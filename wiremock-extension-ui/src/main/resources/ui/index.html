@@ -88,12 +88,20 @@
 
         <div id="tab-journal" class="tab-content">
           <div class="journal-controls">
-            <label><input type="checkbox" id="filter-unmatched-only"> Show unmatched (404) only</label>
+            <div class="journal-controls-top">
+              <input type="text" id="journal-search" placeholder="Filter journal by URL, method, status code..." autocomplete="off">
+            </div>
+            <div class="journal-controls-bottom">
+              <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only"> Show unmatched (404) only</label>
+              <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh"> Live auto-refresh (3s)</label>
+              <span id="journal-filtered-count" class="muted-text"></span>
+            </div>
           </div>
           <div class="table-container">
             <table class="data-table" id="journal-table">
               <thead>
                 <tr>
+                  <th style="width: 24px;"></th>
                   <th>Time</th>
                   <th>Method</th>
                   <th>URL</th>
@@ -103,7 +111,7 @@
                 </tr>
               </thead>
               <tbody id="journal-list">
-                <tr><td colspan="6" class="text-center">No requests recorded yet.</td></tr>
+                <tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>
               </tbody>
             </table>
           </div>

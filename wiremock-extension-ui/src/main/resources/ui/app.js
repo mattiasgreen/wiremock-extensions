@@ -85,6 +85,19 @@
           }
         }
       }
+
+      if (route === 'journal') {
+        const q = params.get('q') || '';
+        if (elements.journalSearch && elements.journalSearch.value !== q) {
+          elements.journalSearch.value = q;
+        }
+        const unmatched = params.get('unmatched') === 'true';
+        if (elements.filterUnmatchedOnly) {
+          elements.filterUnmatchedOnly.checked = unmatched;
+        }
+        expandedRequestId = params.get('reqId') || null;
+        renderJournal();
+      }
     } finally {
       isSyncingRoute = false;
     }
@@ -108,6 +121,9 @@
     detailScenario: document.getElementById('detail-scenario'),
     stubJsonViewer: document.getElementById('stub-json-viewer'),
     journalList: document.getElementById('journal-list'),
+    journalSearch: document.getElementById('journal-search'),
+    journalAutoRefresh: document.getElementById('journal-auto-refresh'),
+    journalFilteredCount: document.getElementById('journal-filtered-count'),
     scenariosContainer: document.getElementById('scenarios-container'),
     btnRefresh: document.getElementById('btn-refresh'),
     btnResetJournal: document.getElementById('btn-reset-journal'),
@@ -249,34 +265,166 @@
     }
   }
 
+  let expandedRequestId = null;
+  let journalAutoRefreshTimer = null;
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function toggleJournalDetail(reqId, updateRoute = true) {
+    if (expandedRequestId === reqId) {
+      expandedRequestId = null;
+    } else {
+      expandedRequestId = reqId;
+    }
+    renderJournal();
+    if (updateRoute) {
+      setRoute('journal', { reqId: expandedRequestId });
+    }
+  }
+
   function renderJournal() {
+    const filter = (elements.journalSearch ? elements.journalSearch.value : '').toLowerCase().trim();
     const unmatchedOnly = elements.filterUnmatchedOnly.checked;
-    const filtered = currentRequests.filter(r => !unmatchedOnly || !r.wasMatched);
+
+    const filtered = currentRequests.filter(r => {
+      if (unmatchedOnly && r.wasMatched) return false;
+      if (!filter) return true;
+      const method = (r.request?.method || '').toLowerCase();
+      const url = (r.request?.url || '').toLowerCase();
+      const status = String(r.response?.status || r.responseDefinition?.status || '');
+      const stubName = (r.stubMapping?.name || '').toLowerCase();
+      return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter);
+    });
+
+    if (elements.journalFilteredCount) {
+      elements.journalFilteredCount.textContent = `Showing ${filtered.length} of ${currentRequests.length}`;
+    }
 
     if (filtered.length === 0) {
-      elements.journalList.innerHTML = '<tr><td colspan="6" class="text-center">No requests found.</td></tr>';
+      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No matching requests found.</td></tr>';
       return;
     }
 
-    elements.journalList.innerHTML = filtered.map(req => {
+    let html = '';
+    filtered.forEach(req => {
+      const isExpanded = req.id === expandedRequestId;
       const time = req.request?.loggedDate ? new Date(req.request.loggedDate).toLocaleTimeString() : '-';
       const method = req.request?.method || '-';
       const url = req.request?.url || '-';
-      const status = req.response?.status || 404;
+      const status = req.response?.status || req.responseDefinition?.status || 404;
       const matched = req.wasMatched;
-      const duration = req.timing?.totalTime ? `${req.timing.totalTime}ms` : '-';
+      const duration = req.timing?.totalTime !== undefined ? `${req.timing.totalTime}ms` : '-';
 
-      return `
-        <tr>
+      html += `
+        <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}">
+          <td><span class="journal-chevron">▶</span></td>
           <td>${time}</td>
           <td><span class="http-badge badge-${method}">${method}</span></td>
-          <td title="${url}">${url}</td>
+          <td title="${escapeHtml(url)}">${escapeHtml(url)}</td>
           <td>${status}</td>
           <td class="${matched ? 'pill-matched' : 'pill-unmatched'}">${matched ? 'MATCHED' : 'UNMATCHED'}</td>
           <td>${duration}</td>
         </tr>
       `;
-    }).join('');
+
+      if (isExpanded) {
+        const reqHeaders = JSON.stringify(req.request?.headers || {}, null, 2);
+        const reqBody = req.request?.body || '(empty)';
+        const resHeaders = JSON.stringify(req.response?.headers || {}, null, 2);
+        const resBody = req.response?.body || req.responseDefinition?.body || '(empty)';
+        const stubName = req.stubMapping?.name || req.response?.headers?.['Matched-Stub-Name'] || (matched ? 'Matched' : 'None (404)');
+
+        html += `
+          <tr class="journal-detail-row" data-request-id="${req.id}">
+            <td colspan="7">
+              <div class="journal-detail-content">
+                <div class="journal-detail-grid">
+                  <div class="journal-detail-card">
+                    <div class="journal-card-header">
+                      <span>Request: ${escapeHtml(method)} ${escapeHtml(url)}</span>
+                      <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
+                    </div>
+                    <div class="journal-section-title">Headers</div>
+                    <pre class="code-block-mini">${escapeHtml(reqHeaders)}</pre>
+                    <div class="journal-section-title">Body</div>
+                    <pre class="code-block-mini">${escapeHtml(reqBody)}</pre>
+                  </div>
+                  <div class="journal-detail-card">
+                    <div class="journal-card-header">
+                      <span>Response: Status ${status} (${escapeHtml(stubName)})</span>
+                      <button class="btn btn-small btn-copy-resp" data-id="${req.id}">📋 Copy Response</button>
+                    </div>
+                    <div class="journal-section-title">Headers</div>
+                    <pre class="code-block-mini">${escapeHtml(resHeaders)}</pre>
+                    <div class="journal-section-title">Body</div>
+                    <pre class="code-block-mini">${escapeHtml(resBody)}</pre>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+    });
+
+    elements.journalList.innerHTML = html;
+
+    // Attach row click listeners
+    elements.journalList.querySelectorAll('.journal-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const reqId = row.dataset.requestId;
+        toggleJournalDetail(reqId, true);
+      });
+    });
+
+    // Attach copy button listeners
+    elements.journalList.querySelectorAll('.btn-copy-req').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const req = currentRequests.find(r => r.id === btn.dataset.id);
+        if (req) {
+          navigator.clipboard.writeText(JSON.stringify(req.request, null, 2));
+          btn.textContent = '✅ Copied!';
+          setTimeout(() => btn.textContent = '📋 Copy Request', 1500);
+        }
+      });
+    });
+
+    elements.journalList.querySelectorAll('.btn-copy-resp').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const req = currentRequests.find(r => r.id === btn.dataset.id);
+        if (req) {
+          navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2));
+          btn.textContent = '✅ Copied!';
+          setTimeout(() => btn.textContent = '📋 Copy Response', 1500);
+        }
+      });
+    });
+  }
+
+  function setupJournalAutoRefresh() {
+    if (elements.journalAutoRefresh && elements.journalAutoRefresh.checked) {
+      if (!journalAutoRefreshTimer) {
+        journalAutoRefreshTimer = setInterval(() => {
+          loadJournal();
+        }, 3000);
+      }
+    } else {
+      if (journalAutoRefreshTimer) {
+        clearInterval(journalAutoRefreshTimer);
+        journalAutoRefreshTimer = null;
+      }
+    }
   }
 
   function renderScenarios(scenarios) {
@@ -302,7 +450,21 @@
     setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
   });
   elements.btnRefresh.addEventListener('click', loadData);
-  elements.filterUnmatchedOnly.addEventListener('change', renderJournal);
+  elements.filterUnmatchedOnly.addEventListener('change', () => {
+    renderJournal();
+    setRoute('journal', { unmatched: elements.filterUnmatchedOnly.checked ? 'true' : null }, true);
+  });
+
+  if (elements.journalSearch) {
+    elements.journalSearch.addEventListener('input', () => {
+      renderJournal();
+      setRoute('journal', { q: elements.journalSearch.value.trim() }, true);
+    });
+  }
+
+  if (elements.journalAutoRefresh) {
+    elements.journalAutoRefresh.addEventListener('change', setupJournalAutoRefresh);
+  }
 
   elements.btnResetJournal.addEventListener('click', async () => {
     if (confirm('Are you sure you want to clear the request journal?')) {
