@@ -2,6 +2,13 @@
 (function () {
   'use strict';
 
+  // Ensure base pathname ends with '/' for consistent relative neighbor URLs (e.g. ../swagger-ui/)
+  if (window.location.pathname && !window.location.pathname.endsWith('/')) {
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname + '/' + window.location.search + window.location.hash);
+    }
+  }
+
   let currentStubs = [];
   let selectedStubId = null;
   let currentRequests = [];

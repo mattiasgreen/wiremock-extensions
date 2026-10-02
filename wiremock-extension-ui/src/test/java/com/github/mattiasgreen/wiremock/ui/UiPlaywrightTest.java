@@ -121,6 +121,10 @@ public class UiPlaywrightTest {
         Locator tabStubDetail = page.locator("#tab-stub-detail");
         assertThat(tabStubDetail.getAttribute("class")).contains("active");
 
+        // Verify relative neighbor link to Swagger UI
+        Locator swaggerLink = page.locator("a[href='../swagger-ui/']");
+        assertThat(swaggerLink.isVisible()).isTrue();
+
         assertThat(pageErrors).as("Uncaught page errors on initial load").isEmpty();
     }
 
