@@ -85,8 +85,21 @@
   }
 
   function activateTab(tabId, updateRoute = true) {
-    elements.tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === tabId));
+    elements.tabs.forEach(t => {
+      const tId = t.getAttribute('data-tab') || (t.dataset && t.dataset.tab);
+      if (tId === tabId) {
+        t.classList.add('active');
+      } else {
+        t.classList.remove('active');
+      }
+    });
+    document.querySelectorAll('.tab-content').forEach(c => {
+      if (c.id === tabId) {
+        c.classList.add('active');
+      } else {
+        c.classList.remove('active');
+      }
+    });
     if (updateRoute) {
       const route = ROUTE_FOR_TAB[tabId] || 'stubs';
       setRoute(route);
@@ -190,54 +203,99 @@
     tabs: document.querySelectorAll('.tab')
   };
 
-  async function apiGet(endpoint) {
-    const res = await fetch(endpoint);
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
-    return res.json();
+  function doFetch(url, options = {}) {
+    if (typeof fetch !== 'undefined') {
+      return fetch(url, options);
+    }
+    return new Promise((resolve, reject) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open(options.method || 'GET', url);
+        if (options.headers) {
+          Object.entries(options.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+        }
+        xhr.onload = () => {
+          const headers = {
+            forEach(cb) {
+              const raw = xhr.getAllResponseHeaders() || '';
+              raw.trim().split(/[\r\n]+/).forEach(line => {
+                const parts = line.split(': ');
+                if (parts.length >= 2) cb(parts.slice(1).join(': '), parts[0]);
+              });
+            }
+          };
+          resolve({
+            status: xhr.status,
+            statusText: xhr.statusText,
+            headers: headers,
+            text: () => Promise.resolve(xhr.responseText),
+            json: () => Promise.resolve(JSON.parse(xhr.responseText)),
+            ok: xhr.status >= 200 && xhr.status < 300
+          });
+        };
+        xhr.onerror = () => reject(new Error('Network error from ' + url));
+        xhr.send(options.body || null);
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
-  async function loadData() {
-    try {
-      await Promise.all([loadMappings(), loadJournal(), loadScenarios()]);
-      applyRouteFromUrl();
-    } catch (err) {
-      console.error('Error refreshing data', err);
-    }
+  function apiGet(endpoint) {
+    return doFetch(endpoint, { method: 'GET' }).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+      return res.json();
+    });
   }
 
-  async function loadMappings() {
-    try {
-      const data = await apiGet('/__admin/mappings');
-      currentStubs = data.mappings || [];
-      renderStubList();
-      elements.statStubs.textContent = currentStubs.length;
-      elements.stubsCountLabel.textContent = `${currentStubs.length} mappings`;
-    } catch (err) {
-      elements.stubList.innerHTML = `<div class="empty-state text-error">Failed to load stubs: ${err.message}</div>`;
-    }
+  function loadData() {
+    return Promise.all([loadMappings(), loadJournal(), loadScenarios()])
+      .then(() => {
+        applyRouteFromUrl();
+      })
+      .catch(err => {
+        console.error('Error refreshing data', err);
+      });
   }
 
-  async function loadJournal() {
-    try {
-      const data = await apiGet('/__admin/requests?limit=100');
-      currentRequests = data.requests || [];
-      elements.statRequests.textContent = currentRequests.length;
-      elements.journalCount.textContent = currentRequests.length;
-      renderJournal();
-    } catch (err) {
-      console.warn('Could not load journal', err);
-    }
+  function loadMappings() {
+    return apiGet('/__admin/mappings')
+      .then(data => {
+        currentStubs = data.mappings || [];
+        renderStubList();
+        if (elements.statStubs) elements.statStubs.textContent = currentStubs.length;
+        if (elements.stubsCountLabel) elements.stubsCountLabel.textContent = `${currentStubs.length} mappings`;
+      })
+      .catch(err => {
+        if (elements.stubList) {
+          elements.stubList.innerHTML = `<div class="empty-state text-error">Failed to load stubs: ${err.message}</div>`;
+        }
+      });
   }
 
-  async function loadScenarios() {
-    try {
-      const data = await apiGet('/__admin/scenarios');
-      const scenarios = data.scenarios || [];
-      elements.statScenarios.textContent = scenarios.length;
-      renderScenarios(scenarios);
-    } catch (err) {
-      console.warn('Could not load scenarios', err);
-    }
+  function loadJournal() {
+    return apiGet('/__admin/requests?limit=100')
+      .then(data => {
+        currentRequests = data.requests || [];
+        if (elements.statRequests) elements.statRequests.textContent = currentRequests.length;
+        if (elements.journalCount) elements.journalCount.textContent = currentRequests.length;
+        renderJournal();
+      })
+      .catch(err => {
+        console.warn('Could not load journal', err);
+      });
+  }
+
+  function loadScenarios() {
+    return apiGet('/__admin/scenarios')
+      .then(data => {
+        const scenarios = data.scenarios || [];
+        if (elements.statScenarios) elements.statScenarios.textContent = scenarios.length;
+        renderScenarios(scenarios);
+      })
+      .catch(err => {
+        console.warn('Could not load scenarios', err);
+      });
   }
 
   function getStubUrl(req) {
@@ -249,7 +307,7 @@
     const filter = (elements.searchBox.value || '').toLowerCase().trim();
     const filtered = currentStubs.filter(s => {
       if (!filter) return true;
-      const method = (s.request?.method || 'ANY').toLowerCase();
+      const method = (s.request && s.request.method ? s.request.method : 'ANY').toLowerCase();
       const url = getStubUrl(s.request).toLowerCase();
       const name = (s.name || '').toLowerCase();
       return method.includes(filter) || url.includes(filter) || name.includes(filter);
@@ -264,11 +322,11 @@
     filtered.forEach(stub => {
       const card = document.createElement('div');
       card.className = `stub-card ${stub.id === selectedStubId ? 'selected' : ''}`;
-      card.dataset.stubId = stub.id;
+      card.setAttribute('data-stub-id', stub.id);
 
-      const method = stub.request?.method || 'ANY';
+      const method = (stub.request && stub.request.method) || 'ANY';
       const url = getStubUrl(stub.request);
-      const name = stub.name || (stub.response?.status ? `Status ${stub.response.status}` : 'Unnamed');
+      const name = stub.name || (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed');
 
       card.innerHTML = `
         <div class="stub-card-top">
@@ -277,7 +335,7 @@
         </div>
         <div class="stub-card-bottom">
           <span>${name}</span>
-          <span>Status: ${stub.response?.status || 200}</span>
+          <span>Status: ${(stub.response && stub.response.status) || 200}</span>
         </div>
       `;
 
@@ -295,19 +353,24 @@
   function selectStub(stub, updateRoute = true) {
     selectedStubId = stub.id;
     document.querySelectorAll('.stub-card').forEach(el => {
-      el.classList.toggle('selected', el.dataset.stubId === stub.id);
+      const id = el.getAttribute('data-stub-id') || (el.dataset && el.dataset.stubId);
+      if (id === stub.id) {
+        el.classList.add('selected');
+      } else {
+        el.classList.remove('selected');
+      }
     });
 
     elements.stubDetailEmpty.classList.add('hidden');
     elements.stubDetailView.classList.remove('hidden');
 
-    const method = stub.request?.method || 'ANY';
+    const method = (stub.request && stub.request.method) || 'ANY';
     elements.detailMethod.textContent = method;
     elements.detailMethod.className = `http-badge badge-${method}`;
     elements.detailUrl.textContent = getStubUrl(stub.request);
     elements.detailName.textContent = stub.name ? `— ${stub.name}` : '';
 
-    const status = stub.response?.status || 200;
+    const status = (stub.response && stub.response.status) || 200;
     elements.detailStatus.textContent = status;
     elements.detailStatus.className = `card-value status-${status >= 500 ? '500' : (status >= 400 ? '400' : '200')}`;
 
@@ -397,10 +460,10 @@
     const filtered = currentRequests.filter(r => {
       if (unmatchedOnly && r.wasMatched) return false;
       if (!filter) return true;
-      const method = (r.request?.method || '').toLowerCase();
-      const url = (r.request?.url || '').toLowerCase();
-      const status = String(r.response?.status || r.responseDefinition?.status || '');
-      const stubName = (r.stubMapping?.name || '').toLowerCase();
+      const method = (r.request && r.request.method ? r.request.method : '').toLowerCase();
+      const url = (r.request && r.request.url ? r.request.url : '').toLowerCase();
+      const status = String((r.response && r.response.status) || (r.responseDefinition && r.responseDefinition.status) || '');
+      const stubName = (r.stubMapping && r.stubMapping.name ? r.stubMapping.name : '').toLowerCase();
       return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter);
     });
 
@@ -416,12 +479,12 @@
     let html = '';
     filtered.forEach(req => {
       const isExpanded = req.id === expandedRequestId;
-      const time = req.request?.loggedDate ? new Date(req.request.loggedDate).toLocaleTimeString() : '-';
-      const method = req.request?.method || '-';
-      const url = req.request?.url || '-';
-      const status = req.response?.status || req.responseDefinition?.status || 404;
+      const time = req.request && req.request.loggedDate ? new Date(req.request.loggedDate).toLocaleTimeString() : '-';
+      const method = (req.request && req.request.method) || '-';
+      const url = (req.request && req.request.url) || '-';
+      const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 404;
       const matched = req.wasMatched;
-      const duration = req.timing?.totalTime !== undefined ? `${req.timing.totalTime}ms` : '-';
+      const duration = (req.timing && req.timing.totalTime !== undefined) ? `${req.timing.totalTime}ms` : '-';
 
       html += `
         <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}">
@@ -436,14 +499,17 @@
       `;
 
       if (isExpanded) {
-        const reqHeadersHtml = highlightJson(req.request?.headers || {});
-        const reqBodyRaw = req.request?.body || '';
+        const reqHeadersHtml = highlightJson((req.request && req.request.headers) || {});
+        const reqBodyRaw = (req.request && req.request.body) || '';
         const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
 
-        const resHeadersHtml = highlightJson(req.response?.headers || req.responseDefinition?.headers || {});
-        const resBodyRaw = req.response?.body || req.responseDefinition?.body || '';
+        const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+        const resHeadersHtml = highlightJson(resHeaders);
+        const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
         const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
-        const stubName = req.stubMapping?.name || req.response?.headers?.['Matched-Stub-Name'] || (matched ? 'Matched' : 'None (404)');
+        const stubName = (req.stubMapping && req.stubMapping.name)
+          || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name'])
+          || (matched ? 'Matched' : 'None (404)');
 
         html += `
           <tr class="journal-detail-row" data-request-id="${req.id}">
@@ -484,7 +550,7 @@
     elements.journalList.querySelectorAll('.journal-row').forEach(row => {
       row.addEventListener('click', (e) => {
         if (e.target.closest('button')) return;
-        const reqId = row.dataset.requestId;
+        const reqId = row.getAttribute('data-request-id') || (row.dataset && row.dataset.requestId);
         toggleJournalDetail(reqId, true);
       });
     });
@@ -493,7 +559,8 @@
     elements.journalList.querySelectorAll('.btn-copy-req').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const req = currentRequests.find(r => r.id === btn.dataset.id);
+        const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
+        const req = currentRequests.find(r => r.id === targetId);
         if (req) {
           navigator.clipboard.writeText(JSON.stringify(req.request, null, 2));
           btn.textContent = '✅ Copied!';
@@ -505,7 +572,8 @@
     elements.journalList.querySelectorAll('.btn-copy-resp').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const req = currentRequests.find(r => r.id === btn.dataset.id);
+        const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
+        const req = currentRequests.find(r => r.id === targetId);
         if (req) {
           navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2));
           btn.textContent = '✅ Copied!';
@@ -569,10 +637,11 @@
     elements.journalAutoRefresh.addEventListener('change', setupJournalAutoRefresh);
   }
 
-  elements.btnResetJournal.addEventListener('click', async () => {
+  elements.btnResetJournal.addEventListener('click', () => {
     if (confirm('Are you sure you want to clear the request journal?')) {
-      await fetch('/__admin/requests', { method: 'DELETE' });
-      await loadJournal();
+      doFetch('/__admin/requests', { method: 'DELETE' })
+        .then(() => loadJournal())
+        .catch(err => console.warn('Could not reset journal', err));
     }
   });
 
@@ -589,16 +658,16 @@
       if (!selectedStubId) return;
       const stub = currentStubs.find(s => s.id === selectedStubId);
       if (!stub) return;
-      const method = stub.request?.method || 'GET';
+      const method = (stub.request && stub.request.method) || 'GET';
       const path = getStubUrl(stub.request);
       const headers = {};
-      if (stub.request?.headers) {
+      if (stub.request && stub.request.headers) {
         for (const [k, v] of Object.entries(stub.request.headers)) {
           headers[k] = v.equalTo || v.matches || v.contains || Object.values(v)[0] || '';
         }
       }
       let body = '';
-      if (stub.request?.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+      if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
         const bp = stub.request.bodyPatterns[0];
         body = bp.equalToJson ? JSON.stringify(bp.equalToJson) : (bp.equalTo || '');
       }
@@ -655,7 +724,7 @@
     }
   }
 
-  async function executeTesterRequest() {
+  function executeTesterRequest() {
     if (!elements.testerUrl || !elements.testerMethod) return;
     const method = elements.testerMethod.value;
     let url = elements.testerUrl.value.trim();
@@ -680,60 +749,64 @@
     }
 
     const startTime = performance.now();
-    try {
-      const fetchOptions = {
-        method,
-        headers
-      };
-      if (bodyText && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        fetchOptions.body = bodyText;
-      }
-
-      const res = await fetch(url, fetchOptions);
-      const elapsed = Math.round(performance.now() - startTime);
-
-      if (elements.testerResponseStatus) {
-        elements.testerResponseStatus.textContent = `${res.status} ${res.statusText || ''}`.trim();
-        elements.testerResponseStatus.className = `card-value status-${res.status >= 500 ? '500' : (res.status >= 400 ? '400' : '200')}`;
-      }
-      if (elements.testerResponseTime) {
-        elements.testerResponseTime.textContent = `${elapsed} ms`;
-      }
-
-      const headerLines = [];
-      res.headers.forEach((val, key) => {
-        headerLines.push(`${key}: ${val}`);
-      });
-      if (elements.testerResponseHeaderCount) {
-        elements.testerResponseHeaderCount.textContent = headerLines.length;
-      }
-      if (elements.testerResponseHeaders) {
-        elements.testerResponseHeaders.textContent = headerLines.join('\n') || '(no headers)';
-      }
-
-      const body = await res.text();
-      renderTesterResponse(body);
-
-      // Silently refresh journal so the user sees the new entry if they switch tabs
-      loadJournal();
-    } catch (err) {
-      const elapsed = Math.round(performance.now() - startTime);
-      if (elements.testerResponseStatus) {
-        elements.testerResponseStatus.textContent = 'ERROR';
-        elements.testerResponseStatus.className = 'card-value status-500';
-      }
-      if (elements.testerResponseTime) {
-        elements.testerResponseTime.textContent = `${elapsed} ms`;
-      }
-      if (elements.testerResponseBody) {
-        elements.testerResponseBody.textContent = `Fetch error: ${err.message}`;
-      }
-    } finally {
-      if (elements.btnTesterSend) {
-        elements.btnTesterSend.disabled = false;
-        elements.btnTesterSend.textContent = '🚀 Send';
-      }
+    const fetchOptions = {
+      method: method,
+      headers: headers
+    };
+    if (bodyText && ['POST', 'PUT', 'PATCH', 'DELETE'].indexOf(method) !== -1) {
+      fetchOptions.body = bodyText;
     }
+
+    doFetch(url, fetchOptions)
+      .then(res => {
+        const elapsed = Math.round(performance.now() - startTime);
+
+        if (elements.testerResponseStatus) {
+          elements.testerResponseStatus.textContent = `${res.status} ${res.statusText || ''}`.trim();
+          elements.testerResponseStatus.className = `card-value status-${res.status >= 500 ? '500' : (res.status >= 400 ? '400' : '200')}`;
+        }
+        if (elements.testerResponseTime) {
+          elements.testerResponseTime.textContent = `${elapsed} ms`;
+        }
+
+        const headerLines = [];
+        if (res.headers && res.headers.forEach) {
+          res.headers.forEach((val, key) => {
+            headerLines.push(`${key}: ${val}`);
+          });
+        }
+        if (elements.testerResponseHeaderCount) {
+          elements.testerResponseHeaderCount.textContent = headerLines.length;
+        }
+        if (elements.testerResponseHeaders) {
+          elements.testerResponseHeaders.textContent = headerLines.join('\n') || '(no headers)';
+        }
+
+        return res.text();
+      })
+      .then(body => {
+        renderTesterResponse(body);
+        loadJournal();
+      })
+      .catch(err => {
+        const elapsed = Math.round(performance.now() - startTime);
+        if (elements.testerResponseStatus) {
+          elements.testerResponseStatus.textContent = 'ERROR';
+          elements.testerResponseStatus.className = 'card-value status-500';
+        }
+        if (elements.testerResponseTime) {
+          elements.testerResponseTime.textContent = `${elapsed} ms`;
+        }
+        if (elements.testerResponseBody) {
+          elements.testerResponseBody.textContent = `Fetch error: ${err.message}`;
+        }
+      })
+      .then(() => {
+        if (elements.btnTesterSend) {
+          elements.btnTesterSend.disabled = false;
+          elements.btnTesterSend.textContent = '🚀 Send';
+        }
+      });
   }
 
   // --- Tester Event Listeners ---
@@ -741,12 +814,15 @@
     elements.btnTesterSend.addEventListener('click', executeTesterRequest);
   }
 
-  document.getElementById('tab-tester')?.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      executeTesterRequest();
-    }
-  });
+  const tabTesterEl = document.getElementById('tab-tester');
+  if (tabTesterEl) {
+    tabTesterEl.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        executeTesterRequest();
+      }
+    });
+  }
 
   if (elements.btnTesterFormatJson) {
     elements.btnTesterFormatJson.addEventListener('click', () => {
@@ -762,10 +838,10 @@
 
   if (elements.btnTesterCopyCurl) {
     elements.btnTesterCopyCurl.addEventListener('click', () => {
-      const method = elements.testerMethod?.value || 'GET';
-      const path = elements.testerUrl?.value || '/';
-      const headers = parseHeadersInput(elements.testerHeaders?.value || '');
-      const body = elements.testerBody?.value || '';
+      const method = (elements.testerMethod && elements.testerMethod.value) || 'GET';
+      const path = (elements.testerUrl && elements.testerUrl.value) || '/';
+      const headers = parseHeadersInput((elements.testerHeaders && elements.testerHeaders.value) || '');
+      const body = (elements.testerBody && elements.testerBody.value) || '';
       const cmd = generateCurl(method, path, headers, body);
       navigator.clipboard.writeText(cmd);
       elements.btnTesterCopyCurl.textContent = '✅ Copied!';
@@ -786,7 +862,7 @@
     elements.btnViewHighlighted.addEventListener('click', () => {
       testerViewMode = 'highlighted';
       elements.btnViewHighlighted.classList.add('active');
-      elements.btnViewRaw?.classList.remove('active');
+      if (elements.btnViewRaw) elements.btnViewRaw.classList.remove('active');
       renderTesterResponse(lastRawResponseBody);
     });
   }
@@ -795,7 +871,7 @@
     elements.btnViewRaw.addEventListener('click', () => {
       testerViewMode = 'raw';
       elements.btnViewRaw.classList.add('active');
-      elements.btnViewHighlighted?.classList.remove('active');
+      if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.remove('active');
       renderTesterResponse(lastRawResponseBody);
     });
   }
@@ -811,7 +887,7 @@
   }
 
   [elements.testerMethod, elements.testerUrl, elements.testerHeaders, elements.testerBody].forEach(el => {
-    el?.addEventListener('change', () => updateTesterRoute(true));
+    if (el) el.addEventListener('change', () => updateTesterRoute(true));
   });
 
   if (elements.btnTestStub) {
@@ -820,16 +896,16 @@
       const stub = currentStubs.find(s => s.id === selectedStubId);
       if (!stub) return;
 
-      const method = stub.request?.method || 'GET';
+      const method = (stub.request && stub.request.method) || 'GET';
       const path = getStubUrl(stub.request);
       const headerLines = [];
-      if (stub.request?.headers) {
+      if (stub.request && stub.request.headers) {
         for (const [k, v] of Object.entries(stub.request.headers)) {
           headerLines.push(`${k}: ${v.equalTo || v.matches || v.contains || Object.values(v)[0] || ''}`);
         }
       }
       let body = '';
-      if (stub.request?.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+      if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
         const bp = stub.request.bodyPatterns[0];
         body = bp.equalToJson ? JSON.stringify(bp.equalToJson, null, 2) : (bp.equalTo || '');
       }
@@ -851,7 +927,8 @@
 
   elements.tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      activateTab(tab.dataset.tab, true);
+      const target = tab.getAttribute('data-tab') || (tab.dataset && tab.dataset.tab);
+      activateTab(target, true);
     });
   });
 

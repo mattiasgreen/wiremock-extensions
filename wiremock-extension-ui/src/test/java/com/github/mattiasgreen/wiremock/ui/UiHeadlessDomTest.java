@@ -59,6 +59,46 @@ public class UiHeadlessDomTest {
 
             HtmlElement statStubs = page.getHtmlElementById("stat-stubs");
             assertThat(statStubs).isNotNull();
+
+            HtmlElement tabTester = page.getHtmlElementById("tab-tester");
+            assertThat(tabTester).isNotNull();
+
+            HtmlElement journalSearch = page.getHtmlElementById("journal-search");
+            assertThat(journalSearch).isNotNull();
+
+            HtmlElement testerUrl = page.getHtmlElementById("tester-url");
+            assertThat(testerUrl).isNotNull();
+
+            HtmlElement btnTesterSend = page.getHtmlElementById("btn-tester-send");
+            assertThat(btnTesterSend).isNotNull();
+        }
+    }
+
+    @Test
+    void testDeepLinkingToTesterTab() throws Exception {
+        try (WebClient webClient = new WebClient(BrowserVersion.CHROME)) {
+            webClient.getOptions().setJavaScriptEnabled(true);
+            webClient.getOptions().setThrowExceptionOnScriptError(true);
+            webClient.getOptions().setCssEnabled(false);
+
+            HtmlPage page = webClient.getPage(server.baseUrl() + "/__admin/ui");
+            webClient.waitForBackgroundJavaScript(2000);
+
+            // Click the HTTP Tester tab
+            HtmlElement tabBtn = page.getFirstByXPath("//button[@data-tab='tab-tester']");
+            assertThat(tabBtn).isNotNull();
+            tabBtn.click();
+            webClient.waitForBackgroundJavaScript(1000);
+
+            HtmlElement tabTester = page.getHtmlElementById("tab-tester");
+            assertThat(tabTester).isNotNull();
+            assertThat(tabTester.getAttribute("class")).contains("active");
+
+            org.htmlunit.html.HtmlTextInput testerUrl = page.getHtmlElementById("tester-url");
+            assertThat(testerUrl.getValue()).isEqualTo("/api/v1/users");
+
+            org.htmlunit.html.HtmlSelect testerMethod = page.getHtmlElementById("tester-method");
+            assertThat(testerMethod.getSelectedOptions().get(0).getValueAttribute()).isEqualTo("GET");
         }
     }
 }

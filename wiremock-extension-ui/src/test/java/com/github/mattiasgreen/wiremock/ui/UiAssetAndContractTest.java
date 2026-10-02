@@ -58,6 +58,13 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"stub-list\"");
         assertThat(html).contains("id=\"search-box\"");
         assertThat(html).contains("id=\"journal-table\"");
+        assertThat(html).contains("id=\"tab-tester\"");
+        assertThat(html).contains("id=\"journal-search\"");
+        assertThat(html).contains("id=\"journal-auto-refresh\"");
+        assertThat(html).contains("id=\"btn-test-stub\"");
+        assertThat(html).contains("id=\"btn-copy-curl\"");
+        assertThat(html).contains("id=\"btn-tester-send\"");
+        assertThat(html).contains("id=\"btn-tester-share-link\"");
     }
 
     @Test
@@ -70,6 +77,10 @@ public class UiAssetAndContractTest {
         assertThat(jsResp.statusCode()).isEqualTo(200);
         assertThat(jsResp.headers().firstValue("Content-Type").get()).contains("application/javascript");
         assertThat(jsResp.body()).contains("loadMappings");
+        assertThat(jsResp.body()).contains("executeTesterRequest");
+        assertThat(jsResp.body()).contains("highlightJson");
+        assertThat(jsResp.body()).contains("generateCurl");
+        assertThat(jsResp.body()).contains("parseHash");
         assertThat(jsResp.headers().firstValue("Cache-Control")).isPresent();
 
         HttpRequest cssReq = HttpRequest.newBuilder()
@@ -80,6 +91,8 @@ public class UiAssetAndContractTest {
         assertThat(cssResp.statusCode()).isEqualTo(200);
         assertThat(cssResp.headers().firstValue("Content-Type").get()).contains("text/css");
         assertThat(cssResp.body()).contains(":root");
+        assertThat(cssResp.body()).contains(".json-key");
+        assertThat(cssResp.body()).contains(".tester-container");
 
         HttpRequest missingReq = HttpRequest.newBuilder()
                 .uri(URI.create(server.baseUrl() + "/__admin/ui/nonexistent.xyz"))
