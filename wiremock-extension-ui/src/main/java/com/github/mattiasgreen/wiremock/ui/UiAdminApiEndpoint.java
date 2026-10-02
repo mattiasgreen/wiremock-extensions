@@ -20,6 +20,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
     private static final List<String> DEV_ROOT_CANDIDATES = List.of(
             System.getProperty("wiremock.ui.dev.staticDir", ""),
             "wiremock-extension-ui/src/main/resources",
+            "../wiremock-extension-ui/src/main/resources",
             "src/main/resources"
     );
 
