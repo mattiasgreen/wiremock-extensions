@@ -128,6 +128,8 @@
     btnRefresh: document.getElementById('btn-refresh'),
     btnResetJournal: document.getElementById('btn-reset-journal'),
     btnCopyJson: document.getElementById('btn-copy-json'),
+    btnCopyCurl: document.getElementById('btn-copy-curl'),
+    btnTestStub: document.getElementById('btn-test-stub'),
     filterUnmatchedOnly: document.getElementById('filter-unmatched-only'),
     tabs: document.querySelectorAll('.tab')
   };
@@ -258,11 +260,53 @@
       ? `${stub.scenarioName} [${stub.requiredScenarioState || 'Start'} -> ${stub.newScenarioState || 'Same'}]`
       : 'None';
 
-    elements.stubJsonViewer.textContent = JSON.stringify(stub, null, 2);
+    elements.stubJsonViewer.innerHTML = highlightJson(stub);
 
     if (updateRoute) {
       setRoute('stubs', { stubId: stub.id });
     }
+  }
+
+  function highlightJson(input) {
+    if (input === null || input === undefined) return '';
+    let jsonStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+    try {
+      if (typeof input === 'string' && (input.trim().startsWith('{') || input.trim().startsWith('['))) {
+        jsonStr = JSON.stringify(JSON.parse(input), null, 2);
+      }
+    } catch (_) {}
+
+    const safe = escapeHtml(jsonStr);
+    return safe.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+      let cls = 'json-number';
+      if (/^"/.test(match)) {
+        if (/:$/.test(match)) {
+          cls = 'json-key';
+        } else {
+          cls = 'json-string';
+        }
+      } else if (/true|false/.test(match)) {
+        cls = 'json-boolean';
+      } else if (/null/.test(match)) {
+        cls = 'json-null';
+      }
+      return `<span class="${cls}">${match}</span>`;
+    });
+  }
+
+  function generateCurl(method, path, headers = {}, body = '') {
+    const origin = window.location.origin || 'http://localhost:8080';
+    const cleanPath = path || '/';
+    const fullUrl = cleanPath.startsWith('http') ? cleanPath : `${origin}${cleanPath.startsWith('/') ? '' : '/'}${cleanPath}`;
+    const parts = [`curl -X ${method || 'GET'} "${fullUrl}"`];
+    for (const [k, v] of Object.entries(headers)) {
+      if (v) parts.push(`-H "${k}: ${v}"`);
+    }
+    if (body && ['POST', 'PUT', 'PATCH', 'DELETE'].includes((method || 'GET').toUpperCase())) {
+      const escapedBody = String(body).replace(/"/g, '\\"');
+      parts.push(`-d "${escapedBody}"`);
+    }
+    return parts.join(' \\\n  ');
   }
 
   let expandedRequestId = null;
@@ -336,10 +380,13 @@
       `;
 
       if (isExpanded) {
-        const reqHeaders = JSON.stringify(req.request?.headers || {}, null, 2);
-        const reqBody = req.request?.body || '(empty)';
-        const resHeaders = JSON.stringify(req.response?.headers || {}, null, 2);
-        const resBody = req.response?.body || req.responseDefinition?.body || '(empty)';
+        const reqHeadersHtml = highlightJson(req.request?.headers || {});
+        const reqBodyRaw = req.request?.body || '';
+        const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
+
+        const resHeadersHtml = highlightJson(req.response?.headers || req.responseDefinition?.headers || {});
+        const resBodyRaw = req.response?.body || req.responseDefinition?.body || '';
+        const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
         const stubName = req.stubMapping?.name || req.response?.headers?.['Matched-Stub-Name'] || (matched ? 'Matched' : 'None (404)');
 
         html += `
@@ -353,9 +400,9 @@
                       <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
                     </div>
                     <div class="journal-section-title">Headers</div>
-                    <pre class="code-block-mini">${escapeHtml(reqHeaders)}</pre>
+                    <pre class="code-block-mini">${reqHeadersHtml}</pre>
                     <div class="journal-section-title">Body</div>
-                    <pre class="code-block-mini">${escapeHtml(reqBody)}</pre>
+                    <pre class="code-block-mini">${reqBodyHtml}</pre>
                   </div>
                   <div class="journal-detail-card">
                     <div class="journal-card-header">
@@ -363,9 +410,9 @@
                       <button class="btn btn-small btn-copy-resp" data-id="${req.id}">📋 Copy Response</button>
                     </div>
                     <div class="journal-section-title">Headers</div>
-                    <pre class="code-block-mini">${escapeHtml(resHeaders)}</pre>
+                    <pre class="code-block-mini">${resHeadersHtml}</pre>
                     <div class="journal-section-title">Body</div>
-                    <pre class="code-block-mini">${escapeHtml(resBody)}</pre>
+                    <pre class="code-block-mini">${resBodyHtml}</pre>
                   </div>
                 </div>
               </div>
@@ -480,6 +527,31 @@
       setTimeout(() => elements.btnCopyJson.textContent = '📋 Copy JSON', 1500);
     }
   });
+
+  if (elements.btnCopyCurl) {
+    elements.btnCopyCurl.addEventListener('click', () => {
+      if (!selectedStubId) return;
+      const stub = currentStubs.find(s => s.id === selectedStubId);
+      if (!stub) return;
+      const method = stub.request?.method || 'GET';
+      const path = getStubUrl(stub.request);
+      const headers = {};
+      if (stub.request?.headers) {
+        for (const [k, v] of Object.entries(stub.request.headers)) {
+          headers[k] = v.equalTo || v.matches || v.contains || Object.values(v)[0] || '';
+        }
+      }
+      let body = '';
+      if (stub.request?.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+        const bp = stub.request.bodyPatterns[0];
+        body = bp.equalToJson ? JSON.stringify(bp.equalToJson) : (bp.equalTo || '');
+      }
+      const cmd = generateCurl(method === 'ANY' ? 'GET' : method, path, headers, body);
+      navigator.clipboard.writeText(cmd);
+      elements.btnCopyCurl.textContent = '✅ Copied!';
+      setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
+    });
+  }
 
   elements.tabs.forEach(tab => {
     tab.addEventListener('click', () => {
