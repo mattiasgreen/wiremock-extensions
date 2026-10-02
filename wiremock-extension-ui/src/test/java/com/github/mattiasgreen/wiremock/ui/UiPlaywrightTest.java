@@ -151,12 +151,15 @@ public class UiPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Scenario 3: HTTP Request Tester execution")
+    @DisplayName("Scenario 3: HTTP Request Tester execution with dual view, permanent headers, and history")
     void testHttpRequestTesterExecution() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
 
-        // Wait for async hash routing to activate tester tab
         page.waitForSelector("#tab-tester.active");
+
+        // Verify headers are permanently visible by default (not collapsed)
+        Locator responseHeaders = page.locator("#tester-response-headers");
+        assertThat(responseHeaders.isVisible()).isTrue();
 
         // Set URL to /api/v1/users
         page.locator("#tester-url").fill("/api/v1/users");
@@ -171,6 +174,80 @@ public class UiPlaywrightTest {
 
         Locator bodyEl = page.locator("#tester-response-body");
         assertThat(bodyEl.textContent()).contains("Alice");
+
+        // Verify response size indicator
+        Locator sizeEl = page.locator("#tester-response-size");
+        assertThat(sizeEl.textContent()).contains("B");
+
+        // Verify response headers are populated and visible
+        assertThat(responseHeaders.textContent().toLowerCase()).contains("content-type");
+
+        // Test Sent Request inspector view
+        page.locator("#btn-tester-tab-request").click();
+        assertThat(page.locator("#tester-sent-url").textContent()).isEqualTo("/api/v1/users");
+        assertThat(page.locator("#tester-sent-method").textContent()).isEqualTo("GET");
+
+        // Test Both (Split) inspector view
+        page.locator("#btn-tester-tab-both").click();
+        assertThat(page.locator("#tester-view-response").isVisible()).isTrue();
+        assertThat(page.locator("#tester-view-request").isVisible()).isTrue();
+
+        // Verify Request History recorded the execution with timestamp
+        Locator historyItems = page.locator(".history-item");
+        assertThat(historyItems.count()).isGreaterThanOrEqualTo(1);
+        Locator firstHistoryItem = historyItems.first();
+        assertThat(firstHistoryItem.textContent()).contains("GET");
+        assertThat(firstHistoryItem.textContent()).contains("200");
+        assertThat(firstHistoryItem.textContent()).contains("/api/v1/users");
+
+        // Switch back to response tab
+        page.locator("#btn-tester-tab-response").click();
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Scenario 8: Tester header presets, auto Content-Type, and history restore/clear")
+    void testTesterPresetsAndHistoryRestore() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+        page.waitForSelector("#tab-tester.active");
+
+        // Test Header Presets
+        page.locator("#btn-preset-json").click();
+        assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
+
+        page.locator("#btn-preset-bearer").click();
+        assertThat(page.locator("#tester-headers").inputValue()).contains("Authorization: Bearer <token>");
+
+        // Test JSON formatting and auto Content-Type
+        page.locator("#tester-body").fill("{\"name\":\"TestItem\",\"count\":5}");
+        page.locator("#btn-tester-format-json").click();
+        assertThat(page.locator("#tester-body").inputValue()).contains("  \"name\": \"TestItem\"");
+
+        // Send a POST request to generate a history entry
+        page.locator("#tester-method").selectOption("POST");
+        page.locator("#tester-url").fill("/api/v1/orders");
+        page.locator("#tester-body").fill("{\"item\": \"Widget\"}");
+        page.locator("#btn-tester-send").click();
+
+        page.waitForSelector("#tester-response-status:has-text('201')");
+
+        // Reset form
+        page.locator("#btn-tester-reset-form").click();
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("GET");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/users");
+        assertThat(page.locator("#tester-headers").inputValue()).isEmpty();
+
+        // Restore from history by clicking the recorded POST history item
+        page.locator(".history-item:has-text('POST')").first().click();
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/orders");
+        assertThat(page.locator("#tester-response-status").textContent()).contains("201");
+
+        // Test clearing history
+        page.onceDialog(Dialog::accept);
+        page.locator("#btn-tester-clear-history").click();
+        assertThat(page.locator(".history-item").count()).isEqualTo(0);
 
         assertThat(pageErrors).isEmpty();
     }
