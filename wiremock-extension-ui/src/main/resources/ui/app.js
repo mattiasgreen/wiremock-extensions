@@ -5,6 +5,90 @@
   let currentStubs = [];
   let selectedStubId = null;
   let currentRequests = [];
+  let isSyncingRoute = false;
+
+  const TAB_ROUTES = {
+    'stubs': 'tab-stub-detail',
+    'journal': 'tab-journal',
+    'scenarios': 'tab-scenarios'
+  };
+
+  const ROUTE_FOR_TAB = {
+    'tab-stub-detail': 'stubs',
+    'tab-journal': 'journal',
+    'tab-scenarios': 'scenarios'
+  };
+
+  function parseHash() {
+    const raw = (window.location.hash || '').replace(/^#\/?/, '');
+    if (!raw) return { route: 'stubs', params: new URLSearchParams() };
+    const idx = raw.indexOf('?');
+    if (idx === -1) {
+      return { route: raw || 'stubs', params: new URLSearchParams() };
+    }
+    return {
+      route: raw.substring(0, idx) || 'stubs',
+      params: new URLSearchParams(raw.substring(idx + 1))
+    };
+  }
+
+  function setRoute(route, newParams = {}, replace = false) {
+    if (isSyncingRoute) return;
+    const current = parseHash();
+    const targetRoute = route !== undefined ? route : current.route;
+    const params = new URLSearchParams(current.params);
+    for (const [k, v] of Object.entries(newParams)) {
+      if (v === null || v === undefined || v === '') {
+        params.delete(k);
+      } else {
+        params.set(k, v);
+      }
+    }
+    const q = params.toString();
+    const newHash = `#${targetRoute}${q ? '?' + q : ''}`;
+    if (window.location.hash !== newHash) {
+      if (replace && window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', newHash);
+      } else {
+        window.location.hash = newHash;
+      }
+    }
+  }
+
+  function activateTab(tabId, updateRoute = true) {
+    elements.tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === tabId));
+    if (updateRoute) {
+      const route = ROUTE_FOR_TAB[tabId] || 'stubs';
+      setRoute(route);
+    }
+  }
+
+  function applyRouteFromUrl() {
+    isSyncingRoute = true;
+    try {
+      const { route, params } = parseHash();
+      const tabId = TAB_ROUTES[route] || 'tab-stub-detail';
+      activateTab(tabId, false);
+
+      if (route === 'stubs' || !route) {
+        const q = params.get('q') || '';
+        if (elements.searchBox.value !== q) {
+          elements.searchBox.value = q;
+        }
+        renderStubList();
+        const stubId = params.get('stubId');
+        if (stubId) {
+          const match = currentStubs.find(s => s.id === stubId);
+          if (match) {
+            selectStub(match, false);
+          }
+        }
+      }
+    } finally {
+      isSyncingRoute = false;
+    }
+  }
 
   const elements = {
     stubList: document.getElementById('stub-list'),
@@ -41,6 +125,7 @@
   async function loadData() {
     try {
       await Promise.all([loadMappings(), loadJournal(), loadScenarios()]);
+      applyRouteFromUrl();
     } catch (err) {
       console.error('Error refreshing data', err);
     }
@@ -122,18 +207,18 @@
         </div>
       `;
 
-      card.addEventListener('click', () => selectStub(stub));
+      card.addEventListener('click', () => selectStub(stub, true));
       elements.stubList.appendChild(card);
     });
 
     // Keep active selected stub updated
     if (selectedStubId) {
       const selected = currentStubs.find(s => s.id === selectedStubId);
-      if (selected) selectStub(selected);
+      if (selected) selectStub(selected, false);
     }
   }
 
-  function selectStub(stub) {
+  function selectStub(stub, updateRoute = true) {
     selectedStubId = stub.id;
     document.querySelectorAll('.stub-card').forEach(el => {
       el.classList.toggle('selected', el.dataset.stubId === stub.id);
@@ -158,6 +243,10 @@
       : 'None';
 
     elements.stubJsonViewer.textContent = JSON.stringify(stub, null, 2);
+
+    if (updateRoute) {
+      setRoute('stubs', { stubId: stub.id });
+    }
   }
 
   function renderJournal() {
@@ -208,7 +297,10 @@
   }
 
   // Event Listeners
-  elements.searchBox.addEventListener('input', renderStubList);
+  elements.searchBox.addEventListener('input', () => {
+    renderStubList();
+    setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
+  });
   elements.btnRefresh.addEventListener('click', loadData);
   elements.filterUnmatchedOnly.addEventListener('change', renderJournal);
 
@@ -229,14 +321,11 @@
 
   elements.tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      elements.tabs.forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-      tab.classList.add('active');
-      const targetId = tab.dataset.tab;
-      document.getElementById(targetId)?.classList.add('active');
+      activateTab(tab.dataset.tab, true);
     });
   });
+
+  window.addEventListener('hashchange', applyRouteFromUrl);
 
   // Initial Boot
   document.addEventListener('DOMContentLoaded', loadData);
