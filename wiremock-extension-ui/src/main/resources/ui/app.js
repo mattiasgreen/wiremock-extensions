@@ -10,14 +10,43 @@
   const TAB_ROUTES = {
     'stubs': 'tab-stub-detail',
     'journal': 'tab-journal',
+    'tester': 'tab-tester',
     'scenarios': 'tab-scenarios'
   };
 
   const ROUTE_FOR_TAB = {
     'tab-stub-detail': 'stubs',
     'tab-journal': 'journal',
+    'tab-tester': 'tester',
     'tab-scenarios': 'scenarios'
   };
+
+  function toBase64(str) {
+    if (!str) return '';
+    try {
+      return btoa(unescape(encodeURIComponent(str)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    } catch (e) {
+      return encodeURIComponent(str);
+    }
+  }
+
+  function fromBase64(b64) {
+    if (!b64) return '';
+    try {
+      let base64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4) base64 += '=';
+      return decodeURIComponent(escape(atob(base64)));
+    } catch (e) {
+      try {
+        return decodeURIComponent(b64);
+      } catch (_) {
+        return b64;
+      }
+    }
+  }
 
   function parseHash() {
     const raw = (window.location.hash || '').replace(/^#\/?/, '');
@@ -98,6 +127,17 @@
         expandedRequestId = params.get('reqId') || null;
         renderJournal();
       }
+
+      if (route === 'tester') {
+        const m = params.get('m');
+        if (m && elements.testerMethod) elements.testerMethod.value = m;
+        const p = params.get('p');
+        if (p && elements.testerUrl) elements.testerUrl.value = p;
+        const h = params.get('h');
+        if (h && elements.testerHeaders) elements.testerHeaders.value = fromBase64(h);
+        const b = params.get('b');
+        if (b && elements.testerBody) elements.testerBody.value = fromBase64(b);
+      }
     } finally {
       isSyncingRoute = false;
     }
@@ -131,6 +171,22 @@
     btnCopyCurl: document.getElementById('btn-copy-curl'),
     btnTestStub: document.getElementById('btn-test-stub'),
     filterUnmatchedOnly: document.getElementById('filter-unmatched-only'),
+    testerMethod: document.getElementById('tester-method'),
+    testerUrl: document.getElementById('tester-url'),
+    btnTesterSend: document.getElementById('btn-tester-send'),
+    testerHeaders: document.getElementById('tester-headers'),
+    testerBody: document.getElementById('tester-body'),
+    btnTesterFormatJson: document.getElementById('btn-tester-format-json'),
+    btnTesterCopyCurl: document.getElementById('btn-tester-copy-curl'),
+    btnTesterShareLink: document.getElementById('btn-tester-share-link'),
+    testerResponseStatus: document.getElementById('tester-response-status'),
+    testerResponseTime: document.getElementById('tester-response-time'),
+    testerResponseHeaders: document.getElementById('tester-response-headers'),
+    testerResponseHeaderCount: document.getElementById('tester-response-header-count'),
+    testerResponseBody: document.getElementById('tester-response-body'),
+    btnViewHighlighted: document.getElementById('btn-view-highlighted'),
+    btnViewRaw: document.getElementById('btn-view-raw'),
+    btnTesterCopyResponse: document.getElementById('btn-tester-copy-response'),
     tabs: document.querySelectorAll('.tab')
   };
 
@@ -550,6 +606,246 @@
       navigator.clipboard.writeText(cmd);
       elements.btnCopyCurl.textContent = '✅ Copied!';
       setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
+    });
+  }
+
+  // --- HTTP Request Tester Logic ---
+  let testerViewMode = 'highlighted';
+  let lastRawResponseBody = '';
+
+  function parseHeadersInput(text) {
+    const headers = {};
+    if (!text) return headers;
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx > 0) {
+        const key = trimmed.substring(0, colonIdx).trim();
+        const val = trimmed.substring(colonIdx + 1).trim();
+        if (key) headers[key] = val;
+      }
+    }
+    return headers;
+  }
+
+  function updateTesterRoute(replace = true) {
+    if (!elements.testerMethod || !elements.testerUrl) return;
+    const m = elements.testerMethod.value;
+    const p = elements.testerUrl.value.trim();
+    const h = elements.testerHeaders ? elements.testerHeaders.value.trim() : '';
+    const b = elements.testerBody ? elements.testerBody.value.trim() : '';
+    setRoute('tester', {
+      m: m !== 'GET' ? m : null,
+      p: p && p !== '/api/v1/users' ? p : null,
+      h: h ? toBase64(h) : null,
+      b: b ? toBase64(b) : null
+    }, replace);
+  }
+
+  function renderTesterResponse(bodyText) {
+    lastRawResponseBody = bodyText;
+    if (!elements.testerResponseBody) return;
+
+    if (testerViewMode === 'raw') {
+      elements.testerResponseBody.textContent = bodyText;
+    } else {
+      elements.testerResponseBody.innerHTML = highlightJson(bodyText);
+    }
+  }
+
+  async function executeTesterRequest() {
+    if (!elements.testerUrl || !elements.testerMethod) return;
+    const method = elements.testerMethod.value;
+    let url = elements.testerUrl.value.trim();
+    if (!url.startsWith('/') && !url.startsWith('http')) {
+      url = '/' + url;
+    }
+    const headers = parseHeadersInput(elements.testerHeaders ? elements.testerHeaders.value : '');
+    const bodyText = elements.testerBody ? elements.testerBody.value.trim() : '';
+
+    updateTesterRoute(false);
+
+    if (elements.btnTesterSend) {
+      elements.btnTesterSend.disabled = true;
+      elements.btnTesterSend.textContent = '⏳ Sending...';
+    }
+    if (elements.testerResponseStatus) {
+      elements.testerResponseStatus.textContent = '...';
+      elements.testerResponseStatus.className = 'card-value';
+    }
+    if (elements.testerResponseTime) {
+      elements.testerResponseTime.textContent = 'measuring...';
+    }
+
+    const startTime = performance.now();
+    try {
+      const fetchOptions = {
+        method,
+        headers
+      };
+      if (bodyText && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        fetchOptions.body = bodyText;
+      }
+
+      const res = await fetch(url, fetchOptions);
+      const elapsed = Math.round(performance.now() - startTime);
+
+      if (elements.testerResponseStatus) {
+        elements.testerResponseStatus.textContent = `${res.status} ${res.statusText || ''}`.trim();
+        elements.testerResponseStatus.className = `card-value status-${res.status >= 500 ? '500' : (res.status >= 400 ? '400' : '200')}`;
+      }
+      if (elements.testerResponseTime) {
+        elements.testerResponseTime.textContent = `${elapsed} ms`;
+      }
+
+      const headerLines = [];
+      res.headers.forEach((val, key) => {
+        headerLines.push(`${key}: ${val}`);
+      });
+      if (elements.testerResponseHeaderCount) {
+        elements.testerResponseHeaderCount.textContent = headerLines.length;
+      }
+      if (elements.testerResponseHeaders) {
+        elements.testerResponseHeaders.textContent = headerLines.join('\n') || '(no headers)';
+      }
+
+      const body = await res.text();
+      renderTesterResponse(body);
+
+      // Silently refresh journal so the user sees the new entry if they switch tabs
+      loadJournal();
+    } catch (err) {
+      const elapsed = Math.round(performance.now() - startTime);
+      if (elements.testerResponseStatus) {
+        elements.testerResponseStatus.textContent = 'ERROR';
+        elements.testerResponseStatus.className = 'card-value status-500';
+      }
+      if (elements.testerResponseTime) {
+        elements.testerResponseTime.textContent = `${elapsed} ms`;
+      }
+      if (elements.testerResponseBody) {
+        elements.testerResponseBody.textContent = `Fetch error: ${err.message}`;
+      }
+    } finally {
+      if (elements.btnTesterSend) {
+        elements.btnTesterSend.disabled = false;
+        elements.btnTesterSend.textContent = '🚀 Send';
+      }
+    }
+  }
+
+  // --- Tester Event Listeners ---
+  if (elements.btnTesterSend) {
+    elements.btnTesterSend.addEventListener('click', executeTesterRequest);
+  }
+
+  document.getElementById('tab-tester')?.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      executeTesterRequest();
+    }
+  });
+
+  if (elements.btnTesterFormatJson) {
+    elements.btnTesterFormatJson.addEventListener('click', () => {
+      if (!elements.testerBody || !elements.testerBody.value.trim()) return;
+      try {
+        const parsed = JSON.parse(elements.testerBody.value);
+        elements.testerBody.value = JSON.stringify(parsed, null, 2);
+      } catch (err) {
+        alert('Invalid JSON: ' + err.message);
+      }
+    });
+  }
+
+  if (elements.btnTesterCopyCurl) {
+    elements.btnTesterCopyCurl.addEventListener('click', () => {
+      const method = elements.testerMethod?.value || 'GET';
+      const path = elements.testerUrl?.value || '/';
+      const headers = parseHeadersInput(elements.testerHeaders?.value || '');
+      const body = elements.testerBody?.value || '';
+      const cmd = generateCurl(method, path, headers, body);
+      navigator.clipboard.writeText(cmd);
+      elements.btnTesterCopyCurl.textContent = '✅ Copied!';
+      setTimeout(() => elements.btnTesterCopyCurl.textContent = '📋 Copy cURL', 1500);
+    });
+  }
+
+  if (elements.btnTesterShareLink) {
+    elements.btnTesterShareLink.addEventListener('click', () => {
+      updateTesterRoute(false);
+      navigator.clipboard.writeText(window.location.href);
+      elements.btnTesterShareLink.textContent = '✅ Link Copied!';
+      setTimeout(() => elements.btnTesterShareLink.textContent = '🔗 Copy Share Link', 1500);
+    });
+  }
+
+  if (elements.btnViewHighlighted) {
+    elements.btnViewHighlighted.addEventListener('click', () => {
+      testerViewMode = 'highlighted';
+      elements.btnViewHighlighted.classList.add('active');
+      elements.btnViewRaw?.classList.remove('active');
+      renderTesterResponse(lastRawResponseBody);
+    });
+  }
+
+  if (elements.btnViewRaw) {
+    elements.btnViewRaw.addEventListener('click', () => {
+      testerViewMode = 'raw';
+      elements.btnViewRaw.classList.add('active');
+      elements.btnViewHighlighted?.classList.remove('active');
+      renderTesterResponse(lastRawResponseBody);
+    });
+  }
+
+  if (elements.btnTesterCopyResponse) {
+    elements.btnTesterCopyResponse.addEventListener('click', () => {
+      if (lastRawResponseBody) {
+        navigator.clipboard.writeText(lastRawResponseBody);
+        elements.btnTesterCopyResponse.textContent = '✅ Copied!';
+        setTimeout(() => elements.btnTesterCopyResponse.textContent = '📋 Copy', 1500);
+      }
+    });
+  }
+
+  [elements.testerMethod, elements.testerUrl, elements.testerHeaders, elements.testerBody].forEach(el => {
+    el?.addEventListener('change', () => updateTesterRoute(true));
+  });
+
+  if (elements.btnTestStub) {
+    elements.btnTestStub.addEventListener('click', () => {
+      if (!selectedStubId) return;
+      const stub = currentStubs.find(s => s.id === selectedStubId);
+      if (!stub) return;
+
+      const method = stub.request?.method || 'GET';
+      const path = getStubUrl(stub.request);
+      const headerLines = [];
+      if (stub.request?.headers) {
+        for (const [k, v] of Object.entries(stub.request.headers)) {
+          headerLines.push(`${k}: ${v.equalTo || v.matches || v.contains || Object.values(v)[0] || ''}`);
+        }
+      }
+      let body = '';
+      if (stub.request?.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+        const bp = stub.request.bodyPatterns[0];
+        body = bp.equalToJson ? JSON.stringify(bp.equalToJson, null, 2) : (bp.equalTo || '');
+      }
+
+      if (elements.testerMethod) elements.testerMethod.value = method === 'ANY' ? 'GET' : method;
+      if (elements.testerUrl) elements.testerUrl.value = path;
+      if (elements.testerHeaders) elements.testerHeaders.value = headerLines.join('\n');
+      if (elements.testerBody) elements.testerBody.value = body;
+
+      activateTab('tab-tester', false);
+      setRoute('tester', {
+        m: method === 'ANY' ? 'GET' : method,
+        p: path,
+        h: headerLines.length ? toBase64(headerLines.join('\n')) : null,
+        b: body ? toBase64(body) : null
+      }, false);
     });
   }
 

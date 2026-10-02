@@ -45,6 +45,7 @@
         <div class="tabs">
           <button class="tab active" data-tab="tab-stub-detail">Stub Details</button>
           <button class="tab" data-tab="tab-journal">Request Journal (<span id="journal-count">0</span>)</button>
+          <button class="tab" data-tab="tab-tester">HTTP Tester</button>
           <button class="tab" data-tab="tab-scenarios">Scenarios</button>
         </div>
 
@@ -116,6 +117,79 @@
                 <tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div id="tab-tester" class="tab-content">
+          <div class="tester-container">
+            <!-- Request Builder Panel -->
+            <div class="tester-request-panel">
+              <div class="tester-url-bar">
+                <select id="tester-method" class="tester-method-select">
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="PATCH">PATCH</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="HEAD">HEAD</option>
+                  <option value="OPTIONS">OPTIONS</option>
+                </select>
+                <input type="text" id="tester-url" placeholder="/api/v1/..." value="/api/v1/users" autocomplete="off">
+                <button id="btn-tester-send" class="btn btn-primary" title="Send Request (Ctrl+Enter)">🚀 Send</button>
+              </div>
+
+              <div class="tester-subcontrols">
+                <div class="tester-section">
+                  <div class="tester-section-header">
+                    <span>Request Headers <span class="muted-text">(Key: Value per line)</span></span>
+                  </div>
+                  <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json"></textarea>
+                </div>
+
+                <div class="tester-section" id="tester-body-section">
+                  <div class="tester-section-header">
+                    <span>Request Body</span>
+                    <button id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
+                  </div>
+                  <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
+                </div>
+              </div>
+
+              <div class="tester-action-bar">
+                <button id="btn-tester-copy-curl" class="btn btn-small" title="Copy as cURL">📋 Copy cURL</button>
+                <button id="btn-tester-share-link" class="btn btn-small" title="Copy shareable link with encoded request">🔗 Copy Share Link</button>
+                <span class="muted-text text-small" style="margin-left: auto;">Press <kbd>Ctrl+Enter</kbd> to send</span>
+              </div>
+            </div>
+
+            <!-- Response Panel -->
+            <div class="tester-response-panel">
+              <div class="tester-response-header">
+                <div class="tester-response-meta">
+                  <span class="muted-text">Status:</span>
+                  <span id="tester-response-status" class="card-value" style="font-size: 0.95rem; margin: 0;">—</span>
+                  <span id="tester-response-time" class="muted-text text-small">—</span>
+                </div>
+                <div class="tester-response-actions">
+                  <div class="view-mode-toggle">
+                    <button class="btn btn-small active" id="btn-view-highlighted">Formatted</button>
+                    <button class="btn btn-small" id="btn-view-raw">Raw</button>
+                  </div>
+                  <button id="btn-tester-copy-response" class="btn btn-small" title="Copy response body">📋 Copy</button>
+                </div>
+              </div>
+
+              <div class="tester-response-headers-container">
+                <details id="tester-response-headers-details">
+                  <summary class="muted-text text-small" style="cursor: pointer; padding: 4px 0;">Response Headers (<span id="tester-response-header-count">0</span>)</summary>
+                  <pre id="tester-response-headers" class="code-block-mini"></pre>
+                </details>
+              </div>
+
+              <div class="code-viewer-container" style="flex: 1;">
+                <pre id="tester-response-body" class="code-block"></pre>
+              </div>
+            </div>
           </div>
         </div>
 
