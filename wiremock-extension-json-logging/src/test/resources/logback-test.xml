@@ -1,0 +1,18 @@
+<configuration>
+    <appender name="TEST_APPENDER" class="com.github.mattiasgreen.wiremock.logging.testutil.TestLogAppender"/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="wiremock.traffic" level="INFO" additivity="true">
+        <appender-ref ref="TEST_APPENDER"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="TEST_APPENDER"/>
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

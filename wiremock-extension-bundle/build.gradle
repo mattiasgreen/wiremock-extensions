@@ -1,0 +1,18 @@
+apply plugin: 'application'
+
+dependencies {
+    api project(':wiremock-extension-json-logging')
+    api project(':wiremock-extension-otel')
+    api project(':wiremock-extension-ui')
+}
+
+application {
+    mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
+}
+
+tasks.register('runStandalone', JavaExec) {
+    group = 'application'
+    description = 'Runs WireMock standalone with all QoL extensions and sample mocks'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
+}

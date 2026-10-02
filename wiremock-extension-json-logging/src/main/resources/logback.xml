@@ -1,0 +1,17 @@
+<configuration>
+    <appender name="JSON_STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdc>true</includeMdc>
+            <includeContext>false</includeContext>
+            <customFields>{"app":"wiremock-logging"}</customFields>
+        </encoder>
+    </appender>
+
+    <logger name="wiremock.traffic" level="INFO" additivity="false">
+        <appender-ref ref="JSON_STDOUT"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="JSON_STDOUT"/>
+    </root>
+</configuration>

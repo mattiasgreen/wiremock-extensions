@@ -1,0 +1,8 @@
+dependencies {
+    implementation 'io.opentelemetry:opentelemetry-api:1.47.0'
+    implementation 'io.opentelemetry:opentelemetry-sdk:1.47.0'
+    implementation 'io.opentelemetry:opentelemetry-exporter-prometheus:1.47.0-alpha'
+    implementation 'io.prometheus:prometheus-metrics-core:1.3.6'
+    implementation 'io.prometheus:prometheus-metrics-exporter-common:1.3.6'
+    implementation 'io.prometheus:prometheus-metrics-exposition-formats:1.3.6'
+}

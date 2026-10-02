@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WireMock Stub Viewer</title>
+  <link rel="stylesheet" href="/__admin/ui/style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="navbar">
+      <div class="brand">
+        <span class="logo">⚡</span>
+        <h1>WireMock Standalone <span class="badge-qol">QoL</span></h1>
+      </div>
+      <div class="stats-bar">
+        <span class="stat-item"><strong id="stat-stubs">0</strong> stubs</span>
+        <span class="stat-item"><strong id="stat-requests">0</strong> requests</span>
+        <span class="stat-item"><strong id="stat-scenarios">0</strong> scenarios</span>
+      </div>
+      <div class="nav-actions">
+        <button id="btn-refresh" class="btn btn-secondary" title="Refresh stubs and journal">🔄 Refresh</button>
+        <button id="btn-reset-journal" class="btn btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
+        <a href="/__admin/metrics/prometheus" target="_blank" class="btn btn-link">📊 Metrics</a>
+      </div>
+    </header>
+
+    <div class="main-container">
+      <!-- Sidebar / Stub List -->
+      <aside class="sidebar">
+        <div class="search-bar">
+          <input type="text" id="search-box" placeholder="Filter stubs by URL, method, or name..." autocomplete="off">
+        </div>
+        <div class="stub-list-header">
+          <span>Configured Stubs</span>
+          <span id="stubs-count-label" class="muted-text">0 mappings</span>
+        </div>
+        <div id="stub-list" class="stub-list">
+          <div class="loading-state">Loading stub mappings...</div>
+        </div>
+      </aside>
+
+      <!-- Content Area / Inspector -->
+      <main class="content-panel">
+        <div class="tabs">
+          <button class="tab active" data-tab="tab-stub-detail">Stub Details</button>
+          <button class="tab" data-tab="tab-journal">Request Journal (<span id="journal-count">0</span>)</button>
+          <button class="tab" data-tab="tab-scenarios">Scenarios</button>
+        </div>
+
+        <div id="tab-stub-detail" class="tab-content active">
+          <div id="stub-detail-empty" class="empty-state">
+            <p>Select a stub mapping from the left panel to inspect its configuration.</p>
+          </div>
+          <div id="stub-detail-view" class="detail-view hidden">
+            <div class="detail-header">
+              <div class="detail-title-group">
+                <span id="detail-method" class="http-badge">GET</span>
+                <span id="detail-url" class="detail-url">/path</span>
+                <span id="detail-name" class="detail-name"></span>
+              </div>
+              <div class="detail-actions">
+                <button id="btn-copy-json" class="btn btn-small">📋 Copy JSON</button>
+              </div>
+            </div>
+
+            <div class="detail-summary-cards">
+              <div class="summary-card">
+                <div class="card-label">Response Status</div>
+                <div id="detail-status" class="card-value status-200">200</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Priority</div>
+                <div id="detail-priority" class="card-value">5</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Scenario</div>
+                <div id="detail-scenario" class="card-value">None</div>
+              </div>
+            </div>
+
+            <div class="code-viewer-container">
+              <div class="code-viewer-header">Stub Mapping JSON</div>
+              <pre id="stub-json-viewer" class="code-block"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-journal" class="tab-content">
+          <div class="journal-controls">
+            <label><input type="checkbox" id="filter-unmatched-only"> Show unmatched (404) only</label>
+          </div>
+          <div class="table-container">
+            <table class="data-table" id="journal-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Method</th>
+                  <th>URL</th>
+                  <th>Status</th>
+                  <th>Matched</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody id="journal-list">
+                <tr><td colspan="6" class="text-center">No requests recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="tab-scenarios" class="tab-content">
+          <div id="scenarios-container" class="scenarios-container">
+            <div class="empty-state">No active stateful scenarios found.</div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/__admin/ui/app.js"></script>
+</body>
+</html>
