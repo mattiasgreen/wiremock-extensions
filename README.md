@@ -1,29 +1,48 @@
 # WireMock Extensions Suite
 
-A collection of lightweight, production-grade quality of life (QoL) extensions for **WireMock** and **WireMock Standalone**.
+A collection of lightweight, production-grade extensions for [WireMock](https://wiremock.org/) and WireMock Standalone.
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Java](https://img.shields.io/badge/Java-21+-orange.svg)](https://adoptium.net/)
-
----
+Each extension is **modular and standalone**: you can pick and choose only the extensions you need, or use the all-in-one bundle to include everything.
 
 ## Modules
 
-| Module | Description | Artifact Coordinates |
+| Module | Description | Documentation |
 | :--- | :--- | :--- |
-| **`wiremock-extension-json-logging`** | Single-line structured JSON logging for verbose/standard mode + corporate MDC request header extraction (`x_correlation_id`, `x_tenant_id`). | `io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0` |
-| **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histograms) + Prometheus scrape route (`/__admin/metrics/prometheus`). | `io.github.mattiasgreen:wiremock-extension-otel:0.1.0` |
-| **`wiremock-extension-ui`** | Pure vanilla JavaScript Single-Page App embedded directly in the JAR at `/__admin/ui` (zero external CDN or Node dependencies). | `io.github.mattiasgreen:wiremock-extension-ui:0.1.0` |
-| **`wiremock-extension-bundle`** | All-in-one umbrella JAR combining all three extensions with zero-touch SPI auto-discovery. | `io.github.mattiasgreen:wiremock-extension-bundle:0.1.0` |
+| **`wiremock-extension-json-logging`** | Single-line structured JSON logging for standard/verbose mode with automatic MDC header extraction (`x_correlation_id`, `x_tenant_id`). | [Module README](wiremock-extension-json-logging/README.md) |
+| **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
+| **`wiremock-extension-ui`** | Embedded single-page web UI at `/__admin/ui/` with stub explorer, JSON syntax highlighting, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
+| **`wiremock-extension-bundle`** | Umbrella module aggregating all three extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 
----
+## Building
 
-## 🚀 Quick Start with WireMock Standalone
+Prerequisites: Java 21+ and Gradle (wrapper included).
 
-### Option 1: Drop-in Classpath (All-in-One Bundle)
+```bash
+# Build all modules and run all tests
+./gradlew build
 
-Run the official WireMock standalone JAR with the extension bundle on the classpath:
+# Build a specific extension module
+./gradlew :wiremock-extension-json-logging:build
+./gradlew :wiremock-extension-otel:build
+./gradlew :wiremock-extension-ui:build
+./gradlew :wiremock-extension-bundle:build
 
+# Run all tests across the suite
+./gradlew test
+```
+
+## Usage Options
+
+### 1. All-in-One Bundle
+
+If you want all extensions together, add `wiremock-extension-bundle` to your project or classpath:
+
+**Gradle**:
+```groovy
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'
+```
+
+**WireMock Standalone CLI**:
 ```bash
 java -cp "wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
@@ -32,81 +51,41 @@ java -cp "wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
 ```
 
 All extensions auto-register via Java Service Provider Interface (SPI):
-- **Stub Viewer UI**: `http://localhost:8080/__admin/ui`
-- **Prometheus Metrics**: `http://localhost:8080/__admin/metrics/prometheus`
-- **Admin API**: `http://localhost:8080/__admin/mappings`
+- Web UI: `http://localhost:8080/__admin/ui/`
+- Prometheus Metrics: `http://localhost:8080/__admin/metrics/prometheus`
+- Admin API: `http://localhost:8080/__admin/mappings`
 
----
+### 2. Individual Extensions
 
-## 🛠️ Feature Deep Dive
+Each extension can be used independently without pulling in the others:
 
-### 1. JSON Logging & MDC Header Tags (`wiremock-extension-json-logging`)
-Intercepts incoming HTTP headers (e.g. `X-Correlation-Id`, `X-Tenant-Id`, `traceparent`), normalizes them to snake_case (`x_correlation_id`), and logs single-line JSON events per transaction:
+- **JSON Logging Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0'
+  ```
+  See [wiremock-extension-json-logging/README.md](wiremock-extension-json-logging/README.md) for details.
 
-```json
-{
-  "timestamp": "2026-10-02T05:23:52.432Z",
-  "event": "wiremock_request_served",
-  "duration_ms": 14.0,
-  "matched": true,
-  "stub_name": "Get User Profile",
-  "request": {
-    "method": "GET",
-    "url": "/api/v1/users/123",
-    "headers": { "X-Correlation-Id": "corr-9921", "X-Tenant-Id": "acme" }
-  },
-  "response": { "status": 200 },
-  "x_correlation_id": "corr-9921",
-  "x_tenant_id": "acme"
-}
-```
+- **OpenTelemetry & Prometheus Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-otel:0.1.0'
+  ```
+  See [wiremock-extension-otel/README.md](wiremock-extension-otel/README.md) for details.
 
-- In **verbose mode** (`--verbose` or `-Dwiremock.verbose.json=true`), full request/response bodies are embedded cleanly within the JSON object.
-- Automatically clears MDC post-serve to prevent thread pollution in Jetty's thread pool.
+- **Web UI Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
+  ```
+  See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
 
-### 2. OpenTelemetry & Prometheus Metrics (`wiremock-extension-otel`)
-Exposes Prometheus/OpenMetrics formatted metrics at `GET /__admin/metrics/prometheus`:
-- `wiremock_requests_total{http_request_method="GET",http_response_status_code="200",wiremock_matched="true",wiremock_stub_name="List Users"}`
-- `wiremock_request_duration_ms` (latency histogram with standard Prometheus bucket distributions)
-- `wiremock_requests_unmatched_total` (counter for 404 unmatched requests)
+### 3. Local Development Runner
 
-### 3. Embedded Vanilla JS UI (`wiremock-extension-ui`)
-- Fast, air-gapped safe (no external CDNs, completely self-contained in JAR, < 30 KB).
-- Modern dark-theme responsive interface.
-- Instant search filter by method, URL path, or stub name.
-- JSON mapping inspector with one-click clipboard copy.
-- Real-time request journal with matched vs unmatched badges and response timings.
-
----
-
-## 🧪 Building & Running Tests
+To launch WireMock with all extensions and pre-loaded sample stubs for local testing:
 
 ```bash
-# Run tests across all modules
-./gradlew test
-
-# Run interactive standalone server with demo mocks
 ./gradlew :wiremock-extension-bundle:runStandalone
 ```
 
----
-
-## 📦 Publishing to Maven Central
-
-1. Ensure your namespace (`io.github.mattiasgreen`) is claimed at [central.sonatype.com](https://central.sonatype.com/).
-2. Set your environment variables:
-   ```bash
-   export ORG_GRADLE_PROJECT_sonatypeUsername="your-portal-token-username"
-   export ORG_GRADLE_PROJECT_sonatypePassword="your-portal-token-password"
-   export ORG_GRADLE_PROJECT_signingKey="your-ascii-armored-gpg-key"
-   export ORG_GRADLE_PROJECT_signingPassword="your-gpg-passphrase"
-   ```
-3. Publish to local maven or Central:
-   ```bash
-   ./gradlew publishToMavenLocal
-   ```
-
----
+The server starts on port `8080` with filesystem hot-reloading for UI development.
 
 ## License
 
