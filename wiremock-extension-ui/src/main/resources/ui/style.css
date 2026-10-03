@@ -141,6 +141,10 @@ body {
   font-style: italic;
 }
 
+.json-punct {
+  color: #64748b;
+}
+
 .btn-link {
   color: var(--accent-color);
 }

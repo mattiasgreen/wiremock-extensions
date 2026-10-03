@@ -146,6 +146,9 @@ public class UiPlaywrightTest {
 
         Locator jsonViewer = page.locator("#stub-json-viewer");
         assertThat(jsonViewer.textContent()).contains("request");
+        assertThat(jsonViewer.locator(".json-key").count()).as("Highlighted JSON keys").isGreaterThan(0);
+        assertThat(jsonViewer.locator(".json-string").count()).as("Highlighted JSON strings").isGreaterThan(0);
+        assertThat(jsonViewer.locator(".json-punct").count()).as("Highlighted JSON punctuation").isGreaterThan(0);
 
         // Verify URL hash updated with stubId
         String url = page.url();
@@ -178,6 +181,10 @@ public class UiPlaywrightTest {
 
         Locator bodyEl = page.locator("#tester-response-body");
         assertThat(bodyEl.textContent()).contains("Alice");
+        assertThat(bodyEl.locator(".json-key").count()).as("Response body JSON keys").isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-string").count()).as("Response body JSON strings").isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-number").count()).as("Response body JSON numbers").isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-punct").count()).as("Response body JSON punctuation").isGreaterThan(0);
 
         // Verify response size indicator
         Locator sizeEl = page.locator("#tester-response-size");
