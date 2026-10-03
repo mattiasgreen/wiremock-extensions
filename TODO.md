@@ -13,6 +13,10 @@ Comprehensive review of project structure, code style, architecture, and enginee
 | **Java Tooling & Formatting** | Spotless with Palantir Java Format, Gradle Version Catalog (`libs.versions.toml`), `-Xlint:all -Werror`. | Enforced clean, consistent code style and centralized dependency declarations. | **P0** | **Completed** |
 | **UI Asset Serving** | Dynamic asset routing in `UiAdminApiEndpoint.java` supporting subdirectories (`/ui/modules/*`) with dev hot-reloading and proper MIME types. | Modular asset serving for Native ES Modules. | **P0** | **Completed** |
 | **UI Modularization** | Modular Native ES Modules (`app.js` + `modules/*`), strict 0-NPM/0-bundler constraint, terse agent comments. | Decoupled, maintainable Vanilla JS architecture verified via Playwright. | **P0** | **Completed** |
+| **Air-Gapped Self-Containment** | Embedded UI assets are local; requires explicit test contract guaranteeing zero remote/CDN calls. | 100% self-contained, verifiable offline execution for strict enterprise/defense networks. | **P1** | Pending |
+| **Distributed Tracing (W3C)** | In-process OpenTelemetry metrics only (`wiremock_requests_total`, histograms). | Distributed Tracing with W3C `traceparent` context extraction, Server Spans, and OTLP export. | **P1** | Pending |
+| **Packaging & Distribution** | Local development runner (`StandaloneDevServer`) and subproject library JARs. | Maven Central publishing, Standalone Fat JAR distribution, and Docker image. | **P1** | Pending |
+| **Interactive Demo (GH Pages)**| README contains animated GIFs; no live web sandbox. | Static interactive browser demo on GitHub Pages with simulated Admin API responses. | **P2** | Pending |
 | **CI / CD Pipeline** | Minimal `ci.yml`; lacks Spotless check, Gradle build caching, and headless Playwright OS dependencies. | Full matrix/verification pipeline with `spotlessCheck`, headless test runner, and caching. | **P2** | *Deferred* |
 | **Extension Robustness** | `HeaderNormalizer.java` recompiles regexes on every call; `OtelMetricsRegistry.java` uses JVM-wide singleton. | Precompiled `Pattern` constants; instance-scoped metrics registry with optional shared fallback. | **P2** | *Deferred* |
 
@@ -35,6 +39,8 @@ Comprehensive review of project structure, code style, architecture, and enginee
    - Unified formatting via Spotless.
    - Centralized dependency management via Gradle Version Catalog.
    - Decoupled, discoverable WireMock SPI extensions (`ExtensionFactory`).
+4. **Air-Gapped & Offline Independence**:
+   - Web assets must never link to external CDNs, Google Fonts, or telemetry. All styles, icons, and scripts must execute completely offline in restricted corporate VPCs.
 
 ---
 
@@ -113,3 +119,27 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] Configure Gradle build cache and dependency verification.
   - [ ] Ensure headless Playwright Linux dependencies are installed or cached for CI runs.
   - [ ] Ensure `test` task runs efficiently with recording tests excluded.
+
+---
+
+### Phase 4: Observability, Packaging & Enterprise Readiness
+
+- [ ] **4.1. Distributed Tracing with W3C Context Propagation (`wiremock-extension-otel`)**
+  - [ ] Extract incoming W3C `traceparent` and `tracestate` headers using standard OpenTelemetry `TextMapGetter`.
+  - [ ] Start an in-process OpenTelemetry `SERVER` Span for each served request in `ServeEventListener`.
+  - [ ] Populate span attributes with semantic conventions: `http.request.method`, `http.response.status_code`, `url.path`, `wiremock.matched`, `wiremock.stub_name`.
+  - [ ] Record exceptions and set span status (`ERROR`) on 5xx responses or unmatched requests.
+  - [ ] Support optional OpenTelemetry trace export (OTLP over gRPC / HTTP) so WireMock spans appear in Jaeger, Grafana Tempo, or Zipkin.
+  - [ ] Integrate trace context into MDC logging (`trace_id`, `span_id`) in `wiremock-extension-json-logging` for end-to-end log-trace correlation.
+
+- [ ] **4.2. Air-Gapped Enterprise Self-Containment**
+  - [ ] Perform asset audit confirming zero outbound CDN requests, external web fonts, or remote analytic beacons.
+  - [ ] Add an automated Playwright network interception test in `UiPlaywrightTest` verifying 100% of network requests remain strictly within `/__admin/ui/*` and `/__admin/*`.
+
+- [ ] **4.3. Packaging & Distribution (Maven Central, Docker Image etc.)**
+  - [ ] Configure Maven Central publishing workflow via Sonatype Central Portal.
+  - [ ] Configure `wiremock-extension-bundle` standalone fat JAR / shadow distribution for single-command CLI execution (`java -jar wiremock-standalone-qol-all.jar`).
+  - [ ] Provide production-ready `Dockerfile` and `docker-compose.yml` reference.
+
+- [ ] **4.4. Interactive GitHub Pages Demo**
+  - [ ] Build a zero-dependency static demo site hosted on GitHub Pages with simulated Admin API responses to allow instant evaluation of the UI, scenario DAG visualizer, and HTTP tester without running Java.
