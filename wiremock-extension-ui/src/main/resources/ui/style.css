@@ -996,5 +996,293 @@ kbd {
   gap: 8px;
 }
 
+/* Scenario FSM Card & Layout */
+.scenario-fsm-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 18px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.scenario-fsm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.scenario-title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scenario-icon {
+  font-size: 1.25rem;
+}
+
+.scenario-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.scenario-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--status-2xx);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--status-2xx);
+  box-shadow: 0 0 8px var(--status-2xx);
+  animation: fsm-pulse 1.8s infinite;
+}
+
+@keyframes fsm-pulse {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  50% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.7; }
+}
+
+.scenario-fsm-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Pipeline Track (DAG flow) */
+.fsm-pipeline-container {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+
+.fsm-pipeline-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.fsm-pipeline-track {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fsm-pipeline-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.fsm-pipeline-step.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: var(--status-2xx);
+  color: var(--text-main);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+  font-weight: 600;
+}
+
+.fsm-step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.fsm-pipeline-step.active .fsm-step-dot {
+  background: var(--status-2xx);
+  box-shadow: 0 0 6px var(--status-2xx);
+}
+
+.fsm-pipeline-arrow {
+  color: var(--accent-color);
+  font-size: 0.9rem;
+}
+
+/* FSM Nodes Grid */
+.fsm-nodes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.fsm-node-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.fsm-node-card.active {
+  border-color: var(--status-2xx);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+}
+
+.fsm-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.fsm-node-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fsm-status-indicator {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.fsm-status-indicator.active {
+  color: var(--status-2xx);
+}
+
+.fsm-node-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.fsm-node-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fsm-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.fsm-badge-active {
+  background: var(--status-2xx);
+  color: #022c22;
+}
+
+.fsm-badge-warning {
+  background: var(--status-4xx);
+  color: #451a03;
+}
+
+.fsm-badge-info {
+  background: var(--accent-color);
+  color: #082f49;
+}
+
+.fsm-section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.fsm-transitions-list, .fsm-operations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fsm-transition-item, .fsm-op-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
+.fsm-op-item.op-rejection {
+  border-left: 3px solid var(--status-4xx);
+}
+
+.fsm-transition-meta, .fsm-op-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.fsm-transition-url, .fsm-op-url {
+  font-family: monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.fsm-target-state-pill {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-color);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fsm-empty-ops {
+  font-size: 0.78rem;
+  font-style: italic;
+  padding: 4px 0;
+}
+
 
 

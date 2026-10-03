@@ -47,6 +47,20 @@ public class UiPlaywrightTest {
         wireMockServer.stubFor(get(urlEqualTo("/favicon.ico"))
                 .willReturn(ok().withBody(new byte[0])));
 
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases"))
+                .withName("Create Case")
+                .inScenario("Case-FSM")
+                .whenScenarioStateIs("Started")
+                .willSetStateTo("OPEN")
+                .willReturn(created().withHeader("Content-Type", "application/json").withBody("{\"status\": \"OPEN\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases/1/close"))
+                .withName("Close Case")
+                .inScenario("Case-FSM")
+                .whenScenarioStateIs("OPEN")
+                .willSetStateTo("CLOSED")
+                .willReturn(okJson("{\"status\": \"CLOSED\"}")));
+
         playwright = Playwright.create();
         BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions().setHeadless(true);
         browser = playwright.chromium().launch(launchOptions);
@@ -270,7 +284,7 @@ public class UiPlaywrightTest {
         page.waitForSelector(".stub-card");
 
         // Click the POST stub card
-        page.locator(".stub-card:has-text('POST')").click();
+        page.locator(".stub-card:has-text('Create Order API')").click();
 
         // Click '⚡ Test Stub' button
         page.locator("#btn-test-stub").click();
@@ -345,6 +359,32 @@ public class UiPlaywrightTest {
         // Search for non-existing query
         page.locator("#search-box").fill("non-existent-filter-query");
         assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Scenario 9: Scenarios DAG visualizer, state pipeline, and state overrides")
+    void testScenariosDagVisualizer() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#scenarios");
+        page.waitForSelector("#tab-scenarios.active .scenario-fsm-card");
+
+        assertThat(page.locator(".scenario-name").textContent()).contains("Case-FSM");
+        assertThat(page.locator(".scenario-state-pill").textContent()).contains("Started");
+
+        // Verify pipeline steps
+        assertThat(page.locator(".fsm-step-name").allTextContents()).contains("Started", "OPEN", "CLOSED");
+
+        // Override state to OPEN
+        page.locator(".scenario-target-state-select").selectOption("OPEN");
+        page.locator(".btn-set-scenario-state").click();
+        page.waitForSelector(".scenario-state-pill:has-text('OPEN')");
+        assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent()).isEqualTo("OPEN");
+
+        // Reset state back to Started
+        page.locator(".btn-reset-single-scenario").click();
+        page.waitForSelector(".scenario-state-pill:has-text('Started')");
+        assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent()).isEqualTo("Started");
 
         assertThat(pageErrors).isEmpty();
     }

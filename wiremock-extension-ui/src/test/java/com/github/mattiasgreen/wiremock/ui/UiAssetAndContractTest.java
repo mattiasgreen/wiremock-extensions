@@ -135,5 +135,19 @@ public class UiAssetAndContractTest {
         assertThat(scenariosResp.statusCode()).isEqualTo(200);
         JsonNode scenariosJson = objectMapper.readTree(scenariosResp.body());
         assertThat(scenariosJson.has("scenarios")).isTrue();
+
+        server.stubFor(get(urlEqualTo("/api/v1/sc-test"))
+                .inScenario("TestScenario")
+                .whenScenarioStateIs("Started")
+                .willSetStateTo("STEP_1")
+                .willReturn(ok("OK")));
+
+        HttpRequest putStateReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/scenarios/TestScenario/state"))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"state\": \"STEP_1\"}"))
+                .build();
+        HttpResponse<String> putResp = httpClient.send(putStateReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(putResp.statusCode()).isEqualTo(200);
     }
 }

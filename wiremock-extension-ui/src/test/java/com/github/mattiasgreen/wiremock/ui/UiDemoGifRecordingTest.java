@@ -28,8 +28,8 @@ public class UiDemoGifRecordingTest {
     private Browser browser;
     private Path outputDir;
 
-    private static final int VIEWPORT_WIDTH = 1120;
-    private static final int VIEWPORT_HEIGHT = 680;
+    private static final int VIEWPORT_WIDTH = 1280;
+    private static final int VIEWPORT_HEIGHT = 740;
 
     @BeforeAll
     void startAll() throws Exception {
@@ -65,12 +65,45 @@ public class UiDemoGifRecordingTest {
                 .withName("Search Inventory")
                 .willReturn(okJson("{\"category\": \"hardware\", \"count\": 142, \"inStock\": true}")));
 
+        // Order Fulfillment Scenario Stubs
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/orders/ORD-9942/status"))
-                .withName("Order Fulfillment Flow")
+                .withName("Order Status (Initial)")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("Started")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PENDING\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/process"))
+                .withName("Start Processing Order")
                 .inScenario("Order-Fulfillment")
                 .whenScenarioStateIs("Started")
                 .willSetStateTo("PROCESSING")
                 .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PROCESSING\"}")));
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/orders/ORD-9942/status"))
+                .withName("Order Status (Processing)")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("PROCESSING")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PROCESSING\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/ship"))
+                .withName("Ship Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("PROCESSING")
+                .willSetStateTo("SHIPPED")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"SHIPPED\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/deliver"))
+                .withName("Deliver Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("SHIPPED")
+                .willSetStateTo("DELIVERED")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"DELIVERED\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/ship"))
+                .withName("Reject Shipping Delivered Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("DELIVERED")
+                .willReturn(status(409).withHeader("Content-Type", "application/json").withBody("{\"error\": \"Order already delivered\"}")));
 
         // 2. Pre-populate Request Journal by sending HTTP requests
         HttpClient httpClient = HttpClient.newHttpClient();
@@ -88,6 +121,10 @@ public class UiDemoGifRecordingTest {
         // 3. Start Playwright
         playwright = Playwright.create();
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+    }
+
+    private void applyZoom(Page page) {
+        page.evaluate("() => { if (document.body) document.body.style.zoom = '0.90'; }");
     }
 
     @AfterAll
@@ -125,6 +162,7 @@ public class UiDemoGifRecordingTest {
         try {
             // Step 1: Open Stubs tab
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+            applyZoom(page);
             page.waitForSelector(".stub-card");
             recordFrame(page, encoder, 1200);
 
@@ -134,7 +172,7 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 1500);
 
             // Step 3: Select orders POST stub
-            page.locator(".stub-card:has-text('POST')").click();
+            page.locator(".stub-card:has-text('Create Order API')").click();
             recordFrame(page, encoder, 1500);
 
             // Step 4: Click 'Test Stub' shortcut
@@ -182,6 +220,7 @@ public class UiDemoGifRecordingTest {
         try {
             // Step 1: Open Request Journal tab
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+            applyZoom(page);
             page.waitForSelector("#journal-list tr.journal-row");
             recordFrame(page, encoder, 1300);
 
@@ -236,6 +275,7 @@ public class UiDemoGifRecordingTest {
         try {
             // 1. Stubs view
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+            applyZoom(page);
             page.waitForSelector(".stub-card");
             page.locator(".stub-card:has-text('/api/v1/users')").click();
             recordFrame(page, encoder, 1500);
@@ -259,10 +299,10 @@ public class UiDemoGifRecordingTest {
             page.locator("#journal-list tr.journal-row").first().click();
             recordFrame(page, encoder, 1800);
 
-            // 6. Switch to Scenarios
+            // 6. Switch to Scenarios (DAG visualizer)
             page.locator("#nav-tab-scenarios").click();
-            page.waitForSelector("#tab-scenarios.active");
-            recordFrame(page, encoder, 2200);
+            page.waitForSelector("#tab-scenarios.active .scenario-fsm-card");
+            recordFrame(page, encoder, 2400);
 
         } finally {
             encoder.finish();
@@ -271,5 +311,52 @@ public class UiDemoGifRecordingTest {
 
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
         System.out.println("Generated GIF 3: " + gifPath.toAbsolutePath() + " (" + (gifPath.toFile().length() / 1024) + " KB)");
+    }
+
+    @Test
+    @DisplayName("Generate demo GIF 4: Scenarios DAG & State Machine Visualizer")
+    void recordScenariosDagWorkflow() {
+        Path gifPath = outputDir.resolve("demo-scenarios-dag.gif");
+        AnimatedGifEncoder encoder = new AnimatedGifEncoder();
+        encoder.start(gifPath.toString());
+        encoder.setRepeat(0); // Loop forever
+        encoder.setQuality(10);
+
+        BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+                .setDeviceScaleFactor(1));
+        Page page = context.newPage();
+
+        try {
+            // Step 1: Open Scenarios tab directly
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#scenarios");
+            applyZoom(page);
+            page.waitForSelector(".scenario-fsm-card");
+            recordFrame(page, encoder, 1500);
+
+            // Step 2: Show the pipeline flow
+            page.waitForSelector(".fsm-pipeline-step");
+            recordFrame(page, encoder, 1500);
+
+            // Step 3: Change state via dropdown override
+            page.locator(".scenario-target-state-select").selectOption("SHIPPED");
+            recordFrame(page, encoder, 1200);
+
+            page.locator(".btn-set-scenario-state").click();
+            page.waitForSelector(".fsm-node-card.active:has-text('SHIPPED')");
+            recordFrame(page, encoder, 2000);
+
+            // Step 4: Click Reset scenario button to return to Started
+            page.locator(".btn-reset-single-scenario").click();
+            page.waitForSelector(".fsm-node-card.active:has-text('Started')");
+            recordFrame(page, encoder, 2200);
+
+        } finally {
+            encoder.finish();
+            context.close();
+        }
+
+        Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
+        System.out.println("Generated GIF 4: " + gifPath.toAbsolutePath() + " (" + (gifPath.toFile().length() / 1024) + " KB)");
     }
 }

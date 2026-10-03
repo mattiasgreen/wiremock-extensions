@@ -46,6 +46,15 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 ![Request Journal Demo](../docs/images/demo-request-journal.gif)
 
+- **Scenario DAG State Machine Visualizer**:
+  - Automatic extraction of state machines and transitions across all configured stubs.
+  - Interactive pipeline flow showing all stages (Started, in-progress states, terminal states).
+  - Real-time active state glow indicator synchronized with live scenario progress.
+  - State operations & rejection invariants inspector with one-click **⚡ Test** triggers.
+  - Per-scenario targeted controls: override scenario state on the fly or reset individual scenarios to `Started`.
+
+![Scenarios DAG Visualizer Demo](../docs/images/demo-scenarios-dag.gif)
+
 - **URL Addressability & Deep Linking**:
   - All tabs, selected stubs, journal details, and tester inputs synchronize with the URL hash (e.g. `#stubs?stubId=...`, `#tester?method=POST&url=...`).
 - **Swagger UI Integration**:

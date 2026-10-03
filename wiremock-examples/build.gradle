@@ -1,0 +1,16 @@
+dependencies {
+    implementation project(':wiremock-extension-bundle')
+    implementation 'org.wiremock:wiremock:3.12.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.18.2'
+
+    testImplementation 'org.wiremock:wiremock:3.12.1'
+    testImplementation 'com.microsoft.playwright:playwright:1.49.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'org.assertj:assertj-core:3.27.3'
+    testImplementation 'ch.qos.logback:logback-classic:1.5.16'
+}
+
+tasks.withType(Sign).configureEach {
+    enabled = false
+}
