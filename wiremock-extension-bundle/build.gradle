@@ -13,8 +13,8 @@ dependencies {
     api project(':wiremock-extension-otel')
     api project(':wiremock-extension-ui')
 
-    standaloneRuntime 'org.wiremock:wiremock:3.12.1'
-    standaloneRuntime 'ch.qos.logback:logback-classic:1.5.16'
+    standaloneRuntime libs.wiremock
+    standaloneRuntime libs.logback.classic
 }
 
 application {
