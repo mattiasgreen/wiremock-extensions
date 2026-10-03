@@ -5,9 +5,8 @@ import com.github.tomakehurst.wiremock.extension.requestfilter.RequestFilterV2;
 import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
-import org.slf4j.MDC;
-
 import java.util.Objects;
+import org.slf4j.MDC;
 
 /**
  * Intercepts incoming requests, extracts corporate headers,

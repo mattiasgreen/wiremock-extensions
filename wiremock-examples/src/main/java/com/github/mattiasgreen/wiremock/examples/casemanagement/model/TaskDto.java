@@ -10,8 +10,7 @@ public class TaskDto {
     private String description;
     private boolean completed;
 
-    public TaskDto() {
-    }
+    public TaskDto() {}
 
     public TaskDto(String id, String caseId, String description, boolean completed) {
         this.id = id;
@@ -54,11 +53,10 @@ public class TaskDto {
 
     @Override
     public String toString() {
-        return "TaskDto{" +
-                "id='" + id + '\'' +
-                ", caseId='" + caseId + '\'' +
-                ", description='" + description + '\'' +
-                ", completed=" + completed +
-                '}';
+        return "TaskDto{" + "id='"
+                + id + '\'' + ", caseId='"
+                + caseId + '\'' + ", description='"
+                + description + '\'' + ", completed="
+                + completed + '}';
     }
 }

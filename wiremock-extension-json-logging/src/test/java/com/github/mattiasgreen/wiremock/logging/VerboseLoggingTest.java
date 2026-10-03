@@ -1,21 +1,20 @@
 package com.github.mattiasgreen.wiremock.logging;
 
-import com.github.mattiasgreen.wiremock.logging.testutil.TestLogAppender;
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.logging.testutil.TestLogAppender;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class VerboseLoggingTest {
 
@@ -42,10 +41,7 @@ public class VerboseLoggingTest {
         System.setProperty("wiremock.verbose.json", "true");
 
         server = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensions(new JsonLoggingListener(true))
-        );
+                WireMockConfiguration.options().dynamicPort().extensions(new JsonLoggingListener(true)));
         server.start();
 
         server.stubFor(post(urlEqualTo("/api/v1/orders"))
@@ -80,16 +76,11 @@ public class VerboseLoggingTest {
         System.setProperty("wiremock.verbose.json", "false");
 
         server = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensions(new JsonLoggingListener(false))
-        );
+                WireMockConfiguration.options().dynamicPort().extensions(new JsonLoggingListener(false)));
         server.start();
 
         server.stubFor(post(urlEqualTo("/api/v1/orders"))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withBody("{\"status\":\"OK\"}")));
+                .willReturn(aResponse().withStatus(200).withBody("{\"status\":\"OK\"}")));
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(server.baseUrl() + "/api/v1/orders"))

@@ -1,23 +1,22 @@
 package com.github.mattiasgreen.wiremock.logging;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.logging.mdc.MdcRequestFilter;
 import com.github.mattiasgreen.wiremock.logging.testutil.TestLogAppender;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.slf4j.MDC;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 
 public class MdcAndJsonLoggingTest {
 
@@ -30,11 +29,9 @@ public class MdcAndJsonLoggingTest {
         TestLogAppender.clear();
         MDC.clear();
 
-        server = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensions(new MdcRequestFilter(), new JsonLoggingListener())
-        );
+        server = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(new MdcRequestFilter(), new JsonLoggingListener()));
         server.start();
 
         httpClient = HttpClient.newHttpClient();
@@ -84,8 +81,7 @@ public class MdcAndJsonLoggingTest {
 
     @Test
     void testMdcCleanedUpAfterRequestCompletes() throws Exception {
-        server.stubFor(get(urlEqualTo("/api/v1/clean"))
-                .willReturn(ok()));
+        server.stubFor(get(urlEqualTo("/api/v1/clean")).willReturn(ok()));
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(server.baseUrl() + "/api/v1/clean"))

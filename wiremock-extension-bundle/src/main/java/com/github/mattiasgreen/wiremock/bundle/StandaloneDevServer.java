@@ -1,9 +1,9 @@
 package com.github.mattiasgreen.wiremock.bundle;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 public class StandaloneDevServer {
 
@@ -18,11 +18,8 @@ public class StandaloneDevServer {
 
         System.setProperty("wiremock.verbose.json", "true");
 
-        WireMockServer server = new WireMockServer(
-                WireMockConfiguration.options()
-                        .port(port)
-                        .extensionScanningEnabled(true)
-        );
+        WireMockServer server =
+                new WireMockServer(WireMockConfiguration.options().port(port).extensionScanningEnabled(true));
 
         server.start();
 
@@ -42,10 +39,7 @@ public class StandaloneDevServer {
 
         server.stubFor(get(urlEqualTo("/api/v1/slow"))
                 .withName("Slow Latency Simulation")
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withFixedDelay(150)
-                        .withBody("{\"latency\":\"delayed\"}")));
+                .willReturn(aResponse().withStatus(200).withFixedDelay(150).withBody("{\"latency\":\"delayed\"}")));
 
         server.stubFor(get(urlEqualTo("/api/v1/error"))
                 .withName("Internal Server Error Mock")

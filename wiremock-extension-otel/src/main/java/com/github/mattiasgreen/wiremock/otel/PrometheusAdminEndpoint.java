@@ -4,7 +4,6 @@ import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
-
 import java.util.Objects;
 
 public class PrometheusAdminEndpoint implements AdminApiExtension {

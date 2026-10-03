@@ -1,12 +1,11 @@
 package com.github.mattiasgreen.wiremock.ui;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.madgag.gif.fmsware.AnimatedGifEncoder;
 import com.microsoft.playwright.*;
-import org.junit.jupiter.api.*;
-
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -17,8 +16,8 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import javax.imageio.ImageIO;
+import org.junit.jupiter.api.*;
 
 @Tag("recording")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -43,24 +42,28 @@ public class UiDemoGifRecordingTest {
         }
         Files.createDirectories(outputDir);
 
-        wireMockServer = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensions(new UiAdminApiEndpoint())
-        );
+        wireMockServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
         wireMockServer.start();
 
         // 1. Mock Stubs
-        wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
-                .withName("List Users API")
-                .willReturn(okJson("[\n  {\"id\": 101, \"name\": \"Alice Johnson\", \"role\": \"ADMIN\", \"active\": true},\n  {\"id\": 102, \"name\": \"Bob Smith\", \"role\": \"DEVELOPER\", \"active\": true},\n  {\"id\": 103, \"name\": \"Charlie Brown\", \"role\": \"OPERATOR\", \"active\": false}\n]")));
+        wireMockServer.stubFor(
+                get(urlEqualTo("/api/v1/users"))
+                        .withName("List Users API")
+                        .willReturn(
+                                okJson(
+                                        "[\n  {\"id\": 101, \"name\": \"Alice Johnson\", \"role\": \"ADMIN\", \"active\": true},\n  {\"id\": 102, \"name\": \"Bob Smith\", \"role\": \"DEVELOPER\", \"active\": true},\n  {\"id\": 103, \"name\": \"Charlie Brown\", \"role\": \"OPERATOR\", \"active\": false}\n]")));
 
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders"))
-                .withName("Create Order API")
-                .withRequestBody(equalToJson("{\n  \"item\": \"Enterprise Subscription\",\n  \"quantity\": 2\n}"))
-                .willReturn(created()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\n  \"orderId\": \"ORD-9942\",\n  \"status\": \"CREATED\",\n  \"estimatedDelivery\": \"2026-10-06\"\n}")));
+        wireMockServer.stubFor(
+                post(urlEqualTo("/api/v1/orders"))
+                        .withName("Create Order API")
+                        .withRequestBody(
+                                equalToJson("{\n  \"item\": \"Enterprise Subscription\",\n  \"quantity\": 2\n}"))
+                        .willReturn(
+                                created()
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                "{\n  \"orderId\": \"ORD-9942\",\n  \"status\": \"CREATED\",\n  \"estimatedDelivery\": \"2026-10-06\"\n}")));
 
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/inventory/items"))
                 .withName("Search Inventory")
@@ -104,20 +107,40 @@ public class UiDemoGifRecordingTest {
                 .withName("Reject Shipping Delivered Order")
                 .inScenario("Order-Fulfillment")
                 .whenScenarioStateIs("DELIVERED")
-                .willReturn(status(409).withHeader("Content-Type", "application/json").withBody("{\"error\": \"Order already delivered\"}")));
+                .willReturn(status(409)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\": \"Order already delivered\"}")));
 
         // 2. Pre-populate Request Journal by sending HTTP requests
         HttpClient httpClient = HttpClient.newHttpClient();
         String baseUrl = wireMockServer.baseUrl();
 
-        httpClient.send(HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/v1/users")).GET().build(), HttpResponse.BodyHandlers.discarding());
-        httpClient.send(HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/api/v1/orders"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("{\"item\": \"Enterprise Subscription\", \"quantity\": 2}"))
-                .build(), HttpResponse.BodyHandlers.discarding());
-        httpClient.send(HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/v1/orders/ORD-9942/status")).GET().build(), HttpResponse.BodyHandlers.discarding());
-        httpClient.send(HttpRequest.newBuilder().uri(URI.create(baseUrl + "/api/v1/unregistered-path")).GET().build(), HttpResponse.BodyHandlers.discarding());
+        httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/api/v1/users"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/api/v1/orders"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"item\": \"Enterprise Subscription\", \"quantity\": 2}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/api/v1/orders/ORD-9942/status"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/api/v1/unregistered-path"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
 
         // 3. Start Playwright
         playwright = Playwright.create();
@@ -184,7 +207,8 @@ public class UiDemoGifRecordingTest {
             // Step 5: Send Request in HTTP Tester
             page.locator("#btn-tester-send").click();
             page.waitForSelector("#tester-response-status:not(:has-text('...')):not(:has-text('—'))");
-            System.out.println("TEST 1 RESPONSE STATUS: " + page.locator("#tester-response-status").textContent());
+            System.out.println("TEST 1 RESPONSE STATUS: "
+                    + page.locator("#tester-response-status").textContent());
             recordFrame(page, encoder, 1800);
 
             // Step 6: View Sent Request
@@ -201,7 +225,8 @@ public class UiDemoGifRecordingTest {
         }
 
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
-        System.out.println("Generated GIF 1: " + gifPath.toAbsolutePath() + " (" + (gifPath.toFile().length() / 1024) + " KB)");
+        System.out.println("Generated GIF 1: " + gifPath.toAbsolutePath() + " ("
+                + (gifPath.toFile().length() / 1024) + " KB)");
     }
 
     @Test
@@ -226,12 +251,15 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 1300);
 
             // Step 2: Expand first row (orders POST)
-            page.locator("#journal-list tr.journal-row:has-text('orders')").first().click();
+            page.locator("#journal-list tr.journal-row:has-text('orders')")
+                    .first()
+                    .click();
             page.waitForSelector("tr.journal-detail-row");
             recordFrame(page, encoder, 2000);
 
             // Step 3: Expand unmatched request (404)
-            page.locator("#journal-list tr.journal-row:has-text('unregistered-path')").click();
+            page.locator("#journal-list tr.journal-row:has-text('unregistered-path')")
+                    .click();
             recordFrame(page, encoder, 1800);
 
             // Step 4: Search filter
@@ -256,7 +284,8 @@ public class UiDemoGifRecordingTest {
         }
 
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
-        System.out.println("Generated GIF 2: " + gifPath.toAbsolutePath() + " (" + (gifPath.toFile().length() / 1024) + " KB)");
+        System.out.println("Generated GIF 2: " + gifPath.toAbsolutePath() + " ("
+                + (gifPath.toFile().length() / 1024) + " KB)");
     }
 
     @Test
@@ -311,7 +340,8 @@ public class UiDemoGifRecordingTest {
         }
 
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
-        System.out.println("Generated GIF 3: " + gifPath.toAbsolutePath() + " (" + (gifPath.toFile().length() / 1024) + " KB)");
+        System.out.println("Generated GIF 3: " + gifPath.toAbsolutePath() + " ("
+                + (gifPath.toFile().length() / 1024) + " KB)");
     }
 
     @Test
@@ -358,6 +388,7 @@ public class UiDemoGifRecordingTest {
         }
 
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
-        System.out.println("Generated GIF 4: " + gifPath.toAbsolutePath() + " (" + (gifPath.toFile().length() / 1024) + " KB)");
+        System.out.println("Generated GIF 4: " + gifPath.toAbsolutePath() + " ("
+                + (gifPath.toFile().length() / 1024) + " KB)");
     }
 }

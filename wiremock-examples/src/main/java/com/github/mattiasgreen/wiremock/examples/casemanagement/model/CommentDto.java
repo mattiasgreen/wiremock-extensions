@@ -9,8 +9,7 @@ public class CommentDto {
     private String caseId;
     private String text;
 
-    public CommentDto() {
-    }
+    public CommentDto() {}
 
     public CommentDto(String id, String caseId, String text) {
         this.id = id;
@@ -44,10 +43,6 @@ public class CommentDto {
 
     @Override
     public String toString() {
-        return "CommentDto{" +
-                "id='" + id + '\'' +
-                ", caseId='" + caseId + '\'' +
-                ", text='" + text + '\'' +
-                '}';
+        return "CommentDto{" + "id='" + id + '\'' + ", caseId='" + caseId + '\'' + ", text='" + text + '\'' + '}';
     }
 }

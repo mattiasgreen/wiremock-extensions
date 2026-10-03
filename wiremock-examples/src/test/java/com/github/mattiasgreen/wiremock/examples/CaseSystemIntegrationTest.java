@@ -1,5 +1,9 @@
 package com.github.mattiasgreen.wiremock.examples;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.github.mattiasgreen.wiremock.examples.casemanagement.CaseClient;
 import com.github.mattiasgreen.wiremock.examples.casemanagement.CaseLifecycleStubs;
 import com.github.mattiasgreen.wiremock.examples.casemanagement.model.*;
@@ -8,10 +12,6 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
 import org.junit.jupiter.api.*;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class CaseSystemIntegrationTest {
@@ -23,11 +23,8 @@ public class CaseSystemIntegrationTest {
 
     @BeforeAll
     void startAll() {
-        wireMockServer = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensions(new UiAdminApiEndpoint())
-        );
+        wireMockServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
         wireMockServer.start();
 
         caseClient = new CaseClient(wireMockServer.baseUrl());
@@ -131,7 +128,8 @@ public class CaseSystemIntegrationTest {
         assertThatThrownBy(() -> caseClient.addComment("case-B", "Comment on ticket B"))
                 .isInstanceOf(CaseConflictException.class)
                 .as("Demonstrates WireMock pain point: Case B fails because Case A shifted the global scenario state")
-                .satisfies(ex -> assertThat(((CaseConflictException) ex).getStatusCode()).isEqualTo(409));
+                .satisfies(ex ->
+                        assertThat(((CaseConflictException) ex).getStatusCode()).isEqualTo(409));
     }
 
     @Test
@@ -157,7 +155,8 @@ public class CaseSystemIntegrationTest {
         // But Case Alpha rejects comments because it is closed!
         assertThatThrownBy(() -> caseClient.addComment("case-alpha", "Late comment on alpha"))
                 .isInstanceOf(CaseConflictException.class)
-                .satisfies(ex -> assertThat(((CaseConflictException) ex).getStatusCode()).isEqualTo(409));
+                .satisfies(ex ->
+                        assertThat(((CaseConflictException) ex).getStatusCode()).isEqualTo(409));
     }
 
     @Test
@@ -188,7 +187,8 @@ public class CaseSystemIntegrationTest {
             // Refresh scenarios in UI
             page.locator("#btn-refresh-scenarios").click();
             page.waitForSelector(".scenario-state-pill:has-text('OPEN')");
-            assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent()).isEqualTo("OPEN");
+            assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent())
+                    .isEqualTo("OPEN");
 
             // Client closes the case via HTTP
             caseClient.closeCase("case-100");
@@ -196,7 +196,8 @@ public class CaseSystemIntegrationTest {
             // Refresh scenarios in UI
             page.locator("#btn-refresh-scenarios").click();
             page.waitForSelector(".scenario-state-pill:has-text('CLOSED')");
-            assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent()).isEqualTo("CLOSED");
+            assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent())
+                    .isEqualTo("CLOSED");
 
         } finally {
             context.close();

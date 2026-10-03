@@ -1,16 +1,15 @@
 package com.github.mattiasgreen.wiremock.ui;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
-import org.junit.jupiter.api.*;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.*;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class UiPlaywrightTest {
@@ -26,11 +25,8 @@ public class UiPlaywrightTest {
 
     @BeforeAll
     void startAll() {
-        wireMockServer = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensions(new UiAdminApiEndpoint())
-        );
+        wireMockServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
         wireMockServer.start();
 
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
@@ -44,15 +40,15 @@ public class UiPlaywrightTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"orderId\": \"ORD-99\", \"status\": \"CREATED\"}")));
 
-        wireMockServer.stubFor(get(urlEqualTo("/favicon.ico"))
-                .willReturn(ok().withBody(new byte[0])));
+        wireMockServer.stubFor(get(urlEqualTo("/favicon.ico")).willReturn(ok().withBody(new byte[0])));
 
         wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases"))
                 .withName("Create Case")
                 .inScenario("Case-FSM")
                 .whenScenarioStateIs("Started")
                 .willSetStateTo("OPEN")
-                .willReturn(created().withHeader("Content-Type", "application/json").withBody("{\"status\": \"OPEN\"}")));
+                .willReturn(
+                        created().withHeader("Content-Type", "application/json").withBody("{\"status\": \"OPEN\"}")));
 
         wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases/1/close"))
                 .withName("Close Case")
@@ -102,7 +98,9 @@ public class UiPlaywrightTest {
         });
 
         page.onResponse(response -> {
-            if (response.status() >= 400 && !response.url().contains("favicon.ico") && !response.url().contains("nonexistent")) {
+            if (response.status() >= 400
+                    && !response.url().contains("favicon.ico")
+                    && !response.url().contains("nonexistent")) {
                 System.err.println("HTTP ERROR RESPONSE: " + response.status() + " " + response.url());
             }
         });
@@ -160,9 +158,15 @@ public class UiPlaywrightTest {
 
         Locator jsonViewer = page.locator("#stub-json-viewer");
         assertThat(jsonViewer.textContent()).contains("request");
-        assertThat(jsonViewer.locator(".json-key").count()).as("Highlighted JSON keys").isGreaterThan(0);
-        assertThat(jsonViewer.locator(".json-string").count()).as("Highlighted JSON strings").isGreaterThan(0);
-        assertThat(jsonViewer.locator(".json-punct").count()).as("Highlighted JSON punctuation").isGreaterThan(0);
+        assertThat(jsonViewer.locator(".json-key").count())
+                .as("Highlighted JSON keys")
+                .isGreaterThan(0);
+        assertThat(jsonViewer.locator(".json-string").count())
+                .as("Highlighted JSON strings")
+                .isGreaterThan(0);
+        assertThat(jsonViewer.locator(".json-punct").count())
+                .as("Highlighted JSON punctuation")
+                .isGreaterThan(0);
 
         // Verify URL hash updated with stubId
         String url = page.url();
@@ -195,10 +199,18 @@ public class UiPlaywrightTest {
 
         Locator bodyEl = page.locator("#tester-response-body");
         assertThat(bodyEl.textContent()).contains("Alice");
-        assertThat(bodyEl.locator(".json-key").count()).as("Response body JSON keys").isGreaterThan(0);
-        assertThat(bodyEl.locator(".json-string").count()).as("Response body JSON strings").isGreaterThan(0);
-        assertThat(bodyEl.locator(".json-number").count()).as("Response body JSON numbers").isGreaterThan(0);
-        assertThat(bodyEl.locator(".json-punct").count()).as("Response body JSON punctuation").isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-key").count())
+                .as("Response body JSON keys")
+                .isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-string").count())
+                .as("Response body JSON strings")
+                .isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-number").count())
+                .as("Response body JSON numbers")
+                .isGreaterThan(0);
+        assertThat(bodyEl.locator(".json-punct").count())
+                .as("Response body JSON punctuation")
+                .isGreaterThan(0);
 
         // Verify response size indicator
         Locator sizeEl = page.locator("#tester-response-size");
@@ -379,12 +391,14 @@ public class UiPlaywrightTest {
         page.locator(".scenario-target-state-select").selectOption("OPEN");
         page.locator(".btn-set-scenario-state").click();
         page.waitForSelector(".scenario-state-pill:has-text('OPEN')");
-        assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent()).isEqualTo("OPEN");
+        assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent())
+                .isEqualTo("OPEN");
 
         // Reset state back to Started
         page.locator(".btn-reset-single-scenario").click();
         page.waitForSelector(".scenario-state-pill:has-text('Started')");
-        assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent()).isEqualTo("Started");
+        assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent())
+                .isEqualTo("Started");
 
         assertThat(pageErrors).isEmpty();
     }

@@ -5,7 +5,6 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
 import com.github.tomakehurst.wiremock.http.ResponseDefinition;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -21,8 +20,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
             System.getProperty("wiremock.ui.dev.staticDir", ""),
             "wiremock-extension-ui/src/main/resources",
             "../wiremock-extension-ui/src/main/resources",
-            "src/main/resources"
-    );
+            "src/main/resources");
 
     @Override
     public String getName() {
@@ -31,12 +29,28 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
 
     @Override
     public void contributeAdminApiRoutes(Router router) {
-        router.add(RequestMethod.GET, "/ui", (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
-        router.add(RequestMethod.GET, "/ui/", (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
-        router.add(RequestMethod.GET, "/ui/index.html", (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
+        router.add(
+                RequestMethod.GET,
+                "/ui",
+                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
+        router.add(
+                RequestMethod.GET,
+                "/ui/",
+                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
+        router.add(
+                RequestMethod.GET,
+                "/ui/index.html",
+                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
 
-        router.add(RequestMethod.GET, "/ui/app.js", (admin, serveEvent, pathParams) -> serveResource("/ui/app.js", "application/javascript; charset=utf-8"));
-        router.add(RequestMethod.GET, "/ui/style.css", (admin, serveEvent, pathParams) -> serveResource("/ui/style.css", "text/css; charset=utf-8"));
+        router.add(
+                RequestMethod.GET,
+                "/ui/app.js",
+                (admin, serveEvent, pathParams) ->
+                        serveResource("/ui/app.js", "application/javascript; charset=utf-8"));
+        router.add(
+                RequestMethod.GET,
+                "/ui/style.css",
+                (admin, serveEvent, pathParams) -> serveResource("/ui/style.css", "text/css; charset=utf-8"));
     }
 
     private ResponseDefinition serveResource(String resourcePath, String contentType) {

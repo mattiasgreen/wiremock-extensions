@@ -2,7 +2,6 @@ package com.github.mattiasgreen.wiremock.examples.casemanagement;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.examples.casemanagement.model.*;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;

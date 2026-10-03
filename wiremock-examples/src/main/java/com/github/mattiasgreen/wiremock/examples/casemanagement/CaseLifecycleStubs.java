@@ -1,8 +1,8 @@
 package com.github.mattiasgreen.wiremock.examples.casemanagement;
 
-import com.github.tomakehurst.wiremock.WireMockServer;
-
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
+
+import com.github.tomakehurst.wiremock.WireMockServer;
 
 /**
  * Reusable stub definitions modeling the Case Management System state machine.
@@ -39,13 +39,16 @@ public class CaseLifecycleStubs {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"id\": \"cmt-1\", \"caseId\": \"case-100\", \"text\": \"First comment\"}")));
 
-        wireMock.stubFor(post(urlPathMatching("/api/v1/cases/[^/]+/tasks"))
-                .withName("Add Task (Open)")
-                .inScenario(scenarioName)
-                .whenScenarioStateIs("OPEN")
-                .willReturn(created()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"id\": \"tsk-1\", \"caseId\": \"case-100\", \"description\": \"Investigate logs\", \"completed\": false}")));
+        wireMock.stubFor(
+                post(urlPathMatching("/api/v1/cases/[^/]+/tasks"))
+                        .withName("Add Task (Open)")
+                        .inScenario(scenarioName)
+                        .whenScenarioStateIs("OPEN")
+                        .willReturn(
+                                created()
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                "{\"id\": \"tsk-1\", \"caseId\": \"case-100\", \"description\": \"Investigate logs\", \"completed\": false}")));
 
         // Transition: OPEN -> CLOSED
         wireMock.stubFor(post(urlPathMatching("/api/v1/cases/[^/]+/close"))
@@ -102,13 +105,16 @@ public class CaseLifecycleStubs {
                 .whenScenarioStateIs("REOPENED")
                 .willReturn(okJson("{\"id\": \"case-100\", \"title\": \"Support Ticket\", \"status\": \"REOPENED\"}")));
 
-        wireMock.stubFor(post(urlPathMatching("/api/v1/cases/[^/]+/comments"))
-                .withName("Add Comment (Reopened)")
-                .inScenario(scenarioName)
-                .whenScenarioStateIs("REOPENED")
-                .willReturn(created()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"id\": \"cmt-2\", \"caseId\": \"case-100\", \"text\": \"Reopened investigation\"}")));
+        wireMock.stubFor(
+                post(urlPathMatching("/api/v1/cases/[^/]+/comments"))
+                        .withName("Add Comment (Reopened)")
+                        .inScenario(scenarioName)
+                        .whenScenarioStateIs("REOPENED")
+                        .willReturn(
+                                created()
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                "{\"id\": \"cmt-2\", \"caseId\": \"case-100\", \"text\": \"Reopened investigation\"}")));
 
         wireMock.stubFor(post(urlPathMatching("/api/v1/cases/[^/]+/close"))
                 .withName("Close Reopened Case")
@@ -130,7 +136,8 @@ public class CaseLifecycleStubs {
                 .withName("Get Isolated Case " + caseId + " (Open)")
                 .inScenario(scenarioName)
                 .whenScenarioStateIs("Started")
-                .willReturn(okJson("{\"id\": \"" + caseId + "\", \"title\": \"" + title + "\", \"status\": \"OPEN\"}")));
+                .willReturn(
+                        okJson("{\"id\": \"" + caseId + "\", \"title\": \"" + title + "\", \"status\": \"OPEN\"}")));
 
         wireMock.stubFor(post(urlEqualTo("/api/v1/cases/" + caseId + "/comments"))
                 .withName("Add Comment to Isolated Case " + caseId)
@@ -138,7 +145,8 @@ public class CaseLifecycleStubs {
                 .whenScenarioStateIs("Started")
                 .willReturn(created()
                         .withHeader("Content-Type", "application/json")
-                        .withBody("{\"id\": \"cmt-" + caseId + "\", \"caseId\": \"" + caseId + "\", \"text\": \"Comment for " + caseId + "\"}")));
+                        .withBody("{\"id\": \"cmt-" + caseId + "\", \"caseId\": \"" + caseId
+                                + "\", \"text\": \"Comment for " + caseId + "\"}")));
 
         // Transition: Started (Open) -> CLOSED
         wireMock.stubFor(post(urlEqualTo("/api/v1/cases/" + caseId + "/close"))
@@ -155,6 +163,7 @@ public class CaseLifecycleStubs {
                 .whenScenarioStateIs("CLOSED")
                 .willReturn(status(409)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("{\"error\": \"CONFLICT\", \"message\": \"Cannot add comments to closed case " + caseId + "\"}")));
+                        .withBody("{\"error\": \"CONFLICT\", \"message\": \"Cannot add comments to closed case "
+                                + caseId + "\"}")));
     }
 }

@@ -12,14 +12,7 @@ import java.util.stream.Collectors;
 public class HeaderNormalizer {
 
     private static final Set<String> DEFAULT_HEADERS = Set.of(
-            "x-correlation-id",
-            "x-request-id",
-            "x-tenant-id",
-            "x-user-id",
-            "x-client-id",
-            "traceparent",
-            "tracestate"
-    );
+            "x-correlation-id", "x-request-id", "x-tenant-id", "x-user-id", "x-client-id", "traceparent", "tracestate");
 
     private final Set<String> configuredHeaders;
 
@@ -28,9 +21,8 @@ public class HeaderNormalizer {
     }
 
     public HeaderNormalizer(Set<String> headers) {
-        this.configuredHeaders = headers.stream()
-                .map(h -> h.toLowerCase(Locale.ROOT).trim())
-                .collect(Collectors.toUnmodifiableSet());
+        this.configuredHeaders =
+                headers.stream().map(h -> h.toLowerCase(Locale.ROOT).trim()).collect(Collectors.toUnmodifiableSet());
     }
 
     private static Set<String> resolveConfiguredHeaders() {

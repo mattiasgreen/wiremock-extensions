@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'maven-publish'
     id 'signing'
+    id 'com.diffplug.spotless' version '7.0.2'
 }
 
 allprojects {
@@ -13,10 +14,28 @@ allprojects {
     }
 }
 
+spotless {
+    format 'misc', {
+        target '*.gradle', '*.md', '.gitignore'
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
     apply plugin: 'signing'
+    apply plugin: 'com.diffplug.spotless'
+
+    spotless {
+        java {
+            palantirJavaFormat('2.50.0')
+            removeUnusedImports()
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
 
     java {
         toolchain {

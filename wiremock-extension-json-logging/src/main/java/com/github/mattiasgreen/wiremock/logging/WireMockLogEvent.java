@@ -3,7 +3,6 @@ package com.github.mattiasgreen.wiremock.logging;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -40,8 +39,7 @@ public class WireMockLogEvent {
 
     private Map<String, String> mdcTags = new HashMap<>();
 
-    public WireMockLogEvent() {
-    }
+    public WireMockLogEvent() {}
 
     public String getTimestamp() {
         return timestamp;

@@ -11,12 +11,11 @@ import com.github.tomakehurst.wiremock.http.LoggedResponse;
 import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
+import java.util.HashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Formats every served request/response into a clean, single-line structured JSON log event,

@@ -9,8 +9,7 @@ public class CaseDto {
     private String title;
     private String status;
 
-    public CaseDto() {
-    }
+    public CaseDto() {}
 
     public CaseDto(String id, String title, String status) {
         this.id = id;
@@ -44,10 +43,6 @@ public class CaseDto {
 
     @Override
     public String toString() {
-        return "CaseDto{" +
-                "id='" + id + '\'' +
-                ", title='" + title + '\'' +
-                ", status='" + status + '\'' +
-                '}';
+        return "CaseDto{" + "id='" + id + '\'' + ", title='" + title + '\'' + ", status='" + status + '\'' + '}';
     }
 }

@@ -6,7 +6,6 @@ import com.github.tomakehurst.wiremock.http.LoggedResponse;
 import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
-
 import java.util.Objects;
 
 public class OtelMetricsListener implements ServeEventListener {

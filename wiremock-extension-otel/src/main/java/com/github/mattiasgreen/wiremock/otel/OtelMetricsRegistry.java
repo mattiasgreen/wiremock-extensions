@@ -9,7 +9,6 @@ import io.opentelemetry.exporter.prometheus.PrometheusMetricReader;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -35,9 +34,8 @@ public class OtelMetricsRegistry {
                 .registerMetricReader(prometheusReader)
                 .build();
 
-        OpenTelemetrySdk openTelemetry = OpenTelemetrySdk.builder()
-                .setMeterProvider(meterProvider)
-                .build();
+        OpenTelemetrySdk openTelemetry =
+                OpenTelemetrySdk.builder().setMeterProvider(meterProvider).build();
 
         this.meter = openTelemetry.getMeter("wiremock-otel");
 
@@ -57,19 +55,22 @@ public class OtelMetricsRegistry {
 
     public void recordRequest(String method, int statusCode, boolean matched, String stubName, double durationMs) {
         Attributes attributes = Attributes.of(
-                AttributeKey.stringKey("http_request_method"), method != null ? method : "UNKNOWN",
-                AttributeKey.stringKey("http_response_status_code"), String.valueOf(statusCode),
-                AttributeKey.stringKey("wiremock_matched"), String.valueOf(matched),
-                AttributeKey.stringKey("wiremock_stub_name"), stubName != null ? stubName : "none"
-        );
+                AttributeKey.stringKey("http_request_method"),
+                method != null ? method : "UNKNOWN",
+                AttributeKey.stringKey("http_response_status_code"),
+                String.valueOf(statusCode),
+                AttributeKey.stringKey("wiremock_matched"),
+                String.valueOf(matched),
+                AttributeKey.stringKey("wiremock_stub_name"),
+                stubName != null ? stubName : "none");
 
         requestsTotal.add(1, attributes);
         requestDuration.record(durationMs, attributes);
 
         if (!matched) {
-            unmatchedTotal.add(1, Attributes.of(
-                    AttributeKey.stringKey("http_request_method"), method != null ? method : "UNKNOWN"
-            ));
+            unmatchedTotal.add(
+                    1,
+                    Attributes.of(AttributeKey.stringKey("http_request_method"), method != null ? method : "UNKNOWN"));
         }
     }
 

@@ -1,18 +1,17 @@
 package com.github.mattiasgreen.wiremock.bundle;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class BundleIntegrationTest {
 
@@ -21,11 +20,8 @@ public class BundleIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        server = new WireMockServer(
-                WireMockConfiguration.options()
-                        .dynamicPort()
-                        .extensionScanningEnabled(true)
-        );
+        server =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensionScanningEnabled(true));
         server.start();
 
         httpClient = HttpClient.newHttpClient();
@@ -40,8 +36,7 @@ public class BundleIntegrationTest {
 
     @Test
     void testBundleLoadsAllExtensionsTogether() throws Exception {
-        server.stubFor(get(urlEqualTo("/api/v1/bundle-test"))
-                .willReturn(okJson("{\"status\":\"bundle-ok\"}")));
+        server.stubFor(get(urlEqualTo("/api/v1/bundle-test")).willReturn(okJson("{\"status\":\"bundle-ok\"}")));
 
         // 1. Test Stub with MDC Header
         HttpRequest req = HttpRequest.newBuilder()
