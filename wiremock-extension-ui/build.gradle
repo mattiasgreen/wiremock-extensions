@@ -3,3 +3,12 @@ dependencies {
     testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
     testImplementation 'com.madgag:animated-gif-lib:1.4'
 }
+
+tasks.register('recordDemoGifs', Test) {
+    group = 'verification'
+    description = 'Generates animated demo GIFs for UI documentation via Playwright'
+    useJUnitPlatform {
+        includeTags 'recording'
+    }
+}
+

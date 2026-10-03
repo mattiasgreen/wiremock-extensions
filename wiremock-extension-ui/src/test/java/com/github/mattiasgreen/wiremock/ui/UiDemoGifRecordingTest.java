@@ -20,6 +20,7 @@ import java.nio.file.Paths;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
+@Tag("recording")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class UiDemoGifRecordingTest {
 

@@ -37,7 +37,9 @@ subprojects {
     }
 
     tasks.named('test') {
-        useJUnitPlatform()
+        useJUnitPlatform {
+            excludeTags 'recording'
+        }
     }
 
     publishing {
