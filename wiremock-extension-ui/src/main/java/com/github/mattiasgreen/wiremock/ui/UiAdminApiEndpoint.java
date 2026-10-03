@@ -29,31 +29,53 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
 
     @Override
     public void contributeAdminApiRoutes(Router router) {
-        router.add(
-                RequestMethod.GET,
-                "/ui",
-                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
-        router.add(
-                RequestMethod.GET,
-                "/ui/",
-                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
+        router.add(RequestMethod.GET, "/ui", (admin, serveEvent, pathParams) -> serveResource("/ui/index.html"));
+        router.add(RequestMethod.GET, "/ui/", (admin, serveEvent, pathParams) -> serveResource("/ui/index.html"));
         router.add(
                 RequestMethod.GET,
                 "/ui/index.html",
-                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html", "text/html; charset=utf-8"));
+                (admin, serveEvent, pathParams) -> serveResource("/ui/index.html"));
 
         router.add(
                 RequestMethod.GET,
-                "/ui/app.js",
-                (admin, serveEvent, pathParams) ->
-                        serveResource("/ui/app.js", "application/javascript; charset=utf-8"));
+                "/ui/{file}",
+                (admin, serveEvent, pathParams) -> serveResource("/ui/" + pathParams.get("file")));
         router.add(
                 RequestMethod.GET,
-                "/ui/style.css",
-                (admin, serveEvent, pathParams) -> serveResource("/ui/style.css", "text/css; charset=utf-8"));
+                "/ui/modules/{module}",
+                (admin, serveEvent, pathParams) -> serveResource("/ui/modules/" + pathParams.get("module")));
     }
 
-    private ResponseDefinition serveResource(String resourcePath, String contentType) {
+    private static String resolveContentType(String path) {
+        if (path.endsWith(".html")) {
+            return "text/html; charset=utf-8";
+        } else if (path.endsWith(".js") || path.endsWith(".mjs")) {
+            return "application/javascript; charset=utf-8";
+        } else if (path.endsWith(".css")) {
+            return "text/css; charset=utf-8";
+        } else if (path.endsWith(".json")) {
+            return "application/json; charset=utf-8";
+        } else if (path.endsWith(".svg")) {
+            return "image/svg+xml";
+        } else if (path.endsWith(".png")) {
+            return "image/png";
+        } else if (path.endsWith(".gif")) {
+            return "image/gif";
+        } else if (path.endsWith(".ico")) {
+            return "image/x-icon";
+        }
+        return "text/plain; charset=utf-8";
+    }
+
+    private ResponseDefinition serveResource(String resourcePath) {
+        if (resourcePath == null || resourcePath.contains("..")) {
+            return ResponseDefinitionBuilder.responseDefinition()
+                    .withStatus(400)
+                    .withHeader("Content-Type", "text/plain")
+                    .withBody("Invalid resource path")
+                    .build();
+        }
+        String contentType = resolveContentType(resourcePath);
         String relativePath = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
 
         // Fast inner loop: Hot-replace static UI files from filesystem if running in dev/source workspace

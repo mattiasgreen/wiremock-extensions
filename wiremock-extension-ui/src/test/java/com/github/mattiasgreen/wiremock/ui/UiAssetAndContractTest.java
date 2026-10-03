@@ -96,6 +96,13 @@ public class UiAssetAndContractTest {
                 .build();
         HttpResponse<String> missingResp = httpClient.send(missingReq, HttpResponse.BodyHandlers.ofString());
         assertThat(missingResp.statusCode()).isEqualTo(404);
+
+        HttpRequest traversalReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/ui/modules/nonexistent.js"))
+                .GET()
+                .build();
+        HttpResponse<String> traversalResp = httpClient.send(traversalReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(traversalResp.statusCode()).isEqualTo(404);
     }
 
     @Test
