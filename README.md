@@ -13,6 +13,10 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | **`wiremock-extension-ui`** | Embedded single-page web UI at `/__admin/ui/` with stub explorer, JSON syntax highlighting, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all three extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 
+## Quick Preview
+
+![WireMock UI Overview](docs/images/demo-ui-tour.gif)
+
 ## Building
 
 Prerequisites: Java 21+ and Gradle (wrapper included).

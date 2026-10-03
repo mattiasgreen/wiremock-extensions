@@ -19,22 +19,33 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 - Completely self-contained and safe for restricted/air-gapped networks.
 - Full hash-based URL addressability so views, filters, stubs, and tester queries can be bookmarked and shared.
 
+![WireMock UI Overview Demo](../docs/images/demo-ui-tour.gif)
+
 ## Features
 
 - **Stub Explorer & Inspector**:
   - Filter stubs instantly by HTTP method, URL pattern, stub name, or scenario state.
   - View full JSON mapping definitions with syntax highlighting (keys, strings, numbers, booleans, null, punctuation).
   - One-click copy for JSON stubs and generated `curl` commands.
-- **Request Journal Viewer**:
-  - Search and filter recorded requests by method, URL, or matching status.
-  - Expandable inline inspector showing request headers/body and corresponding response definition.
-  - Highlights matched vs. unmatched status with visual badges.
+  - **⚡ Test Stub** button transitions directly into the HTTP Tester with pre-populated URL, method, headers, and body.
+
 - **Interactive HTTP Request Tester**:
   - Send requests directly to WireMock with custom methods, headers, and request bodies.
   - Dual sent/received inspection: toggle between Response, Sent Request, or Both (side-by-side split view).
   - Persistent header view with quick preset shortcuts (`+ JSON`, `+ Bearer`, `+ Accept`).
   - Response size indicator (bytes/KB) and formatted response body with JSON syntax highlighting.
   - Local execution history with timestamps, status badges, and restore-on-click capability.
+
+![Stubs and HTTP Tester Demo](../docs/images/demo-stubs-and-tester.gif)
+
+- **Request Journal Viewer**:
+  - Search and filter recorded requests by method, URL, or matching status.
+  - Expandable inline inspector showing request headers/body and corresponding response definition.
+  - Highlights matched vs. unmatched status with visual badges.
+  - Dedicated localized toolbar actions to refresh or clear the journal log.
+
+![Request Journal Demo](../docs/images/demo-request-journal.gif)
+
 - **URL Addressability & Deep Linking**:
   - All tabs, selected stubs, journal details, and tester inputs synchronize with the URL hash (e.g. `#stubs?stubId=...`, `#tester?method=POST&url=...`).
 - **Swagger UI Integration**:

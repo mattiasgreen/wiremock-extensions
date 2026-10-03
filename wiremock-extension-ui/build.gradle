@@ -1,4 +1,5 @@
 dependencies {
     testImplementation 'com.microsoft.playwright:playwright:1.49.0'
     testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+    testImplementation 'com.madgag:animated-gif-lib:1.4'
 }
