@@ -45,20 +45,23 @@ body {
   justify-content: space-between;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  padding: 10px 20px;
-  height: 60px;
+  padding: 0 20px;
+  height: 56px;
+  gap: 16px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .brand h1 {
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 .badge-qol {
@@ -71,21 +74,67 @@ body {
   text-transform: uppercase;
 }
 
-.stats-bar {
+.nav-tabs {
   display: flex;
-  gap: 20px;
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  align-items: center;
+  height: 100%;
+  gap: 2px;
 }
 
-.stats-bar strong {
+.nav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0 16px;
+  height: 100%;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+
+.nav-tab:hover {
+  color: var(--text-main);
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.nav-tab.active {
   color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  font-weight: 600;
+}
+
+.nav-badge {
+  background-color: var(--bg-tertiary);
+  color: var(--text-main);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.nav-tab.active .nav-badge {
+  background-color: #0284c7;
+  color: #ffffff;
+}
+
+.tab-icon {
+  font-size: 0.95rem;
 }
 
 .nav-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .btn {
@@ -154,14 +203,18 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .sidebar {
   width: 380px;
+  flex-shrink: 0;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .search-bar {
@@ -187,10 +240,22 @@ body {
 .stub-list-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 8px 12px;
   font-size: 0.8rem;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-color);
+}
+
+.stub-list-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stub-list-header-actions {
+  display: flex;
+  align-items: center;
 }
 
 .stub-list {
@@ -256,51 +321,41 @@ body {
 }
 
 /* Content Area */
-.content-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--bg-primary);
-  overflow: hidden;
-}
-
-.tabs {
-  display: flex;
-  background-color: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  padding: 0 16px;
-}
-
-.tab {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  padding: 12px 18px;
-  font-size: 0.88rem;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-}
-
-.tab:hover {
-  color: var(--text-main);
-}
-
-.tab.active {
-  color: var(--accent-color);
-  border-bottom-color: var(--accent-color);
-  font-weight: 600;
-}
-
 .tab-content {
   display: none;
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+  height: 100%;
+  min-width: 0;
 }
 
 .tab-content.active {
   display: flex;
   flex-direction: column;
+}
+
+#tab-stub-detail {
+  padding: 0;
+  overflow: hidden;
+}
+
+#tab-stub-detail.active {
+  display: flex;
+  flex-direction: row;
+}
+
+.stub-detail-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  min-width: 0;
+  height: 100%;
+}
+
+#tab-tester {
+  padding: 16px;
+  overflow: hidden;
 }
 
 .empty-state {
@@ -430,10 +485,25 @@ body {
 
 .journal-controls-bottom {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 16px;
   font-size: 0.85rem;
   color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.journal-filters-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.journal-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .checkbox-label {
@@ -895,5 +965,36 @@ kbd {
   border: 1px solid var(--border-color);
   border-radius: 6px;
 }
+
+/* Scenarios View */
+.scenarios-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.scenarios-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.scenarios-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.scenarios-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 
 

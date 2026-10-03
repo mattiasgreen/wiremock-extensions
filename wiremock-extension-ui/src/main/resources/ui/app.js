@@ -186,7 +186,12 @@
     journalFilteredCount: document.getElementById('journal-filtered-count'),
     scenariosContainer: document.getElementById('scenarios-container'),
     btnRefresh: document.getElementById('btn-refresh'),
+    btnRefreshStubs: document.getElementById('btn-refresh-stubs'),
+    btnRefreshJournal: document.getElementById('btn-refresh-journal'),
     btnResetJournal: document.getElementById('btn-reset-journal'),
+    btnRefreshScenarios: document.getElementById('btn-refresh-scenarios'),
+    btnResetScenarios: document.getElementById('btn-reset-scenarios'),
+    btnViewStubInJournal: document.getElementById('btn-view-stub-in-journal'),
     btnCopyJson: document.getElementById('btn-copy-json'),
     btnCopyCurl: document.getElementById('btn-copy-curl'),
     btnTestStub: document.getElementById('btn-test-stub'),
@@ -224,7 +229,7 @@
     testerSentUrl: document.getElementById('tester-sent-url'),
     testerSentHeaders: document.getElementById('tester-sent-headers'),
     testerSentBody: document.getElementById('tester-sent-body'),
-    tabs: document.querySelectorAll('.tab')
+    tabs: document.querySelectorAll('.tab, .nav-tab')
   };
 
   function doFetch(url, options = {}) {
@@ -674,7 +679,56 @@
     renderStubList();
     setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
   });
-  elements.btnRefresh.addEventListener('click', loadData);
+  if (elements.btnRefresh) {
+    elements.btnRefresh.addEventListener('click', loadData);
+  }
+  if (elements.btnRefreshStubs) {
+    elements.btnRefreshStubs.addEventListener('click', () => {
+      elements.btnRefreshStubs.disabled = true;
+      loadMappings().finally(() => {
+        elements.btnRefreshStubs.disabled = false;
+      });
+    });
+  }
+  if (elements.btnRefreshJournal) {
+    elements.btnRefreshJournal.addEventListener('click', () => {
+      elements.btnRefreshJournal.disabled = true;
+      loadJournal().finally(() => {
+        elements.btnRefreshJournal.disabled = false;
+      });
+    });
+  }
+  if (elements.btnRefreshScenarios) {
+    elements.btnRefreshScenarios.addEventListener('click', () => {
+      elements.btnRefreshScenarios.disabled = true;
+      loadScenarios().finally(() => {
+        elements.btnRefreshScenarios.disabled = false;
+      });
+    });
+  }
+  if (elements.btnResetScenarios) {
+    elements.btnResetScenarios.addEventListener('click', () => {
+      if (confirm('Reset all scenarios to their Started state?')) {
+        doFetch('/__admin/scenarios/reset', { method: 'POST' })
+          .then(() => loadScenarios())
+          .catch(err => console.warn('Could not reset scenarios', err));
+      }
+    });
+  }
+  if (elements.btnViewStubInJournal) {
+    elements.btnViewStubInJournal.addEventListener('click', () => {
+      if (!selectedStubId) return;
+      const stub = currentStubs.find(s => s.id === selectedStubId);
+      if (!stub) return;
+      const path = getStubUrl(stub.request);
+      activateTab('tab-journal', false);
+      if (elements.journalSearch) {
+        elements.journalSearch.value = path;
+      }
+      renderJournal();
+      setRoute('journal', { q: path }, false);
+    });
+  }
   elements.filterUnmatchedOnly.addEventListener('change', () => {
     renderJournal();
     setRoute('journal', { unmatched: elements.filterUnmatchedOnly.checked ? 'true' : null }, true);
@@ -691,13 +745,15 @@
     elements.journalAutoRefresh.addEventListener('change', setupJournalAutoRefresh);
   }
 
-  elements.btnResetJournal.addEventListener('click', () => {
-    if (confirm('Are you sure you want to clear the request journal?')) {
-      doFetch('/__admin/requests', { method: 'DELETE' })
-        .then(() => loadJournal())
-        .catch(err => console.warn('Could not reset journal', err));
-    }
-  });
+  if (elements.btnResetJournal) {
+    elements.btnResetJournal.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear the request journal?')) {
+        doFetch('/__admin/requests', { method: 'DELETE' })
+          .then(() => loadJournal())
+          .catch(err => console.warn('Could not reset journal', err));
+      }
+    });
+  }
 
   elements.btnCopyJson.addEventListener('click', () => {
     if (elements.stubJsonViewer.textContent) {

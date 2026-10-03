@@ -13,44 +13,51 @@
         <span class="logo">⚡</span>
         <h1>WireMock Standalone <span class="badge-qol">QoL</span></h1>
       </div>
-      <div class="stats-bar">
-        <span class="stat-item"><strong id="stat-stubs">0</strong> stubs</span>
-        <span class="stat-item"><strong id="stat-requests">0</strong> requests</span>
-        <span class="stat-item"><strong id="stat-scenarios">0</strong> scenarios</span>
-      </div>
+      <nav class="nav-tabs" role="tablist">
+        <button class="tab nav-tab active" data-tab="tab-stub-detail" role="tab" id="nav-tab-stubs">
+          <span class="tab-icon">📋</span> Stubs <span id="stat-stubs" class="nav-badge">0</span>
+        </button>
+        <button class="tab nav-tab" data-tab="tab-journal" role="tab" id="nav-tab-journal">
+          <span class="tab-icon">📜</span> Request Journal <span id="stat-requests" class="nav-badge">0</span>
+          <span id="journal-count" class="hidden">0</span>
+        </button>
+        <button class="tab nav-tab" data-tab="tab-tester" role="tab" id="nav-tab-tester">
+          <span class="tab-icon">🚀</span> HTTP Tester
+        </button>
+        <button class="tab nav-tab" data-tab="tab-scenarios" role="tab" id="nav-tab-scenarios">
+          <span class="tab-icon">🔀</span> Scenarios <span id="stat-scenarios" class="nav-badge">0</span>
+        </button>
+      </nav>
       <div class="nav-actions">
-        <button id="btn-refresh" class="btn btn-secondary" title="Refresh stubs and journal">🔄 Refresh</button>
-        <button id="btn-reset-journal" class="btn btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
         <a href="../swagger-ui/" target="_blank" class="btn btn-link" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
         <a href="../metrics/prometheus" target="_blank" class="btn btn-link" title="Open Prometheus Metrics">📊 Metrics</a>
       </div>
     </header>
 
-    <div class="main-container">
-      <!-- Sidebar / Stub List -->
-      <aside class="sidebar">
-        <div class="search-bar">
-          <input type="text" id="search-box" placeholder="Filter stubs by URL, method, or name..." autocomplete="off">
-        </div>
-        <div class="stub-list-header">
-          <span>Configured Stubs</span>
-          <span id="stubs-count-label" class="muted-text">0 mappings</span>
-        </div>
-        <div id="stub-list" class="stub-list">
-          <div class="loading-state">Loading stub mappings...</div>
-        </div>
-      </aside>
+    <main class="main-container">
+      <!-- Tab 1: Stubs (Master-Detail) -->
+      <div id="tab-stub-detail" class="tab-content active">
+        <!-- Sidebar / Stub List (Master) -->
+        <aside class="sidebar">
+          <div class="search-bar">
+            <input type="text" id="search-box" placeholder="Filter stubs by URL, method, or name..." autocomplete="off">
+          </div>
+          <div class="stub-list-header">
+            <div class="stub-list-title-group">
+              <span>Configured Stubs</span>
+              <span id="stubs-count-label" class="muted-text">0 mappings</span>
+            </div>
+            <div class="stub-list-header-actions">
+              <button id="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
+            </div>
+          </div>
+          <div id="stub-list" class="stub-list">
+            <div class="loading-state">Loading stub mappings...</div>
+          </div>
+        </aside>
 
-      <!-- Content Area / Inspector -->
-      <main class="content-panel">
-        <div class="tabs">
-          <button class="tab active" data-tab="tab-stub-detail">Stub Details</button>
-          <button class="tab" data-tab="tab-journal">Request Journal (<span id="journal-count">0</span>)</button>
-          <button class="tab" data-tab="tab-tester">HTTP Tester</button>
-          <button class="tab" data-tab="tab-scenarios">Scenarios</button>
-        </div>
-
-        <div id="tab-stub-detail" class="tab-content active">
+        <!-- Stub Detail Inspector (Detail) -->
+        <section class="stub-detail-panel">
           <div id="stub-detail-empty" class="empty-state">
             <p>Select a stub mapping from the left panel to inspect its configuration.</p>
           </div>
@@ -63,6 +70,7 @@
               </div>
               <div class="detail-actions">
                 <button id="btn-test-stub" class="btn btn-small btn-primary" title="Open and test this stub in the HTTP Tester">⚡ Test Stub</button>
+                <button id="btn-view-stub-in-journal" class="btn btn-small" title="Search for this stub in Request Journal">🔍 View in Journal</button>
                 <button id="btn-copy-curl" class="btn btn-small" title="Copy request as cURL command">📋 Copy cURL</button>
                 <button id="btn-copy-json" class="btn btn-small" title="Copy stub mapping JSON">📋 Copy JSON</button>
               </div>
@@ -88,161 +96,180 @@
               <pre id="stub-json-viewer" class="code-block"></pre>
             </div>
           </div>
-        </div>
+        </section>
+      </div>
 
-        <div id="tab-journal" class="tab-content">
-          <div class="journal-controls">
-            <div class="journal-controls-top">
-              <input type="text" id="journal-search" placeholder="Filter journal by URL, method, status code..." autocomplete="off">
-            </div>
-            <div class="journal-controls-bottom">
+      <!-- Tab 2: Request Journal (Full Width) -->
+      <div id="tab-journal" class="tab-content">
+        <div class="journal-controls">
+          <div class="journal-controls-top">
+            <input type="text" id="journal-search" placeholder="Filter journal by URL, method, status code..." autocomplete="off">
+          </div>
+          <div class="journal-controls-bottom">
+            <div class="journal-filters-group">
               <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only"> Show unmatched (404) only</label>
               <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh"> Live auto-refresh (3s)</label>
               <span id="journal-filtered-count" class="muted-text"></span>
             </div>
-          </div>
-          <div class="table-container">
-            <table class="data-table" id="journal-table">
-              <thead>
-                <tr>
-                  <th style="width: 24px;"></th>
-                  <th>Time</th>
-                  <th>Method</th>
-                  <th>URL</th>
-                  <th>Status</th>
-                  <th>Matched</th>
-                  <th>Duration</th>
-                </tr>
-              </thead>
-              <tbody id="journal-list">
-                <tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div id="tab-tester" class="tab-content">
-          <div class="tester-container">
-            <!-- Tester History Sidebar -->
-            <aside class="tester-history-panel">
-              <div class="tester-history-header">
-                <span class="history-title">History (<span id="tester-history-count">0</span>)</span>
-                <button id="btn-tester-clear-history" class="btn btn-tiny" title="Clear request history">Clear</button>
-              </div>
-              <div id="tester-history-list" class="tester-history-list">
-                <div class="empty-state text-small">No requests sent yet.</div>
-              </div>
-            </aside>
-
-            <!-- Request Builder Panel -->
-            <div class="tester-request-panel">
-              <div class="tester-url-bar">
-                <select id="tester-method" class="tester-method-select">
-                  <option value="GET">GET</option>
-                  <option value="POST">POST</option>
-                  <option value="PUT">PUT</option>
-                  <option value="PATCH">PATCH</option>
-                  <option value="DELETE">DELETE</option>
-                  <option value="HEAD">HEAD</option>
-                  <option value="OPTIONS">OPTIONS</option>
-                </select>
-                <input type="text" id="tester-url" placeholder="/api/v1/..." value="/api/v1/users" autocomplete="off">
-                <button id="btn-tester-send" class="btn btn-primary" title="Send Request (Ctrl+Enter)">🚀 Send</button>
-              </div>
-
-              <div class="tester-subcontrols">
-                <div class="tester-section">
-                  <div class="tester-section-header">
-                    <span>Request Headers</span>
-                    <div class="preset-badges">
-                      <span class="preset-badge" id="btn-preset-json" title="Add Content-Type: application/json">+ JSON</span>
-                      <span class="preset-badge" id="btn-preset-bearer" title="Add Authorization: Bearer token">+ Bearer</span>
-                      <span class="preset-badge" id="btn-preset-accept" title="Add Accept: application/json">+ Accept</span>
-                    </div>
-                  </div>
-                  <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
-                </div>
-
-                <div class="tester-section" id="tester-body-section">
-                  <div class="tester-section-header">
-                    <span>Request Body</span>
-                    <button id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
-                  </div>
-                  <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
-                </div>
-              </div>
-
-              <div class="tester-action-bar">
-                <button id="btn-tester-copy-curl" class="btn btn-small" title="Copy as cURL">📋 Copy cURL</button>
-                <button id="btn-tester-share-link" class="btn btn-small" title="Copy shareable link with encoded request">🔗 Copy Share Link</button>
-                <button id="btn-tester-reset-form" class="btn btn-small" title="Reset request builder">↺ Reset</button>
-                <span class="muted-text text-small" style="margin-left: auto;">Press <kbd>Ctrl+Enter</kbd> to send</span>
-              </div>
-            </div>
-
-            <!-- Execution Inspector Panel (Request & Response) -->
-            <div class="tester-response-panel">
-              <div class="tester-response-header">
-                <div class="tester-response-meta">
-                  <span class="muted-text">Status:</span>
-                  <span id="tester-response-status" class="card-value" style="font-size: 0.95rem; margin: 0;">—</span>
-                  <span id="tester-response-time" class="muted-text text-small">—</span>
-                  <span id="tester-response-size" class="muted-text text-small">—</span>
-                </div>
-                <div class="tester-response-actions">
-                  <div class="view-mode-toggle" id="tester-view-switcher">
-                    <button class="btn btn-small active" id="btn-tester-tab-response" title="View Response">Response</button>
-                    <button class="btn btn-small" id="btn-tester-tab-request" title="View Sent Request">Sent Request</button>
-                    <button class="btn btn-small" id="btn-tester-tab-both" title="View Both">Both</button>
-                  </div>
-                  <div class="view-mode-toggle" id="tester-format-switcher">
-                    <button class="btn btn-small active" id="btn-view-highlighted">Formatted</button>
-                    <button class="btn btn-small" id="btn-view-raw">Raw</button>
-                  </div>
-                  <button id="btn-tester-copy-response" class="btn btn-small" title="Copy response body">📋 Copy</button>
-                </div>
-              </div>
-
-              <div id="tester-inspector-content" class="tester-inspector-content">
-                <!-- Response View Container -->
-                <div id="tester-view-response" class="inspector-view active">
-                  <div class="headers-permanent-section">
-                    <div class="headers-section-label">Response Headers (<span id="tester-response-header-count">0</span>)</div>
-                    <pre id="tester-response-headers" class="code-block-mini">(no headers yet)</pre>
-                  </div>
-                  <div class="code-viewer-container" style="flex: 1;">
-                    <div class="headers-section-label">Response Body</div>
-                    <pre id="tester-response-body" class="code-block">(no response yet - press Send)</pre>
-                  </div>
-                </div>
-
-                <!-- Sent Request View Container -->
-                <div id="tester-view-request" class="inspector-view hidden">
-                  <div class="sent-summary-bar">
-                    <span id="tester-sent-method" class="http-badge">GET</span>
-                    <span id="tester-sent-url" class="detail-url">/api/v1/users</span>
-                  </div>
-                  <div class="headers-permanent-section">
-                    <div class="headers-section-label">Sent Request Headers</div>
-                    <pre id="tester-sent-headers" class="code-block-mini">(no headers sent)</pre>
-                  </div>
-                  <div class="code-viewer-container" style="flex: 1;">
-                    <div class="headers-section-label">Sent Request Body</div>
-                    <pre id="tester-sent-body" class="code-block">(empty body)</pre>
-                  </div>
-                </div>
-              </div>
+            <div class="journal-actions-group">
+              <button id="btn-refresh-journal" class="btn btn-small btn-secondary" title="Refresh request journal">🔄 Refresh</button>
+              <button id="btn-reset-journal" class="btn btn-small btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
             </div>
           </div>
         </div>
+        <div class="table-container">
+          <table class="data-table" id="journal-table">
+            <thead>
+              <tr>
+                <th style="width: 24px;"></th>
+                <th>Time</th>
+                <th>Method</th>
+                <th>URL</th>
+                <th>Status</th>
+                <th>Matched</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody id="journal-list">
+              <tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        <div id="tab-scenarios" class="tab-content">
-          <div id="scenarios-container" class="scenarios-container">
-            <div class="empty-state">No active stateful scenarios found.</div>
+      <!-- Tab 3: HTTP Tester (Full Width) -->
+      <div id="tab-tester" class="tab-content">
+        <div class="tester-container">
+          <!-- Tester History Sidebar -->
+          <aside class="tester-history-panel">
+            <div class="tester-history-header">
+              <span class="history-title">History (<span id="tester-history-count">0</span>)</span>
+              <button id="btn-tester-clear-history" class="btn btn-tiny" title="Clear request history">Clear</button>
+            </div>
+            <div id="tester-history-list" class="tester-history-list">
+              <div class="empty-state text-small">No requests sent yet.</div>
+            </div>
+          </aside>
+
+          <!-- Request Builder Panel -->
+          <div class="tester-request-panel">
+            <div class="tester-url-bar">
+              <select id="tester-method" class="tester-method-select">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+                <option value="HEAD">HEAD</option>
+                <option value="OPTIONS">OPTIONS</option>
+              </select>
+              <input type="text" id="tester-url" placeholder="/api/v1/..." value="/api/v1/users" autocomplete="off">
+              <button id="btn-tester-send" class="btn btn-primary" title="Send Request (Ctrl+Enter)">🚀 Send</button>
+            </div>
+
+            <div class="tester-subcontrols">
+              <div class="tester-section">
+                <div class="tester-section-header">
+                  <span>Request Headers</span>
+                  <div class="preset-badges">
+                    <span class="preset-badge" id="btn-preset-json" title="Add Content-Type: application/json">+ JSON</span>
+                    <span class="preset-badge" id="btn-preset-bearer" title="Add Authorization: Bearer token">+ Bearer</span>
+                    <span class="preset-badge" id="btn-preset-accept" title="Add Accept: application/json">+ Accept</span>
+                  </div>
+                </div>
+                <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
+              </div>
+
+              <div class="tester-section" id="tester-body-section">
+                <div class="tester-section-header">
+                  <span>Request Body</span>
+                  <button id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
+                </div>
+                <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
+              </div>
+            </div>
+
+            <div class="tester-action-bar">
+              <button id="btn-tester-copy-curl" class="btn btn-small" title="Copy as cURL">📋 Copy cURL</button>
+              <button id="btn-tester-share-link" class="btn btn-small" title="Copy shareable link with encoded request">🔗 Copy Share Link</button>
+              <button id="btn-tester-reset-form" class="btn btn-small" title="Reset request builder">↺ Reset</button>
+              <span class="muted-text text-small" style="margin-left: auto;">Press <kbd>Ctrl+Enter</kbd> to send</span>
+            </div>
+          </div>
+
+          <!-- Execution Inspector Panel (Request & Response) -->
+          <div class="tester-response-panel">
+            <div class="tester-response-header">
+              <div class="tester-response-meta">
+                <span class="muted-text">Status:</span>
+                <span id="tester-response-status" class="card-value" style="font-size: 0.95rem; margin: 0;">—</span>
+                <span id="tester-response-time" class="muted-text text-small">—</span>
+                <span id="tester-response-size" class="muted-text text-small">—</span>
+              </div>
+              <div class="tester-response-actions">
+                <div class="view-mode-toggle" id="tester-view-switcher">
+                  <button class="btn btn-small active" id="btn-tester-tab-response" title="View Response">Response</button>
+                  <button class="btn btn-small" id="btn-tester-tab-request" title="View Sent Request">Sent Request</button>
+                  <button class="btn btn-small" id="btn-tester-tab-both" title="View Both">Both</button>
+                </div>
+                <div class="view-mode-toggle" id="tester-format-switcher">
+                  <button class="btn btn-small active" id="btn-view-highlighted">Formatted</button>
+                  <button class="btn btn-small" id="btn-view-raw">Raw</button>
+                </div>
+                <button id="btn-tester-copy-response" class="btn btn-small" title="Copy response body">📋 Copy</button>
+              </div>
+            </div>
+
+            <div id="tester-inspector-content" class="tester-inspector-content">
+              <!-- Response View Container -->
+              <div id="tester-view-response" class="inspector-view active">
+                <div class="headers-permanent-section">
+                  <div class="headers-section-label">Response Headers (<span id="tester-response-header-count">0</span>)</div>
+                  <pre id="tester-response-headers" class="code-block-mini">(no headers yet)</pre>
+                </div>
+                <div class="code-viewer-container" style="flex: 1;">
+                  <div class="headers-section-label">Response Body</div>
+                  <pre id="tester-response-body" class="code-block">(no response yet - press Send)</pre>
+                </div>
+              </div>
+
+              <!-- Sent Request View Container -->
+              <div id="tester-view-request" class="inspector-view hidden">
+                <div class="sent-summary-bar">
+                  <span id="tester-sent-method" class="http-badge">GET</span>
+                  <span id="tester-sent-url" class="detail-url">/api/v1/users</span>
+                </div>
+                <div class="headers-permanent-section">
+                  <div class="headers-section-label">Sent Request Headers</div>
+                  <pre id="tester-sent-headers" class="code-block-mini">(no headers sent)</pre>
+                </div>
+                <div class="code-viewer-container" style="flex: 1;">
+                  <div class="headers-section-label">Sent Request Body</div>
+                  <pre id="tester-sent-body" class="code-block">(empty body)</pre>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+
+      <!-- Tab 4: Scenarios (Full Width) -->
+      <div id="tab-scenarios" class="tab-content">
+        <div class="scenarios-header-bar">
+          <div class="scenarios-title-group">
+            <span class="scenarios-title">Active Scenarios</span>
+            <span class="muted-text text-small">Stateful scenario progression</span>
+          </div>
+          <div class="scenarios-actions-group">
+            <button id="btn-refresh-scenarios" class="btn btn-small btn-secondary" title="Refresh scenario states">🔄 Refresh</button>
+            <button id="btn-reset-scenarios" class="btn btn-small btn-secondary" title="Reset all scenarios to Started state">↺ Reset Scenarios</button>
+          </div>
+        </div>
+        <div id="scenarios-container" class="scenarios-container">
+          <div class="empty-state">No active stateful scenarios found.</div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script src="/__admin/ui/app.js"></script>
