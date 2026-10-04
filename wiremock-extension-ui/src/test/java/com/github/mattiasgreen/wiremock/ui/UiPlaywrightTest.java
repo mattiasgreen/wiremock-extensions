@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -25,8 +26,10 @@ public class UiPlaywrightTest {
 
     @BeforeAll
     void startAll() {
-        wireMockServer =
-                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
+        wireMockServer = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(
+                        new UiAdminApiEndpoint(), new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
         wireMockServer.start();
 
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
@@ -399,6 +402,127 @@ public class UiPlaywrightTest {
         page.waitForSelector(".scenario-state-pill:has-text('Started')");
         assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent())
                 .isEqualTo("Started");
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Scenario 10: OpenAPI Import modal, YAML spec paste, and stub synthesis")
+    void testOpenApiImportModalWorkflow() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#btn-open-openapi-modal");
+
+        // Click Open Import Modal
+        page.locator("#btn-open-openapi-modal").click();
+        page.waitForSelector("#openapi-modal:not(.hidden)");
+
+        // Verify elements visible
+        assertThat(page.locator("#openapi-spec-content").isVisible()).isTrue();
+        assertThat(page.locator("#btn-submit-openapi-import").isVisible()).isTrue();
+
+        // Paste YAML spec
+        String spec =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Warehouse Inventory
+                  version: 1.0.0
+                paths:
+                  /api/v1/warehouse/stock/{stockId}:
+                    post:
+                      summary: Create warehouse stock item
+                      parameters:
+                        - name: stockId
+                          in: path
+                          required: true
+                          example: STK-882
+                          schema:
+                            type: string
+                        - name: X-Warehouse-Region
+                          in: header
+                          required: true
+                          example: EU-NORTH
+                          schema:
+                            type: string
+                        - name: notify
+                          in: query
+                          required: true
+                          example: true
+                          schema:
+                            type: boolean
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              properties:
+                                warehouseId:
+                                  type: string
+                                  example: WH-12
+                                capacity:
+                                  type: integer
+                                  example: 500
+                      responses:
+                        '201':
+                          description: Stock item created
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  status:
+                                    type: string
+                                    example: CREATED
+                                  createdId:
+                                    type: string
+                                    example: STK-882
+                """;
+
+        page.locator("#openapi-spec-content").fill(spec);
+
+        // Click Generate Stubs
+        page.locator("#btn-submit-openapi-import").click();
+
+        // Feedback message should display success
+        page.waitForSelector(".modal-feedback.success");
+        assertThat(page.locator(".modal-feedback.success").textContent()).contains("Successfully created 1 stubs");
+
+        // Modal should close automatically (hidden state)
+        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // The new stub card should now appear in the stubs list showing the full urlPathTemplate
+        page.waitForSelector(".stub-card:has-text('/api/v1/warehouse/stock/{stockId}')");
+        Locator newStubCard = page.locator(".stub-card:has-text('/api/v1/warehouse/stock/{stockId}')");
+        assertThat(newStubCard.isVisible()).isTrue();
+        assertThat(newStubCard.locator(".stub-card-url").textContent()).isEqualTo("/api/v1/warehouse/stock/{stockId}");
+
+        // Click on it and inspect
+        newStubCard.click();
+        assertThat(page.locator("#detail-url").textContent()).isEqualTo("/api/v1/warehouse/stock/{stockId}");
+        assertThat(page.locator("#stub-json-viewer").textContent()).contains("CREATED");
+
+        // Click Test Stub
+        page.locator("#btn-test-stub").click();
+        page.waitForSelector("#tab-tester.active");
+
+        // Verify HTTP Tester is pre-populated with ready-made request example:
+        // 1. Method is POST
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
+        // 2. Path template is substituted with example param + required query param
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/warehouse/stock/STK-882?notify=true");
+        // 3. Required headers prefilled (Content-Type & X-Warehouse-Region)
+        assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
+        assertThat(page.locator("#tester-headers").inputValue()).contains("X-Warehouse-Region: EU-NORTH");
+        // 4. Request Body prefilled with synthesized JSON payload
+        assertThat(page.locator("#tester-body").inputValue()).contains("\"warehouseId\" : \"WH-12\"");
+        assertThat(page.locator("#tester-body").inputValue()).contains("\"capacity\" : 500");
+
+        // Send the prefilled request directly to WireMock!
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('201')");
+        assertThat(page.locator("#tester-response-body").textContent()).contains("CREATED");
+        assertThat(page.locator("#tester-response-body").textContent()).contains("STK-882");
 
         assertThat(pageErrors).isEmpty();
     }

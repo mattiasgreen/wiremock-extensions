@@ -9,7 +9,15 @@ import { setRoute, toBase64, activateTab } from './router.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
-  return req.url || req.urlPath || req.urlPattern || req.urlPathPattern || '/';
+  return (
+    req.url ||
+    req.urlPath ||
+    req.urlPathTemplate ||
+    req.urlPattern ||
+    req.urlPathPattern ||
+    req.urlPathMatching ||
+    '/'
+  );
 }
 
 export function generateCurl(method, path, headers = {}, body = '') {
@@ -112,15 +120,25 @@ export function selectStub(stub, updateRoute = true) {
 export function sendStubToTester(stub) {
   if (!stub) return;
   const method = (stub.request && stub.request.method) || 'GET';
-  const path = getStubUrl(stub.request);
+  const example = stub.metadata && stub.metadata.exampleRequest;
+
+  let path = example && example.path ? example.path : getStubUrl(stub.request);
   const headerLines = [];
-  if (stub.request && stub.request.headers) {
+
+  if (example && example.headers && Object.keys(example.headers).length > 0) {
+    for (const [k, v] of Object.entries(example.headers)) {
+      headerLines.push(`${k}: ${v}`);
+    }
+  } else if (stub.request && stub.request.headers) {
     for (const [k, v] of Object.entries(stub.request.headers)) {
       headerLines.push(`${k}: ${v.equalTo || v.matches || v.contains || Object.values(v)[0] || ''}`);
     }
   }
+
   let body = '';
-  if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+  if (example && example.body) {
+    body = example.body;
+  } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
     const bp = stub.request.bodyPatterns[0];
     body = bp.equalToJson ? JSON.stringify(bp.equalToJson, null, 2) : (bp.equalTo || '');
   }

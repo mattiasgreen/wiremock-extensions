@@ -1,4 +1,5 @@
 dependencies {
+    testImplementation project(':wiremock-extension-openapi')
     testImplementation libs.playwright
     testImplementation libs.jackson.databind
     testImplementation libs.animated.gif.lib
@@ -7,6 +8,8 @@ dependencies {
 tasks.register('recordDemoGifs', Test) {
     group = 'verification'
     description = 'Generates animated demo GIFs for UI documentation via Playwright'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {
         includeTags 'recording'
     }

@@ -42,6 +42,7 @@ import {
   clearTesterHistory,
   renderTesterResponse
 } from './modules/tester.js';
+import { setupOpenApiModal } from './modules/openapi.js';
 import {
   doFetch,
   apiGet,
@@ -73,6 +74,7 @@ if (window.location.pathname && !window.location.pathname.endsWith('/')) {
 // Wire inter-module callbacks
 registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
+setupOpenApiModal();
 
 registerRouteHandlers({
   applyStubs: (params) => {

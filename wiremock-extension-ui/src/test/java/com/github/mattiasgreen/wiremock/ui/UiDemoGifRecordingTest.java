@@ -42,8 +42,10 @@ public class UiDemoGifRecordingTest {
         }
         Files.createDirectories(outputDir);
 
-        wireMockServer =
-                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
+        wireMockServer = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(
+                        new UiAdminApiEndpoint(), new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
         wireMockServer.start();
 
         // 1. Mock Stubs
@@ -389,6 +391,105 @@ public class UiDemoGifRecordingTest {
 
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
         System.out.println("Generated GIF 4: " + gifPath.toAbsolutePath() + " ("
+                + (gifPath.toFile().length() / 1024) + " KB)");
+    }
+
+    @Test
+    @DisplayName("Generate demo GIF 5: OpenAPI 3.0/3.1 Spec Import & Stub Synthesis")
+    void recordOpenApiImportWorkflow() {
+        Path gifPath = outputDir.resolve("demo-openapi-import.gif");
+        AnimatedGifEncoder encoder = new AnimatedGifEncoder();
+        encoder.start(gifPath.toString());
+        encoder.setRepeat(0); // Loop forever
+        encoder.setQuality(10);
+
+        BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+                .setDeviceScaleFactor(1));
+        Page page = context.newPage();
+
+        try {
+            // Step 1: Open Stubs tab
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+            applyZoom(page);
+            page.waitForSelector(".stub-card");
+            recordFrame(page, encoder, 1400);
+
+            // Step 2: Click 'Import OpenAPI' button
+            page.locator("#btn-open-openapi-modal").click();
+            page.waitForSelector("#openapi-modal:not(.hidden)");
+            recordFrame(page, encoder, 1400);
+
+            // Step 3: Populate sample OpenAPI YAML specification
+            String openApiYaml =
+                    """
+                    openapi: 3.0.3
+                    info:
+                      title: Store Catalog API
+                      version: 1.0.0
+                    paths:
+                      /api/v1/catalog/products:
+                        get:
+                          summary: List catalog products
+                          responses:
+                            '200':
+                              description: Product catalog
+                              content:
+                                application/json:
+                                  schema:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        sku:
+                                          type: string
+                                          example: PROD-778
+                                        name:
+                                          type: string
+                                          example: Wireless Noise-Cancelling Headphones
+                                        price:
+                                          type: number
+                                          example: 199.99
+                    """;
+
+            page.locator("#openapi-spec-content").fill(openApiYaml);
+            recordFrame(page, encoder, 1800);
+
+            // Step 4: Click 'Generate Stubs'
+            page.locator("#btn-submit-openapi-import").click();
+            page.waitForSelector(".modal-feedback.success");
+            recordFrame(page, encoder, 1800);
+
+            // Step 5: Modal closes automatically, new stub card visible in sidebar
+            page.waitForSelector(
+                    "#openapi-modal",
+                    new Page.WaitForSelectorOptions()
+                            .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
+            page.waitForSelector(".stub-card:has-text('/api/v1/catalog/products')");
+            recordFrame(page, encoder, 1500);
+
+            // Step 6: Select the newly generated OpenAPI stub to inspect synthesized JSON
+            page.locator(".stub-card:has-text('/api/v1/catalog/products')").click();
+            page.waitForSelector("#stub-detail-view:not(.hidden)");
+            recordFrame(page, encoder, 2400);
+
+            // Step 7: Jump to HTTP Tester via Test Stub button
+            page.locator("#btn-test-stub").click();
+            page.waitForSelector("#tab-tester.active");
+            recordFrame(page, encoder, 1200);
+
+            // Step 8: Send HTTP Request to newly synthesized stub
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            recordFrame(page, encoder, 2500);
+
+        } finally {
+            encoder.finish();
+            context.close();
+        }
+
+        Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
+        System.out.println("Generated GIF 5: " + gifPath.toAbsolutePath() + " ("
                 + (gifPath.toFile().length() / 1024) + " KB)");
     }
 }

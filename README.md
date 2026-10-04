@@ -10,7 +10,8 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | :--- | :--- | :--- |
 | **`wiremock-extension-json-logging`** | Single-line structured JSON logging for standard/verbose mode with automatic MDC header extraction (`x_correlation_id`, `x_tenant_id`). | [Module README](wiremock-extension-json-logging/README.md) |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
-| **`wiremock-extension-ui`** | Embedded single-page web UI at `/__admin/ui/` with stub explorer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
+| **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
+| **`wiremock-extension-ui`** | Embedded single-page web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 | **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating stateful scenario modeling, parallel case collision pitfalls, best-practice isolated scenarios, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
 
@@ -29,6 +30,7 @@ Prerequisites: Java 21+ and Gradle (wrapper included).
 # Build a specific extension module
 ./gradlew :wiremock-extension-json-logging:build
 ./gradlew :wiremock-extension-otel:build
+./gradlew :wiremock-extension-openapi:build
 ./gradlew :wiremock-extension-ui:build
 ./gradlew :wiremock-extension-bundle:build
 
@@ -58,6 +60,7 @@ java -cp "wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
 All extensions auto-register via Java Service Provider Interface (SPI):
 - Web UI: `http://localhost:8080/__admin/ui/`
 - Prometheus Metrics: `http://localhost:8080/__admin/metrics/prometheus`
+- OpenAPI Spec Importer: `http://localhost:8080/__admin/openapi/import`
 - Admin API: `http://localhost:8080/__admin/mappings`
 
 ### 2. Individual Extensions

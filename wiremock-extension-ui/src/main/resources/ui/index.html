@@ -48,6 +48,7 @@
               <span id="stubs-count-label" class="muted-text">0 mappings</span>
             </div>
             <div class="stub-list-header-actions">
+              <button id="btn-open-openapi-modal" class="btn btn-tiny btn-primary" title="Import stubs from OpenAPI specification">📥 Import OpenAPI</button>
               <button id="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
             </div>
           </div>
@@ -270,6 +271,47 @@
         </div>
       </div>
     </main>
+
+    <!-- OpenAPI Import Modal -->
+    <div id="openapi-modal" class="modal-backdrop hidden">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">📄</span>
+            <h3>Import OpenAPI Specification</h3>
+          </div>
+          <button id="btn-close-openapi-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-description">Paste or upload an OpenAPI 3.0 or 3.1 specification (YAML or JSON) to synthesize WireMock stub mappings.</p>
+          
+          <div class="openapi-dropzone" id="openapi-dropzone">
+            <input type="file" id="openapi-file-input" accept=".yaml,.yml,.json" style="display: none;">
+            <div class="dropzone-content">
+              <span class="dropzone-icon">📁</span>
+              <span class="dropzone-text">Drag & drop OpenAPI YAML/JSON file here, or <button type="button" class="btn btn-tiny btn-secondary" id="btn-browse-openapi-file">Browse File</button></span>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label for="openapi-spec-content">Or paste specification directly:</label>
+            <textarea id="openapi-spec-content" class="code-input" rows="10" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
+          </div>
+
+          <div class="openapi-options-grid" style="margin-top: 12px;">
+            <label class="checkbox-label"><input type="checkbox" id="opt-openapi-success-only"> Success responses only (2xx)</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-headers" checked> Match required headers</label>
+            <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-queries" checked> Match required query params</label>
+          </div>
+
+          <div id="openapi-import-feedback" class="modal-feedback hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-cancel-openapi" class="btn btn-secondary">Cancel</button>
+          <button id="btn-submit-openapi-import" class="btn btn-primary">🚀 Generate Stubs</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="/__admin/ui/app.js"></script>

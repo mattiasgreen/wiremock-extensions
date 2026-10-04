@@ -1,0 +1,5 @@
+dependencies {
+    implementation libs.swagger.parser
+    implementation libs.jackson.databind
+    implementation libs.jackson.datatype.jsr310
+}
