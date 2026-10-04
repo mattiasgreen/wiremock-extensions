@@ -1,12 +1,14 @@
 /**
  * WireMock Admin API client and asynchronous data loader.
- * Endpoints: /__admin/mappings, /__admin/requests, /__admin/scenarios
+ * Endpoints: /__admin/mappings, /__admin/requests, /__admin/scenarios, /__admin/stubs/*
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
 import { renderStubList } from './stubs.js';
 import { renderJournal } from './journal.js';
 import { renderScenarios } from './scenarios.js';
+import { renderProjectSelector, updateFilterCounts } from './projects.js';
+import { updateBulkToolbar } from './bulk-actions.js';
 import {
   parseHeadersInput,
   updateTesterRoute,
@@ -62,19 +64,96 @@ export function apiGet(endpoint) {
   });
 }
 
+export function apiPost(endpoint, body = {}) {
+  return doFetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body)
+  }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+    return res.text().then(text => {
+      if (!text || !text.trim()) return {};
+      try {
+        return JSON.parse(text);
+      } catch {
+        return {};
+      }
+    });
+  });
+}
+
+export function apiPut(endpoint, body = {}) {
+  return doFetch(endpoint, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body)
+  }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+    return res.text().then(text => {
+      if (!text || !text.trim()) return {};
+      try {
+        return JSON.parse(text);
+      } catch {
+        return {};
+      }
+    });
+  });
+}
+
+export function apiDelete(endpoint) {
+  return doFetch(endpoint, { method: 'DELETE' }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+    return res.status === 204 ? {} : res.json().catch(() => ({}));
+  });
+}
+
 export function loadMappings() {
   return apiGet('/__admin/mappings')
     .then(data => {
       state.currentStubs = data.mappings || [];
-      renderStubList();
-      if (elements.statStubs) elements.statStubs.textContent = state.currentStubs.length;
-      if (elements.stubsCountLabel) elements.stubsCountLabel.textContent = `${state.currentStubs.length} mappings`;
     })
     .catch(err => {
       if (elements.stubList) {
         elements.stubList.innerHTML = `<div class="empty-state text-error">Failed to load stubs: ${err.message}</div>`;
       }
     });
+}
+
+export function loadDisabledStubs() {
+  return apiGet('/__admin/stubs/disabled')
+    .then(data => {
+      state.disabledStubs = data.mappings || [];
+    })
+    .catch(err => {
+      // In case endpoint is not available or empty
+      state.disabledStubs = [];
+    });
+}
+
+export function toggleStubState(stubId) {
+  return apiPost(`/__admin/stubs/${stubId}/toggle`);
+}
+
+export function deleteStubMapping(stubId) {
+  // Try normal mapping delete, and also invoke bulk delete to ensure removal from disabledStore
+  return apiDelete(`/__admin/mappings/${stubId}`)
+    .catch(() => bulkStubs('delete', [stubId]));
+}
+
+export function saveStubMapping(stubId, stubData) {
+  return apiPut(`/__admin/mappings/${stubId}`, stubData);
+}
+
+export function createStubMapping(stubData) {
+  return apiPost('/__admin/mappings', stubData);
+}
+
+export function bulkStubs(action, ids) {
+  return apiPost('/__admin/stubs/bulk', { action, ids });
+}
+
+export function importMappings(payload) {
+  return apiPost('/__admin/mappings/import', payload);
 }
 
 export function loadJournal() {
@@ -105,7 +184,8 @@ export function loadScenarios() {
         });
       });
 
-      state.currentStubs.forEach(stub => {
+      const allStubs = [...state.currentStubs, ...state.disabledStubs];
+      allStubs.forEach(stub => {
         if (stub.scenarioName) {
           if (!scenarioMap.has(stub.scenarioName)) {
             scenarioMap.set(stub.scenarioName, {
@@ -137,7 +217,18 @@ export function loadScenarios() {
 
 export function loadData() {
   loadTesterHistoryFromStorage();
-  return Promise.all([loadMappings(), loadJournal(), loadScenarios()])
+  return Promise.all([loadMappings(), loadDisabledStubs(), loadJournal()])
+    .then(() => {
+      renderStubList();
+      renderProjectSelector();
+      updateBulkToolbar();
+      const totalStubs = state.currentStubs.length + state.disabledStubs.length;
+      if (elements.statStubs) elements.statStubs.textContent = totalStubs;
+      if (elements.stubsCountLabel) {
+        elements.stubsCountLabel.textContent = `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
+      }
+      return loadScenarios();
+    })
     .then(() => {
       applyRouteFromUrl();
     })
@@ -237,7 +328,7 @@ export function executeTesterRequest() {
         responseBody: 'Fetch error: ' + err.message
       });
     })
-    .then(() => {
+    .finally(() => {
       if (elements.btnTesterSend) {
         elements.btnTesterSend.disabled = false;
         elements.btnTesterSend.textContent = '🚀 Send';

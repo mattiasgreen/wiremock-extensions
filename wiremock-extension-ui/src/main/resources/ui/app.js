@@ -44,9 +44,33 @@ import {
 } from './modules/tester.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
+  renderProjectSelector,
+  updateFilterCounts
+} from './modules/projects.js';
+import {
+  handleToggleStub,
+  handleDeleteStub,
+  openStubEditor,
+  closeStubEditor,
+  saveStubEditor
+} from './modules/lifecycle.js';
+import {
+  exportStubs,
+  handleBundleImport,
+  openImportModal,
+  closeImportModal,
+  switchImportTab
+} from './modules/import-export.js';
+import {
+  handleSelectAllToggle,
+  executeBulkAction,
+  updateBulkToolbar
+} from './modules/bulk-actions.js';
+import {
   doFetch,
   apiGet,
   loadMappings,
+  loadDisabledStubs,
   loadJournal,
   loadScenarios,
   loadData,
@@ -56,12 +80,14 @@ import {
 // Exported public API for test suite and external scripts
 export {
   loadMappings,
+  loadDisabledStubs,
   executeTesterRequest,
   highlightJson,
   generateCurl,
   parseHash,
   setRoute,
-  activateTab
+  activateTab,
+  exportStubs
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)
@@ -85,7 +111,7 @@ registerRouteHandlers({
     renderStubList();
     const stubId = params.get('stubId');
     if (stubId) {
-      const match = state.currentStubs.find(s => s.id === stubId);
+      const match = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === stubId);
       if (match) selectStub(match, false);
     }
   },
@@ -127,7 +153,39 @@ window.addEventListener('hashchange', applyRouteFromUrl);
 if (elements.searchBox) {
   elements.searchBox.addEventListener('input', () => {
     renderStubList();
+    updateBulkToolbar();
     setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
+  });
+}
+if (elements.projectFilterSelect) {
+  elements.projectFilterSelect.addEventListener('change', (e) => {
+    state.selectedProject = e.target.value || null;
+    renderStubList();
+    updateFilterCounts();
+    updateBulkToolbar();
+  });
+}
+['all', 'active', 'disabled'].forEach(filter => {
+  const btn = document.getElementById(`btn-filter-${filter}`);
+  if (btn) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      state.statusFilter = filter;
+      renderStubList();
+      updateBulkToolbar();
+    });
+  }
+});
+
+if (elements.chkSelectAll) {
+  elements.chkSelectAll.addEventListener('change', (e) => {
+    handleSelectAllToggle(e.target.checked);
+  });
+}
+if (elements.btnExportStubs) {
+  elements.btnExportStubs.addEventListener('click', () => {
+    exportStubs(state.selectedProject ? 'project' : 'all');
   });
 }
 if (elements.btnRefresh) {
@@ -136,22 +194,50 @@ if (elements.btnRefresh) {
 if (elements.btnRefreshStubs) {
   elements.btnRefreshStubs.addEventListener('click', () => {
     elements.btnRefreshStubs.disabled = true;
-    loadMappings().finally(() => {
+    loadData().finally(() => {
       elements.btnRefreshStubs.disabled = false;
     });
   });
 }
+
+// Stubs Detail Actions
 if (elements.btnTestStub) {
   elements.btnTestStub.addEventListener('click', () => {
     if (!state.selectedStubId) return;
-    const stub = state.currentStubs.find(s => s.id === state.selectedStubId);
+    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
     if (stub) sendStubToTester(stub);
+  });
+}
+if (elements.btnEditStub) {
+  elements.btnEditStub.addEventListener('click', () => {
+    if (!state.selectedStubId) return;
+    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
+    if (stub) openStubEditor(stub, false);
+  });
+}
+if (elements.btnCloneStub) {
+  elements.btnCloneStub.addEventListener('click', () => {
+    if (!state.selectedStubId) return;
+    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
+    if (stub) openStubEditor(stub, true);
+  });
+}
+if (elements.btnToggleStub) {
+  elements.btnToggleStub.addEventListener('click', () => {
+    if (!state.selectedStubId) return;
+    handleToggleStub(state.selectedStubId);
+  });
+}
+if (elements.btnDeleteStub) {
+  elements.btnDeleteStub.addEventListener('click', () => {
+    if (!state.selectedStubId) return;
+    handleDeleteStub(state.selectedStubId);
   });
 }
 if (elements.btnViewStubInJournal) {
   elements.btnViewStubInJournal.addEventListener('click', () => {
     if (!state.selectedStubId) return;
-    const stub = state.currentStubs.find(s => s.id === state.selectedStubId);
+    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
     if (!stub) return;
     const path = getStubUrl(stub.request);
     activateTab('tab-journal', false);
@@ -174,7 +260,7 @@ if (elements.btnCopyJson) {
 if (elements.btnCopyCurl) {
   elements.btnCopyCurl.addEventListener('click', () => {
     if (!state.selectedStubId) return;
-    const stub = state.currentStubs.find(s => s.id === state.selectedStubId);
+    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
     if (!stub) return;
     const method = (stub.request && stub.request.method) || 'GET';
     const path = getStubUrl(stub.request);
@@ -193,6 +279,88 @@ if (elements.btnCopyCurl) {
     navigator.clipboard.writeText(cmd);
     elements.btnCopyCurl.textContent = '✅ Copied!';
     setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
+  });
+}
+
+// Bulk Actions Toolbar
+if (elements.btnBulkEnable) {
+  elements.btnBulkEnable.addEventListener('click', () => executeBulkAction('enable'));
+}
+if (elements.btnBulkDisable) {
+  elements.btnBulkDisable.addEventListener('click', () => executeBulkAction('disable'));
+}
+if (elements.btnBulkExport) {
+  elements.btnBulkExport.addEventListener('click', () => executeBulkAction('export'));
+}
+if (elements.btnBulkDelete) {
+  elements.btnBulkDelete.addEventListener('click', () => executeBulkAction('delete'));
+}
+
+// Stub Editor Modal
+if (elements.btnCloseEditorModal) {
+  elements.btnCloseEditorModal.addEventListener('click', closeStubEditor);
+}
+if (elements.btnCancelEditor) {
+  elements.btnCancelEditor.addEventListener('click', closeStubEditor);
+}
+if (elements.btnSaveEditor) {
+  elements.btnSaveEditor.addEventListener('click', saveStubEditor);
+}
+if (elements.btnEditorFormatJson) {
+  elements.btnEditorFormatJson.addEventListener('click', () => {
+    const bodyEl = document.getElementById('editor-body');
+    if (!bodyEl || !bodyEl.value.trim()) return;
+    try {
+      const parsed = JSON.parse(bodyEl.value);
+      bodyEl.value = JSON.stringify(parsed, null, 2);
+    } catch (err) {
+      alert('Invalid JSON: ' + err.message);
+    }
+  });
+}
+
+// Unified Import Modal: Tabs and Bundle Import
+if (elements.importTabOpenApi) {
+  elements.importTabOpenApi.addEventListener('click', () => switchImportTab('openapi'));
+}
+if (elements.importTabBundle) {
+  elements.importTabBundle.addEventListener('click', () => switchImportTab('bundle'));
+}
+if (elements.btnSubmitBundleImport) {
+  elements.btnSubmitBundleImport.addEventListener('click', handleBundleImport);
+}
+if (elements.btnBrowseBundleFile && elements.bundleFileInput) {
+  elements.btnBrowseBundleFile.addEventListener('click', () => elements.bundleFileInput.click());
+  elements.bundleFileInput.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (elements.bundleContent) elements.bundleContent.value = event.target.result;
+      };
+      reader.readAsText(file);
+    }
+  });
+}
+if (elements.bundleDropzone) {
+  elements.bundleDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    elements.bundleDropzone.classList.add('dragover');
+  });
+  elements.bundleDropzone.addEventListener('dragleave', () => {
+    elements.bundleDropzone.classList.remove('dragover');
+  });
+  elements.bundleDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    elements.bundleDropzone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (elements.bundleContent) elements.bundleContent.value = event.target.result;
+      };
+      reader.readAsText(file);
+    }
   });
 }
 

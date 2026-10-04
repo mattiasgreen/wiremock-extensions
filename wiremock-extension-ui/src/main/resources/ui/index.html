@@ -40,20 +40,50 @@
         <!-- Sidebar / Stub List (Master) -->
         <aside class="sidebar">
           <div class="search-bar">
-            <input type="text" id="search-box" placeholder="Filter stubs by URL, method, or name..." autocomplete="off">
+            <input type="text" id="search-box" placeholder="Filter stubs by URL, method, name, or tag..." autocomplete="off">
           </div>
+          
+          <div class="project-filter-bar">
+            <select id="project-filter-select" class="project-filter-select" title="Filter by Project">
+              <option value="">📁 All Projects</option>
+            </select>
+            <div class="status-filter-pills">
+              <button class="filter-pill active" data-filter="all" id="btn-filter-all">All (<span id="count-filter-all">0</span>)</button>
+              <button class="filter-pill" data-filter="active" id="btn-filter-active">Active (<span id="count-filter-active">0</span>)</button>
+              <button class="filter-pill" data-filter="disabled" id="btn-filter-disabled">Disabled (<span id="count-filter-disabled">0</span>)</button>
+            </div>
+          </div>
+
           <div class="stub-list-header">
             <div class="stub-list-title-group">
-              <span>Configured Stubs</span>
+              <label class="select-all-label" title="Select all visible stubs">
+                <input type="checkbox" id="chk-select-all">
+                <span>Stubs</span>
+              </label>
               <span id="stubs-count-label" class="muted-text">0 mappings</span>
             </div>
             <div class="stub-list-header-actions">
-              <button id="btn-open-openapi-modal" class="btn btn-tiny btn-primary" title="Import stubs from OpenAPI specification">📥 Import OpenAPI</button>
+              <button id="btn-open-openapi-modal" class="btn btn-tiny btn-primary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
+              <button id="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
               <button id="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
             </div>
           </div>
+
           <div id="stub-list" class="stub-list">
             <div class="loading-state">Loading stub mappings...</div>
+          </div>
+
+          <!-- Sticky Bulk Actions Bar -->
+          <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
+            <div class="bulk-bar-left">
+              <span id="bulk-selected-count">0 selected</span>
+            </div>
+            <div class="bulk-bar-actions">
+              <button id="btn-bulk-enable" class="btn btn-tiny btn-success" title="Enable selected stubs">🟢 Enable</button>
+              <button id="btn-bulk-disable" class="btn btn-tiny btn-warning" title="Disable selected stubs">⏸️ Disable</button>
+              <button id="btn-bulk-export" class="btn btn-tiny btn-secondary" title="Export selected stubs">📤 Export</button>
+              <button id="btn-bulk-delete" class="btn btn-tiny btn-danger" title="Delete selected stubs">🗑️ Delete</button>
+            </div>
           </div>
         </aside>
 
@@ -71,6 +101,10 @@
               </div>
               <div class="detail-actions">
                 <button id="btn-test-stub" class="btn btn-small btn-primary" title="Open and test this stub in the HTTP Tester">⚡ Test Stub</button>
+                <button id="btn-edit-stub" class="btn btn-small" title="Edit this stub mapping configuration">✏️ Edit</button>
+                <button id="btn-clone-stub" class="btn btn-small" title="Duplicate this stub mapping">📄 Duplicate</button>
+                <button id="btn-toggle-stub" class="btn btn-small btn-warning" title="Toggle active/disabled state">⏸️ Disable Stub</button>
+                <button id="btn-delete-stub" class="btn btn-small btn-danger" title="Permanently delete this stub">🗑️ Delete</button>
                 <button id="btn-view-stub-in-journal" class="btn btn-small" title="Search for this stub in Request Journal">🔍 View in Journal</button>
                 <button id="btn-copy-curl" class="btn btn-small" title="Copy request as cURL command">📋 Copy cURL</button>
                 <button id="btn-copy-json" class="btn btn-small" title="Copy stub mapping JSON">📋 Copy JSON</button>
@@ -85,6 +119,14 @@
               <div class="summary-card">
                 <div class="card-label">Priority</div>
                 <div id="detail-priority" class="card-value">5</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Project</div>
+                <div id="detail-project" class="card-value card-project">Ungrouped</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Lifecycle State</div>
+                <div id="detail-lifecycle-state" class="card-value text-success">ACTIVE</div>
               </div>
               <div class="summary-card">
                 <div class="card-label">Scenario</div>
@@ -272,43 +314,168 @@
       </div>
     </main>
 
-    <!-- OpenAPI Import Modal -->
+    <!-- Unified Import Hub Modal -->
     <div id="openapi-modal" class="modal-backdrop hidden">
       <div class="modal-dialog">
         <div class="modal-header">
           <div class="modal-title-group">
-            <span class="modal-icon">📄</span>
-            <h3>Import OpenAPI Specification</h3>
+            <span class="modal-icon">📥</span>
+            <h3>Import Stubs & Specifications</h3>
           </div>
           <button id="btn-close-openapi-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
         </div>
+        <div class="modal-tabs">
+          <button type="button" id="import-tab-openapi" class="modal-tab active">📄 OpenAPI Spec</button>
+          <button type="button" id="import-tab-bundle" class="modal-tab">📦 WireMock JSON Bundle</button>
+        </div>
         <div class="modal-body">
-          <p class="modal-description">Paste or upload an OpenAPI 3.0 or 3.1 specification (YAML or JSON) to synthesize WireMock stub mappings.</p>
-          
-          <div class="openapi-dropzone" id="openapi-dropzone">
-            <input type="file" id="openapi-file-input" accept=".yaml,.yml,.json" style="display: none;">
-            <div class="dropzone-content">
-              <span class="dropzone-icon">📁</span>
-              <span class="dropzone-text">Drag & drop OpenAPI YAML/JSON file here, or <button type="button" class="btn btn-tiny btn-secondary" id="btn-browse-openapi-file">Browse File</button></span>
+          <!-- OpenAPI Import Subview -->
+          <div id="import-view-openapi">
+            <p class="modal-description">Paste or upload an OpenAPI 3.0 or 3.1 specification (YAML or JSON) to synthesize WireMock stub mappings.</p>
+            
+            <div class="openapi-dropzone" id="openapi-dropzone">
+              <input type="file" id="openapi-file-input" accept=".yaml,.yml,.json" style="display: none;">
+              <div class="dropzone-content">
+                <span class="dropzone-icon">📁</span>
+                <span class="dropzone-text">Drag & drop OpenAPI YAML/JSON file here, or <button type="button" class="btn btn-tiny btn-secondary" id="btn-browse-openapi-file">Browse File</button></span>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <label for="openapi-spec-content">Or paste specification directly:</label>
+              <textarea id="openapi-spec-content" class="code-input" rows="8" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
+            </div>
+
+            <div class="openapi-options-grid" style="margin-top: 12px;">
+              <label class="checkbox-label"><input type="checkbox" id="opt-openapi-success-only"> Success responses only (2xx)</label>
+              <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-headers" checked> Match required headers</label>
+              <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-queries" checked> Match required query params</label>
+            </div>
+
+            <div id="openapi-import-feedback" class="modal-feedback hidden"></div>
+            
+            <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
+              <button id="btn-cancel-openapi" class="btn btn-secondary">Cancel</button>
+              <button id="btn-submit-openapi-import" class="btn btn-primary">🚀 Generate Stubs</button>
             </div>
           </div>
 
-          <div class="form-group" style="margin-top: 12px;">
-            <label for="openapi-spec-content">Or paste specification directly:</label>
-            <textarea id="openapi-spec-content" class="code-input" rows="10" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
+          <!-- WireMock Bundle Import Subview -->
+          <div id="import-view-bundle" class="hidden">
+            <p class="modal-description">Import existing WireMock mappings from a JSON bundle file or raw JSON payload.</p>
+
+            <div class="openapi-dropzone" id="bundle-dropzone">
+              <input type="file" id="bundle-file-input" accept=".json" style="display: none;">
+              <div class="dropzone-content">
+                <span class="dropzone-icon">📦</span>
+                <span class="dropzone-text">Drag & drop WireMock JSON file here, or <button type="button" class="btn btn-tiny btn-secondary" id="btn-browse-bundle-file">Browse File</button></span>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+              <textarea id="bundle-content" class="code-input" rows="8" placeholder='{&#10;  "mappings": [&#10;    { "request": { "method": "GET", "url": "/example" }, "response": { "status": 200 } }&#10;  ]&#10;}'></textarea>
+            </div>
+
+            <div class="form-row" style="margin-top: 12px; display: flex; gap: 12px;">
+              <div class="form-group" style="flex: 1;">
+                <label for="bundle-conflict-policy">Conflict Policy:</label>
+                <select id="bundle-conflict-policy" class="form-control">
+                  <option value="OVERWRITE">Overwrite duplicates (by ID)</option>
+                  <option value="APPEND">Append as new (generate new IDs)</option>
+                  <option value="IGNORE">Ignore duplicates</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="bundle-target-project">Target Project (optional):</label>
+                <input type="text" id="bundle-target-project" class="form-control" placeholder="e.g. Payments API">
+              </div>
+            </div>
+
+            <div id="bundle-import-feedback" class="modal-feedback hidden"></div>
+
+            <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
+              <button type="button" class="btn btn-secondary" onclick="document.getElementById('openapi-modal').classList.add('hidden')">Cancel</button>
+              <button id="btn-submit-bundle-import" class="btn btn-primary">📥 Import Stubs</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stub Editor & Clone Modal -->
+    <div id="stub-editor-modal" class="modal-backdrop hidden">
+      <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">✏️</span>
+            <h3 id="editor-modal-title">Edit Stub Mapping</h3>
+          </div>
+          <button id="btn-close-editor-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row" style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 2;">
+              <label for="editor-name">Stub Name:</label>
+              <input type="text" id="editor-name" class="form-control" placeholder="Descriptive stub name...">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-priority">Priority (1 = highest):</label>
+              <input type="number" id="editor-priority" class="form-control" value="5" min="1" max="100">
+            </div>
           </div>
 
-          <div class="openapi-options-grid" style="margin-top: 12px;">
-            <label class="checkbox-label"><input type="checkbox" id="opt-openapi-success-only"> Success responses only (2xx)</label>
-            <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-headers" checked> Match required headers</label>
-            <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-queries" checked> Match required query params</label>
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-project">Project / API Group:</label>
+              <input type="text" id="editor-project" class="form-control" placeholder="e.g. Warehouse Service">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-tags">Tags (comma-separated):</label>
+              <input type="text" id="editor-tags" class="form-control" placeholder="e.g. inventory, v1, core">
+            </div>
           </div>
 
-          <div id="openapi-import-feedback" class="modal-feedback hidden"></div>
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-method">HTTP Method:</label>
+              <select id="editor-method" class="form-control">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+                <option value="PATCH">PATCH</option>
+                <option value="HEAD">HEAD</option>
+                <option value="OPTIONS">OPTIONS</option>
+                <option value="ANY">ANY</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex: 3;">
+              <label for="editor-url">URL / Path Pattern / Path Template:</label>
+              <input type="text" id="editor-url" class="form-control" placeholder="/api/v1/resource or /resource/{id}">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-status">Status Code:</label>
+              <input type="number" id="editor-status" class="form-control" value="200">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label for="editor-headers">Response Headers (key: value per line):</label>
+            <textarea id="editor-headers" class="code-input" rows="3" placeholder="Content-Type: application/json"></textarea>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="editor-body">Response Body:</label>
+              <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
+            </div>
+            <textarea id="editor-body" class="code-input" rows="7" placeholder="{ &quot;key&quot;: &quot;value&quot; }"></textarea>
+          </div>
         </div>
         <div class="modal-footer">
-          <button id="btn-cancel-openapi" class="btn btn-secondary">Cancel</button>
-          <button id="btn-submit-openapi-import" class="btn btn-primary">🚀 Generate Stubs</button>
+          <button id="btn-cancel-editor" class="btn btn-secondary">Cancel</button>
+          <button id="btn-save-editor" class="btn btn-primary">💾 Save Mapping</button>
         </div>
       </div>
     </div>

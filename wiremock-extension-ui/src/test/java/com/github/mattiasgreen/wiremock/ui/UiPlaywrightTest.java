@@ -29,7 +29,9 @@ public class UiPlaywrightTest {
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
-                        new UiAdminApiEndpoint(), new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
+                        new UiAdminApiEndpoint(),
+                        new StubLifecycleAdminEndpoint(new DisabledStubStore()),
+                        new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
         wireMockServer.start();
 
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
@@ -523,6 +525,197 @@ public class UiPlaywrightTest {
         page.waitForSelector("#tester-response-status:has-text('201')");
         assertThat(page.locator("#tester-response-body").textContent()).contains("CREATED");
         assertThat(page.locator("#tester-response-body").textContent()).contains("STK-882");
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(13)
+    @DisplayName("Should display project pills and filter stubs by project")
+    void testProjectGroupingAndFiltering() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list .stub-card");
+
+        // Verify project selector is present
+        Locator projectSelect = page.locator("#project-filter-select");
+        assertThat(projectSelect.isVisible()).isTrue();
+
+        // Verify project pills are visible on stub cards
+        Locator projectPills = page.locator(".project-pill");
+        assertThat(projectPills.count()).isGreaterThan(0);
+
+        // Verify status pills (All, Active, Disabled) are present
+        Locator btnAll = page.locator("#btn-filter-all");
+        Locator btnActive = page.locator("#btn-filter-active");
+        Locator btnDisabled = page.locator("#btn-filter-disabled");
+        assertThat(btnAll.isVisible()).isTrue();
+        assertThat(btnActive.isVisible()).isTrue();
+        assertThat(btnDisabled.isVisible()).isTrue();
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(14)
+    @DisplayName("Should toggle stub between active and disabled states and affect HTTP traffic")
+    void testEnableDisableStubToggle() throws Exception {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card:has-text('/api/v1/users')");
+
+        Locator userCard = page.locator(".stub-card:has-text('/api/v1/users')").first();
+        Locator toggleBtn = userCard.locator(".btn-card-toggle");
+
+        // Initial traffic should be 200 OK
+        java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/users"))
+                .GET()
+                .build();
+        java.net.http.HttpResponse<String> initialRes =
+                client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertThat(initialRes.statusCode()).isEqualTo(200);
+
+        // 1. Toggle OFF via UI card toggle
+        toggleBtn.click();
+        page.waitForSelector(".stub-card.stub-disabled:has-text('/api/v1/users')");
+        assertThat(userCard.locator(".status-badge.badge-disabled").isVisible()).isTrue();
+
+        // 2. WireMock must now return 404 for this route
+        java.net.http.HttpResponse<String> disabledRes =
+                client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertThat(disabledRes.statusCode()).isEqualTo(404);
+
+        // 3. Toggle back ON via UI card toggle
+        toggleBtn.click();
+        page.waitForSelector(".stub-card:not(.stub-disabled):has-text('/api/v1/users')");
+
+        // 4. WireMock must now return 200 again
+        java.net.http.HttpResponse<String> reEnabledRes =
+                client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertThat(reEnabledRes.statusCode()).isEqualTo(200);
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(15)
+    @DisplayName("Should import WireMock JSON bundle with custom project assignment")
+    void testWireMockBundleImport() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#btn-open-openapi-modal");
+
+        // Open Import Modal
+        page.locator("#btn-open-openapi-modal").click();
+        page.waitForSelector(
+                "#openapi-modal.hidden", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.DETACHED));
+
+        // Switch to WireMock JSON Bundle tab
+        page.locator("#import-tab-bundle").click();
+        page.waitForSelector("#import-view-bundle:not(.hidden)");
+
+        // Fill bundle content and project
+        String bundleJson =
+                """
+                {
+                  "mappings": [
+                    {
+                      "name": "Healthcheck Ping",
+                      "request": {
+                        "method": "GET",
+                        "url": "/api/v1/health/ping"
+                      },
+                      "response": {
+                        "status": 200,
+                        "body": "PONG"
+                      }
+                    }
+                  ]
+                }
+                """;
+
+        page.locator("#bundle-content").fill(bundleJson);
+        page.locator("#bundle-target-project").fill("Ops Management");
+
+        // Click Import
+        page.locator("#btn-submit-bundle-import").click();
+        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Verify imported stub card is displayed with the project
+        page.waitForSelector(".stub-card:has-text('/api/v1/health/ping')");
+        Locator pingCard = page.locator(".stub-card:has-text('/api/v1/health/ping')");
+        assertThat(pingCard.isVisible()).isTrue();
+        assertThat(pingCard.textContent()).contains("Ops Management");
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(16)
+    @DisplayName("Should show bulk actions bar when stub checkboxes are selected")
+    void testBulkActionsBar() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card-chk");
+
+        // Initially hidden
+        assertThat(page.locator("#bulk-actions-bar").isHidden()).isTrue();
+
+        // Check first stub
+        Locator firstChk = page.locator(".stub-card-chk").first();
+        firstChk.check();
+
+        // Bulk bar should now be visible
+        page.waitForSelector("#bulk-actions-bar:not(.hidden)");
+        assertThat(page.locator("#bulk-selected-count").textContent()).contains("1 selected");
+
+        // Uncheck
+        firstChk.uncheck();
+        page.waitForSelector(
+                "#bulk-actions-bar", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.locator("#bulk-actions-bar").isHidden()).isTrue();
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(17)
+    @DisplayName("Should clone stub mapping via editor modal, save it, and verify traffic")
+    void testCloneAndEditStub() throws Exception {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card:has-text('/api/v1/users')");
+
+        // Select stub
+        page.locator(".stub-card:has-text('/api/v1/users')").first().click();
+        page.waitForSelector("#btn-clone-stub");
+
+        // Click Duplicate
+        page.locator("#btn-clone-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        assertThat(page.locator("#editor-modal-title").textContent()).isEqualTo("Duplicate Stub Mapping");
+
+        // Modify URL and status
+        page.locator("#editor-url").fill("/api/v1/users/cloned");
+        page.locator("#editor-status").fill("201");
+        page.locator("#editor-project").fill("User Clones");
+
+        // Save
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Verify cloned stub appears in stubs list
+        page.waitForSelector(".stub-card:has-text('/api/v1/users/cloned')");
+        Locator clonedCard = page.locator(".stub-card:has-text('/api/v1/users/cloned')");
+        assertThat(clonedCard.isVisible()).isTrue();
+        assertThat(clonedCard.textContent()).contains("User Clones");
+
+        // Verify live HTTP traffic returns 201 Created
+        java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/users/cloned"))
+                .GET()
+                .build();
+        java.net.http.HttpResponse<String> res = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertThat(res.statusCode()).isEqualTo(201);
 
         assertThat(pageErrors).isEmpty();
     }

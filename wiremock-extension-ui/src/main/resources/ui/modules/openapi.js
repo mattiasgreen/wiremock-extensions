@@ -4,7 +4,7 @@
  */
 
 import { elements } from './dom.js';
-import { doFetch, loadMappings } from './api.js';
+import { doFetch, loadData } from './api.js';
 
 export function setupOpenApiModal() {
   if (!elements.btnOpenOpenApiModal || !elements.openapiModal) return;
@@ -137,7 +137,7 @@ export function setupOpenApiModal() {
         const data = await response.json();
         if (response.ok) {
           showFeedback(`Successfully created ${data.totalStubsCreated} stubs from OpenAPI spec!`, false);
-          await loadMappings();
+          await loadData();
           setTimeout(() => {
             closeModal();
           }, 1400);

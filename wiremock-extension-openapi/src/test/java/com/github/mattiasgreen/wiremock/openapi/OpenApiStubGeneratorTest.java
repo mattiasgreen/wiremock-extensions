@@ -72,6 +72,8 @@ class OpenApiStubGeneratorTest {
         assertThat(get200.getResponse().getBody()).contains("\"name\" : \"Fluffy\"");
         assertThat(get200.getMetadata().getString("source")).isEqualTo("openapi");
         assertThat(get200.getMetadata().getString("operationId")).isEqualTo("listPets");
+        assertThat(get200.getMetadata().getString("project")).isEqualTo("Simple Petstore");
+        assertThat(get200.getMetadata().getString("api")).isEqualTo("pets");
 
         // Verify POST /pets 201
         StubMapping post201 = stubs.stream()

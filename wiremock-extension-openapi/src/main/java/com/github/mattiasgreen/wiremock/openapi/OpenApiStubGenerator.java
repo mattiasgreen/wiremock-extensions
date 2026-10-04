@@ -198,11 +198,16 @@ public class OpenApiStubGenerator {
                 .attr("method", method.getName())
                 .attr("statusCode", statusCode);
 
+        if (openAPI.getInfo() != null && openAPI.getInfo().getTitle() != null) {
+            metadataBuilder.attr("project", openAPI.getInfo().getTitle());
+        }
+
         if (operation.getOperationId() != null) {
             metadataBuilder.attr("operationId", operation.getOperationId());
         }
         if (operation.getTags() != null && !operation.getTags().isEmpty()) {
             metadataBuilder.attr("tags", operation.getTags());
+            metadataBuilder.attr("api", operation.getTags().get(0));
         }
 
         // Build ready-made example request
