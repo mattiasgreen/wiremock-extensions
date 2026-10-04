@@ -100,17 +100,11 @@ export function renderStubList() {
           <span class="project-pill" title="Project: ${escapeHtml(project)}">📁 ${escapeHtml(project)}</span>
         </div>
       </div>
-      <div class="stub-card-actions">
-        <button class="btn-card-toggle ${isDisabled ? 'off' : 'on'}" data-testid="btn-card-toggle" data-stub-id="${stub.id}" title="${isDisabled ? 'Enable stub' : 'Disable stub'}">
-          ${isDisabled ? '⏸️ Off' : '🟢 On'}
-        </button>
-        <button class="btn-card-delete" data-testid="btn-card-delete" data-stub-id="${stub.id}" title="Delete stub">🗑️</button>
-      </div>
     `;
 
-    // Click on card selects it (unless clicking checkbox or action buttons)
+    // Click on card selects it (unless clicking checkbox)
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.stub-card-select') || e.target.closest('.stub-card-actions')) {
+      if (e.target.closest('.stub-card-select')) {
         return;
       }
       selectStub(stub, true);
@@ -122,24 +116,6 @@ export function renderStubList() {
       chk.addEventListener('change', (e) => {
         e.stopPropagation();
         handleStubCheckboxClick(stub.id, chk.checked);
-      });
-    }
-
-    // Quick toggle button
-    const btnToggle = card.querySelector('.btn-card-toggle');
-    if (btnToggle) {
-      btnToggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleToggleStub(stub.id);
-      });
-    }
-
-    // Quick delete button
-    const btnDelete = card.querySelector('.btn-card-delete');
-    if (btnDelete) {
-      btnDelete.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleDeleteStub(stub.id);
       });
     }
 

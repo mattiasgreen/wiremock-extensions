@@ -562,13 +562,16 @@ public class UiPlaywrightTest {
 
     @Test
     @Order(14)
-    @DisplayName("Should toggle stub between active and disabled states and affect HTTP traffic")
+    @DisplayName("Should toggle stub between active and disabled states in detail view and affect HTTP traffic")
     void testEnableDisableStubToggle() throws Exception {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector(".stub-card:has-text('/api/v1/users')");
 
         Locator userCard = page.locator(".stub-card:has-text('/api/v1/users')").first();
-        Locator toggleBtn = userCard.locator(".btn-card-toggle");
+        userCard.click();
+        page.waitForSelector("#stub-detail-view:not(.hidden)");
+
+        Locator toggleBtn = page.locator("#btn-toggle-stub");
 
         // Initial traffic should be 200 OK
         java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
@@ -580,19 +583,23 @@ public class UiPlaywrightTest {
                 client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
         assertThat(initialRes.statusCode()).isEqualTo(200);
 
-        // 1. Toggle OFF via UI card toggle
+        // 1. Toggle OFF via detail inspector toggle
         toggleBtn.click();
         page.waitForSelector(".stub-card.stub-disabled:has-text('/api/v1/users')");
         assertThat(userCard.locator(".status-badge.badge-disabled").isVisible()).isTrue();
+        assertThat(page.locator("#detail-lifecycle-state").textContent()).isEqualTo("DISABLED");
+        assertThat(toggleBtn.textContent()).contains("Enable Stub");
 
         // 2. WireMock must now return 404 for this route
         java.net.http.HttpResponse<String> disabledRes =
                 client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
         assertThat(disabledRes.statusCode()).isEqualTo(404);
 
-        // 3. Toggle back ON via UI card toggle
+        // 3. Toggle back ON via detail inspector toggle
         toggleBtn.click();
         page.waitForSelector(".stub-card:not(.stub-disabled):has-text('/api/v1/users')");
+        assertThat(page.locator("#detail-lifecycle-state").textContent()).isEqualTo("ACTIVE");
+        assertThat(toggleBtn.textContent()).contains("Disable Stub");
 
         // 4. WireMock must now return 200 again
         java.net.http.HttpResponse<String> reEnabledRes =
