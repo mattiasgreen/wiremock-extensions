@@ -428,12 +428,18 @@ public class UiPlaywrightTest {
                   title: Warehouse Inventory
                   version: 1.0.0
                 paths:
-                  /api/v1/warehouse/stock:
+                  /api/v1/warehouse/stock/{stockId}:
                     get:
-                      summary: Get warehouse stock
+                      summary: Get warehouse stock item
+                      parameters:
+                        - name: stockId
+                          in: path
+                          required: true
+                          schema:
+                            type: string
                       responses:
                         '200':
-                          description: Stock list
+                          description: Stock item
                           content:
                             application/json:
                               schema:
@@ -459,15 +465,21 @@ public class UiPlaywrightTest {
         // Modal should close automatically (hidden state)
         page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
-        // The new stub card should now appear in the stubs list
-        page.waitForSelector(".stub-card:has-text('/api/v1/warehouse/stock')");
-        Locator newStubCard = page.locator(".stub-card:has-text('/api/v1/warehouse/stock')");
+        // The new stub card should now appear in the stubs list showing the full urlPathTemplate
+        page.waitForSelector(".stub-card:has-text('/api/v1/warehouse/stock/{stockId}')");
+        Locator newStubCard = page.locator(".stub-card:has-text('/api/v1/warehouse/stock/{stockId}')");
         assertThat(newStubCard.isVisible()).isTrue();
+        assertThat(newStubCard.locator(".stub-card-url").textContent()).isEqualTo("/api/v1/warehouse/stock/{stockId}");
 
         // Click on it and inspect
         newStubCard.click();
-        assertThat(page.locator("#detail-url").textContent()).contains("/api/v1/warehouse/stock");
+        assertThat(page.locator("#detail-url").textContent()).isEqualTo("/api/v1/warehouse/stock/{stockId}");
         assertThat(page.locator("#stub-json-viewer").textContent()).contains("WH-12");
+
+        // Click Test Stub and verify path template is populated into tester URL input
+        page.locator("#btn-test-stub").click();
+        page.waitForSelector("#tab-tester.active");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/warehouse/stock/{stockId}");
 
         assertThat(pageErrors).isEmpty();
     }

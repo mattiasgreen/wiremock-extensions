@@ -9,7 +9,15 @@ import { setRoute, toBase64, activateTab } from './router.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
-  return req.url || req.urlPath || req.urlPattern || req.urlPathPattern || '/';
+  return (
+    req.url ||
+    req.urlPath ||
+    req.urlPathTemplate ||
+    req.urlPattern ||
+    req.urlPathPattern ||
+    req.urlPathMatching ||
+    '/'
+  );
 }
 
 export function generateCurl(method, path, headers = {}, body = '') {
