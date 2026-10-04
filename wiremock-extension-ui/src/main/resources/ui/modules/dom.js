@@ -31,6 +31,21 @@ export const elements = {
   btnCopyCurl: document.getElementById('btn-copy-curl'),
   btnCopyJson: document.getElementById('btn-copy-json'),
 
+  // OpenAPI Import Modal
+  btnOpenOpenApiModal: document.getElementById('btn-open-openapi-modal'),
+  openapiModal: document.getElementById('openapi-modal'),
+  btnCloseOpenApiModal: document.getElementById('btn-close-openapi-modal'),
+  btnCancelOpenApi: document.getElementById('btn-cancel-openapi'),
+  btnBrowseOpenApiFile: document.getElementById('btn-browse-openapi-file'),
+  openapiFileInput: document.getElementById('openapi-file-input'),
+  openapiDropzone: document.getElementById('openapi-dropzone'),
+  openapiSpecContent: document.getElementById('openapi-spec-content'),
+  btnSubmitOpenApiImport: document.getElementById('btn-submit-openapi-import'),
+  optOpenApiSuccessOnly: document.getElementById('opt-openapi-success-only'),
+  optOpenApiMatchHeaders: document.getElementById('opt-openapi-match-headers'),
+  optOpenApiMatchQueries: document.getElementById('opt-openapi-match-queries'),
+  openapiImportFeedback: document.getElementById('openapi-import-feedback'),
+
   // Journal Tab
   journalList: document.getElementById('journal-list'),
   journalSearch: document.getElementById('journal-search'),

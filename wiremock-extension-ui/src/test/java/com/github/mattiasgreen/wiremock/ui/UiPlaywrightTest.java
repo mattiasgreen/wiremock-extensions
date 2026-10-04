@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -25,8 +26,10 @@ public class UiPlaywrightTest {
 
     @BeforeAll
     void startAll() {
-        wireMockServer =
-                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
+        wireMockServer = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(
+                        new UiAdminApiEndpoint(), new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
         wireMockServer.start();
 
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
@@ -399,6 +402,72 @@ public class UiPlaywrightTest {
         page.waitForSelector(".scenario-state-pill:has-text('Started')");
         assertThat(page.locator(".fsm-node-card.active .fsm-node-name").textContent())
                 .isEqualTo("Started");
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Scenario 10: OpenAPI Import modal, YAML spec paste, and stub synthesis")
+    void testOpenApiImportModalWorkflow() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#btn-open-openapi-modal");
+
+        // Click Open Import Modal
+        page.locator("#btn-open-openapi-modal").click();
+        page.waitForSelector("#openapi-modal:not(.hidden)");
+
+        // Verify elements visible
+        assertThat(page.locator("#openapi-spec-content").isVisible()).isTrue();
+        assertThat(page.locator("#btn-submit-openapi-import").isVisible()).isTrue();
+
+        // Paste YAML spec
+        String spec =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Warehouse Inventory
+                  version: 1.0.0
+                paths:
+                  /api/v1/warehouse/stock:
+                    get:
+                      summary: Get warehouse stock
+                      responses:
+                        '200':
+                          description: Stock list
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  warehouseId:
+                                    type: string
+                                    example: WH-12
+                                  capacity:
+                                    type: integer
+                                    example: 500
+                """;
+
+        page.locator("#openapi-spec-content").fill(spec);
+
+        // Click Generate Stubs
+        page.locator("#btn-submit-openapi-import").click();
+
+        // Feedback message should display success
+        page.waitForSelector(".modal-feedback.success");
+        assertThat(page.locator(".modal-feedback.success").textContent()).contains("Successfully created 1 stubs");
+
+        // Modal should close automatically (hidden state)
+        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // The new stub card should now appear in the stubs list
+        page.waitForSelector(".stub-card:has-text('/api/v1/warehouse/stock')");
+        Locator newStubCard = page.locator(".stub-card:has-text('/api/v1/warehouse/stock')");
+        assertThat(newStubCard.isVisible()).isTrue();
+
+        // Click on it and inspect
+        newStubCard.click();
+        assertThat(page.locator("#detail-url").textContent()).contains("/api/v1/warehouse/stock");
+        assertThat(page.locator("#stub-json-viewer").textContent()).contains("WH-12");
 
         assertThat(pageErrors).isEmpty();
     }
