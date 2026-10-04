@@ -8,6 +8,7 @@ import { highlightJson } from './highlighter.js';
 import { setRoute, toBase64 } from './router.js';
 
 const TESTER_HISTORY_KEY = 'wiremock_ui_tester_history';
+const TESTER_COLLAPSED_KEY = 'wiremock_ui_tester_history_collapsed';
 
 export function appendHeader(name, value) {
   if (!elements.testerHeaders) return;
@@ -48,6 +49,33 @@ export function updateTesterRoute(replace = true) {
   }, replace);
 }
 
+export function initTesterHistoryCollapse() {
+  try {
+    const saved = localStorage.getItem(TESTER_COLLAPSED_KEY);
+    if (saved === 'true') {
+      setTesterHistoryCollapsed(true);
+    }
+  } catch (_) {}
+}
+
+export function setTesterHistoryCollapsed(collapsed) {
+  state.testerHistoryCollapsed = !!collapsed;
+  if (elements.testerHistoryPanel) {
+    if (state.testerHistoryCollapsed) {
+      elements.testerHistoryPanel.classList.add('collapsed');
+    } else {
+      elements.testerHistoryPanel.classList.remove('collapsed');
+    }
+  }
+  try {
+    localStorage.setItem(TESTER_COLLAPSED_KEY, state.testerHistoryCollapsed ? 'true' : 'false');
+  } catch (_) {}
+}
+
+export function toggleTesterHistory() {
+  setTesterHistoryCollapsed(!state.testerHistoryCollapsed);
+}
+
 export function loadTesterHistoryFromStorage() {
   try {
     const saved = localStorage.getItem(TESTER_HISTORY_KEY);
@@ -79,10 +107,14 @@ export function clearTesterHistory() {
 
 export function renderTesterHistory() {
   if (!elements.testerHistoryList) return;
+  const count = state.testerHistory.length;
   if (elements.testerHistoryCount) {
-    elements.testerHistoryCount.textContent = state.testerHistory.length;
+    elements.testerHistoryCount.textContent = count;
   }
-  if (state.testerHistory.length === 0) {
+  if (elements.testerHistoryCollapsedCount) {
+    elements.testerHistoryCollapsedCount.textContent = count;
+  }
+  if (count === 0) {
     elements.testerHistoryList.innerHTML = '<div class="empty-state text-small">No requests sent yet.</div>';
     return;
   }
@@ -101,10 +133,13 @@ export function renderTesterHistory() {
       <div class="history-item-top">
         <span class="http-badge badge-${(item.method || 'GET').toLowerCase()}">${escapeHtml(item.method || 'GET')}</span>
         <span class="card-value ${statusCls}" style="font-size: 0.78rem; margin: 0;">${escapeHtml(item.status ? String(item.status) : 'ERR')}</span>
-        <span class="history-item-meta">${timeStr}</span>
+        <span class="history-time-meta">${timeStr}</span>
       </div>
       <div class="history-item-url" title="${escapeHtml(item.url)}">${escapeHtml(item.url)}</div>
-      <div class="history-item-meta">${item.duration || 0} ms &bull; ${formatBytes(item.size || 0)}</div>
+      <div class="history-item-meta">
+        <span>${item.duration || 0} ms</span>
+        <span>${formatBytes(item.size || 0)}</span>
+      </div>
     `;
 
     card.addEventListener('click', () => {

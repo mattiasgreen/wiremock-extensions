@@ -14,6 +14,7 @@ export const state = {
   expandedRequestId: null,
   allScenarios: [],
   testerHistory: [],
+  testerHistoryCollapsed: false,
   testerViewMode: 'highlighted',
   lastRawResponseBody: '',
   activeInspectorTab: 'response',

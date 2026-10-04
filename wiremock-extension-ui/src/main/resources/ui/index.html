@@ -208,8 +208,31 @@
 
         <div class="tester-container">
           <div class="tester-workspace">
-            <!-- Top Split Panel: Request Builder (Left) & Response Inspector (Right) -->
-            <div class="tester-top-panel">
+            <!-- Left Vertical History Panel (Horizontally Collapsible) -->
+            <aside class="tester-history-panel" id="tester-history-panel" data-testid="tester-history-panel">
+              <!-- Expanded View Header -->
+              <div class="tester-history-header">
+                <span class="history-title">⏱️ History (<span id="tester-history-count">0</span>)</span>
+                <div class="tester-history-header-actions">
+                  <button id="btn-tester-clear-history" data-testid="btn-tester-clear-history" class="btn btn-tiny" title="Clear request history">Clear</button>
+                  <button id="btn-toggle-tester-history" data-testid="btn-toggle-tester-history" class="btn btn-tiny btn-history-collapse" title="Collapse history sidebar">◀</button>
+                </div>
+              </div>
+              <div id="tester-history-list" data-testid="tester-history-list" class="tester-history-list">
+                <div class="empty-state text-small">No requests sent yet.</div>
+              </div>
+
+              <!-- Collapsed Mini Rail -->
+              <div class="tester-history-collapsed-bar" id="tester-history-collapsed-bar" title="Expand Request History">
+                <button id="btn-expand-tester-history" class="btn btn-tiny btn-history-expand" title="Expand history sidebar">▶</button>
+                <span class="collapsed-history-icon" title="Request History">⏱️</span>
+                <span id="tester-history-collapsed-count" class="badge-count" title="History item count">0</span>
+                <span class="collapsed-history-label">History</span>
+              </div>
+            </aside>
+
+            <!-- Center & Right Split Panels: Request Builder & Response Inspector -->
+            <div class="tester-main-panel">
               <!-- Request Builder Panel -->
               <div class="tester-request-panel" data-testid="tester-request-panel">
                 <div class="tester-url-bar">
@@ -309,19 +332,6 @@
                   </div>
                 </div>
               </div>
-            </div>
-
-            <!-- Bottom Panel: Request History -->
-            <div class="tester-bottom-panel">
-              <aside class="tester-history-panel" data-testid="tester-history-panel">
-                <div class="tester-history-header">
-                  <span class="history-title">⏱️ History (<span id="tester-history-count">0</span>)</span>
-                  <button id="btn-tester-clear-history" data-testid="btn-tester-clear-history" class="btn btn-tiny" title="Clear request history">Clear</button>
-                </div>
-                <div id="tester-history-list" data-testid="tester-history-list" class="tester-history-list">
-                  <div class="empty-state text-small">No requests sent yet.</div>
-                </div>
-              </aside>
             </div>
           </div>
         </div>

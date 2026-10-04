@@ -291,6 +291,17 @@ public class UiPlaywrightTest {
         assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/orders");
         assertThat(page.locator("#tester-response-status").textContent()).contains("201");
 
+        // Test collapse and expand of vertical history sidebar
+        Locator historyPanel = page.locator("#tester-history-panel");
+        assertThat(historyPanel.getAttribute("class")).doesNotContain("collapsed");
+
+        page.locator("#btn-toggle-tester-history").click();
+        assertThat(historyPanel.getAttribute("class")).contains("collapsed");
+        assertThat(page.locator("#tester-history-collapsed-bar").isVisible()).isTrue();
+
+        page.locator("#btn-expand-tester-history").click();
+        assertThat(historyPanel.getAttribute("class")).doesNotContain("collapsed");
+
         // Test clearing history
         page.onceDialog(Dialog::accept);
         page.locator("#btn-tester-clear-history").click();
@@ -774,7 +785,7 @@ public class UiPlaywrightTest {
     @Test
     @Order(19)
     @DisplayName(
-            "Should execute full E2E workflow: OpenAPI POST spec import -> stub synthesis with body -> tester execution with persistent sidebar -> bottom history -> journal review")
+            "Should execute full E2E workflow: OpenAPI POST spec import -> stub synthesis with body -> tester execution with persistent sidebar -> vertical history -> journal review")
     void testOpenApiPostE2EWorkflow() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector("#btn-open-openapi-modal");
@@ -863,7 +874,7 @@ public class UiPlaywrightTest {
         assertThat(page.locator("#tester-response-status").textContent()).contains("201");
         assertThat(page.locator("#tester-response-body").textContent()).contains("CART-771");
 
-        // 8. Verify bottom history dock records the execution
+        // 8. Verify vertical history sidebar records the execution
         Locator historyCards = page.locator(".history-item");
         assertThat(historyCards.count()).isGreaterThanOrEqualTo(1);
         assertThat(historyCards.first().textContent()).contains("POST");

@@ -40,7 +40,10 @@ import {
   updateTesterRoute,
   setInspectorTab,
   clearTesterHistory,
-  renderTesterResponse
+  renderTesterResponse,
+  initTesterHistoryCollapse,
+  setTesterHistoryCollapsed,
+  toggleTesterHistory
 } from './modules/tester.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
@@ -101,6 +104,7 @@ if (window.location.pathname && !window.location.pathname.endsWith('/')) {
 registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
 setupOpenApiModal();
+initTesterHistoryCollapse();
 
 registerRouteHandlers({
   applyStubs: (params) => {
@@ -474,6 +478,23 @@ if (elements.btnTesterClearHistory) {
     if (confirm('Clear all request history?')) {
       clearTesterHistory();
     }
+  });
+}
+if (elements.btnToggleTesterHistory) {
+  elements.btnToggleTesterHistory.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTesterHistory();
+  });
+}
+if (elements.btnExpandTesterHistory) {
+  elements.btnExpandTesterHistory.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setTesterHistoryCollapsed(false);
+  });
+}
+if (elements.testerHistoryCollapsedBar) {
+  elements.testerHistoryCollapsedBar.addEventListener('click', () => {
+    setTesterHistoryCollapsed(false);
   });
 }
 if (elements.btnTesterTabResponse) {
