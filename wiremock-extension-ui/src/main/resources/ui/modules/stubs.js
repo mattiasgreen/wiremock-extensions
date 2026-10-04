@@ -75,33 +75,36 @@ export function renderStubList() {
     const card = document.createElement('div');
     card.className = `stub-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'stub-disabled' : ''}`;
     card.setAttribute('data-stub-id', stub.id);
+    card.setAttribute('data-testid', 'stub-card');
 
     const method = (stub.request && stub.request.method) || 'ANY';
     const url = getStubUrl(stub.request);
     const name = stub.name || (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed');
     const project = getStubProject(stub);
+    const statusCode = (stub.response && stub.response.status) || 200;
+    const statusCls = statusCode >= 500 ? 'status-500' : (statusCode >= 400 ? 'status-400' : 'status-200');
 
     card.innerHTML = `
       <div class="stub-card-select">
-        <input type="checkbox" class="stub-card-chk" data-stub-id="${stub.id}" ${isChecked ? 'checked' : ''} title="Select stub">
+        <input type="checkbox" class="stub-card-chk" data-testid="stub-card-chk" data-stub-id="${stub.id}" ${isChecked ? 'checked' : ''} title="Select stub">
       </div>
       <div class="stub-card-content">
         <div class="stub-card-top">
           <span class="http-badge badge-${method}">${method}</span>
           <span class="stub-card-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
+          <span class="stub-status-pill ${statusCls}">${statusCode}</span>
           ${isDisabled ? '<span class="status-badge badge-disabled">DISABLED</span>' : ''}
         </div>
         <div class="stub-card-bottom">
           <span class="stub-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
           <span class="project-pill" title="Project: ${escapeHtml(project)}">📁 ${escapeHtml(project)}</span>
-          <span class="stub-status-pill">Status: ${(stub.response && stub.response.status) || 200}</span>
         </div>
       </div>
       <div class="stub-card-actions">
-        <button class="btn-card-toggle ${isDisabled ? 'off' : 'on'}" data-stub-id="${stub.id}" title="${isDisabled ? 'Enable stub' : 'Disable stub'}">
+        <button class="btn-card-toggle ${isDisabled ? 'off' : 'on'}" data-testid="btn-card-toggle" data-stub-id="${stub.id}" title="${isDisabled ? 'Enable stub' : 'Disable stub'}">
           ${isDisabled ? '⏸️ Off' : '🟢 On'}
         </button>
-        <button class="btn-card-delete" data-stub-id="${stub.id}" title="Delete stub">🗑️</button>
+        <button class="btn-card-delete" data-testid="btn-card-delete" data-stub-id="${stub.id}" title="Delete stub">🗑️</button>
       </div>
     `;
 
@@ -143,6 +146,8 @@ export function renderStubList() {
     elements.stubList.appendChild(card);
   });
 
+  elements.stubList.setAttribute('data-state', 'ready');
+
   if (state.selectedStubId) {
     const selected = allStubs.find(s => s.id === state.selectedStubId);
     if (selected) selectStub(selected, false);
@@ -151,7 +156,6 @@ export function renderStubList() {
 
 export function selectStub(stub, updateRoute = true) {
   state.selectedStubId = stub.id;
-  const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
 
   document.querySelectorAll('.stub-card').forEach(el => {
     const id = el.getAttribute('data-stub-id') || (el.dataset && el.dataset.stubId);
@@ -162,6 +166,12 @@ export function selectStub(stub, updateRoute = true) {
     }
   });
 
+  if (state.activeTab === 'tab-tester') {
+    sendStubToTester(stub, false);
+    return;
+  }
+
+  const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
   elements.stubDetailEmpty.classList.add('hidden');
   elements.stubDetailView.classList.remove('hidden');
 
@@ -208,8 +218,19 @@ export function selectStub(stub, updateRoute = true) {
   }
 }
 
-export function sendStubToTester(stub) {
+export function sendStubToTester(stub, switchTab = true) {
   if (!stub) return;
+  state.selectedStubId = stub.id;
+
+  document.querySelectorAll('.stub-card').forEach(el => {
+    const id = el.getAttribute('data-stub-id') || (el.dataset && el.dataset.stubId);
+    if (id === stub.id) {
+      el.classList.add('selected');
+    } else {
+      el.classList.remove('selected');
+    }
+  });
+
   const method = (stub.request && stub.request.method) || 'GET';
   const example = stub.metadata && stub.metadata.exampleRequest;
 
@@ -228,10 +249,25 @@ export function sendStubToTester(stub) {
 
   let body = '';
   if (example && example.body) {
-    body = example.body;
+    body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
   } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
     const bp = stub.request.bodyPatterns[0];
-    body = bp.equalToJson ? JSON.stringify(bp.equalToJson, null, 2) : (bp.equalTo || '');
+    if (bp.equalToJson) {
+      body = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2);
+    } else if (bp.equalTo) {
+      body = bp.equalTo;
+    } else if (bp.matchesJsonPath) {
+      const match = bp.matchesJsonPath.match(/\$\.([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        body = JSON.stringify({ [match[1]]: "sample_value" }, null, 2);
+      } else {
+        body = '{\n  \n}';
+      }
+    } else if (bp.contains) {
+      body = bp.contains;
+    }
+  } else if (['POST', 'PUT', 'PATCH'].includes(method)) {
+    body = '{\n  \n}';
   }
 
   if (elements.testerMethod) elements.testerMethod.value = method === 'ANY' ? 'GET' : method;
@@ -239,7 +275,18 @@ export function sendStubToTester(stub) {
   if (elements.testerHeaders) elements.testerHeaders.value = headerLines.join('\n');
   if (elements.testerBody) elements.testerBody.value = body;
 
-  activateTab('tab-tester', false);
+  state.contextStub = stub;
+  if (elements.testerContextBanner) {
+    elements.testerContextBanner.classList.remove('hidden');
+    if (elements.testerContextTitle) {
+      const stubDesc = stub.name ? `"${stub.name}" (${method} ${path})` : `${method} ${path}`;
+      elements.testerContextTitle.textContent = `Pre-filled from stub: ${stubDesc}`;
+    }
+  }
+
+  if (switchTab) {
+    activateTab('tab-tester', false);
+  }
   setRoute('tester', {
     m: method === 'ANY' ? 'GET' : method,
     p: path,

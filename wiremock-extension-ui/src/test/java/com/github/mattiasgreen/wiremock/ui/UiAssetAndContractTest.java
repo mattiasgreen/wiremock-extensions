@@ -50,7 +50,7 @@ public class UiAssetAndContractTest {
         assertThat(response.headers().firstValue("Content-Type").get()).contains("text/html");
 
         String html = response.body();
-        assertThat(html).contains("WireMock Stub Viewer");
+        assertThat(html).contains("WireMock Console");
         assertThat(html).contains("id=\"stub-list\"");
         assertThat(html).contains("id=\"search-box\"");
         assertThat(html).contains("id=\"journal-table\"");

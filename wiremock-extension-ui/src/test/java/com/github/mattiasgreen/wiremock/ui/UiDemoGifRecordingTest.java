@@ -420,7 +420,7 @@ public class UiDemoGifRecordingTest {
             page.waitForSelector("#openapi-modal:not(.hidden)");
             recordFrame(page, encoder, 1400);
 
-            // Step 3: Populate sample OpenAPI YAML specification
+            // Step 3: Populate sample OpenAPI YAML specification with GET & POST endpoints
             String openApiYaml =
                     """
                     openapi: 3.0.3
@@ -446,10 +446,46 @@ public class UiDemoGifRecordingTest {
                                           example: PROD-778
                                         name:
                                           type: string
-                                          example: Wireless Noise-Cancelling Headphones
+                                          example: Wireless Headphones
                                         price:
                                           type: number
                                           example: 199.99
+                      /api/v1/catalog/orders:
+                        post:
+                          summary: Place an order
+                          requestBody:
+                            required: true
+                            content:
+                              application/json:
+                                schema:
+                                  type: object
+                                  required:
+                                    - sku
+                                    - quantity
+                                  properties:
+                                    sku:
+                                      type: string
+                                      example: PROD-778
+                                    quantity:
+                                      type: integer
+                                      example: 2
+                                    customer:
+                                      type: string
+                                      example: alex@example.com
+                          responses:
+                            '201':
+                              description: Order confirmed
+                              content:
+                                application/json:
+                                  schema:
+                                    type: object
+                                    properties:
+                                      orderId:
+                                        type: string
+                                        example: ORD-9912
+                                      status:
+                                        type: string
+                                        example: CONFIRMED
                     """;
 
             page.locator("#openapi-spec-content").fill(openApiYaml);
@@ -460,27 +496,46 @@ public class UiDemoGifRecordingTest {
             page.waitForSelector(".modal-feedback.success");
             recordFrame(page, encoder, 1800);
 
-            // Step 5: Modal closes automatically, new stub card visible in sidebar
+            // Step 5: Modal closes automatically, new stub cards visible in sidebar
             page.waitForSelector(
                     "#openapi-modal",
                     new Page.WaitForSelectorOptions()
                             .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
-            page.waitForSelector(".stub-card:has-text('/api/v1/catalog/products')");
+            page.waitForSelector(".stub-card:has-text('/api/v1/catalog/orders')");
             recordFrame(page, encoder, 1500);
 
-            // Step 6: Select the newly generated OpenAPI stub to inspect synthesized JSON
-            page.locator(".stub-card:has-text('/api/v1/catalog/products')").click();
+            // Step 6: Select the synthesized POST stub in sidebar to inspect configuration & synthesized body
+            page.locator(".stub-card:has-text('/api/v1/catalog/orders')")
+                    .first()
+                    .click();
             page.waitForSelector("#stub-detail-view:not(.hidden)");
-            recordFrame(page, encoder, 2400);
+            recordFrame(page, encoder, 2000);
 
-            // Step 7: Jump to HTTP Tester via Test Stub button
+            // Step 7: Jump to HTTP Tester via Test Stub button (sidebar stays visible on left!)
             page.locator("#btn-test-stub").click();
             page.waitForSelector("#tab-tester.active");
-            recordFrame(page, encoder, 1200);
+            recordFrame(page, encoder, 1800);
 
-            // Step 8: Send HTTP Request to newly synthesized stub
+            // Step 8: Send HTTP Request with synthesized example body
             page.locator("#btn-tester-send").click();
-            page.waitForSelector("#tester-response-status:has-text('200')");
+            page.waitForSelector("#tester-response-status:has-text('201')");
+            recordFrame(page, encoder, 2200);
+
+            // Step 9: Bottom Request History dock now shows the executed request card
+            page.waitForSelector(".history-item:has-text('POST')");
+            recordFrame(page, encoder, 1500);
+
+            // Step 10: Inspect live traffic in Request Journal
+            page.locator("#nav-tab-journal").click();
+            page.waitForSelector("#tab-journal.active");
+            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')");
+            recordFrame(page, encoder, 1800);
+
+            // Step 11: Expand matched journal row to inspect matching verification
+            page.locator("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')")
+                    .first()
+                    .click();
+            page.waitForSelector("tr.journal-detail-row");
             recordFrame(page, encoder, 2500);
 
         } finally {

@@ -123,7 +123,7 @@ public class UiPlaywrightTest {
     void testInitialPageLoadAndStubsListing() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
 
-        assertThat(page.title()).isEqualTo("WireMock Stub Viewer");
+        assertThat(page.title()).isEqualTo("WireMock Console");
 
         // Wait for stubs to load asynchronously in sidebar
         page.waitForSelector(".stub-card");
@@ -141,6 +141,11 @@ public class UiPlaywrightTest {
         // Verify relative neighbor link to Swagger UI
         Locator swaggerLink = page.locator("a[href='../swagger-ui/']");
         assertThat(swaggerLink.isVisible()).isTrue();
+
+        // Verify data-testid and data-state contracts for test resilience
+        assertThat(page.getByTestId("navbar").isVisible()).isTrue();
+        assertThat(page.getByTestId("stub-list").getAttribute("data-state")).isEqualTo("ready");
+        assertThat(page.getByTestId("stub-card").count()).isGreaterThanOrEqualTo(2);
 
         assertThat(pageErrors).as("Uncaught page errors on initial load").isEmpty();
     }
@@ -716,6 +721,166 @@ public class UiPlaywrightTest {
                 .build();
         java.net.http.HttpResponse<String> res = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
         assertThat(res.statusCode()).isEqualTo(201);
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("Should display contextual pre-fill banner in tester and dismissible filter chip in journal")
+    void testContextualTesterAndJournalWorkflow() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card:has-text('/api/v1/users')");
+
+        // 1. Select stub and click Test Stub
+        page.locator(".stub-card:has-text('/api/v1/users')").first().click();
+        page.locator("#btn-test-stub").click();
+
+        page.waitForSelector("#tab-tester.active");
+        Locator testerBanner = page.locator("#tester-context-banner");
+        assertThat(testerBanner.isVisible()).isTrue();
+        assertThat(page.locator("#tester-context-title").textContent()).contains("/api/v1/users");
+
+        // Click Clear for Ad-hoc
+        page.locator("#btn-tester-clear-context").click();
+        assertThat(testerBanner.isVisible()).isFalse();
+
+        // 2. Return to Stubs and click View in Journal
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card:has-text('/api/v1/users')");
+        page.locator(".stub-card:has-text('/api/v1/users')").first().click();
+        page.locator("#btn-view-stub-in-journal").click();
+
+        page.waitForSelector("#tab-journal.active");
+        Locator journalBanner = page.locator("#journal-context-banner");
+        assertThat(journalBanner.isVisible()).isTrue();
+        assertThat(page.locator("#journal-filter-chip-text").textContent()).contains("/api/v1/users");
+
+        // Click dismiss ✕ button
+        page.locator("#btn-journal-clear-stub-filter").click();
+        assertThat(journalBanner.isVisible()).isFalse();
+        assertThat(page.locator("#journal-search").inputValue()).isEmpty();
+
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @Order(19)
+    @DisplayName(
+            "Should execute full E2E workflow: OpenAPI POST spec import -> stub synthesis with body -> tester execution with persistent sidebar -> bottom history -> journal review")
+    void testOpenApiPostE2EWorkflow() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#btn-open-openapi-modal");
+
+        // 1. Open OpenAPI import modal
+        page.locator("#btn-open-openapi-modal").click();
+        page.waitForSelector("#openapi-modal:not(.hidden)");
+
+        String openApiYaml =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Checkout Service API
+                  version: 1.0.0
+                paths:
+                  /api/v1/checkout/cart:
+                    post:
+                      summary: Create checkout cart
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              required:
+                                - sku
+                                - quantity
+                              properties:
+                                sku:
+                                  type: string
+                                  example: PROD-998
+                                quantity:
+                                  type: integer
+                                  example: 3
+                      responses:
+                        '201':
+                          description: Checkout cart created
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  cartId:
+                                    type: string
+                                    example: CART-771
+                                  status:
+                                    type: string
+                                    example: CREATED
+                """;
+
+        page.locator("#openapi-spec-content").fill(openApiYaml);
+        page.locator("#btn-submit-openapi-import").click();
+        page.waitForSelector(".modal-feedback.success");
+        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 2. Select synthesized POST stub in sidebar
+        page.waitForSelector(".stub-card:has-text('/api/v1/checkout/cart')");
+        page.locator(".stub-card:has-text('/api/v1/checkout/cart')").first().click();
+
+        // 3. Verify stub details inspector shows POST and 201
+        assertThat(page.locator("#detail-method").textContent()).isEqualTo("POST");
+        assertThat(page.locator("#detail-url").textContent()).isEqualTo("/api/v1/checkout/cart");
+        assertThat(page.locator("#detail-status").textContent()).isEqualTo("201");
+
+        // 4. Click Test Stub
+        page.locator("#btn-test-stub").click();
+        page.waitForSelector("#tab-tester.active");
+
+        // 5. Verify left sidebar remains visible and selected!
+        assertThat(page.locator(".sidebar").isVisible()).isTrue();
+        assertThat(page.locator(".stub-card:has-text('/api/v1/checkout/cart')")
+                        .first()
+                        .getAttribute("class"))
+                .contains("selected");
+
+        // 6. Verify HTTP Tester is pre-filled with synthesized example body
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/checkout/cart");
+        assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
+        assertThat(page.locator("#tester-body").inputValue()).contains("PROD-998");
+        assertThat(page.locator("#tester-context-banner").isVisible()).isTrue();
+
+        // 7. Send the request
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('201')");
+        assertThat(page.locator("#tester-response-status").textContent()).contains("201");
+        assertThat(page.locator("#tester-response-body").textContent()).contains("CART-771");
+
+        // 8. Verify bottom history dock records the execution
+        Locator historyCards = page.locator(".history-item");
+        assertThat(historyCards.count()).isGreaterThanOrEqualTo(1);
+        assertThat(historyCards.first().textContent()).contains("POST");
+        assertThat(historyCards.first().textContent()).contains("201");
+        assertThat(historyCards.first().textContent()).contains("/api/v1/checkout/cart");
+
+        // 9. Navigate to Request Journal to review the logged entry
+        page.locator("#nav-tab-journal").click();
+        page.waitForSelector("#tab-journal.active");
+
+        // In Request Journal, sidebar is hidden to maximize table space
+        assertThat(page.locator(".sidebar").isVisible()).isFalse();
+
+        page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/checkout/cart')");
+        Locator journalRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/checkout/cart')")
+                .first();
+        assertThat(journalRow.textContent()).contains("POST");
+        assertThat(journalRow.textContent()).contains("201");
+
+        // 10. Click row to inspect details
+        journalRow.click();
+        Locator detailRow = page.locator("tr.journal-detail-row");
+        assertThat(detailRow.isVisible()).isTrue();
+        assertThat(detailRow.textContent()).contains("CART-771");
 
         assertThat(pageErrors).isEmpty();
     }

@@ -89,6 +89,9 @@ export const elements = {
   bundleImportFeedback: document.getElementById('bundle-import-feedback'),
 
   // Journal Tab
+  journalContextBanner: document.getElementById('journal-context-banner'),
+  journalFilterChipText: document.getElementById('journal-filter-chip-text'),
+  btnJournalClearStubFilter: document.getElementById('btn-journal-clear-stub-filter'),
   journalList: document.getElementById('journal-list'),
   journalSearch: document.getElementById('journal-search'),
   journalAutoRefresh: document.getElementById('journal-auto-refresh'),
@@ -98,6 +101,10 @@ export const elements = {
   btnResetJournal: document.getElementById('btn-reset-journal'),
 
   // Tester Tab
+  testerContextBanner: document.getElementById('tester-context-banner'),
+  testerContextTitle: document.getElementById('tester-context-title'),
+  btnTesterResetStub: document.getElementById('btn-tester-reset-stub'),
+  btnTesterClearContext: document.getElementById('btn-tester-clear-context'),
   testerMethod: document.getElementById('tester-method'),
   testerUrl: document.getElementById('tester-url'),
   testerHeaders: document.getElementById('tester-headers'),

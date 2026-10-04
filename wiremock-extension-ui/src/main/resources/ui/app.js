@@ -1,5 +1,5 @@
 /**
- * WireMock Standalone QoL UI - Application Entry Point (ES Module).
+ * WireMock Console UI - Application Entry Point (ES Module).
  * Pure Vanilla JS, zero NPM dependencies.
  *
  * Re-exports core API & utilities for test automation compatibility:
@@ -244,8 +244,48 @@ if (elements.btnViewStubInJournal) {
     if (elements.journalSearch) {
       elements.journalSearch.value = path;
     }
+    if (elements.journalContextBanner) {
+      elements.journalContextBanner.classList.remove('hidden');
+      if (elements.journalFilterChipText) {
+        elements.journalFilterChipText.textContent = `Filtered by Stub: ${path}`;
+      }
+    }
     renderJournal();
     setRoute('journal', { q: path }, false);
+  });
+}
+if (elements.btnJournalClearStubFilter) {
+  elements.btnJournalClearStubFilter.addEventListener('click', () => {
+    if (elements.journalSearch) {
+      elements.journalSearch.value = '';
+    }
+    if (elements.journalContextBanner) {
+      elements.journalContextBanner.classList.add('hidden');
+    }
+    renderJournal();
+    setRoute('journal', {}, false);
+  });
+}
+if (elements.btnTesterResetStub) {
+  elements.btnTesterResetStub.addEventListener('click', () => {
+    if (state.contextStub) {
+      sendStubToTester(state.contextStub);
+    }
+  });
+}
+if (elements.btnTesterClearContext) {
+  elements.btnTesterClearContext.addEventListener('click', () => {
+    state.contextStub = null;
+    state.selectedStubId = null;
+    document.querySelectorAll('.stub-card').forEach(el => el.classList.remove('selected'));
+    if (elements.testerContextBanner) {
+      elements.testerContextBanner.classList.add('hidden');
+    }
+    if (elements.testerMethod) elements.testerMethod.value = 'GET';
+    if (elements.testerUrl) elements.testerUrl.value = '/api/v1/users';
+    if (elements.testerHeaders) elements.testerHeaders.value = '';
+    if (elements.testerBody) elements.testerBody.value = '';
+    updateTesterRoute(true);
   });
 }
 if (elements.btnCopyJson) {

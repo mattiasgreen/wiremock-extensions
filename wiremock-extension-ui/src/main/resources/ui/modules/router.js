@@ -84,6 +84,12 @@ export function setRoute(route, newParams = {}, replace = false) {
 }
 
 export function activateTab(tabId, updateRoute = true) {
+  state.activeTab = tabId;
+  const main = document.querySelector('.main-container');
+  if (main) {
+    main.setAttribute('data-active-tab', tabId);
+  }
+
   elements.tabs.forEach(t => {
     const tId = t.getAttribute('data-tab') || (t.dataset && t.dataset.tab);
     if (tId === tabId) {

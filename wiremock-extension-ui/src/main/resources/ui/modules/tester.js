@@ -92,6 +92,7 @@ export function renderTesterHistory() {
     const card = document.createElement('div');
     card.className = 'history-item';
     card.setAttribute('data-history-idx', index);
+    card.setAttribute('data-testid', 'history-item');
 
     const statusCls = item.status >= 500 ? 'status-500' : (item.status >= 400 ? 'status-400' : 'status-200');
     const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';

@@ -17,5 +17,6 @@ export const state = {
   testerViewMode: 'highlighted',
   lastRawResponseBody: '',
   activeInspectorTab: 'response',
+  activeTab: 'tab-stub-detail',
   isSyncingRoute: false
 };

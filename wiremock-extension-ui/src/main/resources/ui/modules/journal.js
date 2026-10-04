@@ -60,7 +60,7 @@ export function renderJournal() {
     const duration = (req.timing && req.timing.totalTime !== undefined) ? `${req.timing.totalTime}ms` : '-';
 
     html += `
-      <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}">
+      <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-testid="journal-row">
         <td><span class="journal-chevron">▶</span></td>
         <td>${time}</td>
         <td><span class="http-badge badge-${method}">${method}</span></td>
@@ -85,7 +85,7 @@ export function renderJournal() {
         || (matched ? 'Matched' : 'None (404)');
 
       html += `
-        <tr class="journal-detail-row" data-request-id="${req.id}">
+        <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">
           <td colspan="7">
             <div class="journal-detail-content">
               <div class="journal-detail-grid">

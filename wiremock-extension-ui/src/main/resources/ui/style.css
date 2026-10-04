@@ -64,6 +64,11 @@ body {
   white-space: nowrap;
 }
 
+.brand-title {
+  color: var(--accent-color);
+  font-weight: 700;
+}
+
 .badge-qol {
   background: linear-gradient(135deg, #06b6d4, #3b82f6);
   color: white;
@@ -206,6 +211,22 @@ body {
   position: relative;
 }
 
+.workspace-area {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Sidebar visibility based on active tab:
+   Visible for Stubs and Tester; hidden for Journal and Scenarios to maximize table/visualizer space */
+.main-container[data-active-tab="tab-journal"] .sidebar,
+.main-container[data-active-tab="tab-scenarios"] .sidebar {
+  display: none;
+}
+
 .sidebar {
   width: 380px;
   flex-shrink: 0;
@@ -305,19 +326,31 @@ body {
 
 .stub-card-url {
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  min-width: 0;
 }
 
 .stub-card-bottom {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  font-size: 0.78rem;
+  gap: 8px;
+  font-size: 0.76rem;
   color: var(--text-muted);
+  min-width: 0;
+}
+
+.stub-card-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 /* Content Area */
@@ -338,11 +371,13 @@ body {
 #tab-stub-detail {
   padding: 0;
   overflow: hidden;
+  flex: 1;
+  height: 100%;
 }
 
 #tab-stub-detail.active {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
 }
 
 .stub-detail-panel {
@@ -356,6 +391,14 @@ body {
 #tab-tester {
   padding: 16px;
   overflow: hidden;
+  flex: 1;
+  height: 100%;
+}
+
+#tab-tester.active {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .empty-state {
@@ -649,8 +692,27 @@ body {
 /* HTTP Request Tester */
 .tester-container {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  flex: 1;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tester-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.tester-top-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
   overflow: hidden;
 }
 
@@ -662,6 +724,10 @@ body {
   gap: 12px;
   min-width: 0;
   overflow-y: auto;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .tester-url-bar {
@@ -818,11 +884,20 @@ kbd {
   color: var(--text-main);
 }
 
-/* Tester History Panel */
+/* Tester History Panel (Bottom Split Dock) */
+.tester-bottom-panel {
+  height: 125px;
+  min-height: 105px;
+  max-height: 155px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .tester-history-panel {
-  width: 220px;
-  min-width: 200px;
-  max-width: 260px;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -835,13 +910,14 @@ kbd {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 5px 12px;
   border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-tertiary);
+  flex-shrink: 0;
 }
 
 .history-title {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -849,20 +925,35 @@ kbd {
 
 .tester-history-list {
   flex: 1;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.tester-history-list .empty-state {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .history-item {
+  width: 220px;
+  min-width: 200px;
+  max-width: 250px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 3px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-color);
   background-color: var(--bg-primary);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -870,7 +961,7 @@ kbd {
 
 .history-item:hover {
   background-color: var(--bg-tertiary);
-  border-color: var(--border-color);
+  border-color: var(--accent-color);
 }
 
 .history-item.active {
@@ -1555,20 +1646,47 @@ kbd {
   padding: 1px 6px;
   border-radius: 4px;
   white-space: nowrap;
-  max-width: 120px;
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .stub-status-pill {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
+  font-family: monospace;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);
+}
+
+.stub-status-pill.status-200 {
+  color: #4ade80;
+  background-color: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.stub-status-pill.status-400 {
+  color: #fbbf24;
+  background-color: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.stub-status-pill.status-500 {
+  color: #f87171;
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .stub-card-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .btn-card-toggle {
@@ -1612,6 +1730,68 @@ kbd {
 
 .btn-card-delete:hover {
   opacity: 1;
+}
+
+/* Contextual Banners for Tester & Journal */
+.journal-context-banner,
+.tester-context-banner {
+  background-color: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.journal-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(56, 189, 248, 0.2);
+  color: var(--accent-color);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.journal-filter-chip button {
+  background: none;
+  border: none;
+  color: var(--accent-color);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0 4px;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.journal-filter-chip button:hover {
+  background-color: rgba(56, 189, 248, 0.35);
+  color: #ffffff;
+}
+
+.journal-filter-hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.tester-context-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-color);
+  font-weight: 500;
+}
+
+.tester-context-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Sticky Bulk Actions Bar */

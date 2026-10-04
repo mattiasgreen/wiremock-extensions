@@ -30,8 +30,17 @@ public class StandaloneDevServer {
                         .withHeader("Content-Type", "application/json")
                         .withBody("[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]")));
 
+        java.util.Map<String, Object> orderExample = java.util.Map.of(
+                "path", "/api/v1/orders",
+                "headers", java.util.Map.of("Content-Type", "application/json"),
+                "body",
+                        "{\n  \"item\": \"Wireless Noise-Canceling Headphones\",\n  \"quantity\": 1,\n  \"price\": 199.99,\n  \"customer\": \"alex@example.com\"\n}");
+
         server.stubFor(post(urlEqualTo("/api/v1/orders"))
                 .withName("Create Order")
+                .withRequestBody(matchingJsonPath("$.item"))
+                .withMetadata(com.github.tomakehurst.wiremock.common.Metadata.metadata()
+                        .attr("exampleRequest", orderExample))
                 .willReturn(aResponse()
                         .withStatus(201)
                         .withHeader("Content-Type", "application/json")
@@ -50,7 +59,7 @@ public class StandaloneDevServer {
 
         System.out.println("=================================================================");
         System.out.println("🚀 WireMock Suite Server running at http://localhost:" + port);
-        System.out.println("👉 Stub Viewer UI:      http://localhost:" + port + "/__admin/ui");
+        System.out.println("👉 WireMock Console UI: http://localhost:" + port + "/__admin/ui");
         System.out.println("👉 Prometheus Metrics:  http://localhost:" + port + "/__admin/metrics/prometheus");
         System.out.println("👉 Admin API:           http://localhost:" + port + "/__admin/mappings");
         System.out.println("=================================================================");

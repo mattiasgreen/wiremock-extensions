@@ -63,6 +63,6 @@ public class BundleIntegrationTest {
                 .build();
         HttpResponse<String> uiResp = httpClient.send(uiReq, HttpResponse.BodyHandlers.ofString());
         assertThat(uiResp.statusCode()).isEqualTo(200);
-        assertThat(uiResp.body()).contains("WireMock Stub Viewer");
+        assertThat(uiResp.body()).contains("WireMock Console");
     }
 }
