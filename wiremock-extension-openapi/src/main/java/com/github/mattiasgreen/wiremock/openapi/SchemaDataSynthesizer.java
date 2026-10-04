@@ -73,6 +73,58 @@ public class SchemaDataSynthesizer {
         return serializeObject(sampleData);
     }
 
+    /**
+     * Synthesizes a request body string for an OpenAPI RequestBody definition.
+     */
+    public String synthesizeRequestBody(io.swagger.v3.oas.models.parameters.RequestBody requestBody, OpenAPI openAPI) {
+        if (requestBody == null
+                || requestBody.getContent() == null
+                || requestBody.getContent().isEmpty()) {
+            return null;
+        }
+
+        // Priority to application/json or fallback to first available
+        MediaType mediaType = requestBody.getContent().get("application/json");
+        if (mediaType == null) {
+            mediaType = requestBody.getContent().values().iterator().next();
+        }
+
+        return synthesizeResponseBody(mediaType, openAPI);
+    }
+
+    /**
+     * Synthesizes a single parameter value (for path or query parameter replacement).
+     */
+    public String synthesizeParameterValue(io.swagger.v3.oas.models.parameters.Parameter param, OpenAPI openAPI) {
+        if (param == null) {
+            return "";
+        }
+        if (param.getExample() != null) {
+            return String.valueOf(param.getExample());
+        }
+        if (param.getExamples() != null && !param.getExamples().isEmpty()) {
+            for (var ex : param.getExamples().values()) {
+                if (ex != null && ex.getValue() != null) {
+                    return String.valueOf(ex.getValue());
+                }
+            }
+        }
+        if (param.getSchema() != null) {
+            Schema<?> schema = resolveSchema(param.getSchema(), openAPI);
+            if (schema.getExample() != null) {
+                return String.valueOf(schema.getExample());
+            }
+            if (options.useDefaultValues() && schema.getDefault() != null) {
+                return String.valueOf(schema.getDefault());
+            }
+            Object sample = generatePrimitiveSample(schema);
+            if (sample != null) {
+                return String.valueOf(sample);
+            }
+        }
+        return param.getName() != null ? "sample-" + param.getName() : "sample";
+    }
+
     @SuppressWarnings("rawtypes")
     private Object synthesizeSchemaValue(Schema<?> rawSchema, OpenAPI openAPI, Set<String> visitedRefs, int depth) {
         if (rawSchema == null || depth > 10) {

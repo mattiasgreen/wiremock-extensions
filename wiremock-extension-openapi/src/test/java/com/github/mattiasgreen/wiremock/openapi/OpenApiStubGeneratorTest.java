@@ -213,4 +213,78 @@ class OpenApiStubGeneratorTest {
         assertThat(body).contains("\"orderId\" : 9999");
         assertThat(body).contains("\"status\" : \"PENDING\"");
     }
+
+    @Test
+    @DisplayName(
+            "Should synthesize example request with substituted path params, required headers and body for POST endpoint")
+    void shouldSynthesizeExampleRequestForPostEndpoint() {
+        String yaml =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Coffee API
+                  version: 1.0.0
+                paths:
+                  /coffees/{roastType}:
+                    post:
+                      summary: Create a new coffee
+                      parameters:
+                        - name: roastType
+                          in: path
+                          required: true
+                          example: espresso
+                          schema:
+                            type: string
+                        - name: X-Store-Id
+                          in: header
+                          required: true
+                          example: store-42
+                          schema:
+                            type: string
+                        - name: notify
+                          in: query
+                          required: true
+                          example: true
+                          schema:
+                            type: boolean
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                  example: Mocha Supreme
+                                price:
+                                  type: number
+                                  example: 5.25
+                      responses:
+                        '201':
+                          description: Coffee created
+                """;
+
+        List<StubMapping> stubs = generator.generateStubs(yaml);
+        assertThat(stubs).hasSize(1);
+
+        StubMapping stub = stubs.getFirst();
+        assertThat(stub.getMetadata()).isNotNull();
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> exampleRequest =
+                (java.util.Map<String, Object>) stub.getMetadata().get("exampleRequest");
+
+        assertThat(exampleRequest).isNotNull();
+        assertThat(exampleRequest.get("path")).isEqualTo("/coffees/espresso?notify=true");
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> headers = (java.util.Map<String, String>) exampleRequest.get("headers");
+        assertThat(headers).containsEntry("Content-Type", "application/json");
+        assertThat(headers).containsEntry("X-Store-Id", "store-42");
+
+        String reqBody = (String) exampleRequest.get("body");
+        assertThat(reqBody).contains("\"name\" : \"Mocha Supreme\"");
+        assertThat(reqBody).contains("\"price\" : 5.25");
+    }
 }

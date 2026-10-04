@@ -205,8 +205,74 @@ public class OpenApiStubGenerator {
             metadataBuilder.attr("tags", operation.getTags());
         }
 
+        // Build ready-made example request
+        Map<String, Object> exampleRequest = buildExampleRequest(path, parameters, operation.getRequestBody(), openAPI);
+        metadataBuilder.attr("exampleRequest", exampleRequest);
+
         stubMapping.setMetadata(metadataBuilder.build());
         return stubMapping;
+    }
+
+    private Map<String, Object> buildExampleRequest(
+            String pathTemplate,
+            List<Parameter> parameters,
+            io.swagger.v3.oas.models.parameters.RequestBody requestBody,
+            OpenAPI openAPI) {
+
+        String resolvedPath = pathTemplate;
+        Map<String, String> exampleHeaders = new java.util.LinkedHashMap<>();
+        Map<String, String> exampleQueryParams = new java.util.LinkedHashMap<>();
+
+        for (Parameter param : parameters) {
+            String paramIn = param.getIn();
+            String sampleVal = dataSynthesizer.synthesizeParameterValue(param, openAPI);
+
+            if ("path".equalsIgnoreCase(paramIn)) {
+                resolvedPath = resolvedPath.replace("{" + param.getName() + "}", sampleVal);
+            } else if ("query".equalsIgnoreCase(paramIn)) {
+                if (Boolean.TRUE.equals(param.getRequired())) {
+                    exampleQueryParams.put(param.getName(), sampleVal);
+                }
+            } else if ("header".equalsIgnoreCase(paramIn)) {
+                if (Boolean.TRUE.equals(param.getRequired())) {
+                    exampleHeaders.put(param.getName(), sampleVal);
+                }
+            }
+        }
+
+        // Append required query parameters to the resolved URL
+        if (!exampleQueryParams.isEmpty()) {
+            StringBuilder queryBuilder = new StringBuilder();
+            boolean first = true;
+            for (Map.Entry<String, String> qEntry : exampleQueryParams.entrySet()) {
+                if (first) {
+                    queryBuilder.append("?");
+                    first = false;
+                } else {
+                    queryBuilder.append("&");
+                }
+                queryBuilder.append(qEntry.getKey()).append("=").append(qEntry.getValue());
+            }
+            resolvedPath = resolvedPath + queryBuilder;
+        }
+
+        String requestBodySample = null;
+        if (requestBody != null) {
+            if (!exampleHeaders.containsKey("Content-Type")) {
+                exampleHeaders.put("Content-Type", "application/json");
+            }
+            requestBodySample = dataSynthesizer.synthesizeRequestBody(requestBody, openAPI);
+        }
+
+        Map<String, Object> example = new java.util.LinkedHashMap<>();
+        example.put("path", resolvedPath);
+        example.put("headers", exampleHeaders);
+        example.put("queryParams", exampleQueryParams);
+        if (requestBodySample != null) {
+            example.put("body", requestBodySample);
+        }
+
+        return example;
     }
 
     private String buildStubName(Operation operation, RequestMethod method, String path, int statusCode) {
