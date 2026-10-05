@@ -97,7 +97,42 @@ To launch WireMock with all extensions and pre-loaded sample stubs for local tes
 
 The server starts on port `8080` with filesystem hot-reloading for UI development.
 
-### 4. Zero-Build Consumer Runner
+### 4. Live Proxy & Traffic Recording Testing (Dual-Server Setup)
+
+To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, and Project Lifecycle workflow:
+
+1. **Start the simulated Upstream Mock Service** (Port `8089`):
+   ```bash
+   ./gradlew :wiremock-extension-bundle:runUpstream
+   ```
+2. **Start the Primary WireMock Server with Extensions & UI** (Port `8080`):
+   ```bash
+   ./gradlew :wiremock-extension-bundle:runStandalone
+   ```
+3. **Open the WireMock Console UI**:
+   Navigate to [http://localhost:8080/__admin/ui/](http://localhost:8080/__admin/ui/).
+4. **Import OpenAPI Specification in Live Proxy Mode**:
+   - Click **Import Spec / Bundle** in the top navigation.
+   - Select **Live Proxy & Recording** mode.
+   - Paste an OpenAPI specification containing an upstream path (e.g. `/api/v1/live-catalog`).
+   - Set the Upstream Base URL to `http://localhost:8089` and set the Project Name to `Catalog Service`.
+   - Click **Import as Live Proxies**.
+5. **Live Test via HTTP Tester**:
+   - Select the newly imported proxy stub (`[GET] /api/v1/live-catalog`).
+   - Click **⚡ Test Stub** to load it into the HTTP Tester.
+   - Click **Send Request**. The request is proxied through WireMock to the upstream service (`8089`) returning live upstream data!
+6. **Snapshot Traffic into Disabled Stubs**:
+   - Return to the **Stubs** tab and select the `Catalog Service` project filter.
+   - The **Project Lifecycle Bar** displays `LIVE PROXY`.
+   - Click **📷 Snapshot Live Traffic**. The proxied traffic from the Request Journal is captured and parked as a `DISABLED` stub.
+   - Click the **Disabled Stubs** filter pill to inspect the captured authentic response.
+7. **Switch to Stubs Mode & Go Offline**:
+   - In the Project Lifecycle Bar, click **Switch to Stubs Mode**.
+   - The project mode badge flips to `STUBS MODE` (proxy stubs are disabled, recorded stubs are activated).
+   - Terminate the upstream service (Ctrl+C on port `8089`).
+   - Re-send the request in the HTTP Tester: it is now served completely offline from the recorded stub!
+
+### 5. Zero-Build Consumer Runner
 
 You can run WireMock Standalone with the complete extension bundle loaded in any empty folder using a single minimal `build.gradle` file, without cloning or building this repository:
 
@@ -127,7 +162,7 @@ gradle run --args="--port 8080 --verbose"
 
 Because all extensions implement `ExtensionFactory` via Java SPI, WireMock automatically discovers and loads the Web UI, metrics, and OpenAPI endpoints on startup.
 
-### 5. Docker Reference Architecture
+### 6. Docker Reference Architecture
 
 To deploy a containerized mock server with the extension bundle, you can assemble an image directly using published artifacts:
 
