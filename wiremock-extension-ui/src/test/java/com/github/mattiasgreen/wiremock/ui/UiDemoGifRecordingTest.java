@@ -45,73 +45,12 @@ public class UiDemoGifRecordingTest {
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
-                        new UiAdminApiEndpoint(), new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
+                        new UiAdminApiEndpoint(),
+                        new StubLifecycleAdminEndpoint(new DisabledStubStore()),
+                        new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
         wireMockServer.start();
 
-        // 1. Mock Stubs
-        wireMockServer.stubFor(
-                get(urlEqualTo("/api/v1/users"))
-                        .withName("List Users API")
-                        .willReturn(
-                                okJson(
-                                        "[\n  {\"id\": 101, \"name\": \"Alice Johnson\", \"role\": \"ADMIN\", \"active\": true},\n  {\"id\": 102, \"name\": \"Bob Smith\", \"role\": \"DEVELOPER\", \"active\": true},\n  {\"id\": 103, \"name\": \"Charlie Brown\", \"role\": \"OPERATOR\", \"active\": false}\n]")));
-
-        wireMockServer.stubFor(
-                post(urlEqualTo("/api/v1/orders"))
-                        .withName("Create Order API")
-                        .withRequestBody(
-                                equalToJson("{\n  \"item\": \"Enterprise Subscription\",\n  \"quantity\": 2\n}"))
-                        .willReturn(
-                                created()
-                                        .withHeader("Content-Type", "application/json")
-                                        .withBody(
-                                                "{\n  \"orderId\": \"ORD-9942\",\n  \"status\": \"CREATED\",\n  \"estimatedDelivery\": \"2026-10-06\"\n}")));
-
-        wireMockServer.stubFor(get(urlEqualTo("/api/v1/inventory/items"))
-                .withName("Search Inventory")
-                .willReturn(okJson("{\"category\": \"hardware\", \"count\": 142, \"inStock\": true}")));
-
-        // Order Fulfillment Scenario Stubs
-        wireMockServer.stubFor(get(urlEqualTo("/api/v1/orders/ORD-9942/status"))
-                .withName("Order Status (Initial)")
-                .inScenario("Order-Fulfillment")
-                .whenScenarioStateIs("Started")
-                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PENDING\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/process"))
-                .withName("Start Processing Order")
-                .inScenario("Order-Fulfillment")
-                .whenScenarioStateIs("Started")
-                .willSetStateTo("PROCESSING")
-                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PROCESSING\"}")));
-
-        wireMockServer.stubFor(get(urlEqualTo("/api/v1/orders/ORD-9942/status"))
-                .withName("Order Status (Processing)")
-                .inScenario("Order-Fulfillment")
-                .whenScenarioStateIs("PROCESSING")
-                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PROCESSING\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/ship"))
-                .withName("Ship Order")
-                .inScenario("Order-Fulfillment")
-                .whenScenarioStateIs("PROCESSING")
-                .willSetStateTo("SHIPPED")
-                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"SHIPPED\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/deliver"))
-                .withName("Deliver Order")
-                .inScenario("Order-Fulfillment")
-                .whenScenarioStateIs("SHIPPED")
-                .willSetStateTo("DELIVERED")
-                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"DELIVERED\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/ship"))
-                .withName("Reject Shipping Delivered Order")
-                .inScenario("Order-Fulfillment")
-                .whenScenarioStateIs("DELIVERED")
-                .willReturn(status(409)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"error\": \"Order already delivered\"}")));
+        setupInitialStubs();
 
         // 2. Pre-populate Request Journal by sending HTTP requests
         HttpClient httpClient = HttpClient.newHttpClient();
@@ -409,18 +348,30 @@ public class UiDemoGifRecordingTest {
         Page page = context.newPage();
 
         try {
-            // Step 1: Open Stubs tab
+            wireMockServer.resetRequests();
+
+            // Step 1: Open Stubs tab and display current initial state
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
             applyZoom(page);
             page.waitForSelector(".stub-card");
+            recordFrame(page, encoder, 1200);
+
+            // Step 2: Clear all existing stubs via select-all and bulk delete
+            page.locator("#chk-select-all").click();
+            page.waitForSelector("#bulk-actions-bar:not(.hidden)");
+            recordFrame(page, encoder, 1100);
+
+            page.onceDialog(Dialog::accept);
+            page.locator("#btn-bulk-delete").click();
+            page.waitForSelector(".stub-list .empty-state");
             recordFrame(page, encoder, 1400);
 
-            // Step 2: Click 'Import OpenAPI' button
+            // Step 3: Open OpenAPI Import modal
             page.locator("#btn-open-openapi-modal").click();
             page.waitForSelector("#openapi-modal:not(.hidden)");
-            recordFrame(page, encoder, 1400);
+            recordFrame(page, encoder, 1100);
 
-            // Step 3: Populate sample OpenAPI YAML specification with GET & POST endpoints
+            // Step 4: Populate sample OpenAPI YAML specification with both GET & POST endpoints
             String openApiYaml =
                     """
                     openapi: 3.0.3
@@ -491,54 +442,74 @@ public class UiDemoGifRecordingTest {
             page.locator("#openapi-spec-content").fill(openApiYaml);
             recordFrame(page, encoder, 1800);
 
-            // Step 4: Click 'Generate Stubs'
+            // Step 5: Generate Stubs from OpenAPI spec
             page.locator("#btn-submit-openapi-import").click();
             page.waitForSelector(".modal-feedback.success");
-            recordFrame(page, encoder, 1800);
+            recordFrame(page, encoder, 1400);
 
-            // Step 5: Modal closes automatically, new stub cards visible in sidebar
+            // Step 6: Modal closes automatically, synthesized GET & POST stubs appear in sidebar
             page.waitForSelector(
                     "#openapi-modal",
                     new Page.WaitForSelectorOptions()
                             .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
             page.waitForSelector(".stub-card:has-text('/api/v1/catalog/orders')");
+            page.waitForSelector(".stub-card:has-text('/api/v1/catalog/products')");
             recordFrame(page, encoder, 1500);
 
-            // Step 6: Select the synthesized POST stub in sidebar to inspect configuration & synthesized body
+            // Step 7: Select POST stub to inspect mapping & jump to HTTP Tester
             page.locator(".stub-card:has-text('/api/v1/catalog/orders')")
                     .first()
                     .click();
             page.waitForSelector("#stub-detail-view:not(.hidden)");
-            recordFrame(page, encoder, 2000);
+            recordFrame(page, encoder, 1400);
 
-            // Step 7: Jump to HTTP Tester via Test Stub button (sidebar stays visible on left!)
             page.locator("#btn-test-stub").click();
             page.waitForSelector("#tab-tester.active");
-            recordFrame(page, encoder, 1800);
+            recordFrame(page, encoder, 1600);
 
-            // Step 8: Send HTTP Request with synthesized example body
+            // Step 8: Send POST request with synthesized example request body
             page.locator("#btn-tester-send").click();
             page.waitForSelector("#tester-response-status:has-text('201')");
-            recordFrame(page, encoder, 2200);
+            recordFrame(page, encoder, 2000);
 
-            // Step 9: Bottom Request History dock now shows the executed request card
-            page.waitForSelector(".history-item:has-text('POST')");
+            // Step 9: In HTTP Tester, select GET stub from persistent sidebar to pre-fill GET endpoint
+            page.locator(".stub-card:has-text('/api/v1/catalog/products')")
+                    .first()
+                    .click();
             recordFrame(page, encoder, 1500);
 
-            // Step 10: Inspect live traffic in Request Journal
+            // Step 10: Send GET request to verify 200 response with synthesized catalog items
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            recordFrame(page, encoder, 2000);
+
+            // Step 11: Modify GET URL to intentionally miss the stub (trigger 404 unmatched)
+            page.locator("#tester-url").fill("/api/v1/catalog/products/missing-sku");
+            recordFrame(page, encoder, 1300);
+
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('404')");
+            recordFrame(page, encoder, 2000);
+
+            // Step 12: Navigate to Request Journal to review traffic history
             page.locator("#nav-tab-journal").click();
             page.waitForSelector("#tab-journal.active");
-            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')");
-            recordFrame(page, encoder, 1800);
+            page.waitForSelector("#journal-list tr.journal-row:has-text('missing-sku')");
+            recordFrame(page, encoder, 2000);
 
-            // Step 11: Expand matched journal row to inspect matching verification
-            page.locator("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')")
+            // Step 13: Expand unmatched request row to inspect matching diagnostics
+            page.locator("#journal-list tr.journal-row:has-text('missing-sku')")
                     .first()
                     .click();
             page.waitForSelector("tr.journal-detail-row");
-            recordFrame(page, encoder, 2500);
+            recordFrame(page, encoder, 2400);
+
+            // Step 14: Filter to unmatched requests only
+            page.locator("#filter-unmatched-only").check();
+            recordFrame(page, encoder, 2200);
 
         } finally {
+            setupInitialStubs();
             encoder.finish();
             context.close();
         }
@@ -546,5 +517,72 @@ public class UiDemoGifRecordingTest {
         Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
         System.out.println("Generated GIF 5: " + gifPath.toAbsolutePath() + " ("
                 + (gifPath.toFile().length() / 1024) + " KB)");
+    }
+
+    private void setupInitialStubs() {
+        wireMockServer.resetAll();
+        wireMockServer.stubFor(
+                get(urlEqualTo("/api/v1/users"))
+                        .withName("List Users API")
+                        .willReturn(
+                                okJson(
+                                        "[\n  {\"id\": 101, \"name\": \"Alice Johnson\", \"role\": \"ADMIN\", \"active\": true},\n  {\"id\": 102, \"name\": \"Bob Smith\", \"role\": \"DEVELOPER\", \"active\": true},\n  {\"id\": 103, \"name\": \"Charlie Brown\", \"role\": \"OPERATOR\", \"active\": false}\n]")));
+
+        wireMockServer.stubFor(
+                post(urlEqualTo("/api/v1/orders"))
+                        .withName("Create Order API")
+                        .withRequestBody(
+                                equalToJson("{\n  \"item\": \"Enterprise Subscription\",\n  \"quantity\": 2\n}"))
+                        .willReturn(
+                                created()
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                "{\n  \"orderId\": \"ORD-9942\",\n  \"status\": \"CREATED\",\n  \"estimatedDelivery\": \"2026-10-06\"\n}")));
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/inventory/items"))
+                .withName("Search Inventory")
+                .willReturn(okJson("{\"category\": \"hardware\", \"count\": 142, \"inStock\": true}")));
+
+        // Order Fulfillment Scenario Stubs
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/orders/ORD-9942/status"))
+                .withName("Order Status (Initial)")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("Started")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PENDING\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/process"))
+                .withName("Start Processing Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("Started")
+                .willSetStateTo("PROCESSING")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PROCESSING\"}")));
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/orders/ORD-9942/status"))
+                .withName("Order Status (Processing)")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("PROCESSING")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"PROCESSING\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/ship"))
+                .withName("Ship Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("PROCESSING")
+                .willSetStateTo("SHIPPED")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"SHIPPED\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/deliver"))
+                .withName("Deliver Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("SHIPPED")
+                .willSetStateTo("DELIVERED")
+                .willReturn(okJson("{\"orderId\": \"ORD-9942\", \"status\": \"DELIVERED\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders/ORD-9942/ship"))
+                .withName("Reject Shipping Delivered Order")
+                .inScenario("Order-Fulfillment")
+                .whenScenarioStateIs("DELIVERED")
+                .willReturn(status(409)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\": \"Order already delivered\"}")));
     }
 }

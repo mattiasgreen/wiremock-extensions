@@ -26,7 +26,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 - **End-to-End OpenAPI Import & Testing Workflow**:
   - One-click import hub for OpenAPI 3.0 / 3.1 specifications (YAML or JSON) and WireMock bundles.
   - Synthesizes realistic mock stubs complete with format-aware example request payloads and response definitions.
-  - Direct handoff into the HTTP Tester with persistent Stubs Explorer on the left, top request/response split, and bottom execution history dock.
+  - Direct handoff into the HTTP Tester with persistent Stubs Explorer on the left, request/response inspector, and collapsible vertical history sidebar.
   - Inspect live traffic matching and response verification in the Request Journal.
 
 ![OpenAPI Spec Import & End-to-End Workflow Demo](../docs/images/demo-openapi-import.gif)
@@ -39,8 +39,8 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 - **Interactive HTTP Request Tester**:
   - Send requests directly to WireMock with custom methods, headers, and request bodies.
-  - Top split pane: Request Builder on the left, Response Inspector on the right (Response, Sent Request, or Both).
-  - Dedicated bottom execution history dock with timestamps, status badges, response sizes, and one-click restoration.
+  - Full-height dual pane: Request Builder on the left, Response Inspector on the right (Response, Sent Request, or Both).
+  - Dedicated collapsible vertical execution history sidebar with timestamps, status badges, response sizes, and one-click restoration.
   - Persistent header presets (`+ JSON`, `+ Bearer`, `+ Accept`) and JSON body formatter.
 
 ![Stubs and HTTP Tester Demo](../docs/images/demo-stubs-and-tester.gif)

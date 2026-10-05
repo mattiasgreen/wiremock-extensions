@@ -63,6 +63,9 @@ export function renderStubList() {
 
   if (filtered.length === 0) {
     elements.stubList.innerHTML = '<div class="empty-state">No matching stubs found.</div>';
+    if (elements.stubDetailEmpty) elements.stubDetailEmpty.classList.remove('hidden');
+    if (elements.stubDetailView) elements.stubDetailView.classList.add('hidden');
+    state.selectedStubId = null;
     return;
   }
 
@@ -126,7 +129,13 @@ export function renderStubList() {
 
   if (state.selectedStubId) {
     const selected = allStubs.find(s => s.id === state.selectedStubId);
-    if (selected) selectStub(selected, false);
+    if (selected) {
+      selectStub(selected, false);
+    } else {
+      state.selectedStubId = null;
+      if (elements.stubDetailEmpty) elements.stubDetailEmpty.classList.remove('hidden');
+      if (elements.stubDetailView) elements.stubDetailView.classList.add('hidden');
+    }
   }
 }
 

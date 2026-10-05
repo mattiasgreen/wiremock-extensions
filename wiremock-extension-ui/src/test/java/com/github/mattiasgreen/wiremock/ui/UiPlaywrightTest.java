@@ -33,34 +33,7 @@ public class UiPlaywrightTest {
                         new StubLifecycleAdminEndpoint(new DisabledStubStore()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
         wireMockServer.start();
-
-        wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
-                .withName("List Users API")
-                .willReturn(okJson("{\"users\": [{\"id\": 1, \"name\": \"Alice\"}, {\"id\": 2, \"name\": \"Bob\"}]}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders"))
-                .withName("Create Order API")
-                .withRequestBody(matchingJsonPath("$.item"))
-                .willReturn(created()
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"orderId\": \"ORD-99\", \"status\": \"CREATED\"}")));
-
-        wireMockServer.stubFor(get(urlEqualTo("/favicon.ico")).willReturn(ok().withBody(new byte[0])));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases"))
-                .withName("Create Case")
-                .inScenario("Case-FSM")
-                .whenScenarioStateIs("Started")
-                .willSetStateTo("OPEN")
-                .willReturn(
-                        created().withHeader("Content-Type", "application/json").withBody("{\"status\": \"OPEN\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases/1/close"))
-                .withName("Close Case")
-                .inScenario("Case-FSM")
-                .whenScenarioStateIs("OPEN")
-                .willSetStateTo("CLOSED")
-                .willReturn(okJson("{\"status\": \"CLOSED\"}")));
+        resetDefaultStubs();
 
         playwright = Playwright.create();
         BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions().setHeadless(true);
@@ -785,121 +758,224 @@ public class UiPlaywrightTest {
     @Test
     @Order(19)
     @DisplayName(
-            "Should execute full E2E workflow: OpenAPI POST spec import -> stub synthesis with body -> tester execution with persistent sidebar -> vertical history -> journal review")
+            "Should execute complete E2E scenario: clear stubs -> import OpenAPI GET & POST -> test both endpoints -> intentionally miss GET stub -> verify unmatched in journal")
     void testOpenApiPostE2EWorkflow() {
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-        page.waitForSelector("#btn-open-openapi-modal");
+        try {
+            wireMockServer.resetRequests();
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+            page.waitForSelector("#stubs-count-label");
 
-        // 1. Open OpenAPI import modal
-        page.locator("#btn-open-openapi-modal").click();
-        page.waitForSelector("#openapi-modal:not(.hidden)");
+            // 1. Clear all existing stubs if any exist
+            if (page.locator(".stub-card").count() > 0) {
+                page.locator("#chk-select-all").click();
+                page.waitForSelector("#bulk-actions-bar:not(.hidden)");
+                page.onceDialog(Dialog::accept);
+                page.locator("#btn-bulk-delete").click();
+                page.waitForSelector(".stub-list .empty-state");
+                assertThat(page.locator(".stub-card").count()).isEqualTo(0);
+            }
 
-        String openApiYaml =
-                """
-                openapi: 3.0.3
-                info:
-                  title: Checkout Service API
-                  version: 1.0.0
-                paths:
-                  /api/v1/checkout/cart:
-                    post:
-                      summary: Create checkout cart
-                      requestBody:
-                        required: true
-                        content:
-                          application/json:
-                            schema:
-                              type: object
-                              required:
-                                - sku
-                                - quantity
-                              properties:
-                                sku:
-                                  type: string
-                                  example: PROD-998
-                                quantity:
-                                  type: integer
-                                  example: 3
-                      responses:
-                        '201':
-                          description: Checkout cart created
-                          content:
-                            application/json:
-                              schema:
-                                type: object
-                                properties:
-                                  cartId:
-                                    type: string
-                                    example: CART-771
-                                  status:
-                                    type: string
-                                    example: CREATED
-                """;
+            // 2. Open OpenAPI import modal
+            page.locator("#btn-open-openapi-modal").click();
+            page.waitForSelector("#openapi-modal:not(.hidden)");
 
-        page.locator("#openapi-spec-content").fill(openApiYaml);
-        page.locator("#btn-submit-openapi-import").click();
-        page.waitForSelector(".modal-feedback.success");
-        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+            String openApiYaml =
+                    """
+                    openapi: 3.0.3
+                    info:
+                      title: Store & Catalog API
+                      version: 1.0.0
+                    paths:
+                      /api/v1/catalog/products:
+                        get:
+                          summary: List catalog products
+                          responses:
+                            '200':
+                              description: Product catalog list
+                              content:
+                                application/json:
+                                  schema:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        sku:
+                                          type: string
+                                          example: PROD-778
+                                        name:
+                                          type: string
+                                          example: Wireless Noise-Canceling Headphones
+                                        price:
+                                          type: number
+                                          example: 199.99
+                      /api/v1/catalog/orders:
+                        post:
+                          summary: Create a product order
+                          requestBody:
+                            required: true
+                            content:
+                              application/json:
+                                schema:
+                                  type: object
+                                  required:
+                                    - sku
+                                    - quantity
+                                    - customer
+                                  properties:
+                                    sku:
+                                      type: string
+                                      example: PROD-778
+                                    quantity:
+                                      type: integer
+                                      example: 2
+                                    customer:
+                                      type: string
+                                      example: alex@example.com
+                          responses:
+                            '201':
+                              description: Order placed successfully
+                              content:
+                                application/json:
+                                  schema:
+                                    type: object
+                                    properties:
+                                      orderId:
+                                        type: string
+                                        example: ORD-9912
+                                      status:
+                                        type: string
+                                        example: CONFIRMED
+                    """;
 
-        // 2. Select synthesized POST stub in sidebar
-        page.waitForSelector(".stub-card:has-text('/api/v1/checkout/cart')");
-        page.locator(".stub-card:has-text('/api/v1/checkout/cart')").first().click();
+            page.locator("#openapi-spec-content").fill(openApiYaml);
+            page.locator("#btn-submit-openapi-import").click();
+            page.waitForSelector(".modal-feedback.success");
+            page.waitForSelector(
+                    "#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
-        // 3. Verify stub details inspector shows POST and 201
-        assertThat(page.locator("#detail-method").textContent()).isEqualTo("POST");
-        assertThat(page.locator("#detail-url").textContent()).isEqualTo("/api/v1/checkout/cart");
-        assertThat(page.locator("#detail-status").textContent()).isEqualTo("201");
+            // 3. Verify both synthesized stubs appear in sidebar
+            page.waitForSelector(".stub-card:has-text('/api/v1/catalog/orders')");
+            page.waitForSelector(".stub-card:has-text('/api/v1/catalog/products')");
+            assertThat(page.locator(".stub-card").count()).isEqualTo(2);
 
-        // 4. Click Test Stub
-        page.locator("#btn-test-stub").click();
-        page.waitForSelector("#tab-tester.active");
+            // 4. Test POST endpoint: Select orders POST stub
+            page.locator(".stub-card:has-text('/api/v1/catalog/orders')")
+                    .first()
+                    .click();
+            assertThat(page.locator("#detail-method").textContent()).isEqualTo("POST");
+            assertThat(page.locator("#detail-url").textContent()).isEqualTo("/api/v1/catalog/orders");
+            assertThat(page.locator("#detail-status").textContent()).isEqualTo("201");
 
-        // 5. Verify left sidebar remains visible and selected!
-        assertThat(page.locator(".sidebar").isVisible()).isTrue();
-        assertThat(page.locator(".stub-card:has-text('/api/v1/checkout/cart')")
-                        .first()
-                        .getAttribute("class"))
-                .contains("selected");
+            // Click Test Stub
+            page.locator("#btn-test-stub").click();
+            page.waitForSelector("#tab-tester.active");
 
-        // 6. Verify HTTP Tester is pre-filled with synthesized example body
-        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
-        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/checkout/cart");
-        assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
-        assertThat(page.locator("#tester-body").inputValue()).contains("PROD-998");
-        assertThat(page.locator("#tester-context-banner").isVisible()).isTrue();
+            // Verify left sidebar remains visible and selected
+            assertThat(page.locator(".sidebar").isVisible()).isTrue();
+            assertThat(page.locator(".stub-card:has-text('/api/v1/catalog/orders')")
+                            .first()
+                            .getAttribute("class"))
+                    .contains("selected");
 
-        // 7. Send the request
-        page.locator("#btn-tester-send").click();
-        page.waitForSelector("#tester-response-status:has-text('201')");
-        assertThat(page.locator("#tester-response-status").textContent()).contains("201");
-        assertThat(page.locator("#tester-response-body").textContent()).contains("CART-771");
+            // Verify HTTP Tester is pre-filled with synthesized example body
+            assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
+            assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/catalog/orders");
+            assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
+            assertThat(page.locator("#tester-body").inputValue()).contains("PROD-778");
+            assertThat(page.locator("#tester-context-banner").isVisible()).isTrue();
 
-        // 8. Verify vertical history sidebar records the execution
-        Locator historyCards = page.locator(".history-item");
-        assertThat(historyCards.count()).isGreaterThanOrEqualTo(1);
-        assertThat(historyCards.first().textContent()).contains("POST");
-        assertThat(historyCards.first().textContent()).contains("201");
-        assertThat(historyCards.first().textContent()).contains("/api/v1/checkout/cart");
+            // Send POST request
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('201')");
+            assertThat(page.locator("#tester-response-status").textContent()).contains("201");
+            assertThat(page.locator("#tester-response-body").textContent()).contains("ORD-9912");
 
-        // 9. Navigate to Request Journal to review the logged entry
-        page.locator("#nav-tab-journal").click();
-        page.waitForSelector("#tab-journal.active");
+            // 5. Test GET endpoint: Select products GET stub in sidebar (which remains visible in tester)
+            page.locator(".stub-card:has-text('/api/v1/catalog/products')")
+                    .first()
+                    .click();
+            assertThat(page.locator("#tester-method").inputValue()).isEqualTo("GET");
+            assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/catalog/products");
 
-        // In Request Journal, sidebar is hidden to maximize table space
-        assertThat(page.locator(".sidebar").isVisible()).isFalse();
+            // Send GET request
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            assertThat(page.locator("#tester-response-status").textContent()).contains("200");
+            assertThat(page.locator("#tester-response-body").textContent())
+                    .contains("Wireless Noise-Canceling Headphones");
 
-        page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/checkout/cart')");
-        Locator journalRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/checkout/cart')")
-                .first();
-        assertThat(journalRow.textContent()).contains("POST");
-        assertThat(journalRow.textContent()).contains("201");
+            // 6. Intentionally miss the GET stub by modifying URL
+            page.locator("#tester-url").fill("/api/v1/catalog/products/missing-sku");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('404')");
+            assertThat(page.locator("#tester-response-status").textContent()).contains("404");
 
-        // 10. Click row to inspect details
-        journalRow.click();
-        Locator detailRow = page.locator("tr.journal-detail-row");
-        assertThat(detailRow.isVisible()).isTrue();
-        assertThat(detailRow.textContent()).contains("CART-771");
+            // 7. Verify vertical history sidebar recorded all 3 operations
+            Locator historyCards = page.locator(".history-item");
+            assertThat(historyCards.count()).isGreaterThanOrEqualTo(3);
+            assertThat(historyCards.nth(0).textContent()).contains("404");
+            assertThat(historyCards.nth(1).textContent()).contains("200");
+            assertThat(historyCards.nth(2).textContent()).contains("201");
 
-        assertThat(pageErrors).isEmpty();
+            // 8. Navigate to Request Journal to review traffic and unmatched request
+            page.locator("#nav-tab-journal").click();
+            page.waitForSelector("#tab-journal.active");
+
+            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')");
+            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/products')");
+            page.waitForSelector("#journal-list tr.journal-row:has-text('missing-sku')");
+
+            // Expand unmatched row
+            Locator unmatchedRow = page.locator("#journal-list tr.journal-row:has-text('missing-sku')")
+                    .first();
+            assertThat(unmatchedRow.textContent()).contains("404");
+            assertThat(unmatchedRow.textContent().toUpperCase()).contains("UNMATCHED");
+            unmatchedRow.click();
+
+            Locator detailRow = page.locator("tr.journal-detail-row");
+            assertThat(detailRow.isVisible()).isTrue();
+            assertThat(detailRow.textContent()).contains("missing-sku");
+
+            // Toggle filter to show unmatched only
+            page.locator("#filter-unmatched-only").check();
+            assertThat(page.locator("#journal-list tr.journal-row:not(.journal-detail-row)")
+                            .count())
+                    .isEqualTo(1);
+
+            assertThat(pageErrors).isEmpty();
+        } finally {
+            resetDefaultStubs();
+        }
+    }
+
+    private void resetDefaultStubs() {
+        wireMockServer.resetAll();
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
+                .withName("List Users API")
+                .willReturn(okJson("{\"users\": [{\"id\": 1, \"name\": \"Alice\"}, {\"id\": 2, \"name\": \"Bob\"}]}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/orders"))
+                .withName("Create Order API")
+                .withRequestBody(matchingJsonPath("$.item"))
+                .willReturn(created()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"orderId\": \"ORD-99\", \"status\": \"CREATED\"}")));
+
+        wireMockServer.stubFor(get(urlEqualTo("/favicon.ico")).willReturn(ok().withBody(new byte[0])));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases"))
+                .withName("Create Case")
+                .inScenario("Case-FSM")
+                .whenScenarioStateIs("Started")
+                .willSetStateTo("OPEN")
+                .willReturn(
+                        created().withHeader("Content-Type", "application/json").withBody("{\"status\": \"OPEN\"}")));
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/cases/1/close"))
+                .withName("Close Case")
+                .inScenario("Case-FSM")
+                .whenScenarioStateIs("OPEN")
+                .willSetStateTo("CLOSED")
+                .willReturn(okJson("{\"status\": \"CLOSED\"}")));
     }
 }
