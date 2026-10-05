@@ -48,7 +48,8 @@ import {
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
   renderProjectSelector,
-  updateFilterCounts
+  updateFilterCounts,
+  setupProjectLifecycleBar
 } from './modules/projects.js';
 import {
   handleToggleStub,
@@ -104,6 +105,7 @@ if (window.location.pathname && !window.location.pathname.endsWith('/')) {
 registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
 setupOpenApiModal();
+setupProjectLifecycleBar(loadData);
 initTesterHistoryCollapse();
 
 registerRouteHandlers({

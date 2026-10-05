@@ -52,6 +52,17 @@
           </div>
         </div>
 
+        <div id="project-lifecycle-bar" class="project-lifecycle-bar hidden" data-testid="project-lifecycle-bar">
+          <div class="project-lifecycle-left">
+            <span id="project-mode-badge" class="project-mode-badge mode-proxy" data-testid="project-mode-badge">LIVE PROXY</span>
+            <span id="project-active-name" class="project-active-name"></span>
+          </div>
+          <div class="project-lifecycle-actions">
+            <button id="btn-project-mode-toggle" data-testid="btn-project-mode-toggle" class="btn btn-tiny btn-secondary" title="Switch project between Live Proxy mode and offline Stubs mode">🔄 Switch Mode</button>
+            <button id="btn-project-snapshot" data-testid="btn-project-snapshot" class="btn btn-tiny btn-primary" title="Snapshot recorded live traffic into disabled stubs for this project">📸 Snapshot</button>
+          </div>
+        </div>
+
         <div class="stub-list-header">
           <div class="stub-list-title-group">
             <label class="select-all-label" title="Select all visible stubs">
@@ -386,6 +397,40 @@
             <div class="form-group" style="margin-top: 12px;">
               <label for="openapi-spec-content">Or paste specification directly:</label>
               <textarea id="openapi-spec-content" class="code-input" rows="8" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
+            </div>
+
+            <div class="openapi-mode-selector" style="margin-top: 12px; display: flex; gap: 16px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);">
+              <label class="radio-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
+                <input type="radio" name="openapi-gen-mode" id="opt-openapi-mode-synthetic" value="SYNTHETIC" checked>
+                <span>🎨 Synthetic Mocks (Offline)</span>
+              </label>
+              <label class="radio-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
+                <input type="radio" name="openapi-gen-mode" id="opt-openapi-mode-proxy" value="PROXY">
+                <span>🌐 Live Proxy & Recording</span>
+              </label>
+            </div>
+
+            <div id="openapi-proxy-config" class="hidden" style="margin-top: 10px; padding: 10px 12px; border-radius: 6px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2);">
+              <div class="form-group">
+                <label for="openapi-proxy-url" style="color: #38bdf8; font-weight: 500;">Target Upstream Base URL (proxyBaseUrl):</label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="url" id="openapi-proxy-url" class="form-control" placeholder="https://api.example.com" style="flex: 2;">
+                  <select id="openapi-server-select" class="form-control" style="flex: 1;" title="Servers found in OpenAPI spec">
+                    <option value="">Spec Servers (Auto)...</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row" style="display: flex; gap: 12px; margin-top: 8px;">
+                <div class="form-group" style="flex: 1;">
+                  <label for="openapi-project-name">Project Group Name:</label>
+                  <input type="text" id="openapi-project-name" class="form-control" placeholder="e.g. Petstore API">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label for="openapi-proxy-headers">Upstream Headers (optional):</label>
+                  <input type="text" id="openapi-proxy-headers" class="form-control" placeholder="Authorization: Bearer token">
+                </div>
+              </div>
+              <small style="color: var(--text-muted); display: block; margin-top: 6px;">Incoming request headers (Authorization, MDC, etc.) are auto-propagated to upstream per default.</small>
             </div>
 
             <div class="openapi-options-grid" style="margin-top: 12px;">

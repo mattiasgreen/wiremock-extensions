@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -109,13 +110,21 @@ public class OpenApiStubGenerator {
             return;
         }
 
-        // Combine path-level parameters and operation-level parameters
         List<Parameter> allParams = new ArrayList<>();
         if (pathItem.getParameters() != null) {
             allParams.addAll(pathItem.getParameters());
         }
         if (operation.getParameters() != null) {
             allParams.addAll(operation.getParameters());
+        }
+
+        if (options.generationMode() == GenerationMode.PROXY
+                || (options.proxyBaseUrl() != null && !options.proxyBaseUrl().isBlank())) {
+            StubMapping proxyStub = createProxyStub(openAPI, path, method, operation, allParams);
+            if (proxyStub != null) {
+                stubs.add(proxyStub);
+            }
+            return;
         }
 
         for (Map.Entry<String, ApiResponse> responseEntry :
@@ -190,6 +199,7 @@ public class OpenApiStubGenerator {
         // Set metadata and name
         String stubName = buildStubName(operation, method, path, statusCode);
         StubMapping stubMapping = new StubMapping(requestBuilder.build(), responseBuilder.build());
+        stubMapping.setId(UUID.randomUUID());
         stubMapping.setName(stubName);
 
         Metadata.Builder metadataBuilder = Metadata.metadata()
@@ -198,9 +208,14 @@ public class OpenApiStubGenerator {
                 .attr("method", method.getName())
                 .attr("statusCode", statusCode);
 
-        if (openAPI.getInfo() != null && openAPI.getInfo().getTitle() != null) {
-            metadataBuilder.attr("project", openAPI.getInfo().getTitle());
-        }
+        String project =
+                options.targetProject() != null && !options.targetProject().isBlank()
+                        ? options.targetProject()
+                        : (openAPI.getInfo() != null && openAPI.getInfo().getTitle() != null
+                                ? openAPI.getInfo().getTitle()
+                                : "Ungrouped");
+        metadataBuilder.attr("project", project);
+        metadataBuilder.attr("mode", "synthetic");
 
         if (operation.getOperationId() != null) {
             metadataBuilder.attr("operationId", operation.getOperationId());
@@ -211,6 +226,89 @@ public class OpenApiStubGenerator {
         }
 
         // Build ready-made example request
+        Map<String, Object> exampleRequest = buildExampleRequest(path, parameters, operation.getRequestBody(), openAPI);
+        metadataBuilder.attr("exampleRequest", exampleRequest);
+
+        stubMapping.setMetadata(metadataBuilder.build());
+        return stubMapping;
+    }
+
+    private StubMapping createProxyStub(
+            OpenAPI openAPI, String path, RequestMethod method, Operation operation, List<Parameter> parameters) {
+
+        RequestPatternBuilder requestBuilder;
+        boolean hasPathParams = PATH_PARAM_PATTERN.matcher(path).find();
+
+        if (hasPathParams) {
+            requestBuilder = RequestPatternBuilder.newRequestPattern(method, urlPathTemplate(path));
+        } else {
+            requestBuilder = RequestPatternBuilder.newRequestPattern(method, urlEqualTo(path));
+        }
+
+        // Query & Header matchers for required parameters
+        for (Parameter param : parameters) {
+            if (Boolean.TRUE.equals(param.getRequired())) {
+                String paramIn = param.getIn();
+                if ("query".equalsIgnoreCase(paramIn) && options.matchRequiredQueryParams()) {
+                    requestBuilder.withQueryParam(param.getName(), matching(".+"));
+                } else if ("header".equalsIgnoreCase(paramIn) && options.matchRequiredHeaders()) {
+                    requestBuilder.withHeader(param.getName(), matching(".+"));
+                }
+            }
+        }
+
+        String targetBaseUrl = options.proxyBaseUrl();
+        if ((targetBaseUrl == null || targetBaseUrl.isBlank())
+                && openAPI.getServers() != null
+                && !openAPI.getServers().isEmpty()) {
+            targetBaseUrl = openAPI.getServers().get(0).getUrl();
+        }
+
+        if (targetBaseUrl == null || targetBaseUrl.isBlank()) {
+            throw new IllegalArgumentException("proxyBaseUrl must be specified for PROXY mode");
+        }
+
+        ResponseDefinitionBuilder.ProxyResponseDefinitionBuilder responseBuilder =
+                ResponseDefinitionBuilder.responseDefinition().proxiedFrom(targetBaseUrl);
+
+        if (options.additionalProxyHeaders() != null) {
+            for (Map.Entry<String, String> header :
+                    options.additionalProxyHeaders().entrySet()) {
+                responseBuilder.withAdditionalRequestHeader(header.getKey(), header.getValue());
+            }
+        }
+
+        String stubName = "[PROXY " + method.getName() + "] "
+                + (operation.getSummary() != null && !operation.getSummary().isBlank() ? operation.getSummary() : path);
+
+        StubMapping stubMapping = new StubMapping(requestBuilder.build(), responseBuilder.build());
+        stubMapping.setId(UUID.randomUUID());
+        stubMapping.setName(stubName);
+        stubMapping.setPriority(10);
+
+        String project =
+                options.targetProject() != null && !options.targetProject().isBlank()
+                        ? options.targetProject()
+                        : (openAPI.getInfo() != null && openAPI.getInfo().getTitle() != null
+                                ? openAPI.getInfo().getTitle()
+                                : "Ungrouped");
+
+        Metadata.Builder metadataBuilder = Metadata.metadata()
+                .attr("source", "openapi")
+                .attr("mode", "proxy")
+                .attr("proxyBaseUrl", targetBaseUrl)
+                .attr("path", path)
+                .attr("method", method.getName())
+                .attr("project", project);
+
+        if (operation.getOperationId() != null) {
+            metadataBuilder.attr("operationId", operation.getOperationId());
+        }
+        if (operation.getTags() != null && !operation.getTags().isEmpty()) {
+            metadataBuilder.attr("tags", operation.getTags());
+            metadataBuilder.attr("api", operation.getTags().get(0));
+        }
+
         Map<String, Object> exampleRequest = buildExampleRequest(path, parameters, operation.getRequestBody(), openAPI);
         metadataBuilder.attr("exampleRequest", exampleRequest);
 

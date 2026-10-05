@@ -5,6 +5,7 @@
 import { state } from './state.js';
 import { elements } from './dom.js';
 import { getStubUrl } from './stubs.js';
+import { setProjectMode, snapshotProjectRecordings } from './api.js';
 
 export function extractBaseSegment(path) {
   if (!path || path === '/') return 'Root';
@@ -94,4 +95,91 @@ export function updateFilterCounts() {
   if (countAll) countAll.textContent = activeList.length + disabledList.length;
   if (countActive) countActive.textContent = activeList.length;
   if (countDisabled) countDisabled.textContent = disabledList.length;
+
+  updateProjectLifecycleBar();
+}
+
+export function updateProjectLifecycleBar() {
+  const bar = elements.projectLifecycleBar;
+  if (!bar) return;
+
+  if (!state.selectedProject) {
+    bar.classList.add('hidden');
+    return;
+  }
+
+  const projStubs = [...state.currentStubs, ...state.disabledStubs].filter(s => getStubProject(s) === state.selectedProject);
+  const proxyStubs = projStubs.filter(s => (s.response && !!s.response.proxyBaseUrl) || (s.metadata && s.metadata.mode === 'proxy'));
+
+  if (proxyStubs.length === 0) {
+    bar.classList.add('hidden');
+    return;
+  }
+
+  bar.classList.remove('hidden');
+
+  if (elements.projectActiveName) {
+    elements.projectActiveName.textContent = state.selectedProject;
+  }
+
+  const activeProxy = proxyStubs.some(s => state.currentStubs.some(c => c.id === s.id));
+
+  if (elements.projectModeBadge) {
+    if (activeProxy) {
+      elements.projectModeBadge.textContent = 'LIVE PROXY';
+      elements.projectModeBadge.className = 'project-mode-badge mode-proxy';
+    } else {
+      elements.projectModeBadge.textContent = 'STUBS MODE';
+      elements.projectModeBadge.className = 'project-mode-badge mode-stubs';
+    }
+  }
+
+  if (elements.btnProjectModeToggle) {
+    elements.btnProjectModeToggle.textContent = activeProxy ? '🟣 Switch to Stubs' : '🟢 Switch to Proxy';
+    elements.btnProjectModeToggle.title = activeProxy
+      ? 'Disable proxy stubs and activate recorded static stubs'
+      : 'Disable static stubs and activate live proxy stubs';
+  }
+}
+
+export function setupProjectLifecycleBar(loadDataFn) {
+  if (elements.btnProjectModeToggle) {
+    elements.btnProjectModeToggle.addEventListener('click', async () => {
+      if (!state.selectedProject) return;
+      const projStubs = [...state.currentStubs, ...state.disabledStubs].filter(s => getStubProject(s) === state.selectedProject);
+      const proxyStubs = projStubs.filter(s => (s.response && !!s.response.proxyBaseUrl) || (s.metadata && s.metadata.mode === 'proxy'));
+      const activeProxy = proxyStubs.some(s => state.currentStubs.some(c => c.id === s.id));
+      const targetMode = activeProxy ? 'stubs' : 'proxy';
+
+      try {
+        elements.btnProjectModeToggle.disabled = true;
+        await setProjectMode(state.selectedProject, targetMode);
+        if (loadDataFn) await loadDataFn();
+      } catch (err) {
+        alert('Failed to switch project mode: ' + err.message);
+      } finally {
+        if (elements.btnProjectModeToggle) elements.btnProjectModeToggle.disabled = false;
+      }
+    });
+  }
+
+  if (elements.btnProjectSnapshot) {
+    elements.btnProjectSnapshot.addEventListener('click', async () => {
+      if (!state.selectedProject) return;
+      try {
+        elements.btnProjectSnapshot.disabled = true;
+        elements.btnProjectSnapshot.textContent = 'Capturing...';
+        const res = await snapshotProjectRecordings(state.selectedProject);
+        if (loadDataFn) await loadDataFn();
+        alert(`Snapshot complete! Captured ${res.totalRecorded || 0} stubs in disabled state for review.`);
+      } catch (err) {
+        alert('Failed to snapshot project recordings: ' + err.message);
+      } finally {
+        if (elements.btnProjectSnapshot) {
+          elements.btnProjectSnapshot.disabled = false;
+          elements.btnProjectSnapshot.textContent = '📸 Snapshot';
+        }
+      }
+    });
+  }
 }
