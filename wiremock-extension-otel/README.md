@@ -22,6 +22,12 @@ An admin endpoint is mounted at `GET /__admin/metrics/prometheus` via WireMock's
   - `wiremock_stub_name`: Associated stub name (if defined)
 - **Latency Histogram (`wiremock_request_duration_ms`)**: Standard Prometheus bucket distribution for request durations in milliseconds.
 - **Unmatched Request Counter (`wiremock_requests_unmatched_total`)**: Dedicated counter to alert on unexpected or unmatched requests.
+- **Distributed Tracing (W3C & OTLP)**:
+  - Automatically extracts incoming W3C `traceparent` and `tracestate` headers to preserve parent-child trace context.
+  - Generates OpenTelemetry `SERVER` spans with standard HTTP semantic conventions (`http.request.method`, `http.response.status_code`, `url.path`, `url.query`, `client.address`).
+  - Correlates WireMock metadata: `wiremock.matched`, `wiremock.stub_id`, `wiremock.stub_name`, `wiremock.scenario_name`, `wiremock.scenario_state`.
+  - Marks spans as `ERROR` for HTTP 5xx responses or unmatched requests.
+  - Optional OTLP gRPC export (`OTEL_EXPORTER_OTLP_ENDPOINT` or `-Dwiremock.otel.exporter.otlp.endpoint=http://localhost:4317`).
 - **Zero External Infrastructure**: Uses an in-process OpenTelemetry registry and embedded Prometheus exporter with minimal overhead.
 
 ## Sample Prometheus Output

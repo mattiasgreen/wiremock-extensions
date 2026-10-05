@@ -41,6 +41,9 @@ public class MdcRequestFilter implements RequestFilterV2 {
         return true;
     }
 
+    private static final java.util.regex.Pattern TRACEPARENT_PATTERN =
+            java.util.regex.Pattern.compile("^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$");
+
     @Override
     public RequestFilterAction filter(Request request, ServeEvent serveEvent) {
         if (request != null && request.getHeaders() != null) {
@@ -50,6 +53,18 @@ public class MdcRequestFilter implements RequestFilterV2 {
                     String value = header.firstValue();
                     if (value != null) {
                         MDC.put(normalizedKey, value);
+                    }
+                }
+            }
+
+            HttpHeader traceparentHeader = request.header("traceparent");
+            if (traceparentHeader != null && traceparentHeader.isPresent()) {
+                String tp = traceparentHeader.firstValue();
+                if (tp != null) {
+                    java.util.regex.Matcher m = TRACEPARENT_PATTERN.matcher(tp.trim());
+                    if (m.matches()) {
+                        MDC.put("trace_id", m.group(1));
+                        MDC.put("span_id", m.group(2));
                     }
                 }
             }

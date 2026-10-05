@@ -33,13 +33,16 @@ The extension listens to request completion events via WireMock's `RequestFilter
   "event": "wiremock_request_served",
   "duration_ms": 14.0,
   "matched": true,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
   "stub_name": "Get User Profile",
   "request": {
     "method": "GET",
     "url": "/api/v1/users/123",
     "headers": {
       "X-Correlation-Id": "corr-9921",
-      "X-Tenant-Id": "acme"
+      "X-Tenant-Id": "acme",
+      "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
     }
   },
   "response": {

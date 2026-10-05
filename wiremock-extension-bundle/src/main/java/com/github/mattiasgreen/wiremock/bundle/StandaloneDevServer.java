@@ -61,6 +61,7 @@ public class StandaloneDevServer {
         System.out.println("🚀 WireMock Suite Server running at http://localhost:" + port);
         System.out.println("👉 WireMock Console UI: http://localhost:" + port + "/__admin/ui");
         System.out.println("👉 Prometheus Metrics:  http://localhost:" + port + "/__admin/metrics/prometheus");
+        System.out.println("👉 Tracing & Logging:   W3C Context Propagation & MDC Active");
         System.out.println("👉 Admin API:           http://localhost:" + port + "/__admin/mappings");
         System.out.println("=================================================================");
         System.out.println("Press Ctrl+C to terminate the server.");

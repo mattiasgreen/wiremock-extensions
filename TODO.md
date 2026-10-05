@@ -14,11 +14,11 @@ Comprehensive review of project structure, code style, architecture, and enginee
 | **UI Asset Serving** | Dynamic asset routing in `UiAdminApiEndpoint.java` supporting subdirectories (`/ui/modules/*`) with dev hot-reloading and proper MIME types. | Modular asset serving for Native ES Modules. | **P0** | **Completed** |
 | **UI Modularization** | Modular Native ES Modules (`app.js` + `modules/*`), strict 0-NPM/0-bundler constraint, terse agent comments. | Decoupled, maintainable Vanilla JS architecture verified via Playwright. | **P0** | **Completed** |
 | **Air-Gapped Self-Containment** | Embedded UI assets are local; requires explicit test contract guaranteeing zero remote/CDN calls. | 100% self-contained, verifiable offline execution for strict enterprise/defense networks. | **P1** | Pending |
-| **Distributed Tracing (W3C)** | In-process OpenTelemetry metrics only (`wiremock_requests_total`, histograms). | Distributed Tracing with W3C `traceparent` context extraction, Server Spans, and OTLP export. | **P1** | Pending |
+| **Distributed Tracing (W3C)** | OpenTelemetry metrics and W3C distributed tracing with server spans, OTLP export, and log correlation. | Distributed Tracing with W3C `traceparent` context extraction, Server Spans, and OTLP export. | **P1** | **Completed** |
 | **Packaging & Distribution** | Local development runner (`StandaloneDevServer`) and subproject library JARs. | Maven Central publishing, Standalone Fat JAR distribution, and Docker image. | **P1** | Pending |
 | **Interactive Demo (GH Pages)**| README contains animated GIFs; no live web sandbox. | Static interactive browser demo on GitHub Pages with simulated Admin API responses. | **P2** | Pending |
 | **CI / CD Pipeline** | Minimal `ci.yml`; lacks Spotless check, Gradle build caching, and headless Playwright OS dependencies. | Full matrix/verification pipeline with `spotlessCheck`, headless test runner, and caching. | **P2** | *Deferred* |
-| **Extension Robustness** | `HeaderNormalizer.java` recompiles regexes on every call; `OtelMetricsRegistry.java` uses JVM-wide singleton. | Precompiled `Pattern` constants; instance-scoped metrics registry with optional shared fallback. | **P2** | *Deferred* |
+| **Extension Robustness** | Precompiled `Pattern` constants in `HeaderNormalizer.java`; instance-scoped tracing registry. | Instance-scoped metrics and tracing registries with test isolation. | **P2** | **Completed** |
 
 ---
 
@@ -124,13 +124,13 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ### Phase 4: Observability, Packaging & Enterprise Readiness
 
-- [ ] **4.1. Distributed Tracing with W3C Context Propagation (`wiremock-extension-otel`)**
-  - [ ] Extract incoming W3C `traceparent` and `tracestate` headers using standard OpenTelemetry `TextMapGetter`.
-  - [ ] Start an in-process OpenTelemetry `SERVER` Span for each served request in `ServeEventListener`.
-  - [ ] Populate span attributes with semantic conventions: `http.request.method`, `http.response.status_code`, `url.path`, `wiremock.matched`, `wiremock.stub_name`.
-  - [ ] Record exceptions and set span status (`ERROR`) on 5xx responses or unmatched requests.
-  - [ ] Support optional OpenTelemetry trace export (OTLP over gRPC / HTTP) so WireMock spans appear in Jaeger, Grafana Tempo, or Zipkin.
-  - [ ] Integrate trace context into MDC logging (`trace_id`, `span_id`) in `wiremock-extension-json-logging` for end-to-end log-trace correlation.
+- [x] **4.1. Distributed Tracing with W3C Context Propagation (`wiremock-extension-otel`)**
+  - [x] Extract incoming W3C `traceparent` and `tracestate` headers using standard OpenTelemetry `TextMapGetter`.
+  - [x] Start an in-process OpenTelemetry `SERVER` Span for each served request in `ServeEventListener`.
+  - [x] Populate span attributes with semantic conventions: `http.request.method`, `http.response.status_code`, `url.path`, `wiremock.matched`, `wiremock.stub_name`.
+  - [x] Record exceptions and set span status (`ERROR`) on 5xx responses or unmatched requests.
+  - [x] Support optional OpenTelemetry trace export (OTLP over gRPC / HTTP) so WireMock spans appear in Jaeger, Grafana Tempo, or Zipkin.
+  - [x] Integrate trace context into MDC logging (`trace_id`, `span_id`) in `wiremock-extension-json-logging` for end-to-end log-trace correlation.
 
 - [ ] **4.2. Air-Gapped Enterprise Self-Containment**
   - [ ] Perform asset audit confirming zero outbound CDN requests, external web fonts, or remote analytic beacons.
