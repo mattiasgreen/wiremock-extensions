@@ -145,6 +145,11 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]
 ```
 
+## Roadmap & Wishlist
+
+- [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying (WireMock reverse proxy currently defaults to trust-all certificates).
+- [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
+
 ## License
 
 [Apache License 2.0](LICENSE)
