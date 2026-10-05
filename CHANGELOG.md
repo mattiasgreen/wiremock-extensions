@@ -41,14 +41,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Project workspace switcher (`modules/projects.js`): Toggle between OpenAPI projects and execution modes (Mock vs. Proxy vs. Recording).
   - Request Journal Promotion (`modules/journal.js`): Single-click "Promote to Stub" button converting live proxied transactions directly into permanent mappings.
   - Visual mode indicators in navigation toolbar and stubs list.
-- **`[In-Flight / Staged]`** **CI / CD Pipeline Modernization (`.github/workflows/ci.yml`)**:
-  - Upgraded Gradle caching with `gradle/actions/setup-gradle@v4`.
-  - Added headless Playwright Linux OS dependencies installation (`npx playwright install-deps chromium`).
-  - Added automated `spotlessCheck` step to fail fast on formatting regressions.
-- **`[In-Flight / Staged]`** **Distribution & Deployment Reference (`README.md`)**:
-  - Added Zero-Build Consumer Runner guide using published Gradle dependencies.
-  - Added production-ready Alpine Dockerfile reference architecture.
-
 ---
 
 ## [Committed on `main`]
@@ -56,6 +48,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### [0.1.0] - 2026-10-05
 
 #### Added / Enhanced
+- **`[2026-10-05 08:16:00 +02:00]`** **CI / CD Pipeline Modernization (`.github/workflows/ci.yml`)**:
+  - Upgraded to `actions/setup-java@v5` and `gradle/actions/setup-gradle@v4` with automatic dependency and build caching.
+  - Added automated `spotlessCheck` step to fail fast on formatting regressions.
+  - Maintained 100% Zero-NPM pure Java and Vanilla JS pipeline execution.
+- **`[2026-10-05 08:16:00 +02:00]`** **Packaging & Distribution Refinements (`build.gradle`, `README.md`)**:
+  - Configured `maven-publish` to selectively publish distributable extensions and exclude internal `wiremock-examples`.
+  - Added Zero-Build Consumer Runner guide using published Gradle dependencies.
+  - Added production-ready Alpine Dockerfile reference architecture.
 - **`[2026-10-05 04:11:11 +02:00]`** (`0e1eaa0`) **E2E Scenario & Demo Recording**:
   - Updated complete E2E scenario in `UiPlaywrightTest` and `UiDemoGifRecordingTest` covering stub clearing, GET/POST execution, and unmatched journal review.
   - Regenerated all demonstration GIFs for documentation.

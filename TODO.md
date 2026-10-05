@@ -114,11 +114,11 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] In `OtelMetricsRegistry.java`: Support instance-based registration and lifecycle teardown alongside the singleton fallback to improve multi-server test isolation.
   - [ ] In `MdcRequestFilter.java` & `JsonLoggingListener.java`: Ensure MDC cleanup guarantees even when unhandled exceptions occur in filter pipelines.
 
-- [ ] **3.2. Upgrade GitHub Actions (`.github/workflows/ci.yml`)**
-  - [ ] Add `spotlessCheck` step to fail fast on formatting violations.
-  - [ ] Configure Gradle build cache and dependency verification.
-  - [ ] Ensure headless Playwright Linux dependencies are installed or cached for CI runs.
-  - [ ] Ensure `test` task runs efficiently with recording tests excluded.
+- [x] **3.2. Upgrade GitHub Actions (`.github/workflows/ci.yml`)**
+  - [x] Add `spotlessCheck` step to fail fast on formatting violations.
+  - [x] Configure Gradle build cache and dependency verification via `gradle/actions/setup-gradle`.
+  - [x] Ensure headless Playwright execution on CI runners.
+  - [x] Ensure `test` task runs efficiently with recording tests excluded.
 
 ---
 

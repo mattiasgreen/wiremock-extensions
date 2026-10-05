@@ -97,6 +97,54 @@ To launch WireMock with all extensions and pre-loaded sample stubs for local tes
 
 The server starts on port `8080` with filesystem hot-reloading for UI development.
 
+### 4. Zero-Build Consumer Runner
+
+You can run WireMock Standalone with the complete extension bundle loaded in any empty folder using a single minimal `build.gradle` file, without cloning or building this repository:
+
+```groovy
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    runtimeOnly 'org.wiremock:wiremock-standalone:3.12.1'
+    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'
+}
+
+application {
+    mainClass = 'com.github.tomakehurst.wiremock.standalone.WireMockServerRunner'
+}
+```
+
+Run with:
+```bash
+gradle run --args="--port 8080 --verbose"
+```
+
+Because all extensions implement `ExtensionFactory` via Java SPI, WireMock automatically discovers and loads the Web UI, metrics, and OpenAPI endpoints on startup.
+
+### 5. Docker Reference Architecture
+
+To deploy a containerized mock server with the extension bundle, you can assemble an image directly using published artifacts:
+
+```dockerfile
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /wiremock
+
+ARG WIREMOCK_VERSION=3.12.1
+ARG BUNDLE_VERSION=0.1.0
+
+RUN wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
+ && wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]
+```
+
 ## License
 
 [Apache License 2.0](LICENSE)

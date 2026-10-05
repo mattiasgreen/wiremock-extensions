@@ -7,6 +7,3 @@ dependencies {
     testImplementation libs.playwright
 }
 
-tasks.withType(Sign).configureEach {
-    enabled = false
-}
