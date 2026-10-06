@@ -588,9 +588,28 @@ if (elements.btnResetScenarios) {
   });
 }
 
+// Version Badge Loader
+function loadVersionInfo() {
+  const badge = document.getElementById('app-version-badge');
+  if (!badge) return;
+  doFetch('/__admin/ui/version')
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.version) {
+        badge.textContent = `v${data.version} (${data.branch}@${data.commit})`;
+        badge.title = `WireMock Extensions v${data.version} | Branch: ${data.branch} | Commit: ${data.commit}`;
+      }
+    })
+    .catch(() => {});
+}
+
 // Initial Boot
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', loadData);
+  document.addEventListener('DOMContentLoaded', () => {
+    loadData();
+    loadVersionInfo();
+  });
 } else {
   loadData();
+  loadVersionInfo();
 }
