@@ -36,6 +36,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
                 "/ui/index.html",
                 (admin, serveEvent, pathParams) -> serveResource("/ui/index.html"));
 
+        router.add(RequestMethod.GET, "/ui/version", (admin, serveEvent, pathParams) -> serveVersionInfo());
         router.add(
                 RequestMethod.GET,
                 "/ui/{file}",
@@ -44,7 +45,6 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
                 RequestMethod.GET,
                 "/ui/modules/{module}",
                 (admin, serveEvent, pathParams) -> serveResource("/ui/modules/" + pathParams.get("module")));
-        router.add(RequestMethod.GET, "/ui/version", (admin, serveEvent, pathParams) -> serveVersionInfo());
     }
 
     private ResponseDefinition serveVersionInfo() {
