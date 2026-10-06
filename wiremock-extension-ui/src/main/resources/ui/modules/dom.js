@@ -41,6 +41,7 @@ export const elements = {
   stubJsonViewer: document.getElementById('stub-json-viewer'),
   btnRefresh: document.getElementById('btn-refresh'),
   btnRefreshStubs: document.getElementById('btn-refresh-stubs'),
+  btnCreateStub: document.getElementById('btn-create-stub'),
   btnExportStubs: document.getElementById('btn-export-stubs'),
   btnTestStub: document.getElementById('btn-test-stub'),
   btnEditStub: document.getElementById('btn-edit-stub'),

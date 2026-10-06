@@ -105,6 +105,15 @@ Comprehensive review of project structure, code style, architecture, and enginee
 - [x] **2.4. Verify Playwright and Integration Test Suites**
   - [x] Full Playwright headless browser test suite (`UiPlaywrightTest`) passed with zero regressions.
 
+- [x] **2.5. Stub Lifecycle Management & Ad-Hoc Stub Creation**
+  - [x] Resolved 404 error when editing stubs by providing unified `PUT /stubs/{id}` in `StubLifecycleAdminEndpoint` supporting active stubs, disabled stubs, and upsert fallback.
+  - [x] Added ad-hoc stub creation button (`➕ New` / `#btn-create-stub`) in UI header with clean modal defaults.
+  - [x] Added Playwright integration test Scenario 12 verifying active editing, disabled editing without 404, and ad-hoc creation.
+  - [ ] **Roadmap Enhancements for Ad-Hoc Stubbing**:
+    - [ ] Advanced request matcher builder (header rules, query params, cookies, JSONPath matching).
+    - [ ] Dynamic response templating helper suggestions (Handlebars expressions like `{{request.path.[1]}}`, `{{randomValue type='UUID'}}`).
+    - [ ] Inline JSON schema validator and test-run response preview.
+
 ---
 
 ### Phase 3: Extension Hardening & CI/CD Pipeline (Deferred)

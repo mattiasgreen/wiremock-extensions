@@ -28,7 +28,11 @@ public class OtelMetricsRegistry {
         return INSTANCE;
     }
 
-    public OtelMetricsRegistry() {
+    public static OtelMetricsRegistry create() {
+        return new OtelMetricsRegistry();
+    }
+
+    private OtelMetricsRegistry() {
         this.prometheusReader = new PrometheusMetricReader(false, name -> true);
         SdkMeterProvider meterProvider = SdkMeterProvider.builder()
                 .registerMetricReader(prometheusReader)

@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -132,9 +133,6 @@ public class SchemaDataSynthesizer {
         }
 
         Schema<?> schema = resolveSchema(rawSchema, openAPI);
-        if (schema == null) {
-            return null;
-        }
 
         // Priority 1: Schema example
         if (schema.getExample() != null) {
@@ -201,38 +199,38 @@ public class SchemaDataSynthesizer {
     }
 
     private Object generatePrimitiveSample(Schema<?> schema) {
-        String type = schema.getType();
-        String format = schema.getFormat();
+        String type = schema.getType() != null ? schema.getType().toLowerCase(Locale.ROOT) : "";
+        String format = schema.getFormat() != null ? schema.getFormat().toLowerCase(Locale.ROOT) : "";
 
-        if (schema instanceof UUIDSchema || "uuid".equalsIgnoreCase(format)) {
+        if (schema instanceof UUIDSchema || "uuid".equals(format)) {
             return "3fa85f64-5717-4562-b3fc-2c963f66afa6";
         }
-        if (schema instanceof DateTimeSchema || "date-time".equalsIgnoreCase(format)) {
+        if (schema instanceof DateTimeSchema || "date-time".equals(format)) {
             return "2026-10-04T12:00:00Z";
         }
-        if (schema instanceof DateSchema || "date".equalsIgnoreCase(format)) {
+        if (schema instanceof DateSchema || "date".equals(format)) {
             return "2026-10-04";
         }
-        if (schema instanceof EmailSchema || "email".equalsIgnoreCase(format)) {
+        if (schema instanceof EmailSchema || "email".equals(format)) {
             return "user@example.com";
         }
-        if ("uri".equalsIgnoreCase(format)) {
+        if ("uri".equals(format)) {
             return "https://example.com/resource";
         }
-        if ("ipv4".equalsIgnoreCase(format)) {
+        if ("ipv4".equals(format)) {
             return "192.168.1.1";
         }
 
-        if (schema instanceof IntegerSchema || "integer".equalsIgnoreCase(type)) {
+        if (schema instanceof IntegerSchema || "integer".equals(type)) {
             return 1;
         }
-        if (schema instanceof NumberSchema || "number".equalsIgnoreCase(type)) {
+        if (schema instanceof NumberSchema || "number".equals(type)) {
             return 9.99;
         }
-        if (schema instanceof BooleanSchema || "boolean".equalsIgnoreCase(type)) {
+        if (schema instanceof BooleanSchema || "boolean".equals(type)) {
             return true;
         }
-        if (schema instanceof StringSchema || "string".equalsIgnoreCase(type)) {
+        if (schema instanceof StringSchema || "string".equals(type)) {
             return schema.getName() != null ? schema.getName() : "string";
         }
 

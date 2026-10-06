@@ -205,6 +205,11 @@ if (elements.btnRefreshStubs) {
     });
   });
 }
+if (elements.btnCreateStub) {
+  elements.btnCreateStub.addEventListener('click', () => {
+    openStubEditor(null, false);
+  });
+}
 
 // Stubs Detail Actions
 if (elements.btnTestStub) {

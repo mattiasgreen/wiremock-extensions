@@ -72,7 +72,8 @@ public class JsonLoggingListener implements ServeEventListener {
 
             try {
                 String jsonOutput = OBJECT_MAPPER.writeValueAsString(event);
-                LOG.info(jsonOutput);
+                String sanitizedJson = jsonOutput.replace('\r', ' ').replace('\n', ' ');
+                LOG.info("{}", sanitizedJson);
             } catch (JsonProcessingException e) {
                 LOG.error("Failed to serialize WireMockLogEvent to JSON", e);
             }

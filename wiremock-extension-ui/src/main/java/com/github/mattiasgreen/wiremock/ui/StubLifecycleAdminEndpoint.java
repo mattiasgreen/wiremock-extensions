@@ -14,12 +14,14 @@ import com.github.tomakehurst.wiremock.http.RequestMethod;
 import com.github.tomakehurst.wiremock.matching.RequestPatternBuilder;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
+import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -151,6 +153,60 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             return notFound("Stub not found");
         });
 
+        // Edit / Upsert stub mapping (supports active or disabled stubs)
+        router.add(RequestMethod.PUT, "/stubs/{id}", (admin, serveEvent, pathParams) -> {
+            UUID id;
+            try {
+                id = UUID.fromString(pathParams.get("id"));
+            } catch (Exception e) {
+                return badRequest("Invalid UUID format");
+            }
+
+            String body = serveEvent.getRequest().getBodyAsString();
+            if (body == null || body.isBlank()) {
+                return badRequest("Request body is required");
+            }
+
+            StubMapping updatedStub;
+            try {
+                updatedStub = Json.read(body, StubMapping.class);
+            } catch (Exception e) {
+                return badRequest("Failed to deserialize StubMapping: " + e.getMessage());
+            }
+            updatedStub.setId(id);
+
+            // 1. If stub is in disabledStubStore, update it there
+            if (disabledStubStore.get(id) != null) {
+                disabledStubStore.put(updatedStub);
+                return ok(updatedStub);
+            }
+
+            // 2. If stub is active in admin, update it in WireMock admin
+            SingleStubMappingResult result = admin.getStubMapping(id);
+            if (result != null && result.isPresent()) {
+                admin.editStubMapping(updatedStub);
+                return ok(updatedStub);
+            }
+
+            // 3. Fallback upsert: register in admin
+            admin.addStubMapping(updatedStub);
+            return ok(updatedStub);
+        });
+
+        // Delete a stub mapping by ID (removes from active or disabled store)
+        router.add(RequestMethod.DELETE, "/stubs/{id}", (admin, serveEvent, pathParams) -> {
+            UUID id;
+            try {
+                id = UUID.fromString(pathParams.get("id"));
+            } catch (Exception e) {
+                return badRequest("Invalid UUID format");
+            }
+
+            disabledStubStore.remove(id);
+            admin.removeStubMapping(id);
+            return ok(Map.of("status", "deleted", "id", id.toString()));
+        });
+
         // Bulk operations: enable, disable, delete
         router.add(RequestMethod.POST, "/stubs/bulk", (admin, serveEvent, pathParams) -> {
             String body = serveEvent.getRequest().getBodyAsString();
@@ -170,7 +226,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 for (JsonNode idNode : idsNode) {
                     try {
                         UUID id = UUID.fromString(idNode.asText());
-                        switch (action.toLowerCase()) {
+                        switch (action.toLowerCase(Locale.ROOT)) {
                             case "disable" -> {
                                 SingleStubMappingResult res = admin.getStubMapping(id);
                                 if (res != null && res.isPresent()) {
@@ -195,12 +251,12 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                                 return badRequest("Unsupported action: " + action);
                             }
                         }
-                    } catch (Exception ignored) {
+                    } catch (IllegalArgumentException ignored) {
                     }
                 }
 
                 return ok(Map.of("action", action, "processed", count));
-            } catch (Exception e) {
+            } catch (IOException | IllegalArgumentException e) {
                 return badRequest("Failed to parse request: " + e.getMessage());
             }
         });
@@ -272,7 +328,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                     }
                 }
 
-                String assignedProject = (matchedStub != null && getStubProject(matchedStub) != null)
+                String assignedProject = matchedStub != null
                         ? getStubProject(matchedStub)
                         : (allProjects ? "Recorded Traffic" : targetProject);
 
@@ -326,9 +382,9 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 try {
                     JsonNode root = objectMapper.readTree(body);
                     if (root.has("mode")) {
-                        requestedMode = root.get("mode").asText("stubs").toLowerCase();
+                        requestedMode = root.get("mode").asText("stubs").toLowerCase(Locale.ROOT);
                     }
-                } catch (Exception ignored) {
+                } catch (IOException ignored) {
                 }
             }
 
@@ -400,7 +456,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
         return (project != null && !project.isBlank()) ? project : "Ungrouped";
     }
 
-    private static com.github.tomakehurst.wiremock.http.ResponseDefinition ok(Map<String, ?> body) {
+    private static com.github.tomakehurst.wiremock.http.ResponseDefinition ok(Object body) {
         return ResponseDefinitionBuilder.responseDefinition()
                 .withStatus(200)
                 .withHeader("Content-Type", "application/json")
