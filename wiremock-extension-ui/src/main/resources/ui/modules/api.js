@@ -335,3 +335,21 @@ export function executeTesterRequest() {
       }
     });
 }
+
+export function inspectOpenApi(spec) {
+  return doFetch('/__admin/openapi/inspect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ spec })
+  }).then(res => res.json());
+}
+
+export function snapshotProjectRecordings(project) {
+  const enc = encodeURIComponent(project || '*');
+  return apiPost(`/__admin/projects/${enc}/recordings/snapshot`);
+}
+
+export function setProjectMode(project, mode) {
+  const enc = encodeURIComponent(project);
+  return apiPost(`/__admin/projects/${enc}/mode`, { mode });
+}

@@ -10,6 +10,7 @@ import com.github.tomakehurst.wiremock.http.RequestMethod;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Admin API Extension providing endpoints to ingest OpenAPI specifications
@@ -29,6 +30,44 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
 
     @Override
     public void contributeAdminApiRoutes(Router router) {
+        router.add(RequestMethod.POST, "/openapi/inspect", (admin, serveEvent, pathParams) -> {
+            String requestBody = serveEvent.getRequest().getBodyAsString();
+            if (requestBody == null || requestBody.isBlank()) {
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(400)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":\"Request body cannot be empty\"}")
+                        .build();
+            }
+
+            String specContent = requestBody;
+            try {
+                if (requestBody.trim().startsWith("{")) {
+                    JsonNode node = objectMapper.readTree(requestBody);
+                    if (node.has("spec") && node.get("spec").isTextual()) {
+                        specContent = node.get("spec").asText();
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+
+            try {
+                OpenApiSpecInspector inspector = new OpenApiSpecInspector();
+                OpenApiSpecInfo info = inspector.inspect(specContent);
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(Json.write(info))
+                        .build();
+            } catch (Exception e) {
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(400)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":" + Json.write(e.getMessage()) + "}")
+                        .build();
+            }
+        });
+
         router.add(RequestMethod.POST, "/openapi/import", (admin, serveEvent, pathParams) -> {
             String requestBody = serveEvent.getRequest().getBodyAsString();
             if (requestBody == null || requestBody.isBlank()) {
@@ -71,6 +110,31 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
                                 builder.useSyntheticExamples(
                                         opts.get("useSyntheticExamples").asBoolean());
                             }
+                            if (opts.has("generationMode")) {
+                                try {
+                                    builder.generationMode(GenerationMode.valueOf(
+                                            opts.get("generationMode").asText().toUpperCase()));
+                                } catch (Exception ignored) {
+                                }
+                            }
+                            if (opts.has("proxyBaseUrl")
+                                    && !opts.get("proxyBaseUrl").isNull()) {
+                                builder.proxyBaseUrl(opts.get("proxyBaseUrl").asText());
+                            }
+                            if (opts.has("targetProject")
+                                    && !opts.get("targetProject").isNull()) {
+                                builder.targetProject(opts.get("targetProject").asText());
+                            }
+                            if (opts.has("additionalProxyHeaders")
+                                    && opts.get("additionalProxyHeaders").isObject()) {
+                                java.util.Iterator<Map.Entry<String, JsonNode>> fields =
+                                        opts.get("additionalProxyHeaders").fields();
+                                while (fields.hasNext()) {
+                                    Map.Entry<String, JsonNode> entry = fields.next();
+                                    builder.additionalProxyHeader(
+                                            entry.getKey(), entry.getValue().asText());
+                                }
+                            }
                             options = builder.build();
                         }
                     }
@@ -86,13 +150,15 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
                 List<OpenApiImportResult.StubSummary> summaries = new ArrayList<>();
                 for (StubMapping stub : generatedStubs) {
                     admin.addStubMapping(stub);
+                    int status = stub.getResponse().getStatus();
+                    Integer statusVal = (status > 0) ? status : null;
                     summaries.add(new OpenApiImportResult.StubSummary(
                             stub.getId() != null ? stub.getId().toString() : null,
                             stub.getName(),
                             stub.getRequest().getMethod().getName(),
                             stub.getRequest().getUrl(),
                             stub.getRequest().getUrlPathTemplate(),
-                            stub.getResponse().getStatus()));
+                            statusVal));
                 }
 
                 OpenApiImportResult result = new OpenApiImportResult(summaries.size(), summaries, List.of());

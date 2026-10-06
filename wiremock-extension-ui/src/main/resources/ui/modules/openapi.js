@@ -4,7 +4,7 @@
  */
 
 import { elements } from './dom.js';
-import { doFetch, loadData } from './api.js';
+import { doFetch, loadData, inspectOpenApi } from './api.js';
 
 export function setupOpenApiModal() {
   if (!elements.btnOpenOpenApiModal || !elements.openapiModal) return;
@@ -34,6 +34,69 @@ export function setupOpenApiModal() {
       elements.openapiImportFeedback.className = `modal-feedback ${isError ? 'error' : 'success'}`;
       elements.openapiImportFeedback.textContent = msg;
     }
+  }
+
+  // Generation mode toggle
+  function updateModeUi() {
+    const isProxy = elements.optOpenApiModeProxy && elements.optOpenApiModeProxy.checked;
+    if (elements.openapiProxyConfig) {
+      if (isProxy) {
+        elements.openapiProxyConfig.classList.remove('hidden');
+      } else {
+        elements.openapiProxyConfig.classList.add('hidden');
+      }
+    }
+  }
+
+  if (elements.optOpenApiModeSynthetic) {
+    elements.optOpenApiModeSynthetic.addEventListener('change', updateModeUi);
+  }
+  if (elements.optOpenApiModeProxy) {
+    elements.optOpenApiModeProxy.addEventListener('change', updateModeUi);
+  }
+
+  // Auto-inspect OpenAPI spec on input
+  async function triggerSpecInspection() {
+    const spec = (elements.openapiSpecContent && elements.openapiSpecContent.value.trim()) || '';
+    if (!spec || spec.length < 20) return;
+
+    try {
+      const info = await inspectOpenApi(spec);
+      if (info && info.title && elements.openapiProjectName && !elements.openapiProjectName.value) {
+        elements.openapiProjectName.value = info.title;
+      }
+      if (info && Array.isArray(info.servers) && elements.openapiServerSelect) {
+        elements.openapiServerSelect.innerHTML = '<option value="">Spec Servers (' + info.servers.length + ')...</option>';
+        info.servers.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.url;
+          opt.textContent = s.description ? `${s.url} (${s.description})` : s.url;
+          elements.openapiServerSelect.appendChild(opt);
+        });
+
+        if (info.servers.length > 0 && elements.openapiProxyUrl && !elements.openapiProxyUrl.value) {
+          elements.openapiProxyUrl.value = info.servers[0].url;
+        }
+      }
+    } catch (_) {
+      // Ignored during typing
+    }
+  }
+
+  if (elements.openapiSpecContent) {
+    let inspectTimer = null;
+    elements.openapiSpecContent.addEventListener('input', () => {
+      clearTimeout(inspectTimer);
+      inspectTimer = setTimeout(triggerSpecInspection, 600);
+    });
+  }
+
+  if (elements.openapiServerSelect) {
+    elements.openapiServerSelect.addEventListener('change', () => {
+      if (elements.openapiServerSelect.value && elements.openapiProxyUrl) {
+        elements.openapiProxyUrl.value = elements.openapiServerSelect.value;
+      }
+    });
   }
 
   elements.btnOpenOpenApiModal.addEventListener('click', openModal);
@@ -99,6 +162,7 @@ export function setupOpenApiModal() {
     reader.onload = (event) => {
       if (elements.openapiSpecContent) {
         elements.openapiSpecContent.value = event.target.result;
+        triggerSpecInspection();
       }
     };
     reader.readAsText(file);
@@ -113,11 +177,36 @@ export function setupOpenApiModal() {
         return;
       }
 
+      const isProxy = elements.optOpenApiModeProxy && elements.optOpenApiModeProxy.checked;
+      const proxyBaseUrl = (elements.openapiProxyUrl && elements.openapiProxyUrl.value.trim()) || '';
+      const targetProject = (elements.openapiProjectName && elements.openapiProjectName.value.trim()) || null;
+
+      if (isProxy && !proxyBaseUrl) {
+        showFeedback('Please enter or select a Target Upstream Base URL (proxyBaseUrl).', true);
+        return;
+      }
+
       const options = {
+        generationMode: isProxy ? 'PROXY' : 'SYNTHETIC',
+        proxyBaseUrl: isProxy ? proxyBaseUrl : null,
+        targetProject: targetProject,
         includeOnlySuccessResponses: elements.optOpenApiSuccessOnly ? elements.optOpenApiSuccessOnly.checked : false,
         matchRequiredHeaders: elements.optOpenApiMatchHeaders ? elements.optOpenApiMatchHeaders.checked : true,
         matchRequiredQueryParams: elements.optOpenApiMatchQueries ? elements.optOpenApiMatchQueries.checked : true
       };
+
+      if (isProxy && elements.openapiProxyHeaders && elements.openapiProxyHeaders.value.trim()) {
+        const headers = {};
+        elements.openapiProxyHeaders.value.split('\n').forEach(line => {
+          const colon = line.indexOf(':');
+          if (colon > 0) {
+            headers[line.substring(0, colon).trim()] = line.substring(colon + 1).trim();
+          }
+        });
+        if (Object.keys(headers).length > 0) {
+          options.additionalProxyHeaders = headers;
+        }
+      }
 
       const payload = {
         spec,
@@ -125,7 +214,7 @@ export function setupOpenApiModal() {
       };
 
       elements.btnSubmitOpenApiImport.disabled = true;
-      elements.btnSubmitOpenApiImport.textContent = 'Generating...';
+      elements.btnSubmitOpenApiImport.textContent = isProxy ? 'Configuring Proxy...' : 'Generating...';
 
       try {
         const response = await doFetch('/__admin/openapi/import', {

@@ -69,6 +69,20 @@ body {
   font-weight: 700;
 }
 
+.brand-version-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+  padding: 1px 8px;
+  letter-spacing: 0.01em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 .badge-qol {
   background: linear-gradient(135deg, #06b6d4, #3b82f6);
   color: white;
@@ -1924,6 +1938,71 @@ kbd {
   background-color: #dc2626;
 }
 
+/* Proxy Status Pill & Mode Badge */
+.stub-status-pill.status-proxy {
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.35);
+  font-weight: 600;
+}
 
+.card-value.status-proxy {
+  color: #38bdf8;
+}
 
+/* Project Lifecycle Toolbar */
+.project-lifecycle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color);
+  gap: 8px;
+}
 
+.project-lifecycle-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.project-active-name {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.project-mode-badge.mode-proxy {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.project-mode-badge.mode-stubs {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.project-lifecycle-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}

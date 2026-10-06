@@ -289,4 +289,73 @@ class OpenApiStubGeneratorTest {
         assertThat(reqBody).contains("\"name\" : \"Mocha Supreme\"");
         assertThat(reqBody).contains("\"price\" : 5.25");
     }
+
+    @Test
+    @DisplayName("Should generate proxy stubs when GenerationMode.PROXY is selected")
+    void shouldGenerateProxyStubs() {
+        String yaml =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Orders API
+                  version: 1.0.0
+                servers:
+                  - url: https://orders.upstream.internal
+                paths:
+                  /orders:
+                    get:
+                      summary: List Orders
+                      responses:
+                        '200':
+                          description: Ok
+                        '500':
+                          description: Error
+                  /orders/{orderId}:
+                    get:
+                      summary: Get Order by ID
+                      responses:
+                        '200':
+                          description: Ok
+                """;
+
+        OpenApiStubOptions options = OpenApiStubOptions.builder()
+                .generationMode(GenerationMode.PROXY)
+                .proxyBaseUrl("https://orders.staging.internal")
+                .targetProject("Orders Core")
+                .additionalProxyHeader("X-Internal-Token", "secret99")
+                .build();
+
+        OpenApiStubGenerator proxyGen = new OpenApiStubGenerator(options);
+        List<StubMapping> stubs = proxyGen.generateStubs(yaml);
+
+        // Exactly 2 proxy stubs: 1 per operation (not 3 for each response status code!)
+        assertThat(stubs).hasSize(2);
+
+        StubMapping listOrders = stubs.stream()
+                .filter(s -> s.getRequest().getUrl().equals("/orders"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(listOrders.getName()).isEqualTo("[PROXY GET] List Orders");
+        assertThat(listOrders.getPriority()).isEqualTo(10);
+        assertThat(listOrders.getResponse().getProxyBaseUrl()).isEqualTo("https://orders.staging.internal");
+        assertThat(listOrders
+                        .getResponse()
+                        .getAdditionalProxyRequestHeaders()
+                        .getHeader("X-Internal-Token")
+                        .firstValue())
+                .isEqualTo("secret99");
+        assertThat(listOrders.getMetadata().getString("mode")).isEqualTo("proxy");
+        assertThat(listOrders.getMetadata().getString("project")).isEqualTo("Orders Core");
+        assertThat(listOrders.getMetadata().getString("proxyBaseUrl")).isEqualTo("https://orders.staging.internal");
+
+        StubMapping getOrderById = stubs.stream()
+                .filter(s -> s.getRequest().getUrlPathTemplate() != null
+                        && s.getRequest().getUrlPathTemplate().equals("/orders/{orderId}"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(getOrderById.getName()).isEqualTo("[PROXY GET] Get Order by ID");
+        assertThat(getOrderById.getResponse().getProxyBaseUrl()).isEqualTo("https://orders.staging.internal");
+    }
 }

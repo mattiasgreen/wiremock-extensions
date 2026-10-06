@@ -102,7 +102,10 @@ export function renderJournal() {
                 <div class="journal-detail-card">
                   <div class="journal-card-header">
                     <span>Response: Status ${status} (${escapeHtml(stubName)})</span>
-                    <button class="btn btn-small btn-copy-resp" data-id="${req.id}">📋 Copy Response</button>
+                    <div style="display: flex; gap: 6px;">
+                      <button class="btn btn-small btn-freeze-req" data-id="${req.id}" title="Freeze this live response as a disabled static stub for review">📸 Freeze Stub</button>
+                      <button class="btn btn-small btn-copy-resp" data-id="${req.id}">📋 Copy Response</button>
+                    </div>
                   </div>
                   <div class="journal-section-title">Headers</div>
                   <pre class="code-block-mini">${resHeadersHtml}</pre>
@@ -124,6 +127,58 @@ export function renderJournal() {
       if (e.target.closest('button')) return;
       const reqId = row.getAttribute('data-request-id') || (row.dataset && row.dataset.requestId);
       toggleJournalDetail(reqId, true);
+    });
+  });
+
+  elements.journalList.querySelectorAll('.btn-freeze-req').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
+      const req = state.currentRequests.find(r => r.id === targetId);
+      if (!req) return;
+
+      const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
+      const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+      const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+      const headers = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+
+      const stubData = {
+        name: `[RECORDED ${req.request.method} ${status}] ${req.request.url}`,
+        priority: 5,
+        request: {
+          method: req.request.method,
+          url: req.request.url
+        },
+        response: {
+          status: status,
+          headers: headers,
+          body: typeof resBody === 'string' ? resBody : JSON.stringify(resBody)
+        },
+        metadata: {
+          source: 'recorded-proxy',
+          project: project,
+          mode: 'static',
+          recordedAt: new Date().toISOString()
+        }
+      };
+
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        const { createStubMapping, toggleStubState, loadData } = await import('./api.js');
+        const created = await createStubMapping(stubData);
+        if (created && created.id) {
+          await toggleStubState(created.id); // Park into disabled store per default
+        }
+        await loadData();
+        btn.textContent = '✅ Frozen!';
+        setTimeout(() => btn.textContent = '📸 Freeze Stub', 1500);
+      } catch (err) {
+        alert('Failed to freeze stub: ' + err.message);
+        btn.textContent = '📸 Freeze Stub';
+      } finally {
+        btn.disabled = false;
+      }
     });
   });
 

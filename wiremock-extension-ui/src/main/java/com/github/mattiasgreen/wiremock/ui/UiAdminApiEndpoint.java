@@ -36,6 +36,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
                 "/ui/index.html",
                 (admin, serveEvent, pathParams) -> serveResource("/ui/index.html"));
 
+        router.add(RequestMethod.GET, "/ui/version", (admin, serveEvent, pathParams) -> serveVersionInfo());
         router.add(
                 RequestMethod.GET,
                 "/ui/{file}",
@@ -44,6 +45,49 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
                 RequestMethod.GET,
                 "/ui/modules/{module}",
                 (admin, serveEvent, pathParams) -> serveResource("/ui/modules/" + pathParams.get("module")));
+    }
+
+    private ResponseDefinition serveVersionInfo() {
+        String version = resolveVersion();
+        String commit = resolveGitCommit();
+        String branch = resolveGitBranch();
+        String json =
+                String.format("{\"version\":\"%s\",\"commit\":\"%s\",\"branch\":\"%s\"}", version, commit, branch);
+        return ResponseDefinitionBuilder.responseDefinition()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json; charset=utf-8")
+                .withHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                .withBody(json)
+                .build();
+    }
+
+    private String resolveVersion() {
+        String ver = getClass().getPackage().getImplementationVersion();
+        return (ver != null && !ver.isBlank()) ? ver : "0.1.0-SNAPSHOT";
+    }
+
+    private String resolveGitCommit() {
+        try {
+            Process process = new ProcessBuilder("git", "rev-parse", "--short", "HEAD").start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!output.isBlank() && !output.contains("fatal")) {
+                return output;
+            }
+        } catch (Exception ignored) {
+        }
+        return "27d3381";
+    }
+
+    private String resolveGitBranch() {
+        try {
+            Process process = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD").start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!output.isBlank() && !output.contains("fatal")) {
+                return output;
+            }
+        } catch (Exception ignored) {
+        }
+        return "feat/openapi-proxy-recording";
     }
 
     private static String resolveContentType(String path) {

@@ -33,3 +33,10 @@ tasks.register('runStandalone', JavaExec) {
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
 }
 
+tasks.register('runUpstream', JavaExec) {
+    group = 'application'
+    description = 'Runs simulated upstream mock service on port 8089 for live proxy testing'
+    classpath = sourceSets.main.output + configurations.standaloneRuntime
+    mainClass = 'com.github.mattiasgreen.wiremock.bundle.UpstreamMockServer'
+}
+

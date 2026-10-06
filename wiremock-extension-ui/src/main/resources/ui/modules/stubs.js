@@ -84,8 +84,9 @@ export function renderStubList() {
     const url = getStubUrl(stub.request);
     const name = stub.name || (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed');
     const project = getStubProject(stub);
-    const statusCode = (stub.response && stub.response.status) || 200;
-    const statusCls = statusCode >= 500 ? 'status-500' : (statusCode >= 400 ? 'status-400' : 'status-200');
+    const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
+    const statusCode = isProxy ? 'PROXY' : ((stub.response && stub.response.status) || 200);
+    const statusCls = isProxy ? 'status-proxy' : (statusCode >= 500 ? 'status-500' : (statusCode >= 400 ? 'status-400' : 'status-200'));
 
     card.innerHTML = `
       <div class="stub-card-select">
@@ -166,9 +167,10 @@ export function selectStub(stub, updateRoute = true) {
   elements.detailUrl.textContent = getStubUrl(stub.request);
   elements.detailName.textContent = stub.name ? `— ${stub.name}` : '';
 
-  const status = (stub.response && stub.response.status) || 200;
+  const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
+  const status = isProxy ? 'PROXY' : ((stub.response && stub.response.status) || 200);
   elements.detailStatus.textContent = status;
-  elements.detailStatus.className = `card-value status-${status >= 500 ? '500' : (status >= 400 ? '400' : '200')}`;
+  elements.detailStatus.className = `card-value ${isProxy ? 'status-proxy' : (status >= 500 ? 'status-500' : (status >= 400 ? 'status-400' : 'status-200'))}`;
 
   elements.detailPriority.textContent = stub.priority || 5;
   elements.detailScenario.textContent = stub.scenarioName

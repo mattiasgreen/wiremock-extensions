@@ -948,6 +948,120 @@ public class UiPlaywrightTest {
         }
     }
 
+    @Test
+    @DisplayName("Scenario 11: OpenAPI Live Proxy Import, Testing via UI, Snapshot Recording, and Project Mode Flip")
+    void testOpenApiLiveProxyAndRecordingLifecycle() {
+        WireMockServer upstreamServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstreamServer.start();
+
+        try {
+            upstreamServer.stubFor(get(urlEqualTo("/api/v1/live-catalog"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"status\":\"success\",\"upstreamData\":\"Live Catalog Item\"}")));
+
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+            assertThat(page.title()).isEqualTo("WireMock Console");
+
+            // 1. Open Import Modal
+            page.locator("#btn-open-openapi-modal").click();
+            page.waitForSelector("#openapi-modal:not(.hidden)");
+
+            // 2. Select Live Proxy & Recording mode
+            page.locator("#opt-openapi-mode-proxy").click();
+            assertThat(page.locator("#openapi-proxy-config").isVisible()).isTrue();
+
+            page.locator("#openapi-proxy-url").fill(upstreamServer.baseUrl());
+            page.locator("#openapi-project-name").fill("Catalog Service");
+
+            String specYaml =
+                    """
+                    openapi: 3.0.3
+                    info:
+                      title: Catalog Service
+                      version: 1.0.0
+                    paths:
+                      /api/v1/live-catalog:
+                        get:
+                          summary: Fetch live catalog
+                          responses:
+                            '200':
+                              description: Ok
+                    """;
+
+            page.locator("#openapi-spec-content").fill(specYaml);
+            page.locator("#btn-submit-openapi-import").click();
+
+            // Wait for modal to close and stub to appear
+            page.waitForSelector(
+                    "#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+            page.waitForSelector("#stub-list .stub-card");
+
+            // 3. Verify PROXY badge is rendered in stub card
+            Locator proxyCard = page.locator(".stub-card")
+                    .filter(new Locator.FilterOptions().setHasText("live-catalog"))
+                    .first();
+            assertThat(proxyCard.isVisible()).isTrue();
+            assertThat(proxyCard.locator(".status-proxy").textContent()).contains("PROXY");
+
+            // 4. Test Stub via HTTP Tester
+            proxyCard.click();
+            page.locator("#btn-test-stub").click();
+            page.waitForSelector("#tab-tester.active");
+
+            // Send request through Primary WireMock -> proxies to upstream
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            assertThat(page.locator("#tester-response-body").textContent()).contains("Live Catalog Item");
+
+            // 5. Select project in Project Filter
+            page.locator("#nav-tab-stubs").click();
+            page.waitForSelector("#tab-stub-detail.active");
+            page.locator("#project-filter-select").selectOption("Catalog Service");
+
+            // 6. Project lifecycle bar should be visible in LIVE PROXY mode
+            page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
+            assertThat(page.locator("#project-mode-badge").textContent()).contains("LIVE PROXY");
+
+            // 7. Snapshot live traffic (handle alert dialog)
+            page.onceDialog(dialog -> dialog.accept());
+            page.locator("#btn-project-snapshot").click();
+
+            // Verify recorded stub was created in DISABLED state
+            page.waitForSelector("#btn-filter-disabled");
+            page.locator("#btn-filter-disabled").click();
+            Locator disabledCard = page.locator(".stub-card")
+                    .filter(new Locator.FilterOptions().setHasText("RECORDED"))
+                    .first();
+            assertThat(disabledCard.isVisible()).isTrue();
+            assertThat(disabledCard.locator(".status-badge.badge-disabled").textContent())
+                    .contains("DISABLED");
+
+            // 8. Toggle project mode to STUBS MODE
+            page.locator("#btn-project-mode-toggle").click();
+            page.waitForSelector("#project-mode-badge:has-text('STUBS MODE')");
+
+            // 9. Stop upstream server (simulate offline environment)
+            upstreamServer.stop();
+
+            // 10. Re-test endpoint in HTTP Tester -> Served offline from the recorded stub!
+            page.locator("#nav-tab-tester").click();
+            page.waitForSelector("#tab-tester.active");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            assertThat(page.locator("#tester-response-body").textContent()).contains("Live Catalog Item");
+
+            assertThat(pageErrors).isEmpty();
+        } finally {
+            if (upstreamServer.isRunning()) {
+                upstreamServer.stop();
+            }
+            resetDefaultStubs();
+        }
+    }
+
     private void resetDefaultStubs() {
         wireMockServer.resetAll();
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))

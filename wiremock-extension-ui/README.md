@@ -25,9 +25,14 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 - **End-to-End OpenAPI Import & Testing Workflow**:
   - One-click import hub for OpenAPI 3.0 / 3.1 specifications (YAML or JSON) and WireMock bundles.
-  - Synthesizes realistic mock stubs complete with format-aware example request payloads and response definitions.
+  - Choice between **Synthetic Stubs** (format-aware data generator) and **Live Transparent Proxy** (proxies requests to upstream live service with auto-discovered `servers:` block).
   - Direct handoff into the HTTP Tester with persistent Stubs Explorer on the left, request/response inspector, and collapsible vertical history sidebar.
   - Inspect live traffic matching and response verification in the Request Journal.
+
+- **Live Proxy Recording & Project Lifecycle**:
+  - Group stubs and proxies into distinct **Projects**.
+  - **One-Click Snapshot Recording**: Record actual traffic forwarded to the upstream service directly from the request journal into captured stubs parked as `DISABLED` so they do not collide with active proxying.
+  - **Project Mode Flip**: Toggle between **LIVE PROXY** mode and offline **STUBS MODE** in one click. Flipping to `STUBS MODE` disables the proxy stubs and activates the authentic recorded stubs, enabling 100% offline testing.
 
 ![OpenAPI Spec Import & End-to-End Workflow Demo](../docs/images/demo-openapi-import.gif)
 
