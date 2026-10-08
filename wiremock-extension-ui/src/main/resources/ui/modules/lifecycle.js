@@ -65,7 +65,7 @@ export function openStubEditor(stub, clone = false) {
 
   const titleEl = document.getElementById('editor-modal-title');
   if (titleEl) {
-    titleEl.textContent = clone ? 'Duplicate Stub Mapping' : 'Edit Stub Mapping';
+    titleEl.textContent = clone ? 'Duplicate Stub Mapping' : (stub ? 'Edit Stub Mapping' : 'Create New Stub');
   }
 
   const nameInput = document.getElementById('editor-name');
@@ -81,13 +81,16 @@ export function openStubEditor(stub, clone = false) {
   const req = stub ? stub.request : {};
   const res = stub ? stub.response : {};
   const meta = stub ? (stub.metadata || {}) : {};
+  const activeProj = (state.activeProjectFilter && state.activeProjectFilter !== '*' && state.activeProjectFilter !== '_all')
+    ? state.activeProjectFilter
+    : '';
 
-  if (nameInput) nameInput.value = clone ? `${stub.name || 'Stub'} (Copy)` : (stub.name || '');
+  if (nameInput) nameInput.value = clone ? `${stub.name || 'Stub'} (Copy)` : (stub ? (stub.name || '') : '');
   if (methodSelect) methodSelect.value = (req.method || 'GET').toUpperCase();
-  if (urlInput) urlInput.value = req.url || req.urlPath || req.urlPathTemplate || req.urlPattern || '/';
+  if (urlInput) urlInput.value = stub ? (req.url || req.urlPath || req.urlPathTemplate || req.urlPattern || '/') : '/';
   if (statusInput) statusInput.value = (res.status != null) ? res.status : 200;
-  if (priorityInput) priorityInput.value = stub.priority || 5;
-  if (projectInput) projectInput.value = meta.project || '';
+  if (priorityInput) priorityInput.value = (stub && stub.priority) ? stub.priority : 5;
+  if (projectInput) projectInput.value = meta.project || activeProj;
   if (tagsInput) tagsInput.value = Array.isArray(meta.tags) ? meta.tags.join(', ') : (meta.tags || '');
 
   // Extract response headers
@@ -96,6 +99,8 @@ export function openStubEditor(stub, clone = false) {
     for (const [k, v] of Object.entries(res.headers)) {
       headerLines.push(`${k}: ${v}`);
     }
+  } else if (!stub) {
+    headerLines.push('Content-Type: application/json');
   }
   if (headersText) headersText.value = headerLines.join('\n');
 
@@ -105,6 +110,8 @@ export function openStubEditor(stub, clone = false) {
     bodyContent = res.body;
   } else if (res.jsonBody != null) {
     bodyContent = JSON.stringify(res.jsonBody, null, 2);
+  } else if (!stub) {
+    bodyContent = '{\n  "status": "ok"\n}';
   }
   if (bodyText) bodyText.value = bodyContent;
 

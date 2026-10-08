@@ -137,11 +137,11 @@ public class WireMockLogEvent {
 
     @JsonAnyGetter
     public Map<String, String> getMdcTags() {
-        return mdcTags;
+        return mdcTags != null ? new HashMap<>(mdcTags) : null;
     }
 
     public void setMdcTags(Map<String, String> mdcTags) {
-        this.mdcTags = mdcTags != null ? mdcTags : new HashMap<>();
+        this.mdcTags = mdcTags != null ? new HashMap<>(mdcTags) : new HashMap<>();
     }
 
     public void addMdcTag(String key, String value) {
@@ -181,11 +181,11 @@ public class WireMockLogEvent {
         }
 
         public Map<String, String> getHeaders() {
-            return headers;
+            return headers != null ? new HashMap<>(headers) : null;
         }
 
         public void setHeaders(Map<String, String> headers) {
-            this.headers = headers;
+            this.headers = headers != null ? new HashMap<>(headers) : null;
         }
 
         public String getBody() {
@@ -212,11 +212,11 @@ public class WireMockLogEvent {
         }
 
         public Map<String, String> getHeaders() {
-            return headers;
+            return headers != null ? new HashMap<>(headers) : null;
         }
 
         public void setHeaders(Map<String, String> headers) {
-            this.headers = headers;
+            this.headers = headers != null ? new HashMap<>(headers) : null;
         }
 
         public String getBody() {

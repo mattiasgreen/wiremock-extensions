@@ -29,5 +29,5 @@ jobs:
       - name: Check Code Style & Formatting
         run: ./gradlew spotlessCheck
 
-      - name: Build and Test
-        run: ./gradlew test
+      - name: Build, Test & Static Analysis
+        run: ./gradlew check

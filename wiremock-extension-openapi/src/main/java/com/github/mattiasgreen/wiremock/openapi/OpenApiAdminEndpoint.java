@@ -48,7 +48,7 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
                         specContent = node.get("spec").asText();
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
             }
 
             try {
@@ -113,8 +113,8 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
                             if (opts.has("generationMode")) {
                                 try {
                                     builder.generationMode(GenerationMode.valueOf(
-                                            opts.get("generationMode").asText().toUpperCase()));
-                                } catch (Exception ignored) {
+                                            opts.get("generationMode").asText().toUpperCase(java.util.Locale.ROOT)));
+                                } catch (IllegalArgumentException ignored) {
                                 }
                             }
                             if (opts.has("proxyBaseUrl")
@@ -139,7 +139,7 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
                         }
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
                 // Not a wrapped JSON, treat whole body as raw YAML or JSON spec
             }
 
@@ -150,15 +150,17 @@ public class OpenApiAdminEndpoint implements AdminApiExtension {
                 List<OpenApiImportResult.StubSummary> summaries = new ArrayList<>();
                 for (StubMapping stub : generatedStubs) {
                     admin.addStubMapping(stub);
-                    int status = stub.getResponse().getStatus();
-                    Integer statusVal = (status > 0) ? status : null;
+                    int status =
+                            (stub.getResponse() != null && stub.getResponse().getStatus() > 0)
+                                    ? stub.getResponse().getStatus()
+                                    : 200;
                     summaries.add(new OpenApiImportResult.StubSummary(
                             stub.getId() != null ? stub.getId().toString() : null,
                             stub.getName(),
                             stub.getRequest().getMethod().getName(),
                             stub.getRequest().getUrl(),
                             stub.getRequest().getUrlPathTemplate(),
-                            statusVal));
+                            status));
                 }
 
                 OpenApiImportResult result = new OpenApiImportResult(summaries.size(), summaries, List.of());

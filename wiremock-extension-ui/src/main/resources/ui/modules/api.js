@@ -135,13 +135,18 @@ export function toggleStubState(stubId) {
 }
 
 export function deleteStubMapping(stubId) {
-  // Try normal mapping delete, and also invoke bulk delete to ensure removal from disabledStore
-  return apiDelete(`/__admin/mappings/${stubId}`)
-    .catch(() => bulkStubs('delete', [stubId]));
+  // Try /__admin/stubs/${stubId} first (cleans up active and disabled), fallback to mappings
+  return apiDelete(`/__admin/stubs/${stubId}`)
+    .catch(() => apiDelete(`/__admin/mappings/${stubId}`).catch(() => bulkStubs('delete', [stubId])));
 }
 
 export function saveStubMapping(stubId, stubData) {
-  return apiPut(`/__admin/mappings/${stubId}`, stubData);
+  // Use /__admin/stubs/${stubId} which supports both active and disabled stubs safely
+  return apiPut(`/__admin/stubs/${stubId}`, stubData)
+    .catch(err => {
+      // Fallback to core /__admin/mappings/${stubId} if stubs endpoint unavailable
+      return apiPut(`/__admin/mappings/${stubId}`, stubData);
+    });
 }
 
 export function createStubMapping(stubData) {

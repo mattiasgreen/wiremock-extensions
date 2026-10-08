@@ -12,7 +12,8 @@ Guidelines, constraints, architecture, and commands for autonomous coding agents
 | :--- | :--- | :--- |
 | **`wiremock-extension-json-logging`** | Single-line JSON traffic logging with corporate header MDC propagation (`x-correlation-id`, `x-tenant-id`). | `RequestFilterV2` (`MdcRequestFilter`), `ServeEventListener` (`JsonLoggingListener`) |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, duration histograms) + Prometheus scrape route (`/__admin/metrics/prometheus`). | `ServeEventListener` (`OtelMetricsListener`), `AdminApiExtension` (`PrometheusAdminEndpoint`) |
-| **`wiremock-extension-ui`** | Embedded Vanilla JS single-page web UI at `/__admin/ui/` with stub viewer, scenario DAG visualizer, request journal, and HTTP tester. | `AdminApiExtension` (`UiAdminApiEndpoint`) |
+| **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification ingestion, schema data synthesis, and live proxy/recording routes (`/__admin/openapi/import`). | `AdminApiExtension` (`OpenApiAdminEndpoint`) |
+| **`wiremock-extension-ui`** | Embedded Vanilla JS single-page web UI at `/__admin/ui/` with stub viewer, scenario DAG visualizer, request journal, and HTTP tester. | `AdminApiExtension` (`UiAdminApiEndpoint`, `StubLifecycleAdminEndpoint`) |
 | **`wiremock-extension-bundle`** | Meta-jar aggregating all extensions with auto-discovery (`ExtensionFactory`) + `StandaloneDevServer` runner. | Meta-packaging & standalone JavaExec runner |
 | **`wiremock-examples`** | Case Management reference implementation modeling stateful FSM scenarios, parallel collision pitfalls, and integration tests. | Reference implementation & test suite |
 
@@ -30,11 +31,25 @@ Guidelines, constraints, architecture, and commands for autonomous coding agents
 3. **Format Standards**:
    - Always run `./gradlew spotlessApply` before committing.
    - Adhere strictly to Google Java Format / Palantir standards via Spotless.
+4. **Static Security & Code Quality Gate (SpotBugs + FindSecBugs)**:
+   - Enforced across all subprojects on production code via `./gradlew spotbugsMain` and `./gradlew check`.
+   - Builds fail (`ignoreFailures = false`) if any correctness or security issues are detected.
+   - Always use explicit `Locale.ROOT` on case conversions (e.g., `toLowerCase(Locale.ROOT)`).
+   - Always sanitize potential CRLF (`\r`, `\n`) characters before logging dynamic inputs.
+   - Always load classpath assets using static class literals (`MyClass.class.getResourceAsStream(...)`), never dynamic `getClass()`.
 
 ---
 
 ## 3. Essential Commands & Development Workflows
 
+* **Run all verification checks** (Tests, Spotless, and SpotBugs):
+  ```bash
+  ./gradlew check
+  ```
+* **Run SpotBugs security analysis across all modules**:
+  ```bash
+  ./gradlew spotbugsMain
+  ```
 * **Run all tests** (GIF recording excluded by default for speed):
   ```bash
   ./gradlew test

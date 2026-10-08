@@ -23,6 +23,7 @@ public class UiPlaywrightTest {
     private final List<String> consoleLogs = Collections.synchronizedList(new ArrayList<>());
     private final List<String> consoleErrors = Collections.synchronizedList(new ArrayList<>());
     private final List<String> pageErrors = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> httpErrors = Collections.synchronizedList(new ArrayList<>());
 
     @BeforeAll
     void startAll() {
@@ -58,6 +59,7 @@ public class UiPlaywrightTest {
         consoleLogs.clear();
         consoleErrors.clear();
         pageErrors.clear();
+        httpErrors.clear();
         context = browser.newContext();
         page = context.newPage();
 
@@ -80,6 +82,7 @@ public class UiPlaywrightTest {
                     && !response.url().contains("favicon.ico")
                     && !response.url().contains("nonexistent")) {
                 System.err.println("HTTP ERROR RESPONSE: " + response.status() + " " + response.url());
+                httpErrors.add(response.status() + " " + response.url());
             }
         });
     }
@@ -1060,6 +1063,80 @@ public class UiPlaywrightTest {
             }
             resetDefaultStubs();
         }
+    }
+
+    @Test
+    @DisplayName("Scenario 12: Stub lifecycle management (Edit Active, Edit Disabled, Ad-hoc Creation)")
+    void testStubManagementEditAndCreateWorkflow() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#stub-list .stub-card");
+
+        // 1. Edit an active stub
+        Locator usersCard = page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("List Users API"))
+                .first();
+        usersCard.click();
+        page.waitForSelector("#tab-stub-detail.active");
+        page.locator("#btn-edit-stub").click();
+
+        // Modal opens
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        page.locator("#editor-name").fill("Updated Users API");
+        page.locator("#btn-save-editor").click();
+
+        // Modal closes and detail updates
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        page.waitForSelector("#detail-name:has-text('Updated Users API')");
+        assertThat(page.locator("#detail-name").textContent()).contains("Updated Users API");
+
+        // 2. Toggle stub to disabled
+        page.locator("#btn-toggle-stub").click();
+        page.waitForSelector("#detail-lifecycle-state:has-text('DISABLED')");
+
+        // 3. Edit the DISABLED stub - previously this returned a 404 error!
+        page.locator("#btn-edit-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        page.locator("#editor-name").fill("Updated Disabled Users API");
+        page.locator("#btn-save-editor").click();
+
+        // Modal closes and verified without 404
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        page.waitForSelector("#detail-name:has-text('Updated Disabled Users API')");
+        assertThat(page.locator("#detail-name").textContent()).contains("Updated Disabled Users API");
+
+        // 4. Ad-hoc Stub Creation via ➕ New
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        assertThat(page.locator("#editor-modal-title").textContent()).contains("Create New Stub");
+
+        page.locator("#editor-name").fill("Ad-hoc Custom API");
+        page.locator("#editor-method").selectOption("POST");
+        page.locator("#editor-url").fill("/api/v1/adhoc-test");
+        page.locator("#editor-status").fill("201");
+        page.locator("#editor-body").fill("{\"adhoc\": true, \"message\": \"Created successfully\"}");
+        page.locator("#btn-save-editor").click();
+
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        page.waitForSelector(".stub-card:has-text('Ad-hoc Custom API')");
+
+        // 5. Test newly created stub in HTTP Tester
+        Locator adhocCard = page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("Ad-hoc Custom API"))
+                .first();
+        adhocCard.click();
+        page.locator("#btn-test-stub").click();
+        page.waitForSelector("#tab-tester.active");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('201')");
+        assertThat(page.locator("#tester-response-body").textContent()).contains("Created successfully");
+
+        // Ensure no browser errors or 404s occurred during the operations
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+        assertThat(httpErrors).isEmpty();
     }
 
     private void resetDefaultStubs() {

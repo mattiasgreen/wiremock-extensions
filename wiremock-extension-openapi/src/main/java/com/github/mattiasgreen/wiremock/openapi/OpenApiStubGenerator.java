@@ -21,6 +21,7 @@ import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -120,10 +121,7 @@ public class OpenApiStubGenerator {
 
         if (options.generationMode() == GenerationMode.PROXY
                 || (options.proxyBaseUrl() != null && !options.proxyBaseUrl().isBlank())) {
-            StubMapping proxyStub = createProxyStub(openAPI, path, method, operation, allParams);
-            if (proxyStub != null) {
-                stubs.add(proxyStub);
-            }
+            stubs.add(createProxyStub(openAPI, path, method, operation, allParams));
             return;
         }
 
@@ -137,10 +135,7 @@ public class OpenApiStubGenerator {
                 continue;
             }
 
-            StubMapping stub = createStub(openAPI, path, method, operation, allParams, statusCode, apiResponse);
-            if (stub != null) {
-                stubs.add(stub);
-            }
+            stubs.add(createStub(openAPI, path, method, operation, allParams, statusCode, apiResponse));
         }
     }
 
@@ -165,10 +160,10 @@ public class OpenApiStubGenerator {
         // Query & Header matchers for required parameters
         for (Parameter param : parameters) {
             if (Boolean.TRUE.equals(param.getRequired())) {
-                String paramIn = param.getIn();
-                if ("query".equalsIgnoreCase(paramIn) && options.matchRequiredQueryParams()) {
+                String paramIn = param.getIn() != null ? param.getIn().toLowerCase(Locale.ROOT) : "";
+                if ("query".equals(paramIn) && options.matchRequiredQueryParams()) {
                     requestBuilder.withQueryParam(param.getName(), matching(".+"));
-                } else if ("header".equalsIgnoreCase(paramIn) && options.matchRequiredHeaders()) {
+                } else if ("header".equals(paramIn) && options.matchRequiredHeaders()) {
                     requestBuilder.withHeader(param.getName(), matching(".+"));
                 }
             }
@@ -248,10 +243,10 @@ public class OpenApiStubGenerator {
         // Query & Header matchers for required parameters
         for (Parameter param : parameters) {
             if (Boolean.TRUE.equals(param.getRequired())) {
-                String paramIn = param.getIn();
-                if ("query".equalsIgnoreCase(paramIn) && options.matchRequiredQueryParams()) {
+                String paramIn = param.getIn() != null ? param.getIn().toLowerCase(Locale.ROOT) : "";
+                if ("query".equals(paramIn) && options.matchRequiredQueryParams()) {
                     requestBuilder.withQueryParam(param.getName(), matching(".+"));
-                } else if ("header".equalsIgnoreCase(paramIn) && options.matchRequiredHeaders()) {
+                } else if ("header".equals(paramIn) && options.matchRequiredHeaders()) {
                     requestBuilder.withHeader(param.getName(), matching(".+"));
                 }
             }
@@ -327,16 +322,16 @@ public class OpenApiStubGenerator {
         Map<String, String> exampleQueryParams = new java.util.LinkedHashMap<>();
 
         for (Parameter param : parameters) {
-            String paramIn = param.getIn();
+            String paramIn = param.getIn() != null ? param.getIn().toLowerCase(Locale.ROOT) : "";
             String sampleVal = dataSynthesizer.synthesizeParameterValue(param, openAPI);
 
-            if ("path".equalsIgnoreCase(paramIn)) {
+            if ("path".equals(paramIn)) {
                 resolvedPath = resolvedPath.replace("{" + param.getName() + "}", sampleVal);
-            } else if ("query".equalsIgnoreCase(paramIn)) {
+            } else if ("query".equals(paramIn)) {
                 if (Boolean.TRUE.equals(param.getRequired())) {
                     exampleQueryParams.put(param.getName(), sampleVal);
                 }
-            } else if ("header".equalsIgnoreCase(paramIn)) {
+            } else if ("header".equals(paramIn)) {
                 if (Boolean.TRUE.equals(param.getRequired())) {
                     exampleHeaders.put(param.getName(), sampleVal);
                 }
@@ -389,7 +384,7 @@ public class OpenApiStubGenerator {
     }
 
     private int parseStatusCode(String codeStr) {
-        if ("default".equalsIgnoreCase(codeStr)) {
+        if ("default".equals(codeStr != null ? codeStr.toLowerCase(Locale.ROOT) : null)) {
             return 200;
         }
         try {

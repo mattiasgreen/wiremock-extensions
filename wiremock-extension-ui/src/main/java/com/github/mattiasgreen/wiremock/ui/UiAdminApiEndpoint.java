@@ -73,7 +73,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
             if (!output.isBlank() && !output.contains("fatal")) {
                 return output;
             }
-        } catch (Exception ignored) {
+        } catch (IOException | RuntimeException ignored) {
         }
         return "27d3381";
     }
@@ -85,7 +85,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
             if (!output.isBlank() && !output.contains("fatal")) {
                 return output;
             }
-        } catch (Exception ignored) {
+        } catch (IOException | RuntimeException ignored) {
         }
         return "feat/openapi-proxy-recording";
     }
@@ -148,7 +148,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
         }
 
         // Production classpath fallback
-        try (InputStream in = getClass().getResourceAsStream(resourcePath)) {
+        try (InputStream in = UiAdminApiEndpoint.class.getResourceAsStream(resourcePath)) {
             if (in == null) {
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(404)

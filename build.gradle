@@ -3,11 +3,13 @@ plugins {
     id 'maven-publish'
     id 'signing'
     id 'com.diffplug.spotless' version '7.0.2'
+    alias(libs.plugins.spotbugs) apply false
+    id 'com.gradleup.nmcp.aggregation' version '1.6.2'
 }
 
 allprojects {
     group = 'io.github.mattiasgreen'
-    version = '0.1.0-SNAPSHOT'
+    version = rootProject.version
 
     repositories {
         mavenCentral()
@@ -25,11 +27,14 @@ spotless {
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'com.diffplug.spotless'
+    apply plugin: 'com.github.spotbugs'
 
     if (project.name != 'wiremock-examples') {
         apply plugin: 'maven-publish'
         apply plugin: 'signing'
+        apply plugin: 'com.gradleup.nmcp'
     }
+
 
     spotless {
         java {
@@ -54,6 +59,7 @@ subprojects {
     }
 
     dependencies {
+        spotbugsPlugins libs.findsecbugs.plugin
         compileOnly libs.wiremock
         testImplementation libs.wiremock
 
@@ -61,6 +67,30 @@ subprojects {
         testRuntimeOnly libs.junit.platform.launcher
         testImplementation libs.assertj.core
         testImplementation libs.logback.classic
+    }
+
+    spotbugs {
+        ignoreFailures = false
+        effort = 'max'
+        reportLevel = 'low'
+        excludeFilter = rootProject.file('config/spotbugs/spotbugs-exclude.xml')
+    }
+
+    tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+        reports {
+            html {
+                required = true
+            }
+            xml {
+                required = true
+            }
+        }
+    }
+
+    tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+        if (name.endsWith('Test')) {
+            enabled = false
+        }
     }
 
     tasks.named('test') {
@@ -102,5 +132,36 @@ subprojects {
                 }
             }
         }
+
+        signing {
+            def signingKey = findProperty('signingKey') ?: System.getenv('SIGNING_KEY')
+            def signingPassword = findProperty('signingPassword') ?: System.getenv('SIGNING_PASSWORD')
+
+            if (signingKey != null) {
+                useInMemoryPgpKeys(signingKey as String, signingPassword as String)
+            } else {
+                if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
+                    def gitGpg = new File('C:/Program Files/Git/usr/bin/gpg.exe')
+                    if (gitGpg.exists() && !project.hasProperty('signing.gnupg.executable')) {
+                        project.ext.set('signing.gnupg.executable', gitGpg.absolutePath)
+                    }
+                }
+                useGpgCmd()
+            }
+            required = {
+                gradle.taskGraph.allTasks.any {
+                    it.name.startsWith('publish') || it.name.startsWith('publishAll')
+                }
+            }
+            sign publishing.publications.mavenJava
+        }
+    }
+}
+
+nmcpAggregation {
+    centralPortal {
+        username = findProperty('sonatypeUsername') ?: System.getenv('MAVEN_CENTRAL_USERNAME')
+        password = findProperty('sonatypePassword') ?: System.getenv('MAVEN_CENTRAL_PASSWORD')
+        publishingType = 'USER_MANAGED'
     }
 }

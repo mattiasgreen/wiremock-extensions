@@ -36,8 +36,11 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 ![OpenAPI Spec Import & End-to-End Workflow Demo](../docs/images/demo-openapi-import.gif)
 
-- **Stub Explorer & Inspector**:
-  - Filter stubs instantly by HTTP method, URL pattern, stub name, or scenario state.
+- **Stub Explorer, Lifecycle & Ad-Hoc Creation**:
+  - Filter stubs instantly by HTTP method, URL pattern, stub name, project, or lifecycle state.
+  - Create brand new stubs from scratch via `➕ New` without needing an OpenAPI spec or bundle.
+  - Interactive editor modal to edit, duplicate, or inspect stub definitions with JSON formatting.
+  - Seamless lifecycle management: edit both active and disabled stubs safely with zero 404 errors.
   - View full JSON mapping definitions with syntax highlighting (keys, strings, numbers, booleans, null, punctuation).
   - One-click copy for JSON stubs and generated `curl` commands.
   - **⚡ Test Stub** button transitions directly into the HTTP Tester with pre-populated URL, method, headers, and body while keeping the stubs sidebar visible.
