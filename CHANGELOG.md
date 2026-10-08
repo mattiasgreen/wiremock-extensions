@@ -5,6 +5,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 1.0.0 (2026-10-08)
+
+
+### Features
+
+* **examples:** add case management stateful reference example and scenarios DAG visualizer ([3ff84fd](https://github.com/mattiasgreen/wiremock-extensions/commit/3ff84fdf9b599e378d968d7deb31511effe44174))
+* **openapi,ui:** add live transparent proxying, traffic snapshot recording, and project mode toggle ([a0c0a7f](https://github.com/mattiasgreen/wiremock-extensions/commit/a0c0a7febef778a40299ff71fd2bbc05635bb10c))
+* **openapi:** Add OpenAPI 3.0/3.1 spec ingestion, stub synthesis engine, Admin API route, and embedded Web UI modal ([b38b80e](https://github.com/mattiasgreen/wiremock-extensions/commit/b38b80e13fc9de1da4f46d4405c5d4c70cf6354b))
+* **openapi:** Add OpenAPI 3.0/3.1 spec ingestion, stub synthesizer, Admin API route, and UI modal ([3c38d0a](https://github.com/mattiasgreen/wiremock-extensions/commit/3c38d0a6b0948a257fb64cabb0c652c602454531))
+* **openapi:** Synthesize ready-made request examples with substituted parameters and prefill HTTP Tester ([b3c0090](https://github.com/mattiasgreen/wiremock-extensions/commit/b3c00902ce321a27267aea775534aa63c9590881))
+* **otel,logging:** implement W3C distributed tracing and log correlation ([bfb6e69](https://github.com/mattiasgreen/wiremock-extensions/commit/bfb6e69983769ca22753a3516fa612437f79912e))
+* **otel,logging:** implement W3C distributed tracing and log correlation ([dc42695](https://github.com/mattiasgreen/wiremock-extensions/commit/dc4269560748b987b1137cd203803cbddc56ffe0))
+* **quality:** enforce SpotBugs/FindSecBugs gate and fix security findings ([a0d5a4b](https://github.com/mattiasgreen/wiremock-extensions/commit/a0d5a4b049cd29874386d8be9bd57d85d6aeb6e3))
+* **ui:** add filterable journal, expandable detail rows and auto-refresh ([7a213cc](https://github.com/mattiasgreen/wiremock-extensions/commit/7a213cc28b1e86f46de3139c19a168ed65eea5ab))
+* **ui:** add interactive HTTP request tester with deep linking and stub testing shortcut ([f1a8dee](https://github.com/mattiasgreen/wiremock-extensions/commit/f1a8dee861db545ca308522e6fb88aa578aec3c0))
+* **ui:** add JSON syntax highlighting and copy as cURL utility ([770e184](https://github.com/mattiasgreen/wiremock-extensions/commit/770e18476712b5e8e22ba888a9bc9dd742c2cef5))
+* **ui:** add relative URL link to neighbor /__admin/swagger-ui/ ([361e942](https://github.com/mattiasgreen/wiremock-extensions/commit/361e9424e1d8b74447f9b1f61745200b13e24e1d))
+* **ui:** add stub lifecycle, project grouping, import/export hub, and bulk actions ([c9326aa](https://github.com/mattiasgreen/wiremock-extensions/commit/c9326aaff7c9c9f9dc9b04ddf4a32a7bf093eb45))
+* **ui:** add URL hash router and deep linking for tabs and stubs ([b78c294](https://github.com/mattiasgreen/wiremock-extensions/commit/b78c2941ab41fce0520d8a0f9b7f28f93908d8a7))
+* **ui:** clean up stub card actions and right-align project tag ([3e7271b](https://github.com/mattiasgreen/wiremock-extensions/commit/3e7271bba7aa68adecad1d0752741d123f953015))
+* **ui:** display version and git branch/commit next to brand logo ([1f21d1b](https://github.com/mattiasgreen/wiremock-extensions/commit/1f21d1ba0a9eb3cfacf3008b16c8fa5973b08b41))
+* **ui:** enhance HTTP tester with dual inspection, permanent headers, presets and history ([6da3dc1](https://github.com/mattiasgreen/wiremock-extensions/commit/6da3dc15b2ba9fe88ce1330e48a658af8e3a7dab))
+* **ui:** redesign http tester history into compact collapsible vertical sidebar ([385e864](https://github.com/mattiasgreen/wiremock-extensions/commit/385e86486768502385f1f230346997b00fd6e2c7))
+* **ui:** redesign workbench layout with persistent stubs sidebar, bottom history dock, and E2E demo ([d23d3dc](https://github.com/mattiasgreen/wiremock-extensions/commit/d23d3dcaecb23c3da8dbe992423d710896ea0416))
+* **ui:** restructure topology into domain-first navigation and scoped stubs sidebar ([7ce1fa4](https://github.com/mattiasgreen/wiremock-extensions/commit/7ce1fa41df7ad8c60d9d695723dfdf32b39f16e9))
+* **ui:** support dynamic modular asset routing in UiAdminApiEndpoint ([77063f7](https://github.com/mattiasgreen/wiremock-extensions/commit/77063f73f276590b7a8db90e110c2bd4a6b6e369))
+* **ui:** update complete E2E scenario with stub clearing, GET/POST testing, and unmatched journal review ([0e1eaa0](https://github.com/mattiasgreen/wiremock-extensions/commit/0e1eaa00f45d4134e525bfc2e6d32115628bd81d))
+
+
+### Bug Fixes
+
+* **bundle:** add standalone runtime dependencies for runStandalone ([3d7a020](https://github.com/mattiasgreen/wiremock-extensions/commit/3d7a020b06ccf1e865675ed2432ff25e390ffd42))
+* **otel:** resolve SpotBugs singleton constructor and uncalled method findings ([6474d11](https://github.com/mattiasgreen/wiremock-extensions/commit/6474d11027a0b43ce7de204dbc9d5d07e60d1636))
+* **ui:** add parent relative path candidate for dev static file hot reload ([6bf1bd2](https://github.com/mattiasgreen/wiremock-extensions/commit/6bf1bd26df3ecf90d3e756be98360aabef98fdd6))
+* **ui:** correct JSON syntax highlighting tokenization and escaping ([ef4ccd6](https://github.com/mattiasgreen/wiremock-extensions/commit/ef4ccd6adb26ecb1e8bdf455fa05230c69207e71))
+* **ui:** prioritize /ui/version route before /ui/{file} ([c078dce](https://github.com/mattiasgreen/wiremock-extensions/commit/c078dce6e68b6a50e018911e7a0c88e8b64f7a8c))
+* **ui:** Support urlPathTemplate and urlPathMatching in getStubUrl ([87aa97c](https://github.com/mattiasgreen/wiremock-extensions/commit/87aa97c3a3f0d05225abb8ad47b63b325fc7de8b))
+
 ## [Upcoming / In-Flight on Branches]
 
 ### Branch `feat/otel-tracing-and-logging`
