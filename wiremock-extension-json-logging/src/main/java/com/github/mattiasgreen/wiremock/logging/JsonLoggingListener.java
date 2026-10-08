@@ -99,6 +99,15 @@ public class JsonLoggingListener implements ServeEventListener {
             event.setStubName(stubMapping.getName());
         }
 
+        String mdcTraceId = MDC.get("trace_id");
+        if (mdcTraceId != null && !mdcTraceId.isBlank()) {
+            event.setTraceId(mdcTraceId);
+        }
+        String mdcSpanId = MDC.get("span_id");
+        if (mdcSpanId != null && !mdcSpanId.isBlank()) {
+            event.setSpanId(mdcSpanId);
+        }
+
         Request request = serveEvent.getRequest();
         if (request != null) {
             WireMockLogEvent.RequestDetails reqDetails = new WireMockLogEvent.RequestDetails();

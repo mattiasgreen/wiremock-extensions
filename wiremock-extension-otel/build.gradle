@@ -2,7 +2,10 @@ dependencies {
     implementation libs.opentelemetry.api
     implementation libs.opentelemetry.sdk
     implementation libs.opentelemetry.exporter.prometheus
+    implementation libs.opentelemetry.exporter.otlp
     implementation libs.prometheus.metrics.core
     implementation libs.prometheus.metrics.exporter.common
     implementation libs.prometheus.metrics.exposition.formats
+
+    testImplementation libs.opentelemetry.sdk.testing
 }

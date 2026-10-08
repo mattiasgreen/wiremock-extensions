@@ -22,6 +22,12 @@ public class WireMockLogEvent {
     @JsonProperty("matched")
     private boolean matched;
 
+    @JsonProperty("trace_id")
+    private String traceId;
+
+    @JsonProperty("span_id")
+    private String spanId;
+
     @JsonProperty("stub_id")
     private String stubId;
 
@@ -40,6 +46,22 @@ public class WireMockLogEvent {
     private Map<String, String> mdcTags = new HashMap<>();
 
     public WireMockLogEvent() {}
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public void setTraceId(String traceId) {
+        this.traceId = traceId;
+    }
+
+    public String getSpanId() {
+        return spanId;
+    }
+
+    public void setSpanId(String spanId) {
+        this.spanId = spanId;
+    }
 
     public String getTimestamp() {
         return timestamp;

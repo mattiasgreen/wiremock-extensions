@@ -16,6 +16,10 @@ public class HeaderNormalizer {
 
     private final Set<String> configuredHeaders;
 
+    private static final java.util.regex.Pattern NON_ALPHANUMERIC = java.util.regex.Pattern.compile("(?i)[^a-z0-9]+");
+    private static final java.util.regex.Pattern CAMEL_CASE = java.util.regex.Pattern.compile("([a-z])([A-Z])");
+    private static final java.util.regex.Pattern SURROUNDING_UNDERSCORES = java.util.regex.Pattern.compile("^_+|_+$");
+
     public HeaderNormalizer() {
         this(resolveConfiguredHeaders());
     }
@@ -58,8 +62,8 @@ public class HeaderNormalizer {
             return "";
         }
         String trimmed = headerName.trim();
-        String snake = trimmed.replaceAll("(?i)[^a-z0-9]+", "_");
-        snake = snake.replaceAll("([a-z])([A-Z])", "$1_$2");
-        return snake.replaceAll("^_+|_+$", "").toLowerCase(Locale.ROOT);
+        String snake = NON_ALPHANUMERIC.matcher(trimmed).replaceAll("_");
+        snake = CAMEL_CASE.matcher(snake).replaceAll("$1_$2");
+        return SURROUNDING_UNDERSCORES.matcher(snake).replaceAll("").toLowerCase(Locale.ROOT);
     }
 }

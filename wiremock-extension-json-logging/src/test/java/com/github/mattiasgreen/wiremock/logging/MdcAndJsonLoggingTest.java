@@ -115,6 +115,32 @@ public class MdcAndJsonLoggingTest {
         assertThat(logJson.has("unmatched_reason")).isTrue();
     }
 
+    @Test
+    void testTraceparentExtractedToTraceIdAndSpanIdInJsonLog() throws Exception {
+        server.stubFor(get(urlEqualTo("/api/v1/traced")).willReturn(ok("{\"status\":\"ok\"}")));
+
+        String traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        String parentSpanId = "00f067aa0ba902b7";
+        String traceparent = "00-" + traceId + "-" + parentSpanId + "-01";
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/api/v1/traced"))
+                .header("traceparent", traceparent)
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        JsonNode logJson = awaitTrafficLogJson();
+        assertThat(logJson).isNotNull();
+
+        assertThat(logJson.has("trace_id")).isTrue();
+        assertThat(logJson.get("trace_id").asText()).isEqualTo(traceId);
+        assertThat(logJson.has("span_id")).isTrue();
+        assertThat(logJson.get("span_id").asText()).isEqualTo(parentSpanId);
+    }
+
     private JsonNode awaitTrafficLogJson() throws InterruptedException {
         long deadline = System.currentTimeMillis() + 2000;
         while (System.currentTimeMillis() < deadline) {
