@@ -1,0 +1,54 @@
+// launch.gradle - Single-file script to run WireMock Standalone with prebuilt wiremock-extensions
+// Usage:
+//   gradle -b launch.gradle runServer                     # Standard WireMock server (./mappings & ./__files)
+//   gradle -b launch.gradle runDevServer                  # Demo server with sample endpoints and active UI
+//   gradle -b launch.gradle runServer -Pargs="--port 8888" # Custom CLI arguments
+//   gradle -b launch.gradle runDevServer -PextVersion=1.1.0
+
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+def extVersion = project.findProperty('extVersion') ?: '1.1.0'
+def wiremockVersion = project.findProperty('wiremockVersion') ?: '3.12.1'
+def logbackVersion = project.findProperty('logbackVersion') ?: '1.5.16'
+
+configurations {
+    wiremockServer {
+        canBeResolved = true
+        canBeConsumed = false
+    }
+}
+
+dependencies {
+    wiremockServer "io.github.mattiasgreen:wiremock-extension-bundle:${extVersion}"
+    wiremockServer "org.wiremock:wiremock:${wiremockVersion}"
+    wiremockServer "ch.qos.logback:logback-classic:${logbackVersion}"
+}
+
+// 1. Launches StandaloneDevServer with pre-configured sample mock APIs and active UI
+tasks.register('runDevServer', JavaExec) {
+    group = 'wiremock'
+    description = 'Launches WireMock standalone with demo mocks, active UI, metrics, and tracing'
+    classpath = configurations.wiremockServer
+    mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
+    if (project.hasProperty('args')) {
+        args project.property('args').toString().split('\\s+')
+    }
+}
+
+// 2. Launches official WireMock Standalone runner (reads mappings from current directory)
+tasks.register('runServer', JavaExec) {
+    group = 'wiremock'
+    description = 'Launches official WireMock standalone CLI runner with extensions auto-discovered via SPI'
+    classpath = configurations.wiremockServer
+    mainClass = 'com.github.tomakehurst.wiremock.standalone.WireMockServerRunner'
+    args = project.hasProperty('args') ?
+        project.property('args').toString().split('\\s+') as List :
+        ['--port', '8080', '--verbose']
+}

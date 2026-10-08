@@ -13,6 +13,7 @@ allprojects {
 
     repositories {
         mavenCentral()
+        mavenLocal()
     }
 }
 
@@ -172,4 +173,37 @@ nmcpAggregation {
         password = findProperty('sonatypePassword') ?: System.getenv('MAVEN_CENTRAL_PASSWORD')
         publishingType = 'USER_MANAGED'
     }
+}
+
+configurations {
+    prebuiltWiremock {
+        canBeResolved = true
+        canBeConsumed = false
+    }
+}
+
+dependencies {
+    prebuiltWiremock "io.github.mattiasgreen:wiremock-extension-bundle:${project.findProperty('launchVersion') ?: project.version}"
+    prebuiltWiremock libs.wiremock
+    prebuiltWiremock libs.logback.classic
+}
+
+tasks.register('launchPrebuilt', JavaExec) {
+    group = 'application'
+    description = 'Runs WireMock standalone with prebuilt extensions from Maven repository (without compiling locally)'
+    classpath = configurations.prebuiltWiremock
+    mainClass = project.findProperty('launchMain') ?: 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
+    if (project.hasProperty('args')) {
+        args project.property('args').toString().split('\\s+')
+    }
+}
+
+tasks.register('launchServer', JavaExec) {
+    group = 'application'
+    description = 'Runs standard WireMock standalone CLI runner (loads ./mappings and ./__files) with prebuilt extensions'
+    classpath = configurations.prebuiltWiremock
+    mainClass = 'com.github.tomakehurst.wiremock.standalone.WireMockServerRunner'
+    args = project.hasProperty('args') ?
+        project.property('args').toString().split('\\s+') as List :
+        ['--port', '8080', '--verbose']
 }
