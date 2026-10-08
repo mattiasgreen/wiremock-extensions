@@ -36,18 +36,30 @@ public class OtelTracingRegistry implements Closeable {
         return INSTANCE;
     }
 
-    public OtelTracingRegistry() {
+    public static OtelTracingRegistry create() {
+        return new OtelTracingRegistry();
+    }
+
+    private OtelTracingRegistry() {
         this(resolveTracingEnabled(), resolveOtlpEndpoint(), null);
     }
 
-    public OtelTracingRegistry(OpenTelemetry customOpenTelemetry) {
+    public static OtelTracingRegistry create(OpenTelemetry customOpenTelemetry) {
+        return new OtelTracingRegistry(customOpenTelemetry);
+    }
+
+    public static OtelTracingRegistry create(boolean enabled, String otlpEndpoint, SpanExporter customExporter) {
+        return new OtelTracingRegistry(enabled, otlpEndpoint, customExporter);
+    }
+
+    private OtelTracingRegistry(OpenTelemetry customOpenTelemetry) {
         this.openTelemetry = Objects.requireNonNull(customOpenTelemetry, "customOpenTelemetry must not be null");
         this.tracerProvider = null;
         this.tracer = customOpenTelemetry.getTracer(INSTRUMENTATION_NAME);
         this.tracingEnabled = true;
     }
 
-    public OtelTracingRegistry(boolean enabled, String otlpEndpoint, SpanExporter customExporter) {
+    private OtelTracingRegistry(boolean enabled, String otlpEndpoint, SpanExporter customExporter) {
         this.tracingEnabled = enabled;
 
         SdkTracerProviderBuilder tracerProviderBuilder = SdkTracerProvider.builder()

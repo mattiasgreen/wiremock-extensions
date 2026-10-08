@@ -133,13 +133,6 @@ public class OtelTracingListener implements ServeEventListener {
         }
     }
 
-    private static long getServeEventStartTime(ServeEvent serveEvent) {
-        if (serveEvent.getRequest() != null && serveEvent.getRequest().getLoggedDate() != null) {
-            return serveEvent.getRequest().getLoggedDate().getTime();
-        }
-        return System.currentTimeMillis();
-    }
-
     private static String sanitizeSpanPath(String rawUrl) {
         if (rawUrl == null || rawUrl.isEmpty()) {
             return "/";

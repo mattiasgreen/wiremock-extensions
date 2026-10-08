@@ -31,7 +31,7 @@ public class OtelTracingTest {
     @BeforeEach
     void setUp() {
         spanExporter = InMemorySpanExporter.create();
-        tracingRegistry = new OtelTracingRegistry(true, null, spanExporter);
+        tracingRegistry = OtelTracingRegistry.create(true, null, spanExporter);
 
         server = new WireMockServer(
                 WireMockConfiguration.options().dynamicPort().extensions(new OtelTracingListener(tracingRegistry)));
