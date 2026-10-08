@@ -56,12 +56,15 @@ jobs:
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-        run: ./gradlew nmcpPublishAllPublicationsToCentralPortal
+        run: ./gradlew nmcpPublishAggregationToCentralPortal
 
       - name: Upload Artifacts to GitHub Release
-        if: ${{ needs.release-please.outputs.release_created == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ needs.release-please.outputs.tag_name }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(git describe --tags --abbrev=0)
+          fi
           find . -path "*/build/libs/*.jar" ! -name "*-plain.jar" -exec gh release upload "$TAG" {} --clobber \;
+
