@@ -175,7 +175,21 @@ export const elements = {
   // Scenarios Tab
   scenariosContainer: document.getElementById('scenarios-container'),
   btnRefreshScenarios: document.getElementById('btn-refresh-scenarios'),
-  btnResetScenarios: document.getElementById('btn-reset-scenarios')
+  btnResetScenarios: document.getElementById('btn-reset-scenarios'),
+
+  // Target Host Configuration
+  btnTargetHost: document.getElementById('btn-target-host'),
+  targetHostLabel: document.getElementById('target-host-label'),
+  targetHostDot: document.getElementById('target-host-dot'),
+  targetHostModal: document.getElementById('target-host-modal'),
+  inputTargetHost: document.getElementById('input-target-host'),
+  btnSaveTargetHost: document.getElementById('btn-save-target-host'),
+  btnResetTargetHost: document.getElementById('btn-reset-target-host'),
+  btnCancelTargetHost: document.getElementById('btn-cancel-target-host'),
+  btnCloseTargetHost: document.getElementById('btn-close-target-host'),
+  targetHostStatus: document.getElementById('target-host-status'),
+  linkSwaggerUi: document.getElementById('link-swagger-ui'),
+  linkMetrics: document.getElementById('link-metrics')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */

@@ -6,7 +6,7 @@
  * loadMappings, executeTesterRequest, highlightJson, generateCurl, parseHash.
  */
 
-import { state } from './modules/state.js';
+import { state, setTargetUrlInLocation } from './modules/state.js';
 import { elements } from './modules/dom.js';
 import { highlightJson } from './modules/highlighter.js';
 import {
@@ -304,7 +304,9 @@ if (elements.btnTesterClearContext) {
 if (elements.btnCopyJson) {
   elements.btnCopyJson.addEventListener('click', () => {
     if (elements.stubJsonViewer && elements.stubJsonViewer.textContent) {
-      navigator.clipboard.writeText(elements.stubJsonViewer.textContent);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(elements.stubJsonViewer.textContent).catch(() => {});
+      }
       elements.btnCopyJson.textContent = '✅ Copied!';
       setTimeout(() => elements.btnCopyJson.textContent = '📋 Copy JSON', 1500);
     }
@@ -329,7 +331,9 @@ if (elements.btnCopyCurl) {
       body = bp.equalToJson ? JSON.stringify(bp.equalToJson) : (bp.equalTo || '');
     }
     const cmd = generateCurl(method === 'ANY' ? 'GET' : method, path, headers, body);
-    navigator.clipboard.writeText(cmd);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).catch(() => {});
+    }
     elements.btnCopyCurl.textContent = '✅ Copied!';
     setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
   });
@@ -582,7 +586,9 @@ if (elements.btnTesterCopyCurl) {
     const headers = parseHeadersInput((elements.testerHeaders && elements.testerHeaders.value) || '');
     const body = (elements.testerBody && elements.testerBody.value) || '';
     const cmd = generateCurl(method, path, headers, body);
-    navigator.clipboard.writeText(cmd);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).catch(() => {});
+    }
     elements.btnTesterCopyCurl.textContent = '✅ Copied!';
     setTimeout(() => elements.btnTesterCopyCurl.textContent = '📋 Copy cURL', 1500);
   });
@@ -590,7 +596,9 @@ if (elements.btnTesterCopyCurl) {
 if (elements.btnTesterShareLink) {
   elements.btnTesterShareLink.addEventListener('click', () => {
     updateTesterRoute(false);
-    navigator.clipboard.writeText(window.location.href);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
     elements.btnTesterShareLink.textContent = '✅ Link Copied!';
     setTimeout(() => elements.btnTesterShareLink.textContent = '🔗 Copy Share Link', 1500);
   });
@@ -614,7 +622,9 @@ if (elements.btnViewRaw) {
 if (elements.btnTesterCopyResponse) {
   elements.btnTesterCopyResponse.addEventListener('click', () => {
     if (state.lastRawResponseBody) {
-      navigator.clipboard.writeText(state.lastRawResponseBody);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(state.lastRawResponseBody).catch(() => {});
+      }
       elements.btnTesterCopyResponse.textContent = '✅ Copied!';
       setTimeout(() => elements.btnTesterCopyResponse.textContent = '📋 Copy', 1500);
     }
@@ -643,6 +653,100 @@ if (elements.btnResetScenarios) {
   });
 }
 
+// Target Host Display & Switcher
+export function updateTargetHostDisplay() {
+  if (elements.targetHostLabel) {
+    elements.targetHostLabel.textContent = state.apiBaseUrl
+      ? `Target: ${state.apiBaseUrl}`
+      : 'Target: (same-origin)';
+  }
+  if (elements.targetHostDot) {
+    elements.targetHostDot.className = state.apiBaseUrl
+      ? 'target-host-dot remote'
+      : 'target-host-dot';
+  }
+  if (elements.linkSwaggerUi) {
+    elements.linkSwaggerUi.href = state.apiBaseUrl
+      ? `${state.apiBaseUrl}/__admin/swagger-ui/`
+      : '../swagger-ui/';
+  }
+  if (elements.linkMetrics) {
+    elements.linkMetrics.href = state.apiBaseUrl
+      ? `${state.apiBaseUrl}/__admin/metrics/prometheus`
+      : '../metrics/prometheus';
+  }
+}
+
+function setupTargetHostControls() {
+  if (elements.btnTargetHost && elements.targetHostModal) {
+    elements.btnTargetHost.addEventListener('click', () => {
+      elements.targetHostModal.classList.remove('hidden');
+      if (elements.inputTargetHost) {
+        elements.inputTargetHost.value = state.apiBaseUrl || '';
+        elements.inputTargetHost.focus();
+      }
+      if (elements.targetHostStatus) {
+        elements.targetHostStatus.classList.add('hidden');
+      }
+    });
+  }
+
+  const closeTargetModal = () => {
+    if (elements.targetHostModal) {
+      elements.targetHostModal.classList.add('hidden');
+    }
+  };
+
+  if (elements.btnCloseTargetHost) {
+    elements.btnCloseTargetHost.addEventListener('click', closeTargetModal);
+  }
+  if (elements.btnCancelTargetHost) {
+    elements.btnCancelTargetHost.addEventListener('click', closeTargetModal);
+  }
+  if (elements.targetHostModal) {
+    elements.targetHostModal.addEventListener('click', (e) => {
+      if (e.target === elements.targetHostModal) {
+        closeTargetModal();
+      }
+    });
+  }
+
+  const applyTargetHost = (newTarget) => {
+    setTargetUrlInLocation(newTarget);
+    updateTargetHostDisplay();
+    closeTargetModal();
+    loadData();
+    loadVersionInfo();
+  };
+
+  if (elements.btnSaveTargetHost) {
+    elements.btnSaveTargetHost.addEventListener('click', () => {
+      let val = (elements.inputTargetHost ? elements.inputTargetHost.value : '').trim();
+      if (val && !val.startsWith('http://') && !val.startsWith('https://')) {
+        val = `http://${val}`;
+      }
+      applyTargetHost(val);
+    });
+  }
+
+  if (elements.btnResetTargetHost) {
+    elements.btnResetTargetHost.addEventListener('click', () => {
+      applyTargetHost('');
+    });
+  }
+
+  if (elements.inputTargetHost) {
+    elements.inputTargetHost.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (elements.btnSaveTargetHost) elements.btnSaveTargetHost.click();
+      } else if (e.key === 'Escape') {
+        closeTargetModal();
+      }
+    });
+  }
+}
+
 // Version Badge Loader
 function loadVersionInfo() {
   const badge = document.getElementById('app-version-badge');
@@ -658,13 +762,17 @@ function loadVersionInfo() {
     .catch(() => {});
 }
 
-// Initial Boot
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    loadData();
-    loadVersionInfo();
-  });
-} else {
+function boot() {
+  updateTargetHostDisplay();
+  setupTargetHostControls();
   loadData();
   loadVersionInfo();
 }
+
+// Initial Boot
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+

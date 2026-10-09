@@ -60,7 +60,8 @@ public class UiPlaywrightTest {
         consoleErrors.clear();
         pageErrors.clear();
         httpErrors.clear();
-        context = browser.newContext();
+        context = browser.newContext(
+                new Browser.NewContextOptions().setPermissions(List.of("clipboard-read", "clipboard-write")));
         page = context.newPage();
 
         page.onConsoleMessage(msg -> {
@@ -1204,6 +1205,55 @@ public class UiPlaywrightTest {
         page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
         // Ensure no errors
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+        assertThat(httpErrors).isEmpty();
+    }
+
+    @Test
+    void testConfigurableWireMockTargetHost() {
+        // 1. Initial load at standard URL
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#target-host-label");
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
+
+        // 2. Open Target Host modal
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+
+        // Enter target host URL
+        String targetUrl = wireMockServer.baseUrl();
+        page.locator("#input-target-host").fill(targetUrl);
+        page.locator("#btn-save-target-host").click();
+
+        // 3. Verify modal closes and label updates
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: " + targetUrl);
+        assertThat(page.url())
+                .contains("wiremock=" + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8));
+
+        // 4. Verify cURL copy works with target URL
+        page.waitForSelector(".stub-card");
+        page.locator(".stub-card").first().click();
+        page.locator("#btn-copy-curl").click();
+        assertThat(page.locator("#btn-copy-curl").textContent()).contains("Copied");
+
+        // 5. Test Reset to same-origin
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.locator("#btn-reset-target-host").click();
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
+        assertThat(page.url()).doesNotContain("wiremock=");
+
+        // 6. Test direct deep-link with ?wiremock= query parameter
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?wiremock="
+                + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8) + "#stubs");
+        page.waitForSelector(".stub-card");
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: " + targetUrl);
+
         assertThat(pageErrors).isEmpty();
         assertThat(consoleErrors).isEmpty();
         assertThat(httpErrors).isEmpty();

@@ -19,14 +19,25 @@ import {
 } from './tester.js';
 import { applyRouteFromUrl } from './router.js';
 
+export function apiUrl(endpoint) {
+  if (!endpoint) return '';
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
+  const base = (state.apiBaseUrl || '').trim().replace(/\/+$/, '');
+  const clean = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  return base ? `${base}${clean}` : clean;
+}
+
 export function doFetch(url, options = {}) {
+  const targetUrl = apiUrl(url);
   if (typeof fetch !== 'undefined') {
-    return fetch(url, options);
+    return fetch(targetUrl, options);
   }
   return new Promise((resolve, reject) => {
     try {
       const xhr = new XMLHttpRequest();
-      xhr.open(options.method || 'GET', url);
+      xhr.open(options.method || 'GET', targetUrl);
       if (options.headers) {
         Object.entries(options.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
       }
@@ -49,7 +60,7 @@ export function doFetch(url, options = {}) {
           ok: xhr.status >= 200 && xhr.status < 300
         });
       };
-      xhr.onerror = () => reject(new Error('Network error from ' + url));
+      xhr.onerror = () => reject(new Error('Network error from ' + targetUrl));
       xhr.send(options.body || null);
     } catch (err) {
       reject(err);
@@ -58,19 +69,21 @@ export function doFetch(url, options = {}) {
 }
 
 export function apiGet(endpoint) {
-  return doFetch(endpoint, { method: 'GET' }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+  const targetUrl = apiUrl(endpoint);
+  return doFetch(targetUrl, { method: 'GET' }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
     return res.json();
   });
 }
 
 export function apiPost(endpoint, body = {}) {
-  return doFetch(endpoint, {
+  const targetUrl = apiUrl(endpoint);
+  return doFetch(targetUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body)
   }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
     return res.text().then(text => {
       if (!text || !text.trim()) return {};
       try {
@@ -83,12 +96,13 @@ export function apiPost(endpoint, body = {}) {
 }
 
 export function apiPut(endpoint, body = {}) {
-  return doFetch(endpoint, {
+  const targetUrl = apiUrl(endpoint);
+  return doFetch(targetUrl, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body)
   }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
     return res.text().then(text => {
       if (!text || !text.trim()) return {};
       try {
@@ -101,8 +115,9 @@ export function apiPut(endpoint, body = {}) {
 }
 
 export function apiDelete(endpoint) {
-  return doFetch(endpoint, { method: 'DELETE' }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+  const targetUrl = apiUrl(endpoint);
+  return doFetch(targetUrl, { method: 'DELETE' }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
     return res.status === 204 ? {} : res.json().catch(() => ({}));
   });
 }

@@ -2191,3 +2191,31 @@ kbd {
   width: 100%;
   text-align: center;
 }
+
+.btn-target-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.target-host-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-success, #10b981);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.target-host-dot.remote {
+  background-color: var(--accent-color, #38bdf8);
+}
+
+.target-host-dot.error {
+  background-color: var(--color-danger, #ef4444);
+}
+

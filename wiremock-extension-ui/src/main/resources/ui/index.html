@@ -4,7 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WireMock Console</title>
-  <link rel="stylesheet" href="/__admin/ui/style.css">
+  <script>
+    if (window.location.pathname.endsWith('/ui')) {
+      window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
@@ -30,8 +35,12 @@
         </button>
       </nav>
       <div class="nav-actions">
-        <a href="../swagger-ui/" target="_blank" class="btn btn-link" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
-        <a href="../metrics/prometheus" target="_blank" class="btn btn-link" title="Open Prometheus Metrics">📊 Metrics</a>
+        <button id="btn-target-host" class="btn btn-secondary btn-target-host" data-testid="btn-target-host" title="Configure WireMock Target Server">
+          <span class="target-host-dot" id="target-host-dot"></span>
+          <span id="target-host-label">Target: (same-origin)</span>
+        </button>
+        <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
+        <a href="../metrics/prometheus" target="_blank" class="btn btn-link" id="link-metrics" title="Open Prometheus Metrics">📊 Metrics</a>
       </div>
     </header>
 
@@ -644,7 +653,35 @@
       </div>
     </div>
   </div>
+  </div>
 
-  <script type="module" src="/__admin/ui/app.js"></script>
+  <!-- Target Host Configuration Modal -->
+  <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>🎯 WireMock Target Server</h3>
+        <button id="btn-close-target-host" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description" style="margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted);">
+          Point this console to any WireMock instance. The target URL is kept in the browser URL query parameter (<code>?wiremock=...</code>).
+        </p>
+        <div class="form-group">
+          <label for="input-target-host">WireMock Base URL:</label>
+          <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080" autocomplete="off" data-testid="input-target-host">
+        </div>
+        <div id="target-host-status" class="hidden" style="margin-top: 10px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-cancel-target-host" class="btn btn-secondary">Cancel</button>
+          <button id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>
