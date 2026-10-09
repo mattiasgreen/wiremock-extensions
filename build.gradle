@@ -163,6 +163,7 @@ dependencies {
     nmcpAggregation project(':wiremock-extension-json-logging')
     nmcpAggregation project(':wiremock-extension-openapi')
     nmcpAggregation project(':wiremock-extension-otel')
+    nmcpAggregation project(':wiremock-extension-stateful')
     nmcpAggregation project(':wiremock-extension-ui')
 }
 
