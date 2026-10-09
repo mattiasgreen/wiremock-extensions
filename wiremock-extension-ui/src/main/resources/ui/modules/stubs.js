@@ -24,7 +24,7 @@ export function getStubUrl(req) {
 }
 
 export function generateCurl(method, path, headers = {}, body = '') {
-  const origin = window.location.origin || 'http://localhost:8080';
+  const origin = state.apiBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '') || 'http://localhost:8080';
   const cleanPath = path || '/';
   const fullUrl = cleanPath.startsWith('http') ? cleanPath : `${origin}${cleanPath.startsWith('/') ? '' : '/'}${cleanPath}`;
   const parts = [`curl -X ${method || 'GET'} "${fullUrl}"`];
@@ -61,13 +61,50 @@ export function renderStubList() {
     return method.includes(filter) || url.includes(filter) || name.includes(filter) || tags.includes(filter) || proj.includes(filter);
   });
 
-  if (filtered.length === 0) {
-    elements.stubList.innerHTML = '<div class="empty-state">No matching stubs found.</div>';
+  if (allStubs.length === 0) {
+    elements.stubList.innerHTML = `
+      <div class="empty-state empty-stubs-container" data-testid="empty-stubs-container">
+        <div class="empty-stubs-icon">📋</div>
+        <div class="empty-stubs-title">No Stubs Configured</div>
+        <div class="empty-stubs-desc">Bootstrap your stubs from an OpenAPI spec or create one from scratch.</div>
+        <div class="empty-stubs-actions">
+          <button id="btn-empty-import-openapi" class="btn btn-tiny btn-primary" title="Import stubs from OpenAPI spec">📥 Import OpenAPI</button>
+          <button id="btn-empty-create-stub" class="btn btn-tiny btn-secondary" title="Create a new stub from scratch">➕ New Stub</button>
+        </div>
+      </div>
+    `;
+    const btnEmptyOpenApi = document.getElementById('btn-empty-import-openapi');
+    if (btnEmptyOpenApi) {
+      btnEmptyOpenApi.addEventListener('click', () => {
+        if (elements.btnOpenOpenApiModal) elements.btnOpenOpenApiModal.click();
+      });
+    }
+    const btnEmptyCreate = document.getElementById('btn-empty-create-stub');
+    if (btnEmptyCreate) {
+      btnEmptyCreate.addEventListener('click', () => {
+        openStubEditor(null, false);
+      });
+    }
     if (elements.stubDetailEmpty) elements.stubDetailEmpty.classList.remove('hidden');
+    if (elements.stubDetailEmptyDefault) elements.stubDetailEmptyDefault.classList.add('hidden');
+    if (elements.stubDetailEmptyWelcome) elements.stubDetailEmptyWelcome.classList.remove('hidden');
     if (elements.stubDetailView) elements.stubDetailView.classList.add('hidden');
     state.selectedStubId = null;
     return;
   }
+
+  if (filtered.length === 0) {
+    elements.stubList.innerHTML = '<div class="empty-state">No matching stubs found.</div>';
+    if (elements.stubDetailEmpty) elements.stubDetailEmpty.classList.remove('hidden');
+    if (elements.stubDetailEmptyDefault) elements.stubDetailEmptyDefault.classList.remove('hidden');
+    if (elements.stubDetailEmptyWelcome) elements.stubDetailEmptyWelcome.classList.add('hidden');
+    if (elements.stubDetailView) elements.stubDetailView.classList.add('hidden');
+    state.selectedStubId = null;
+    return;
+  }
+
+  if (elements.stubDetailEmptyDefault) elements.stubDetailEmptyDefault.classList.remove('hidden');
+  if (elements.stubDetailEmptyWelcome) elements.stubDetailEmptyWelcome.classList.add('hidden');
 
   elements.stubList.innerHTML = '';
   filtered.forEach(stub => {

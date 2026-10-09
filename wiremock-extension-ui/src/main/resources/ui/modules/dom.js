@@ -66,6 +66,21 @@ export const elements = {
   btnSaveEditor: document.getElementById('btn-save-editor'),
   btnCloseEditorModal: document.getElementById('btn-close-editor-modal'),
   btnEditorFormatJson: document.getElementById('btn-editor-format-json'),
+  editorOpenApiBanner: document.getElementById('editor-openapi-banner'),
+  btnEditorOpenOpenApi: document.getElementById('btn-editor-open-openapi'),
+  editorTemplateGroup: document.getElementById('editor-template-group'),
+  editorTemplateSelect: document.getElementById('editor-template-select'),
+  btnApplyTemplate: document.getElementById('btn-apply-template'),
+  editorBodyMatchType: document.getElementById('editor-body-match-type'),
+  editorBodyMatchContainer: document.getElementById('editor-body-match-container'),
+  editorBodyMatchLabel: document.getElementById('editor-body-match-label'),
+  editorBodyMatchPattern: document.getElementById('editor-body-match-pattern'),
+
+  // Welcome Guide
+  stubDetailEmptyDefault: document.getElementById('stub-detail-empty-default'),
+  stubDetailEmptyWelcome: document.getElementById('stub-detail-empty-welcome'),
+  btnWelcomeOpenApi: document.getElementById('btn-welcome-openapi'),
+  btnWelcomeCreate: document.getElementById('btn-welcome-create'),
 
   // Unified Import Modal
   btnOpenOpenApiModal: document.getElementById('btn-open-openapi-modal'),

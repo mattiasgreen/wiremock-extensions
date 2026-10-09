@@ -2006,3 +2006,188 @@ kbd {
   gap: 6px;
   flex-shrink: 0;
 }
+
+/* Stub Editor Enhancements & Templates */
+.editor-openapi-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  font-size: 0.84rem;
+  color: var(--text-main);
+}
+
+.editor-openapi-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-template-group {
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.template-label-row {
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
+.template-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.editor-section-header {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-color);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 4px;
+  margin-top: 6px;
+}
+
+/* Empty Stubs & Welcome Guide */
+.empty-stubs-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 30px 16px;
+  gap: 10px;
+}
+
+.empty-stubs-icon {
+  font-size: 2.2rem;
+  opacity: 0.6;
+}
+
+.empty-stubs-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.empty-stubs-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  max-width: 220px;
+  line-height: 1.4;
+}
+
+.empty-stubs-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.welcome-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 30px 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.welcome-header {
+  margin-bottom: 24px;
+}
+
+.welcome-logo {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.welcome-header h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.welcome-subtitle {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.welcome-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  width: 100%;
+}
+
+.welcome-card {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 24px 20px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.welcome-card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.welcome-card-primary {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.04) 0%, rgba(30, 41, 59, 1) 100%);
+}
+
+.welcome-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.welcome-icon {
+  font-size: 1.8rem;
+}
+
+.welcome-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.welcome-card p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  flex-grow: 1;
+}
+
+.welcome-card .btn {
+  margin-top: 6px;
+  width: 100%;
+  text-align: center;
+}
