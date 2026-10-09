@@ -56,7 +56,9 @@ import {
   handleDeleteStub,
   openStubEditor,
   closeStubEditor,
-  saveStubEditor
+  saveStubEditor,
+  applyStubTemplate,
+  updateBodyMatchLabel
 } from './modules/lifecycle.js';
 import {
   exportStubs,
@@ -367,6 +369,54 @@ if (elements.btnEditorFormatJson) {
     } catch (err) {
       alert('Invalid JSON: ' + err.message);
     }
+  });
+}
+if (elements.btnEditorOpenOpenApi) {
+  elements.btnEditorOpenOpenApi.addEventListener('click', () => {
+    closeStubEditor();
+    if (elements.btnOpenOpenApiModal) {
+      elements.btnOpenOpenApiModal.click();
+    }
+  });
+}
+if (elements.editorTemplateSelect) {
+  elements.editorTemplateSelect.addEventListener('change', () => {
+    const val = elements.editorTemplateSelect.value;
+    if (val && val !== 'custom') {
+      applyStubTemplate(val);
+    }
+  });
+}
+if (elements.btnApplyTemplate) {
+  elements.btnApplyTemplate.addEventListener('click', () => {
+    if (elements.editorTemplateSelect && elements.editorTemplateSelect.value !== 'custom') {
+      applyStubTemplate(elements.editorTemplateSelect.value);
+    }
+  });
+}
+if (elements.editorBodyMatchType) {
+  elements.editorBodyMatchType.addEventListener('change', () => {
+    const val = elements.editorBodyMatchType.value;
+    if (elements.editorBodyMatchContainer) {
+      if (val === 'none') {
+        elements.editorBodyMatchContainer.classList.add('hidden');
+      } else {
+        elements.editorBodyMatchContainer.classList.remove('hidden');
+      }
+    }
+    updateBodyMatchLabel(val);
+  });
+}
+if (elements.btnWelcomeOpenApi) {
+  elements.btnWelcomeOpenApi.addEventListener('click', () => {
+    if (elements.btnOpenOpenApiModal) {
+      elements.btnOpenOpenApiModal.click();
+    }
+  });
+}
+if (elements.btnWelcomeCreate) {
+  elements.btnWelcomeCreate.addEventListener('click', () => {
+    openStubEditor(null, false);
   });
 }
 
