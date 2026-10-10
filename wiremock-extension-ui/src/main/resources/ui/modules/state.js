@@ -56,8 +56,9 @@ export const state = {
   disabledStubs: [],
   selectedStubId: null,
   selectedProject: null, // null means all projects
-  statusFilter: 'all',   // 'all' | 'active' | 'disabled'
+  statusFilter: 'all',   // 'all' | 'active' | 'disabled' | 'dynamic'
   selectedStubIds: new Set(),
+  statefulModels: [],
   currentRequests: [],
   expandedRequestId: null,
   allScenarios: [],

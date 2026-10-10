@@ -59,6 +59,7 @@
             <button class="filter-pill active" data-filter="all" id="btn-filter-all" data-testid="btn-filter-all">All (<span id="count-filter-all">0</span>)</button>
             <button class="filter-pill" data-filter="active" id="btn-filter-active" data-testid="btn-filter-active">Active (<span id="count-filter-active">0</span>)</button>
             <button class="filter-pill" data-filter="disabled" id="btn-filter-disabled" data-testid="btn-filter-disabled">Disabled (<span id="count-filter-disabled">0</span>)</button>
+            <button class="filter-pill" data-filter="dynamic" id="btn-filter-dynamic" data-testid="btn-filter-dynamic">⚡ Dynamic (<span id="count-filter-dynamic">0</span>)</button>
           </div>
         </div>
 
@@ -83,6 +84,7 @@
           </div>
           <div class="stub-list-header-actions">
             <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping">➕ New</button>
+            <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create a dynamic / stateful simulation stub">⚡ Dynamic</button>
             <button id="btn-open-openapi-modal" data-testid="btn-open-openapi-modal" class="btn btn-tiny btn-secondary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
             <button id="btn-export-stubs" data-testid="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
             <button id="btn-refresh-stubs" data-testid="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
@@ -179,6 +181,26 @@
               <div class="summary-card">
                 <div class="card-label">Scenario</div>
                 <div id="detail-scenario" data-testid="detail-scenario" class="card-value">None</div>
+              </div>
+            </div>
+
+            <!-- Dynamic / Stateful Simulation Specification Panel -->
+            <div id="detail-stateful-section" class="detail-stateful-section hidden" data-testid="detail-stateful-section">
+              <div class="stateful-spec-card">
+                <div class="stateful-card-header">
+                  <div class="stateful-title">⚡ Stateful Simulation Engine: <strong id="stateful-entity-label">cases</strong></div>
+                  <span class="stateful-scope-pill" id="stateful-route-scope">/api/v1/cases/**</span>
+                </div>
+                <div class="stateful-details-grid">
+                  <div class="stateful-subcard">
+                    <div class="stateful-subcard-title">🛡️ Invariant Preconditions (<span id="stateful-invariants-count">0</span>)</div>
+                    <div id="stateful-invariants-list" class="stateful-rule-list">None</div>
+                  </div>
+                  <div class="stateful-subcard">
+                    <div class="stateful-subcard-title">🔄 State Mutations (<span id="stateful-mutations-count">0</span>)</div>
+                    <div id="stateful-mutations-list" class="stateful-rule-list">None</div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -652,8 +674,6 @@
         </div>
       </div>
     </div>
-  </div>
-  </div>
 
   <!-- Target Host Configuration Modal -->
   <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
@@ -678,6 +698,55 @@
           <button id="btn-cancel-target-host" class="btn btn-secondary">Cancel</button>
           <button id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic / Stateful Stub Creation Modal -->
+  <div id="dynamic-stub-modal" class="modal-overlay hidden" data-testid="dynamic-stub-modal">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">⚡</span>
+          <h3 id="dynamic-modal-title">New Dynamic Stateful Simulation</h3>
+        </div>
+        <button id="btn-close-dynamic-modal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+        <p class="modal-description" style="margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted);">
+          Define a stateful entity model with relational state, automatic sub-resource arrays, and invariant guards. In-process isolation is automatically partitioned by <code>X-Correlation-Id</code>.
+        </p>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="dynamic-template-select"><strong>Model Template:</strong></label>
+          <select id="dynamic-template-select" class="form-control" data-testid="dynamic-template-select">
+            <option value="case-management" selected>Case Management (Cases &amp; Tasks with Invariant Guard)</option>
+            <option value="order-fulfillment">Order Fulfillment (Orders &amp; Items)</option>
+          </select>
+        </div>
+
+        <div class="form-row" style="display: flex; gap: 12px; margin-bottom: 12px;">
+          <div class="form-group" style="flex: 1;">
+            <label for="dynamic-entity-name">Entity Name:</label>
+            <input type="text" id="dynamic-entity-name" class="form-control" value="cases" data-testid="dynamic-entity-name">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="dynamic-id-param">ID Path Parameter:</label>
+            <input type="text" id="dynamic-id-param" class="form-control" value="caseId" data-testid="dynamic-id-param">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="dynamic-id-prefix">ID Prefix:</label>
+            <input type="text" id="dynamic-id-prefix" class="form-control" value="case-" data-testid="dynamic-id-prefix">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="dynamic-model-json"><strong>Model Specification JSON (AST):</strong></label>
+          <textarea id="dynamic-model-json" class="code-input" rows="12" data-testid="dynamic-model-json"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-cancel-dynamic" class="btn btn-secondary">Cancel</button>
+        <button id="btn-save-dynamic" class="btn btn-primary" data-testid="btn-save-dynamic">⚡ Create Dynamic Model</button>
       </div>
     </div>
   </div>

@@ -9,6 +9,7 @@ import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
 import { handleStubCheckboxClick, updateBulkToolbar } from './bulk-actions.js';
+import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -40,15 +41,19 @@ export function generateCurl(method, path, headers = {}, body = '') {
 
 export function renderStubList() {
   const filter = (elements.searchBox && elements.searchBox.value || '').toLowerCase().trim();
-  const allStubs = [...state.currentStubs, ...state.disabledStubs];
+  const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
+  const allStubs = [...state.currentStubs, ...state.disabledStubs, ...dynamicStubs];
 
   const filtered = allStubs.filter(s => {
+    const isDynamic = !!s.isDynamic;
     const isDisabled = state.disabledStubs.some(d => d.id === s.id);
-    if (state.statusFilter === 'active' && isDisabled) return false;
-    if (state.statusFilter === 'disabled' && !isDisabled) return false;
+
+    if (state.statusFilter === 'active' && (isDisabled || isDynamic)) return false;
+    if (state.statusFilter === 'disabled' && (!isDisabled || isDynamic)) return false;
+    if (state.statusFilter === 'dynamic' && !isDynamic) return false;
 
     if (state.selectedProject) {
-      const proj = getStubProject(s);
+      const proj = isDynamic ? (s.metadata && s.metadata.project) : getStubProject(s);
       if (proj !== state.selectedProject) return false;
     }
 
@@ -57,8 +62,9 @@ export function renderStubList() {
     const url = getStubUrl(s.request).toLowerCase();
     const name = (s.name || '').toLowerCase();
     const tags = (s.metadata && Array.isArray(s.metadata.tags)) ? s.metadata.tags.join(' ').toLowerCase() : '';
-    const proj = getStubProject(s).toLowerCase();
-    return method.includes(filter) || url.includes(filter) || name.includes(filter) || tags.includes(filter) || proj.includes(filter);
+    const proj = (isDynamic ? (s.metadata && s.metadata.project || '') : getStubProject(s)).toLowerCase();
+    const entity = (s.entity || '').toLowerCase();
+    return method.includes(filter) || url.includes(filter) || name.includes(filter) || tags.includes(filter) || proj.includes(filter) || entity.includes(filter);
   });
 
   if (allStubs.length === 0) {
@@ -108,19 +114,20 @@ export function renderStubList() {
 
   elements.stubList.innerHTML = '';
   filtered.forEach(stub => {
+    const isDynamic = !!stub.isDynamic;
     const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
     const isSelected = stub.id === state.selectedStubId;
     const isChecked = state.selectedStubIds.has(stub.id);
 
     const card = document.createElement('div');
-    card.className = `stub-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'stub-disabled' : ''}`;
+    card.className = `stub-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'stub-disabled' : ''} ${isDynamic ? 'stub-dynamic' : ''}`;
     card.setAttribute('data-stub-id', stub.id);
     card.setAttribute('data-testid', 'stub-card');
 
     const method = (stub.request && stub.request.method) || 'ANY';
     const url = getStubUrl(stub.request);
     const name = stub.name || (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed');
-    const project = getStubProject(stub);
+    const project = isDynamic ? (stub.metadata && stub.metadata.project) : getStubProject(stub);
     const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
     const statusCode = isProxy ? 'PROXY' : ((stub.response && stub.response.status) || 200);
     const statusCls = isProxy ? 'status-proxy' : (statusCode >= 500 ? 'status-500' : (statusCode >= 400 ? 'status-400' : 'status-200'));
@@ -134,11 +141,12 @@ export function renderStubList() {
           <span class="http-badge badge-${method}">${method}</span>
           <span class="stub-card-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
           <span class="stub-status-pill ${statusCls}">${statusCode}</span>
+          ${isDynamic ? '<span class="status-badge badge-dynamic">⚡ DYNAMIC</span>' : ''}
           ${isDisabled ? '<span class="status-badge badge-disabled">DISABLED</span>' : ''}
         </div>
         <div class="stub-card-bottom">
           <span class="stub-card-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-          <span class="project-pill" title="Project: ${escapeHtml(project)}">📁 ${escapeHtml(project)}</span>
+          <span class="project-pill" title="Coverage: ${escapeHtml(stub.urlRange || project)}">📦 ${escapeHtml(stub.urlRange || project)}</span>
         </div>
       </div>
     `;
@@ -194,6 +202,7 @@ export function selectStub(stub, updateRoute = true) {
     return;
   }
 
+  const isDynamic = !!stub.isDynamic;
   const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
   elements.stubDetailEmpty.classList.add('hidden');
   elements.stubDetailView.classList.remove('hidden');
@@ -209,33 +218,102 @@ export function selectStub(stub, updateRoute = true) {
   elements.detailStatus.textContent = status;
   elements.detailStatus.className = `card-value ${isProxy ? 'status-proxy' : (status >= 500 ? 'status-500' : (status >= 400 ? 'status-400' : 'status-200'))}`;
 
-  elements.detailPriority.textContent = stub.priority || 5;
-  elements.detailScenario.textContent = stub.scenarioName
-    ? `${stub.scenarioName} [${stub.requiredScenarioState || 'Start'} -> ${stub.newScenarioState || 'Same'}]`
-    : 'None';
+  elements.detailPriority.textContent = stub.priority || (isDynamic ? 1 : 5);
+  elements.detailScenario.textContent = isDynamic
+    ? (stub.invariants && stub.invariants.length > 0 ? `${stub.invariants.length} Invariant Guard(s)` : 'Stateful Relational FSM')
+    : (stub.scenarioName
+      ? `${stub.scenarioName} [${stub.requiredScenarioState || 'Start'} -> ${stub.newScenarioState || 'Same'}]`
+      : 'None');
 
   // Project card
   const detailProject = document.getElementById('detail-project');
   if (detailProject) {
-    const proj = getStubProject(stub);
+    const proj = isDynamic ? (stub.metadata && stub.metadata.project) : getStubProject(stub);
     detailProject.textContent = proj;
   }
 
   // Lifecycle state card
   const detailState = document.getElementById('detail-lifecycle-state');
   if (detailState) {
-    detailState.textContent = isDisabled ? 'DISABLED' : 'ACTIVE';
-    detailState.className = `card-value ${isDisabled ? 'text-warning' : 'text-success'}`;
+    if (isDynamic) {
+      detailState.textContent = 'DYNAMIC SIMULATION';
+      detailState.className = 'card-value text-dynamic';
+    } else {
+      detailState.textContent = isDisabled ? 'DISABLED' : 'ACTIVE';
+      detailState.className = `card-value ${isDisabled ? 'text-warning' : 'text-success'}`;
+    }
   }
 
   // Toggle button label
   const btnToggle = document.getElementById('btn-toggle-stub');
   if (btnToggle) {
-    btnToggle.textContent = isDisabled ? '🟢 Enable Stub' : '⏸️ Disable Stub';
-    btnToggle.className = `btn btn-small ${isDisabled ? 'btn-success' : 'btn-warning'}`;
+    if (isDynamic) {
+      btnToggle.classList.add('hidden');
+    } else {
+      btnToggle.classList.remove('hidden');
+      btnToggle.textContent = isDisabled ? '🟢 Enable Stub' : '⏸️ Disable Stub';
+      btnToggle.className = `btn btn-small ${isDisabled ? 'btn-success' : 'btn-warning'}`;
+    }
   }
 
-  elements.stubJsonViewer.innerHTML = highlightJson(stub);
+  // Edit / Clone buttons
+  const btnEdit = document.getElementById('btn-edit-stub');
+  const btnClone = document.getElementById('btn-clone-stub');
+  if (btnEdit) btnEdit.style.display = isDynamic ? 'none' : '';
+  if (btnClone) btnClone.style.display = isDynamic ? 'none' : '';
+
+  // Dynamic / Stateful Specification section
+  const statefulSection = elements.detailStatefulSection || document.getElementById('detail-stateful-section');
+  if (statefulSection) {
+    if (isDynamic) {
+      statefulSection.classList.remove('hidden');
+      const entityLabel = document.getElementById('stateful-entity-label');
+      const scopeLabel = document.getElementById('stateful-route-scope');
+      const invCount = document.getElementById('stateful-invariants-count');
+      const invList = document.getElementById('stateful-invariants-list');
+      const mutCount = document.getElementById('stateful-mutations-count');
+      const mutList = document.getElementById('stateful-mutations-list');
+
+      if (entityLabel) entityLabel.textContent = stub.entity || 'entity';
+      if (scopeLabel) scopeLabel.textContent = stub.urlRange || stub.request.urlPathTemplate;
+      if (invCount) invCount.textContent = stub.invariants ? stub.invariants.length : 0;
+      if (mutCount) mutCount.textContent = stub.mutations ? stub.mutations.length : 0;
+
+      if (invList) {
+        if (!stub.invariants || stub.invariants.length === 0) {
+          invList.innerHTML = '<span class="muted-text">No invariant guards (always accepted)</span>';
+        } else {
+          invList.innerHTML = stub.invariants.map(inv => {
+            const guardTitle = inv.name || inv.failMessage || 'Invariant Guard';
+            const rejectCode = inv.failStatus || inv.rejectStatusCode || 400;
+            return `
+            <div class="stateful-rule-item">
+              <div><strong>Guard:</strong> ${escapeHtml(guardTitle)}</div>
+              <div class="muted-text" style="font-size: 0.75rem;">Condition: <code>${escapeHtml(JSON.stringify(inv.condition))}</code> &rarr; Reject HTTP ${rejectCode}</div>
+            </div>
+          `;
+          }).join('');
+        }
+      }
+
+      if (mutList) {
+        if (!stub.mutations || stub.mutations.length === 0) {
+          mutList.innerHTML = '<span class="muted-text">Read-only (no state mutations)</span>';
+        } else {
+          mutList.innerHTML = stub.mutations.map(m => `
+            <div class="stateful-rule-item">
+              <div><strong>Action:</strong> <code>${escapeHtml(m.type)}</code></div>
+              <div class="muted-text" style="font-size: 0.75rem;">${escapeHtml(JSON.stringify(m))}</div>
+            </div>
+          `).join('');
+        }
+      }
+    } else {
+      statefulSection.classList.add('hidden');
+    }
+  }
+
+  elements.stubJsonViewer.innerHTML = highlightJson(isDynamic ? (stub.rule || stub) : stub);
 
   if (updateRoute) {
     setRoute('stubs', { stubId: stub.id });
@@ -259,7 +337,17 @@ export function sendStubToTester(stub, switchTab = true) {
   const example = stub.metadata && stub.metadata.exampleRequest;
 
   let path = example && example.path ? example.path : getStubUrl(stub.request);
+  if (stub.isDynamic) {
+    const idPrefix = (stub.model && stub.model.idPrefix) || (stub.entity ? stub.entity + '-' : 'item-');
+    path = path.replace(/\{([^}]+)\}/g, () => `${idPrefix}100`);
+  }
+
   const headerLines = [];
+
+  if (stub.isDynamic) {
+    headerLines.push('X-Correlation-Id: test-scenario-1');
+    headerLines.push('Content-Type: application/json');
+  }
 
   if (example && example.headers && Object.keys(example.headers).length > 0) {
     for (const [k, v] of Object.entries(example.headers)) {
@@ -272,7 +360,17 @@ export function sendStubToTester(stub, switchTab = true) {
   }
 
   let body = '';
-  if (example && example.body) {
+  if (stub.isDynamic && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    if (path.includes('/tasks')) {
+      body = JSON.stringify({ title: 'Verification Task', status: 'PENDING' }, null, 2);
+    } else if (path.includes('/items')) {
+      body = JSON.stringify({ sku: 'WIDGET-01', quantity: 2 }, null, 2);
+    } else if (path.includes('/close') || path.includes('/ship')) {
+      body = '{\n  \n}';
+    } else {
+      body = JSON.stringify({ title: 'Sample ' + (stub.entity || 'Item'), status: 'OPEN' }, null, 2);
+    }
+  } else if (example && example.body) {
     body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
   } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
     const bp = stub.request.bodyPatterns[0];

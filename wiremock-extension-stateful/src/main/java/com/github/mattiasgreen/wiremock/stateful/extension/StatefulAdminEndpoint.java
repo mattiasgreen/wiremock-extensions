@@ -80,6 +80,15 @@ public class StatefulAdminEndpoint implements AdminApiExtension {
             }
         });
 
+        router.add(RequestMethod.GET, "/stateful/models", (admin, serveEvent, pathParams) -> {
+            String json = AstJson.toJson(stateEngine.getAllModels());
+            return ResponseDefinitionBuilder.responseDefinition()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(json)
+                    .build();
+        });
+
         router.add(RequestMethod.DELETE, "/stateful/sessions/{correlationId}", (admin, serveEvent, pathParams) -> {
             String correlationId = pathParams.get("correlationId");
             stateEngine.clearSession(correlationId);

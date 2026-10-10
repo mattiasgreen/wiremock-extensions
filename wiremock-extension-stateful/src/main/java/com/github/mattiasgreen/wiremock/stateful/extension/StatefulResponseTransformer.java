@@ -67,6 +67,22 @@ public class StatefulResponseTransformer implements ResponseDefinitionTransforme
 
         result.headers().forEach(builder::withHeader);
 
+        builder.withHeader("x-wiremock-stateful", "true");
+        if (result.entityType() != null) {
+            builder.withHeader("x-wiremock-stateful-entity", result.entityType());
+        }
+        if (result.matchedRoute() != null) {
+            builder.withHeader("x-wiremock-stateful-route", result.matchedRoute());
+        }
+        builder.withHeader(
+                "x-wiremock-stateful-invariants",
+                result.invariantsPassed()
+                        ? "PASSED"
+                        : "VIOLATED: " + (result.invariantMessage() != null ? result.invariantMessage() : "failed"));
+        if (correlationId != null) {
+            builder.withHeader("x-correlation-id", correlationId);
+        }
+
         return builder.build();
     }
 }

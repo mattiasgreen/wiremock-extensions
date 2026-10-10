@@ -10,16 +10,30 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class StateEngine {
 
-    public record ExecutionResult(int status, String body, Map<String, String> headers) {}
+    public record ExecutionResult(
+            int status,
+            String body,
+            Map<String, String> headers,
+            String entityType,
+            String matchedRoute,
+            boolean invariantsPassed,
+            String invariantMessage) {
+        public ExecutionResult(int status, String body, Map<String, String> headers) {
+            this(status, body, headers, null, null, true, null);
+        }
+    }
 
     private final SessionStateStore stateStore = new SessionStateStore();
     private final Map<String, List<CompiledRule>> rulesByCorrelation = new ConcurrentHashMap<>();
-    private final List<CompiledRule> globalRules = new ArrayList<>();
+    private final Map<String, List<AstModelDefinition>> modelsByCorrelation = new ConcurrentHashMap<>();
+    private final List<CompiledRule> globalRules = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<AstModelDefinition> globalModels = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final AtomicLong idGenerator = new AtomicLong(100);
 
     private record CompiledRule(AstModelDefinition model, AstRuleDefinition rule, RouteMatcher matcher) {}
 
     public void registerGlobalModel(AstModelDefinition model) {
+        globalModels.add(model);
         for (AstRuleDefinition rule : model.rules()) {
             globalRules.add(new CompiledRule(
                     model,
@@ -29,6 +43,9 @@ public final class StateEngine {
     }
 
     public void registerSessionModel(String correlationId, AstModelDefinition model) {
+        modelsByCorrelation
+                .computeIfAbsent(correlationId, k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(model);
         List<CompiledRule> compiled = rulesByCorrelation.computeIfAbsent(correlationId, k -> new ArrayList<>());
         for (AstRuleDefinition rule : model.rules()) {
             compiled.add(new CompiledRule(
@@ -38,14 +55,36 @@ public final class StateEngine {
         }
     }
 
+    public List<AstModelDefinition> getAllModels() {
+        Set<AstModelDefinition> distinct = new LinkedHashSet<>(globalModels);
+        modelsByCorrelation.values().forEach(distinct::addAll);
+        return List.copyOf(distinct);
+    }
+
+    public List<AstModelDefinition> getModelsForCorrelation(String correlationId) {
+        if (correlationId == null || correlationId.isBlank()) {
+            return getAllModels();
+        }
+        List<AstModelDefinition> sessionModels = modelsByCorrelation.get(correlationId);
+        if (sessionModels == null) {
+            return List.copyOf(globalModels);
+        }
+        Set<AstModelDefinition> merged = new LinkedHashSet<>(globalModels);
+        merged.addAll(sessionModels);
+        return List.copyOf(merged);
+    }
+
     public void clearSession(String correlationId) {
         rulesByCorrelation.remove(correlationId);
+        modelsByCorrelation.remove(correlationId);
         stateStore.clearSession(correlationId);
     }
 
     public void clearAll() {
         rulesByCorrelation.clear();
+        modelsByCorrelation.clear();
         globalRules.clear();
+        globalModels.clear();
         stateStore.clearAll();
     }
 
@@ -126,7 +165,14 @@ public final class StateEngine {
             boolean satisfied = AstEvaluator.evaluate(inv.condition(), entity, pathParams);
             if (!satisfied) {
                 String errorJson = "{\"status\":" + inv.failStatus() + ",\"error\":\"" + inv.failMessage() + "\"}";
-                return new ExecutionResult(inv.failStatus(), errorJson, Map.of("Content-Type", "application/json"));
+                return new ExecutionResult(
+                        inv.failStatus(),
+                        errorJson,
+                        Map.of("Content-Type", "application/json"),
+                        entityType,
+                        rule.route().method() + " " + rule.route().pathPattern(),
+                        false,
+                        inv.failMessage());
             }
         }
 
@@ -154,7 +200,14 @@ public final class StateEngine {
             responseHeaders.put("Content-Type", "application/json");
         }
 
-        return new ExecutionResult(status, responseBody, Collections.unmodifiableMap(responseHeaders));
+        return new ExecutionResult(
+                status,
+                responseBody,
+                Collections.unmodifiableMap(responseHeaders),
+                entityType,
+                rule.route().method() + " " + rule.route().pathPattern(),
+                true,
+                null);
     }
 
     private String formatResponseBody(AstResponseSource source, ObjectNode entity, JsonNode affectedItem) {

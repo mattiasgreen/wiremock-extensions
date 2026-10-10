@@ -1733,6 +1733,110 @@ kbd {
   letter-spacing: 0.5px;
 }
 
+.status-badge.badge-dynamic {
+  background-color: rgba(6, 182, 212, 0.2);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.5);
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.stub-card.stub-dynamic {
+  border-left: 3px solid #06b6d4;
+}
+
+.pill-stateful {
+  color: #22d3ee !important;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.text-dynamic {
+  color: #22d3ee !important;
+}
+
+/* Dynamic Stateful Simulation Spec Detail Card */
+.detail-stateful-section {
+  margin-bottom: 16px;
+}
+
+.stateful-spec-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(6, 78, 59, 0.2));
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.stateful-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+}
+
+.stateful-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.stateful-scope-pill {
+  font-family: monospace;
+  font-size: 0.78rem;
+  background-color: rgba(6, 182, 212, 0.2);
+  color: #38bdf8;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.stateful-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stateful-subcard {
+  background-color: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+.stateful-subcard-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.stateful-rule-list {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #cbd5e1;
+}
+
+.stateful-rule-item {
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+}
+
+.stateful-rule-item:last-child {
+  border-bottom: none;
+}
+
+.journal-stateful-card {
+  border-left: 3px solid #06b6d4;
+  background: rgba(6, 182, 212, 0.05);
+}
+
 .project-pill {
   font-size: 0.7rem;
   background-color: rgba(56, 189, 248, 0.12);

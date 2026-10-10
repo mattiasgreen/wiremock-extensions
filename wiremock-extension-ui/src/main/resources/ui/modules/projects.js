@@ -83,18 +83,21 @@ export function updateFilterCounts() {
   const countAll = document.getElementById('count-filter-all');
   const countActive = document.getElementById('count-filter-active');
   const countDisabled = document.getElementById('count-filter-disabled');
+  const countDynamic = document.getElementById('count-filter-dynamic');
 
   let activeList = state.currentStubs;
   let disabledList = state.disabledStubs;
+  const dynamicRulesCount = (state.statefulModels || []).reduce((acc, m) => acc + ((m.rules && m.rules.length) || 0), 0);
 
   if (state.selectedProject) {
     activeList = activeList.filter(s => getStubProject(s) === state.selectedProject);
     disabledList = disabledList.filter(s => getStubProject(s) === state.selectedProject);
   }
 
-  if (countAll) countAll.textContent = activeList.length + disabledList.length;
+  if (countAll) countAll.textContent = activeList.length + disabledList.length + (state.selectedProject ? 0 : dynamicRulesCount);
   if (countActive) countActive.textContent = activeList.length;
   if (countDisabled) countDisabled.textContent = disabledList.length;
+  if (countDynamic) countDynamic.textContent = dynamicRulesCount;
 
   updateProjectLifecycleBar();
 }

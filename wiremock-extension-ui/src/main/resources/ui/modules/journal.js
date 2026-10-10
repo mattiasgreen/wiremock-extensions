@@ -26,6 +26,15 @@ export function toggleJournalDetail(reqId, updateRoute = true) {
   }
 }
 
+function getHeader(headers, name) {
+  if (!headers) return null;
+  const lower = name.toLowerCase();
+  for (const [k, v] of Object.entries(headers)) {
+    if (k.toLowerCase() === lower) return v;
+  }
+  return null;
+}
+
 export function renderJournal() {
   const filter = (elements.journalSearch ? elements.journalSearch.value : '').toLowerCase().trim();
   const unmatchedOnly = elements.filterUnmatchedOnly.checked;
@@ -37,7 +46,9 @@ export function renderJournal() {
     const url = (r.request && r.request.url ? r.request.url : '').toLowerCase();
     const status = String((r.response && r.response.status) || (r.responseDefinition && r.responseDefinition.status) || '');
     const stubName = (r.stubMapping && r.stubMapping.name ? r.stubMapping.name : '').toLowerCase();
-    return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter);
+    const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
+    const statefulEntity = (getHeader(rHeaders, 'x-wiremock-stateful-entity') || '').toLowerCase();
+    return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter) || statefulEntity.includes(filter);
   });
 
   if (elements.journalFilteredCount) {
@@ -59,6 +70,12 @@ export function renderJournal() {
     const matched = req.wasMatched;
     const duration = (req.timing && req.timing.totalTime !== undefined) ? `${req.timing.totalTime}ms` : '-';
 
+    const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+    const isDynamic = getHeader(resHeaders, 'x-wiremock-stateful') === 'true';
+    const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
+    const dynamicRoute = getHeader(resHeaders, 'x-wiremock-stateful-route');
+    const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
+
     html += `
       <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-testid="journal-row">
         <td><span class="journal-chevron">▶</span></td>
@@ -66,7 +83,7 @@ export function renderJournal() {
         <td><span class="http-badge badge-${method}">${method}</span></td>
         <td title="${escapeHtml(url)}">${escapeHtml(url)}</td>
         <td>${status}</td>
-        <td class="${matched ? 'pill-matched' : 'pill-unmatched'}">${matched ? 'MATCHED' : 'UNMATCHED'}</td>
+        <td class="${isDynamic ? 'pill-matched pill-stateful' : (matched ? 'pill-matched' : 'pill-unmatched')}">${isDynamic ? '⚡ DYNAMIC' : (matched ? 'MATCHED' : 'UNMATCHED')}</td>
         <td>${duration}</td>
       </tr>
     `;
@@ -76,19 +93,34 @@ export function renderJournal() {
       const reqBodyRaw = (req.request && req.request.body) || '';
       const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
 
-      const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
       const resHeadersHtml = highlightJson(resHeaders);
       const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
       const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
       const stubName = (req.stubMapping && req.stubMapping.name)
         || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name'])
-        || (matched ? 'Matched' : 'None (404)');
+        || (isDynamic ? `Dynamic: ${dynamicEntity}` : (matched ? 'Matched' : 'None (404)'));
 
       html += `
         <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">
           <td colspan="7">
             <div class="journal-detail-content">
               <div class="journal-detail-grid">
+                ${isDynamic ? `
+                <div class="journal-detail-card journal-stateful-card" data-testid="journal-stateful-card">
+                  <div class="journal-card-header">
+                    <span>⚡ Stateful Simulation Trace</span>
+                    <span class="status-badge badge-dynamic">DYNAMIC</span>
+                  </div>
+                  <div class="journal-section-title">Entity &amp; Route</div>
+                  <div style="font-family: monospace; font-size: 0.85rem; margin-bottom: 8px;">
+                    <strong>${escapeHtml(dynamicEntity || 'Entity')}</strong>: ${escapeHtml(dynamicRoute || '')}
+                  </div>
+                  <div class="journal-section-title">Invariant Evaluation</div>
+                  <div style="font-size: 0.85rem;" class="${(dynamicInvariants || '').toUpperCase().startsWith('VIOLATED') ? 'text-danger' : 'text-success'}">
+                    🛡️ ${escapeHtml(dynamicInvariants || 'PASSED')}
+                  </div>
+                </div>
+                ` : ''}
                 <div class="journal-detail-card">
                   <div class="journal-card-header">
                     <span>Request: ${escapeHtml(method)} ${escapeHtml(url)}</span>

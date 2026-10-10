@@ -1,5 +1,6 @@
 dependencies {
     testImplementation project(':wiremock-extension-openapi')
+    testImplementation project(':wiremock-extension-stateful')
     testImplementation libs.playwright
     testImplementation libs.jackson.databind
     testImplementation libs.animated.gif.lib
