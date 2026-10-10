@@ -2,6 +2,10 @@
 
 A collection of lightweight, production-grade extensions for [WireMock](https://wiremock.org/) and WireMock Standalone.
 
+> 📊 **Customer Pitch Deck**: View the interactive slide deck at [https://mattiasgreen.github.io/wiremock-extensions/pitch/](https://mattiasgreen.github.io/wiremock-extensions/pitch/) (or locally at `http://localhost:8080/__admin/ui/pitch/`).
+>
+> 🔍 **Retrospective & Roadmap**: See [retrospective.md](retrospective.md) for the architecture audit, failure mode analysis, and prioritized feature roadmap.
+
 Each extension is **modular and standalone**: you can pick and choose only the extensions you need, or use the all-in-one bundle to include everything.
 
 ## Modules
@@ -11,6 +15,7 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | **`wiremock-extension-json-logging`** | Single-line structured JSON logging for standard/verbose mode with automatic MDC header extraction (`x_correlation_id`, `x_tenant_id`). | [Module README](wiremock-extension-json-logging/README.md) |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
+| **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with type-safe Java DSL, 100% RCE-safe AST evaluation, and multi-tenant `X-Correlation-Id` isolation to prevent parallel test collision. | [Module README](wiremock-extension-stateful/README.md) |
 | **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 | **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating stateful scenario modeling, parallel case collision pitfalls, best-practice isolated scenarios, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
@@ -86,6 +91,12 @@ Each extension can be used independently without pulling in the others:
   implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
   ```
   See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
+
+- **Dynamic Stateful Simulation Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:0.1.0'
+  ```
+  See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
 
 ### 3. Local Development Runner
 
