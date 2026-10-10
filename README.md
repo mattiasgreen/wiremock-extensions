@@ -191,9 +191,33 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]
 ```
 
-## Roadmap & Wishlist
+## Roadmap & Unified Simulator Stack
 
-- [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying (WireMock reverse proxy currently defaults to trust-all certificates).
+The suite is expanding into a **zero-sprawl Simulator Stack** running entirely in-process inside WireMock (sub-second startup, zero external container dependencies).
+
+> 📘 **Full Architecture Blueprint**: Read [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md) for technical design details, and [retrospective.md](retrospective.md) for release phasing.
+
+### Upcoming Simulator Modules
+
+* **🌪️ Network Chaos & Fault Injection (`wiremock-extension-chaos`)**:
+  * Native re-implementation of Shopify's Toxiproxy in modern **Java 21 Virtual Threads** (`Thread.ofVirtual()`), running directly inside WireMock without external Go sidecars.
+  * All 7 toxics supported: `latency` (with jitter), `bandwidth` throttling, `slow_close`, `timeout` (black hole), `reset_peer` (TCP RST via `setSoLinger(true,0)`), `slicer` (packet fragmentation), and `limit_data`.
+  * Dual-layer control: L4 TCP Proxy with Toxiproxy v2 REST API compatibility (`POST /proxies/{name}/toxics`) + L7 WireMock HTTP chaos rules filtered by path, headers, or `X-Correlation-Id`.
+  * Web UI Chaos controller with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey").
+
+* **📬 AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**:
+  * Ingest AsyncAPI 2.x and 3.x specifications (`asyncapi.yaml`) via `POST /__admin/asyncapi/import` and synthesize mock event publishers and schema payload generators.
+  * Native WebSockets (`ws://...`) and Server-Sent Events (`GET /__async/channels/{name}` SSE) with zero external message broker containers.
+  * In-memory Virtual Topic Broker supporting pub/sub channels, topic wildcards (`orders.*`), offset cursors, and consumer group simulation.
+  * Bidirectional HTTP ⇄ Event triggers: automatically publish async events when HTTP endpoints are called, or fire webhooks when events are produced.
+
+* **🪝 Asynchronous Callbacks & Webhooks (`wiremock-extension-webhooks`)**:
+  * Automatic OpenAPI 3.0/3.1 `callbacks` parsing: synthesizes `202 Accepted` stubs paired with asynchronous webhook deliveries to dynamic URLs like `{{jsonPath request.body '$.callbackUrl'}}`.
+  * Stateful workflow triggers: emit out-of-band callbacks upon state transitions in `wiremock-extension-stateful`.
+  * Webhook Outbox Journal: UI audit log tracking dispatched callbacks, target endpoints, delivery status, retries, and an interactive "Trigger / Replay Now" button.
+
+### General Wishlist
+- [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying.
 - [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
 
 ## License
