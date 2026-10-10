@@ -42,17 +42,64 @@ Guidelines, constraints, architecture, and commands for autonomous coding agents
 
 ## 3. Essential Commands & Development Workflows
 
+### Fast Feedback & Inner Loop Guidelines
+To prevent long idle wait times and maintain high velocity, always choose the tightest feedback loop applicable:
+- **Never run full multi-module `./gradlew check` or all E2E tests during active code edits.**
+- **Defer Spotless and SpotBugs gates** until feature completion or pre-commit / pre-push.
+- Clean stale JVM background processes periodically with `./gradlew --stop` if daemon reuse slows down.
+
+#### A. Frontend & UI Workflows (`wiremock-extension-ui`)
+* **Loop 1: Dev Server Hot-Reload (0-second rebuild)**
+  * Start `./gradlew :wiremock-extension-bundle:runStandalone` in background or separate shell.
+  * Static web assets (`.html`, `.css`, `.js`) in `src/main/resources/ui/` are served straight from disk. Just refresh the browser.
+* **Loop 2: Targeted Playwright Verification (~10–18s)**
+  * Filter to only the single test method being authored or debugged:
+    ```bash
+    ./gradlew :wiremock-extension-ui:test --tests "UiPlaywrightTest.testSpecificMethodName"
+    ```
+* **Loop 3: Subproject Formatting (Fast)**
+  * Format only web/UI assets without running full repo formatting:
+    ```bash
+    ./gradlew :wiremock-extension-ui:spotlessApply
+    ```
+
+#### B. Backend / Java Workflows (`json-logging`, `otel`, `openapi`, etc.)
+* **Loop 1: Targeted Class or Method Test (< 5s)**
+  * ```bash
+    ./gradlew :wiremock-extension-openapi:test --tests "OpenApiSpecParserTest.shouldParseSimpleSpec"
+    ```
+* **Loop 2: Module-Level Test Suite (< 15s)**
+  * ```bash
+    ./gradlew :wiremock-extension-openapi:test
+    ```
+* **Loop 3: Module-Level Static Analysis Gate**
+  * ```bash
+    ./gradlew :wiremock-extension-openapi:spotbugsMain
+    ```
+
+#### C. Outer Loop Gate (Pre-Commit & Pre-PR)
+**MANDATORY**: The final outer check MUST ALWAYS be run after the inner loop is green, before committing or creating a PR:
+```bash
+./gradlew spotlessApply
+./gradlew check
+```
+Only proceed to `git commit` once both inner loop and outer gate are 100% green.
+
+#### D. Pull Request (PR) Preparation Protocol
+Before submitting or presenting a PR to the user, coding agents must complete the following checklist:
+1. **Documentation Review**:
+   - Verify that all relevant documentation (`README.md`, module-specific `README.md`, architectural notes) has been updated to reflect new features, CLI routes, and configuration options.
+2. **UI Demo Assets Check**:
+   - If UI changes, visual enhancements, or new user workflows were introduced, ensure demo GIF recordings in `docs/images/` and `UiDemoGifRecordingTest` have been updated/regenerated.
+3. **Copy-Pasteable PR Markdown**:
+   - Always output clean, complete, copy-pasteable markdown for the PR body (Summary, Key Features, Verification Checklist).
+4. **Direct PR Creation URL**:
+   - Always provide a clickable link to create the PR on GitHub using the current feature branch against the base branch (e.g. `https://github.com/mattiasgreen/wiremock-extensions/compare/main...<feature-branch>?expand=1`).
+
+### Essential Task Reference
 * **Run all verification checks** (Tests, Spotless, and SpotBugs):
   ```bash
   ./gradlew check
-  ```
-* **Run SpotBugs security analysis across all modules**:
-  ```bash
-  ./gradlew spotbugsMain
-  ```
-* **Run all tests** (GIF recording excluded by default for speed):
-  ```bash
-  ./gradlew test
   ```
 * **Run standalone development server with sample stubs**:
   ```bash
@@ -69,10 +116,6 @@ Guidelines, constraints, architecture, and commands for autonomous coding agents
 * **Format codebase (Java & web assets)**:
   ```bash
   ./gradlew spotlessApply
-  ```
-* **Check formatting compliance**:
-  ```bash
-  ./gradlew spotlessCheck
   ```
 * **Regenerate documentation demo GIFs** (only when UI visual changes are made):
   ```bash

@@ -12,6 +12,7 @@ dependencies {
     api project(':wiremock-extension-json-logging')
     api project(':wiremock-extension-otel')
     api project(':wiremock-extension-openapi')
+    api project(':wiremock-extension-stateful')
     api project(':wiremock-extension-ui')
 
     standaloneRuntime libs.wiremock

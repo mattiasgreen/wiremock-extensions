@@ -82,6 +82,14 @@ import {
   loadData,
   executeTesterRequest
 } from './modules/api.js';
+import {
+  setupDynamicStubModal,
+  normalizeStatefulModelsToStubs
+} from './modules/dynamic-stubs.js';
+
+export function getAllStubs() {
+  return [...state.currentStubs, ...state.disabledStubs, ...normalizeStatefulModelsToStubs(state.statefulModels || [])];
+}
 
 // Exported public API for test suite and external scripts
 export {
@@ -108,6 +116,7 @@ registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
 setupOpenApiModal();
 setupProjectLifecycleBar(loadData);
+setupDynamicStubModal();
 initTesterHistoryCollapse();
 
 registerRouteHandlers({
@@ -119,7 +128,7 @@ registerRouteHandlers({
     renderStubList();
     const stubId = params.get('stubId');
     if (stubId) {
-      const match = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === stubId);
+      const match = getAllStubs().find(s => s.id === stubId);
       if (match) selectStub(match, false);
     }
   },
@@ -173,7 +182,7 @@ if (elements.projectFilterSelect) {
     updateBulkToolbar();
   });
 }
-['all', 'active', 'disabled'].forEach(filter => {
+['all', 'active', 'disabled', 'dynamic'].forEach(filter => {
   const btn = document.getElementById(`btn-filter-${filter}`);
   if (btn) {
     btn.addEventListener('click', () => {
@@ -217,7 +226,7 @@ if (elements.btnCreateStub) {
 if (elements.btnTestStub) {
   elements.btnTestStub.addEventListener('click', () => {
     if (!state.selectedStubId) return;
-    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
+    const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (stub) sendStubToTester(stub);
   });
 }
@@ -250,7 +259,7 @@ if (elements.btnDeleteStub) {
 if (elements.btnViewStubInJournal) {
   elements.btnViewStubInJournal.addEventListener('click', () => {
     if (!state.selectedStubId) return;
-    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
+    const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (!stub) return;
     const path = getStubUrl(stub.request);
     activateTab('tab-journal', false);
@@ -315,7 +324,7 @@ if (elements.btnCopyJson) {
 if (elements.btnCopyCurl) {
   elements.btnCopyCurl.addEventListener('click', () => {
     if (!state.selectedStubId) return;
-    const stub = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === state.selectedStubId);
+    const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (!stub) return;
     const method = (stub.request && stub.request.method) || 'GET';
     const path = getStubUrl(stub.request);

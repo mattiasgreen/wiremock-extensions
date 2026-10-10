@@ -235,17 +235,39 @@ export function loadScenarios() {
     });
 }
 
+export function loadStatefulModels() {
+  return apiGet('/__admin/stateful/models')
+    .then(data => {
+      state.statefulModels = Array.isArray(data) ? data : [];
+    })
+    .catch(() => {
+      state.statefulModels = [];
+    });
+}
+
+export function createStatefulModel(modelData) {
+  return apiPost('/__admin/stateful/rules', modelData);
+}
+
+export function deleteStatefulSession(correlationId) {
+  return apiDelete(`/__admin/stateful/sessions/${encodeURIComponent(correlationId)}`);
+}
+
 export function loadData() {
   loadTesterHistoryFromStorage();
-  return Promise.all([loadMappings(), loadDisabledStubs(), loadJournal()])
+  return Promise.all([loadMappings(), loadDisabledStubs(), loadJournal(), loadStatefulModels()])
     .then(() => {
       renderStubList();
       renderProjectSelector();
+      updateFilterCounts();
       updateBulkToolbar();
-      const totalStubs = state.currentStubs.length + state.disabledStubs.length;
+      const dynamicCount = (state.statefulModels || []).reduce((acc, m) => acc + ((m.rules && m.rules.length) || 0), 0);
+      const totalStubs = state.currentStubs.length + state.disabledStubs.length + dynamicCount;
       if (elements.statStubs) elements.statStubs.textContent = totalStubs;
       if (elements.stubsCountLabel) {
-        elements.stubsCountLabel.textContent = `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
+        elements.stubsCountLabel.textContent = dynamicCount > 0
+          ? `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled · ${dynamicCount} dynamic`
+          : `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
       }
       return loadScenarios();
     })

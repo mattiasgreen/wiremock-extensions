@@ -3,6 +3,10 @@ package com.github.mattiasgreen.wiremock.ui;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mattiasgreen.wiremock.stateful.dsl.*;
+import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
+import com.github.mattiasgreen.wiremock.stateful.extension.StatefulAdminEndpoint;
+import com.github.mattiasgreen.wiremock.stateful.extension.StatefulResponseTransformer;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
@@ -10,12 +14,14 @@ import com.microsoft.playwright.options.WaitForSelectorState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.*;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class UiPlaywrightTest {
 
     private WireMockServer wireMockServer;
+    private StateEngine stateEngine;
     private Playwright playwright;
     private Browser browser;
     private BrowserContext context;
@@ -27,12 +33,15 @@ public class UiPlaywrightTest {
 
     @BeforeAll
     void startAll() {
+        stateEngine = new StateEngine();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
                         new UiAdminApiEndpoint(),
                         new StubLifecycleAdminEndpoint(new DisabledStubStore()),
-                        new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
+                        new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
+                        new StatefulAdminEndpoint(stateEngine),
+                        new StatefulResponseTransformer(stateEngine)));
         wireMockServer.start();
         resetDefaultStubs();
 
@@ -93,6 +102,7 @@ public class UiPlaywrightTest {
         if (context != null) {
             context.close();
         }
+        resetDefaultStubs();
     }
 
     @Test
@@ -123,6 +133,18 @@ public class UiPlaywrightTest {
         assertThat(page.getByTestId("navbar").isVisible()).isTrue();
         assertThat(page.getByTestId("stub-list").getAttribute("data-state")).isEqualTo("ready");
         assertThat(page.getByTestId("stub-card").count()).isGreaterThanOrEqualTo(2);
+
+        // Verify sidebar filter search box functionality
+        page.locator("#search-box").fill("orders");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
+        assertThat(page.locator(".stub-card:visible").textContent()).contains("orders");
+
+        page.locator("#search-box").fill("non-existent-filter-query");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
+
+        // Clear search box to restore listing
+        page.locator("#search-box").fill("");
+        assertThat(page.locator(".stub-card:visible").count()).isGreaterThanOrEqualTo(2);
 
         assertThat(pageErrors).as("Uncaught page errors on initial load").isEmpty();
     }
@@ -288,28 +310,6 @@ public class UiPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Scenario 4: Test Stub shortcut transition to HTTP Tester")
-    void testTestStubShortcutTransition() {
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-        page.waitForSelector(".stub-card");
-
-        // Click the POST stub card
-        page.locator(".stub-card:has-text('Create Order API')").click();
-
-        // Click '⚡ Test Stub' button
-        page.locator("#btn-test-stub").click();
-
-        // Should switch to tester tab
-        page.waitForSelector("#tab-tester.active");
-
-        // Verify prefilled values
-        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
-        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/orders");
-
-        assertThat(pageErrors).isEmpty();
-    }
-
-    @Test
     @DisplayName("Scenario 5: Request journal filtering and inline accordion details")
     void testRequestJournalFilteringAndAccordion() {
         // Send a request directly to WireMock to generate a journal entry
@@ -349,26 +349,6 @@ public class UiPlaywrightTest {
 
         assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
         assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/custom/deep-link");
-
-        assertThat(pageErrors).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Scenario 7: Sidebar stub filter search box")
-    void testSidebarStubSearchFiltering() {
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-        page.waitForSelector(".stub-card");
-
-        assertThat(page.locator(".stub-card").count()).isGreaterThanOrEqualTo(2);
-
-        // Search for 'orders'
-        page.locator("#search-box").fill("orders");
-        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
-        assertThat(page.locator(".stub-card:visible").textContent()).contains("orders");
-
-        // Search for non-existing query
-        page.locator("#search-box").fill("non-existent-filter-query");
-        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
 
         assertThat(pageErrors).isEmpty();
     }
@@ -735,6 +715,8 @@ public class UiPlaywrightTest {
         Locator testerBanner = page.locator("#tester-context-banner");
         assertThat(testerBanner.isVisible()).isTrue();
         assertThat(page.locator("#tester-context-title").textContent()).contains("/api/v1/users");
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("GET");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/users");
 
         // Click Clear for Ad-hoc
         page.locator("#btn-tester-clear-context").click();
@@ -1259,7 +1241,219 @@ public class UiPlaywrightTest {
         assertThat(httpErrors).isEmpty();
     }
 
+    private com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition createCasesModel() {
+        return SimulatorModel.forEntity("cases")
+                .idPathParam("caseId")
+                .idPrefix("case-")
+                .onPost("/api/v1/cases")
+                .initialState(Map.of("status", "OPEN", "tasks", List.of()))
+                .respondWith(201, ResponseSource.entity())
+                .onGet("/api/v1/cases/{caseId}")
+                .respondWith(200, ResponseSource.entity())
+                .onPost("/api/v1/cases/{caseId}/tasks")
+                .mutate(Action.appendToList("tasks", Source.requestBodyWithGeneratedId("id", "task-")))
+                .respondWith(201, ResponseSource.entity())
+                .onPut("/api/v1/cases/{caseId}/close")
+                .require(
+                        Expr.list("tasks").allMatch(Expr.field("status").notEq("PENDING")),
+                        409,
+                        "Cannot close case: pending tasks exist")
+                .mutate(Action.setField("status", "CLOSED"))
+                .respondWith(200, ResponseSource.entity())
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "Scenario 22: Unified stubs view displays dynamic simulation badges, route coverage, and invariant cards")
+    void testUnifiedStubsViewDisplaysDynamicBadgesAndCoverage() {
+        stateEngine.registerGlobalModel(createCasesModel());
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card.stub-dynamic");
+
+        // Verify dynamic stubs appear with [⚡ DYNAMIC] badge
+        Locator dynamicCards = page.locator(".stub-card.stub-dynamic");
+        assertThat(dynamicCards.count()).isEqualTo(4);
+        assertThat(dynamicCards.first().locator(".badge-dynamic").textContent()).contains("DYNAMIC");
+
+        // Test Filter pill: click "⚡ Dynamic"
+        page.locator("#btn-filter-dynamic").click();
+        page.waitForTimeout(200);
+        assertThat(page.locator(".stub-card").count()).isEqualTo(4);
+
+        // Click on the Close Case dynamic stub
+        Locator closeCaseCard =
+                page.locator(".stub-card", new Page.LocatorOptions().setHasText("PUT /api/v1/cases/{caseId}/close"));
+        closeCaseCard.click();
+        page.waitForSelector("#detail-stateful-section:not(.hidden)");
+
+        // Verify stateful specification details
+        assertThat(page.locator("#stateful-entity-label").textContent()).isEqualTo("cases");
+        assertThat(page.locator("#stateful-route-scope").textContent()).contains("/api/v1/cases/*/close");
+        assertThat(page.locator("#stateful-invariants-count").textContent()).isEqualTo("1");
+        assertThat(page.locator("#stateful-invariants-list").textContent())
+                .contains("Cannot close case: pending tasks exist");
+        assertThat(page.locator("#stateful-mutations-count").textContent()).isEqualTo("1");
+
+        // Reset filter
+        page.locator("#btn-filter-all").click();
+
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "Scenario 23: Dynamic stub jump to HTTP tester with path parameter replacement and execution journal tracing")
+    void testDynamicStubToTesterToJournalWorkflow() {
+        stateEngine.registerGlobalModel(createCasesModel());
+        com.fasterxml.jackson.databind.node.ObjectNode caseEntity =
+                com.github.mattiasgreen.wiremock.stateful.ast.AstJson.createObjectNode();
+        caseEntity.put("id", "case-100");
+        caseEntity.put("status", "OPEN");
+        caseEntity.putArray("tasks");
+        stateEngine.getStateStore().putEntity("test-scenario-1", "cases", "case-100", caseEntity);
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector(".stub-card.stub-dynamic");
+
+        // Select POST /api/v1/cases/{caseId}/tasks
+        Locator taskCard =
+                page.locator(".stub-card", new Page.LocatorOptions().setHasText("POST /api/v1/cases/{caseId}/tasks"));
+        taskCard.click();
+
+        // Click "⚡ Test Stub"
+        page.locator("#btn-test-stub").click();
+
+        // Verify HTTP Tester tab activated and URL parameter resolved
+        page.waitForSelector("#tab-tester.active");
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/cases/case-100/tasks");
+        assertThat(page.locator("#tester-headers").inputValue()).contains("X-Correlation-Id: test-scenario-1");
+        assertThat(page.locator("#tester-body").inputValue()).contains("Verification Task");
+
+        // Click Send
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:not(:has-text('...'))");
+        assertThat(page.locator("#tester-response-status").textContent()).contains("201");
+
+        // Navigate to Request Journal
+        page.locator("#nav-tab-journal").click();
+        page.waitForSelector("#journal-table");
+
+        // Check that the request in journal shows [⚡ DYNAMIC] badge
+        Locator journalRows = page.locator("#journal-list tr[data-testid='journal-row']");
+        assertThat(journalRows.first().locator(".pill-stateful").textContent()).contains("DYNAMIC");
+
+        // Expand the journal row
+        journalRows.first().click();
+        page.waitForSelector("tr[data-testid='journal-detail-row']:not(.hidden)");
+
+        // Verify the Stateful Simulation card appears in the journal detail
+        Locator statefulCard = page.locator("div[data-testid='journal-stateful-card']");
+        assertThat(statefulCard.isVisible()).isTrue();
+        assertThat(statefulCard.textContent()).contains("cases");
+        assertThat(statefulCard.textContent()).contains("PASSED");
+
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Scenario 24: Bootstrap new dynamic stub from template modal")
+    void testCreateDynamicStubFromTemplateModal() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // Open Dynamic Stub Modal
+        page.locator("#btn-create-dynamic-stub").click();
+        page.waitForSelector("#dynamic-stub-modal:not(.hidden)");
+
+        // Test Validation Handling: enter malformed JSON and attempt save
+        page.locator("#dynamic-model-json").fill("{ malformed json syntax ]");
+        final boolean[] dialogHandled = {false};
+        page.onceDialog(dialog -> {
+            assertThat(dialog.message()).contains("Invalid JSON");
+            dialogHandled[0] = true;
+            dialog.accept();
+        });
+        page.locator("#btn-save-dynamic").click();
+        page.waitForTimeout(100);
+        assertThat(dialogHandled[0]).isTrue();
+        assertThat(page.locator("#dynamic-stub-modal").isVisible()).isTrue();
+
+        // Select Order Fulfillment template
+        page.locator("#dynamic-template-select").selectOption("order-fulfillment");
+        assertThat(page.locator("#dynamic-entity-name").inputValue()).isEqualTo("orders");
+        assertThat(page.locator("#dynamic-model-json").inputValue()).contains("cannot ship empty order");
+
+        // Click Create
+        page.locator("#btn-save-dynamic").click();
+        page.waitForSelector(
+                "#dynamic-stub-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Verify dynamic stubs for orders appear in sidebar
+        page.waitForSelector(".stub-card:has-text('ORDERS')");
+        Locator orderCards = page.locator(".stub-card:has-text('ORDERS')");
+        assertThat(orderCards.count()).isGreaterThanOrEqualTo(1);
+
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Scenario 25: Stateful invariant violation returns 409 and traces in Request Journal")
+    void testDynamicStubInvariantViolationInJournal() {
+        stateEngine.registerGlobalModel(createCasesModel());
+
+        // Step 1: Create a case and add a pending task using HTTP Tester
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+        page.locator("#tester-method").selectOption("POST");
+        page.locator("#tester-url").fill("/api/v1/cases");
+        page.locator("#tester-headers").fill("X-Correlation-Id: inv-session-1\nContent-Type: application/json");
+        page.locator("#tester-body").fill("{\"title\":\"Case with tasks\"}");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('201')");
+
+        // Add task to newly generated case-101
+        page.locator("#tester-url").fill("/api/v1/cases/case-101/tasks");
+        page.locator("#tester-body").fill("{\"title\":\"Pending task\",\"status\":\"PENDING\"}");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('201')");
+
+        // Step 2: Try to close case -> should be rejected with 409
+        page.locator("#tester-method").selectOption("PUT");
+        page.locator("#tester-url").fill("/api/v1/cases/case-101/close");
+        page.locator("#tester-body").fill("{}");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('409')");
+        assertThat(page.locator("#tester-response-body").textContent())
+                .contains("Cannot close case: pending tasks exist");
+
+        // Step 3: Check Request Journal for invariant violation
+        page.locator("#nav-tab-journal").click();
+        page.waitForSelector("#journal-table");
+
+        Locator firstRow =
+                page.locator("#journal-list tr[data-testid='journal-row']").first();
+        firstRow.click();
+        page.waitForSelector("tr[data-testid='journal-detail-row']:not(.hidden)");
+
+        Locator statefulCard = page.locator("div[data-testid='journal-stateful-card']");
+        assertThat(statefulCard.isVisible()).isTrue();
+        assertThat(statefulCard.textContent()).contains("VIOLATED");
+        assertThat(statefulCard.textContent()).contains("Cannot close case: pending tasks exist");
+
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors.stream().filter(e -> !e.contains("409")).toList())
+                .isEmpty();
+    }
+
     private void resetDefaultStubs() {
+        if (stateEngine != null) {
+            stateEngine.clearAll();
+        }
         wireMockServer.resetAll();
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
                 .withName("List Users API")
