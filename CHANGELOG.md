@@ -5,6 +5,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.2.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.1.0...v1.2.0) (2026-10-10)
+
+
+### Features
+
+* add launchPrebuilt task and standalone launch.gradle script ([afede78](https://github.com/mattiasgreen/wiremock-extensions/commit/afede785990a95deb992dbec0f41c9127c0f5edb))
+* **stateful:** add AST-driven stateful API simulation extension and client DSL ([4c9aa2c](https://github.com/mattiasgreen/wiremock-extensions/commit/4c9aa2c8c356db0dae9802dc8b2627dee6c4347d))
+* **ui:** add stub creation templates, request body matching, and OpenAPI guidance ([877e3b4](https://github.com/mattiasgreen/wiremock-extensions/commit/877e3b440ae0f856c8679ab6119cd5b21f828e8d))
+* **ui:** add stub creation templates, request body matching, and OpenAPI guidance ([245bf1e](https://github.com/mattiasgreen/wiremock-extensions/commit/245bf1e9b33d1eccbc3c6a9a8c9750c4fd33ee08))
+* **ui:** integrate dynamic stateful simulation stubs, inspection, creation templates, and E2E tests ([ef915e5](https://github.com/mattiasgreen/wiremock-extensions/commit/ef915e57d636dc49aa8865e6c01b8c39cc13aa2e))
+* **ui:** support relative static assets and configurable WireMock target in URL ([3a1dd9c](https://github.com/mattiasgreen/wiremock-extensions/commit/3a1dd9ce37bdc4e2ac418103cd555eed5024f211))
+
+
+### Bug Fixes
+
+* **build:** register subprojects in nmcpAggregation dependencies ([8dfad93](https://github.com/mattiasgreen/wiremock-extensions/commit/8dfad937d0c21d7e13b8f73661eeed0e4c46dcbf))
+
 ## [1.1.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.0.0...v1.1.0) (2026-10-08)
 
 
