@@ -134,6 +134,18 @@ public class UiPlaywrightTest {
         assertThat(page.getByTestId("stub-list").getAttribute("data-state")).isEqualTo("ready");
         assertThat(page.getByTestId("stub-card").count()).isGreaterThanOrEqualTo(2);
 
+        // Verify sidebar filter search box functionality
+        page.locator("#search-box").fill("orders");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
+        assertThat(page.locator(".stub-card:visible").textContent()).contains("orders");
+
+        page.locator("#search-box").fill("non-existent-filter-query");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
+
+        // Clear search box to restore listing
+        page.locator("#search-box").fill("");
+        assertThat(page.locator(".stub-card:visible").count()).isGreaterThanOrEqualTo(2);
+
         assertThat(pageErrors).as("Uncaught page errors on initial load").isEmpty();
     }
 
@@ -298,28 +310,6 @@ public class UiPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Scenario 4: Test Stub shortcut transition to HTTP Tester")
-    void testTestStubShortcutTransition() {
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-        page.waitForSelector(".stub-card");
-
-        // Click the POST stub card
-        page.locator(".stub-card:has-text('Create Order API')").click();
-
-        // Click '⚡ Test Stub' button
-        page.locator("#btn-test-stub").click();
-
-        // Should switch to tester tab
-        page.waitForSelector("#tab-tester.active");
-
-        // Verify prefilled values
-        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
-        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/orders");
-
-        assertThat(pageErrors).isEmpty();
-    }
-
-    @Test
     @DisplayName("Scenario 5: Request journal filtering and inline accordion details")
     void testRequestJournalFilteringAndAccordion() {
         // Send a request directly to WireMock to generate a journal entry
@@ -359,26 +349,6 @@ public class UiPlaywrightTest {
 
         assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
         assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/custom/deep-link");
-
-        assertThat(pageErrors).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Scenario 7: Sidebar stub filter search box")
-    void testSidebarStubSearchFiltering() {
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-        page.waitForSelector(".stub-card");
-
-        assertThat(page.locator(".stub-card").count()).isGreaterThanOrEqualTo(2);
-
-        // Search for 'orders'
-        page.locator("#search-box").fill("orders");
-        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
-        assertThat(page.locator(".stub-card:visible").textContent()).contains("orders");
-
-        // Search for non-existing query
-        page.locator("#search-box").fill("non-existent-filter-query");
-        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
 
         assertThat(pageErrors).isEmpty();
     }
@@ -745,6 +715,8 @@ public class UiPlaywrightTest {
         Locator testerBanner = page.locator("#tester-context-banner");
         assertThat(testerBanner.isVisible()).isTrue();
         assertThat(page.locator("#tester-context-title").textContent()).contains("/api/v1/users");
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("GET");
+        assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/users");
 
         // Click Clear for Ad-hoc
         page.locator("#btn-tester-clear-context").click();
@@ -1397,6 +1369,19 @@ public class UiPlaywrightTest {
         // Open Dynamic Stub Modal
         page.locator("#btn-create-dynamic-stub").click();
         page.waitForSelector("#dynamic-stub-modal:not(.hidden)");
+
+        // Test Validation Handling: enter malformed JSON and attempt save
+        page.locator("#dynamic-model-json").fill("{ malformed json syntax ]");
+        final boolean[] dialogHandled = {false};
+        page.onceDialog(dialog -> {
+            assertThat(dialog.message()).contains("Invalid JSON");
+            dialogHandled[0] = true;
+            dialog.accept();
+        });
+        page.locator("#btn-save-dynamic").click();
+        page.waitForTimeout(100);
+        assertThat(dialogHandled[0]).isTrue();
+        assertThat(page.locator("#dynamic-stub-modal").isVisible()).isTrue();
 
         // Select Order Fulfillment template
         page.locator("#dynamic-template-select").selectOption("order-fulfillment");
