@@ -4,7 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WireMock Console</title>
-  <link rel="stylesheet" href="/__admin/ui/style.css">
+  <script>
+    if (window.location.pathname.endsWith('/ui')) {
+      window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
@@ -30,8 +35,12 @@
         </button>
       </nav>
       <div class="nav-actions">
-        <a href="../swagger-ui/" target="_blank" class="btn btn-link" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
-        <a href="../metrics/prometheus" target="_blank" class="btn btn-link" title="Open Prometheus Metrics">📊 Metrics</a>
+        <button id="btn-target-host" class="btn btn-secondary btn-target-host" data-testid="btn-target-host" title="Configure WireMock Target Server">
+          <span class="target-host-dot" id="target-host-dot"></span>
+          <span id="target-host-label">Target: (same-origin)</span>
+        </button>
+        <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
+        <a href="../metrics/prometheus" target="_blank" class="btn btn-link" id="link-metrics" title="Open Prometheus Metrics">📊 Metrics</a>
       </div>
     </header>
 
@@ -105,8 +114,32 @@
           <!-- Stub Detail Inspector (Detail) -->
           <section class="stub-detail-panel" data-testid="stub-detail-panel">
             <div id="stub-detail-empty" class="empty-state" data-testid="stub-detail-empty">
-            <p>Select a stub mapping from the left panel to inspect its configuration.</p>
-          </div>
+              <div id="stub-detail-empty-default">
+                <p>Select a stub mapping from the left panel to inspect its configuration.</p>
+              </div>
+              <div id="stub-detail-empty-welcome" class="welcome-guide hidden" data-testid="stub-detail-welcome">
+                <div class="welcome-header">
+                  <span class="welcome-logo">⚡</span>
+                  <h2>Welcome to WireMock Console</h2>
+                  <p class="welcome-subtitle">Get started by bootstrapping your API stubs or defining a new stub from scratch.</p>
+                </div>
+                <div class="welcome-cards">
+                  <div class="welcome-card welcome-card-primary">
+                    <div class="welcome-badge">Recommended</div>
+                    <div class="welcome-icon">📥</div>
+                    <h3>Bootstrap from OpenAPI</h3>
+                    <p>Import an OpenAPI 3.0 / 3.1 specification to synthesize mock stubs or live proxies instantly.</p>
+                    <button type="button" id="btn-welcome-openapi" class="btn btn-primary" title="Import stubs from OpenAPI spec">📥 Import OpenAPI Spec</button>
+                  </div>
+                  <div class="welcome-card">
+                    <div class="welcome-icon">➕</div>
+                    <h3>Create Stub from Scratch</h3>
+                    <p>Define custom stubs matching URIs, request bodies ("contains string X"), or JSON matchers using built-in examples.</p>
+                    <button type="button" id="btn-welcome-create" class="btn btn-secondary" title="Create a new stub from scratch">➕ Create New Stub</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           <div id="stub-detail-view" class="detail-view hidden" data-testid="stub-detail-view">
             <div class="detail-header">
               <div class="detail-title-group">
@@ -503,6 +536,34 @@
           <button id="btn-close-editor-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
         </div>
         <div class="modal-body">
+          <!-- OpenAPI Bootstrap Banner (Primary way to bootstrap) -->
+          <div id="editor-openapi-banner" class="editor-openapi-banner" data-testid="editor-openapi-banner">
+            <div class="editor-openapi-banner-text">
+              <span class="banner-icon">💡</span>
+              <span><strong>Bootstrapping a full API?</strong> The primary way is to point to an OpenAPI spec to generate all stubs automatically.</span>
+            </div>
+            <button type="button" id="btn-editor-open-openapi" class="btn btn-tiny btn-secondary" title="Switch to OpenAPI Spec Import">📥 Import OpenAPI Spec</button>
+          </div>
+
+          <!-- Template / Example Selector -->
+          <div id="editor-template-group" class="form-group editor-template-group" data-testid="editor-template-group">
+            <div class="template-label-row">
+              <label for="editor-template-select"><strong>Example Templates:</strong> <span class="muted-text">Choose an example to pre-fill configuration</span></label>
+            </div>
+            <div class="template-select-row">
+              <select id="editor-template-select" class="form-control" data-testid="editor-template-select">
+                <option value="custom">Blank / Custom Stub</option>
+                <option value="uri-get" selected>Matching URI only (GET /api/v1/items)</option>
+                <option value="body-contains">Matching Request Body ("body contains string X")</option>
+                <option value="body-json">Matching Request JSON Body (POST /api/v1/orders)</option>
+                <option value="url-pattern">Matching URL Regex Pattern (GET /api/v1/items/[0-9]+)</option>
+                <option value="error-response">Error Response (404 Not Found)</option>
+              </select>
+              <button type="button" id="btn-apply-template" class="btn btn-tiny btn-secondary">Apply Example</button>
+            </div>
+          </div>
+
+          <div class="editor-section-header">Metadata &amp; Routing</div>
           <div class="form-row" style="display: flex; gap: 12px;">
             <div class="form-group" style="flex: 2;">
               <label for="editor-name">Stub Name:</label>
@@ -525,7 +586,8 @@
             </div>
           </div>
 
-          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
+          <div class="editor-section-header" style="margin-top: 14px;">Request Matching</div>
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 6px;">
             <div class="form-group" style="flex: 1;">
               <label for="editor-method">HTTP Method:</label>
               <select id="editor-method" class="form-control">
@@ -543,6 +605,28 @@
               <label for="editor-url">URL / Path Pattern / Path Template:</label>
               <input type="text" id="editor-url" class="form-control" placeholder="/api/v1/resource or /resource/{id}">
             </div>
+          </div>
+
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-body-match-type">Request Body Matcher:</label>
+              <select id="editor-body-match-type" class="form-control" data-testid="editor-body-match-type">
+                <option value="none">None (Match any request body)</option>
+                <option value="contains">Body contains string ("contains")</option>
+                <option value="equalToJson">JSON match (equalToJson)</option>
+                <option value="equalTo">Exact string match (equalTo)</option>
+                <option value="matchesJsonPath">JSONPath expression (matchesJsonPath)</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="editor-body-match-container" class="form-group hidden" style="margin-top: 10px;">
+            <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
+            <textarea id="editor-body-match-pattern" class="code-input" rows="3" placeholder="Expected pattern or substring..."></textarea>
+          </div>
+
+          <div class="editor-section-header" style="margin-top: 14px;">Response Definition</div>
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 6px;">
             <div class="form-group" style="flex: 1;">
               <label for="editor-status">Status Code:</label>
               <input type="number" id="editor-status" class="form-control" value="200">
@@ -569,7 +653,35 @@
       </div>
     </div>
   </div>
+  </div>
 
-  <script type="module" src="/__admin/ui/app.js"></script>
+  <!-- Target Host Configuration Modal -->
+  <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>🎯 WireMock Target Server</h3>
+        <button id="btn-close-target-host" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description" style="margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted);">
+          Point this console to any WireMock instance. The target URL is kept in the browser URL query parameter (<code>?wiremock=...</code>).
+        </p>
+        <div class="form-group">
+          <label for="input-target-host">WireMock Base URL:</label>
+          <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080" autocomplete="off" data-testid="input-target-host">
+        </div>
+        <div id="target-host-status" class="hidden" style="margin-top: 10px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-cancel-target-host" class="btn btn-secondary">Cancel</button>
+          <button id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>

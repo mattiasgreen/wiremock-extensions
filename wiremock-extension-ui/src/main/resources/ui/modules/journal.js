@@ -188,7 +188,9 @@ export function renderJournal() {
       const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
       const req = state.currentRequests.find(r => r.id === targetId);
       if (req) {
-        navigator.clipboard.writeText(JSON.stringify(req.request, null, 2));
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(JSON.stringify(req.request, null, 2)).catch(() => {});
+        }
         btn.textContent = '✅ Copied!';
         setTimeout(() => btn.textContent = '📋 Copy Request', 1500);
       }
@@ -201,7 +203,9 @@ export function renderJournal() {
       const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
       const req = state.currentRequests.find(r => r.id === targetId);
       if (req) {
-        navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2));
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2)).catch(() => {});
+        }
         btn.textContent = '✅ Copied!';
         setTimeout(() => btn.textContent = '📋 Copy Response', 1500);
       }

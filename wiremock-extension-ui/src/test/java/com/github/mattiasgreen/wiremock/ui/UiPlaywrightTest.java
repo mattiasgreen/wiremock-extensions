@@ -60,7 +60,8 @@ public class UiPlaywrightTest {
         consoleErrors.clear();
         pageErrors.clear();
         httpErrors.clear();
-        context = browser.newContext();
+        context = browser.newContext(
+                new Browser.NewContextOptions().setPermissions(List.of("clipboard-read", "clipboard-write")));
         page = context.newPage();
 
         page.onConsoleMessage(msg -> {
@@ -1134,6 +1135,125 @@ public class UiPlaywrightTest {
         assertThat(page.locator("#tester-response-body").textContent()).contains("Created successfully");
 
         // Ensure no browser errors or 404s occurred during the operations
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+        assertThat(httpErrors).isEmpty();
+    }
+
+    @Test
+    void testStubCreationTemplatesAndRequestBodyMatching() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list .stub-card");
+
+        // 1. Open Stub Editor from Scratch
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        // Verify OpenAPI banner guidance is present
+        page.waitForSelector("#editor-openapi-banner:not(.hidden)");
+        assertThat(page.locator("#editor-openapi-banner").textContent())
+                .contains("The primary way is to point to an OpenAPI spec");
+
+        // Verify Template selector is present and defaults to uri-get
+        page.waitForSelector("#editor-template-group:not(.hidden)");
+        assertThat(page.locator("#editor-template-select").inputValue()).isEqualTo("uri-get");
+        assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/items");
+
+        // 2. Select Template: Body Contains ("body contains string X")
+        page.locator("#editor-template-select").selectOption("body-contains");
+        assertThat(page.locator("#editor-method").inputValue()).isEqualTo("POST");
+        assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/messages");
+        assertThat(page.locator("#editor-body-match-type").inputValue()).isEqualTo("contains");
+        page.waitForSelector("#editor-body-match-container:not(.hidden)");
+        assertThat(page.locator("#editor-body-match-pattern").inputValue()).isEqualTo("string X");
+
+        // 3. Save new stub
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 4. Verify new stub card appeared in list
+        page.waitForSelector(".stub-card:has-text('Submit Message (Body Contains)')");
+        Locator card = page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("Submit Message (Body Contains)"))
+                .first();
+        card.click();
+
+        // 5. Transfer to HTTP Tester
+        page.locator("#btn-test-stub").click();
+        page.waitForSelector("#tab-tester.active");
+        assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
+        assertThat(page.locator("#tester-url").inputValue()).contains("/api/v1/messages");
+        // Pre-filled body contains "string X" from the bodyPattern matcher
+        assertThat(page.locator("#tester-body").inputValue()).contains("string X");
+
+        // 6. Send matching request -> expects 200 OK
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('200')");
+        assertThat(page.locator("#tester-response-body").textContent()).contains("body contains string X");
+
+        // 7. Test OpenAPI modal shortcut from stub creator
+        page.locator("#nav-tab-stubs").click();
+        page.waitForSelector("#tab-stub-detail.active");
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        page.locator("#btn-editor-open-openapi").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        page.waitForSelector("#openapi-modal:not(.hidden)");
+        page.locator("#btn-cancel-openapi").click();
+        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Ensure no errors
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+        assertThat(httpErrors).isEmpty();
+    }
+
+    @Test
+    void testConfigurableWireMockTargetHost() {
+        // 1. Initial load at standard URL
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#target-host-label");
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
+
+        // 2. Open Target Host modal
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+
+        // Enter target host URL
+        String targetUrl = wireMockServer.baseUrl();
+        page.locator("#input-target-host").fill(targetUrl);
+        page.locator("#btn-save-target-host").click();
+
+        // 3. Verify modal closes and label updates
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: " + targetUrl);
+        assertThat(page.url())
+                .contains("wiremock=" + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8));
+
+        // 4. Verify cURL copy works with target URL
+        page.waitForSelector(".stub-card");
+        page.locator(".stub-card").first().click();
+        page.locator("#btn-copy-curl").click();
+        assertThat(page.locator("#btn-copy-curl").textContent()).contains("Copied");
+
+        // 5. Test Reset to same-origin
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.locator("#btn-reset-target-host").click();
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
+        assertThat(page.url()).doesNotContain("wiremock=");
+
+        // 6. Test direct deep-link with ?wiremock= query parameter
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?wiremock="
+                + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8) + "#stubs");
+        page.waitForSelector(".stub-card");
+        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: " + targetUrl);
+
         assertThat(pageErrors).isEmpty();
         assertThat(consoleErrors).isEmpty();
         assertThat(httpErrors).isEmpty();
