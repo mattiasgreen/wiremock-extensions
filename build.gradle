@@ -95,7 +95,7 @@ subprojects {
 
     tasks.named('test') {
         useJUnitPlatform {
-            excludeTags 'recording'
+            excludeTags 'recording', 'pitch-deck'
         }
     }
 

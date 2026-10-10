@@ -16,3 +16,13 @@ tasks.register('recordDemoGifs', Test) {
     }
 }
 
+tasks.register('recordPitchDeckScreenshots', Test) {
+    group = 'verification'
+    description = 'Generates high-resolution screenshots for the pitch deck presentation via Playwright'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'pitch-deck'
+    }
+}
+

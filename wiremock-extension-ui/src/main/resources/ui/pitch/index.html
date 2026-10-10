@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WireMock Extended / WireMock Plus — Pitch Deck</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-card: #1e293b;
+      --bg-code: #0b1120;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+      --accent-blue: #38bdf8;
+      --accent-indigo: #818cf8;
+      --accent-emerald: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-rose: #f43f5e;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-code: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --border-color: #cbd5e1;
+      --accent-blue: #0284c7;
+      --accent-indigo: #6366f1;
+      --accent-emerald: #059669;
+      --accent-amber: #d97706;
+      --accent-rose: #e11d48;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      line-height: 1.5;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      user-select: none;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    /* Deck Layout */
+    .deck-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Progress bar */
+    .progress-bar-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      z-index: 100;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-blue), var(--accent-indigo), var(--accent-emerald));
+      width: 10%;
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Slide area */
+    .slide-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 3.5rem;
+    }
+
+    .slide {
+      position: absolute;
+      width: calc(100% - 7rem);
+      max-width: 1300px;
+      height: calc(100% - 5rem);
+      max-height: 780px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(40px) scale(0.98);
+      transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0) scale(1);
+      z-index: 10;
+    }
+
+    .slide.prev {
+      opacity: 0;
+      transform: translateX(-40px) scale(0.98);
+    }
+
+    /* Header & Navigation Bar */
+    .deck-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 2rem;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      z-index: 50;
+      font-size: 0.85rem;
+    }
+
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .brand-logo span.accent {
+      color: var(--accent-blue);
+    }
+
+    .title-picker {
+      background: var(--bg-primary);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-icon {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.15s ease;
+    }
+
+    .btn-icon:hover {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+
+    .slide-counter {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      min-width: 60px;
+      text-align: center;
+    }
+
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .header-link {
+      color: var(--accent-blue);
+      text-decoration: none;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .header-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Slide Typography & Elements */
+    .slide-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.85rem;
+      width: fit-content;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .slide-badge.emerald {
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--accent-emerald);
+      border-color: rgba(52, 211, 153, 0.3);
+    }
+
+    .slide-badge.amber {
+      background: rgba(251, 191, 36, 0.12);
+      color: var(--accent-amber);
+      border-color: rgba(251, 191, 36, 0.3);
+    }
+
+    .slide-badge.rose {
+      background: rgba(244, 63, 94, 0.12);
+      color: var(--accent-rose);
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+
+    h1.slide-title {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(135deg, var(--text-main) 60%, var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    h2.slide-subtitle {
+      font-size: 1.25rem;
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-bottom: 1.75rem;
+      line-height: 1.4;
+    }
+
+    /* Grids & Cards */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      height: 100%;
+      align-items: center;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem 1.4rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      position: relative;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--accent-indigo);
+      transform: translateY(-2px);
+    }
+
+    .card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .card ul {
+      margin-top: 0.5rem;
+      padding-left: 1.2rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .card ul li {
+      margin-bottom: 0.35rem;
+    }
+
+    /* Media Container */
+    .media-card {
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      background: #000;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      position: relative;
+    }
+
+    .media-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+      object-fit: cover;
+    }
+
+    .media-caption {
+      padding: 0.45rem 0.75rem;
+      background: var(--bg-secondary);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Comparison Table */
+    .comparison-table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--bg-card);
+    }
+
+    table.comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.82rem;
+    }
+
+    table.comparison-table th {
+      background: var(--bg-secondary);
+      padding: 0.65rem 0.85rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    table.comparison-table td {
+      padding: 0.6rem 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    table.comparison-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.comparison-table tr.highlight-row {
+      background: rgba(56, 189, 248, 0.08);
+      font-weight: 600;
+    }
+
+    table.comparison-table tr.highlight-row td {
+      color: var(--text-main);
+    }
+
+    .check { color: var(--accent-emerald); font-weight: bold; }
+    .cross { color: var(--accent-rose); font-weight: bold; }
+    .partial { color: var(--accent-amber); font-weight: bold; }
+
+    /* Code Blocks */
+    pre.code-block {
+      background: var(--bg-code);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.9rem 1.1rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+
+    code .kw { color: #f43f5e; font-weight: 600; }
+    code .str { color: #34d399; }
+    code .fn { color: #38bdf8; }
+    code .comment { color: #64748b; font-style: italic; }
+
+    /* Speaker Notes Drawer */
+    .speaker-notes-panel {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-secondary);
+      border-top: 2px solid var(--accent-indigo);
+      padding: 1rem 2rem;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      z-index: 90;
+      max-height: 25vh;
+      overflow-y: auto;
+    }
+
+    .speaker-notes-panel.open {
+      transform: translateY(0);
+    }
+
+    .notes-label {
+      font-weight: 700;
+      color: var(--accent-indigo);
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+
+    /* Print styles for exporting to PDF */
+    @media print {
+      body {
+        overflow: visible;
+        height: auto;
+        width: auto;
+        background: #fff;
+        color: #000;
+      }
+      .deck-header, .progress-bar-container, .speaker-notes-panel {
+        display: none !important;
+      }
+      .slide-viewport {
+        display: block;
+        padding: 0;
+      }
+      .slide {
+        position: relative !important;
+        display: flex !important;
+        opacity: 1 !important;
+        page-break-after: always;
+        transform: none !important;
+        width: 100% !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        padding: 2rem;
+        box-sizing: border-box;
+      }
+    }
+  </style>
+</head>
+<body data-theme="dark">
+  <div class="deck-container">
+    <div class="progress-bar-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <!-- Header / Global Controls -->
+    <header class="deck-header">
+      <div class="brand-cluster">
+        <div class="brand-logo">
+          ⚡ <span id="brandNameDisplay">WireMock Extended</span>
+        </div>
+        <select class="title-picker" id="titleVariantSelect" title="Select product positioning title">
+          <option value="WireMock Extended" selected>WireMock Extended</option>
+          <option value="WireMock Plus">WireMock Plus</option>
+          <option value="WireMock Pro (OSS)">WireMock Pro (OSS)</option>
+        </select>
+      </div>
+
+      <div class="nav-controls">
+        <button class="btn-icon" id="btnPrev" title="Previous Slide (← / PageUp)">◀</button>
+        <span class="slide-counter" id="slideCounter">01 / 10</span>
+        <button class="btn-icon" id="btnNext" title="Next Slide (→ / Space)">▶</button>
+        <button class="btn-icon" id="btnNotes" title="Toggle Speaker Notes (N)">📝</button>
+        <button class="btn-icon" id="btnTheme" title="Toggle Light/Dark Theme (T)">🌓</button>
+        <button class="btn-icon" id="btnFullscreen" title="Fullscreen (F)">⛶</button>
+      </div>
+
+      <div class="header-links">
+        <a href="../" target="_blank" class="header-link" title="Open Live Console">🚀 Open Console</a>
+        <a href="https://github.com/mattiasgreen/wiremock-extensions" target="_blank" class="header-link">GitHub ↗</a>
+      </div>
+    </header>
+
+    <!-- Slides Viewport -->
+    <main class="slide-viewport">
+
+      <!-- Slide 1: Title & Hook -->
+      <section class="slide active" data-slide="1">
+        <div class="slide-badge emerald">Enterprise API Simulation Platform</div>
+        <h1 class="slide-title" id="slide1Title">WireMock Extended</h1>
+        <h2 class="slide-subtitle">
+          The production-grade, zero-cloud API simulation studio for JVM &amp; Standalone.<br>
+          Embedded Web UI, instant OpenAPI mocks, &amp; flake-free stateful workflows.
+        </h2>
+
+        <div class="grid-4" style="margin-top: 1.5rem;">
+          <div class="card">
+            <h3>🖥️ Embedded UI</h3>
+            <p>Pure Vanilla ES modules, zero NPM dependencies. Stub explorer, scenario DAG, and HTTP tester.</p>
+          </div>
+          <div class="card">
+            <h3>📑 OpenAPI Synthesis</h3>
+            <p>Instant stub generation from OAS 3.0/3.1 specs with live proxy traffic snapshotting.</p>
+          </div>
+          <div class="card">
+            <h3>⚡ Dynamic State AST</h3>
+            <p>RCE-safe sealed AST engine with <code>X-Correlation-Id</code> isolation to end CI flakes.</p>
+          </div>
+          <div class="card">
+            <h3>📊 Observability</h3>
+            <p>Single-line JSON logging with MDC propagation and OpenTelemetry / Prometheus scrape.</p>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          Welcome everyone. WireMock is the industry standard for HTTP mocking, but teams hitting enterprise scale face four major bottlenecks: brittle scenarios that collide in parallel CI, zero built-in web UI, heavy manual OpenAPI conversion, and cloud compliance blockers. Today we introduce WireMock Extended (or WireMock Plus)—a drop-in suite that gives you a complete API simulation studio completely on-premises.
+        </div>
+      </section>
+
+      <!-- Slide 2: The Enterprise Problem -->
+      <section class="slide" data-slide="2">
+        <div class="slide-badge rose">The Enterprise Bottleneck</div>
+        <h1 class="slide-title">Why Legacy Mocking Slows Teams Down</h1>
+        <h2 class="slide-subtitle">Engineering teams waste hundreds of hours fighting brittle mock setups and flaky CI pipelines.</h2>
+
+        <div class="grid-3">
+          <div class="card">
+            <h3 style="color: var(--accent-rose);">❌ Global Scenario Collisions</h3>
+            <p>WireMock scenarios share global state. When parallel test runners mutate the same scenario name concurrently, tests overwrite each other and cause non-deterministic CI flakes.</p>
+          </div>
+          <div class="card">
+            <h3 style="color: var(--accent-amber);">❌ Blindness &amp; Tool Sprawl</h3>
+            <p>WireMock OSS lacks a built-in web console. Developers are forced to juggle Postman, inspect raw JSON mapping files, or sift through multiline unstructured logs.</p>
+          </div>
+          <div class="card">
+            <h3 style="color: var(--accent-blue);">❌ Cloud &amp; Compliance Blockers</h3>
+            <p>Commercial SaaS platforms (WireMock Cloud) require sending proprietary API schemas and payloads to third-party clouds—a strict non-starter in banking, healthcare, and defense.</p>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          Ask any tech lead what fails most often in their CI pipeline, and integration test flakiness tops the list. In standard WireMock, scenarios are global singletons. If Test A advances scenario 'OrderFlow' to SHIPPED while Test B assumes it's PENDING, both fail. Meanwhile, commercial solutions require SaaS contracts that security teams reject.
+        </div>
+      </section>
+
+      <!-- Slide 3: The Architecture & Solution -->
+      <section class="slide" data-slide="3">
+        <div class="slide-badge">Zero Cloud • 100% On-Premises</div>
+        <h1 class="slide-title">Architecture: Modular Yet Unified</h1>
+        <h2 class="slide-subtitle">Available as individual lightweight extensions or a 1-line All-in-One meta-bundle.</h2>
+
+        <div class="grid-2">
+          <div>
+            <div class="card" style="margin-bottom: 1rem;">
+              <h3>📦 All-in-One Meta Bundle (<code>wiremock-extension-bundle</code>)</h3>
+              <p>Automatic SPI auto-discovery for WireMock Standalone. Drop a single JAR onto the classpath and immediately unlock UI, metrics, logging, OpenAPI, and stateful simulation.</p>
+            </div>
+            <div class="card">
+              <h3>🧩 Pick &amp; Choose Modularity</h3>
+              <p>In lightweight microservice testcontainers, pull only what you need (e.g. JSON MDC logging or OpenTelemetry) without bringing in UI assets or OpenAPI parsers.</p>
+            </div>
+          </div>
+          <div class="card">
+            <h3>⚡ SPI Extension Factory Topology</h3>
+            <pre class="code-block"><code><span class="comment">// 100% Standard WireMock Extension SPI</span>
+wiremock-extension-bundle
+ ├── wiremock-extension-json-logging  <span class="comment">(MDC filter)</span>
+ ├── wiremock-extension-otel          <span class="comment">(Prometheus)</span>
+ ├── wiremock-extension-openapi       <span class="comment">(OAS 3.0/3.1)</span>
+ ├── wiremock-extension-stateful      <span class="comment">(AST engine)</span>
+ └── wiremock-extension-ui            <span class="comment">(Vanilla SPA)</span></code></pre>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          We designed this with strict zero-lock-in principles. The entire platform runs on standard WireMock SPI. You can run it as a standalone container, inside Docker, or embedded directly inside your JUnit 5 test suites.
+        </div>
+      </section>
+
+      <!-- Slide 4: Deep Dive: Embedded Developer Console -->
+      <section class="slide" data-slide="4">
+        <div class="slide-badge emerald">Developer Experience</div>
+        <h1 class="slide-title">Embedded Developer Console</h1>
+        <h2 class="slide-subtitle">Zero NPM, pure native ES modules, running directly inside WireMock at <code>/__admin/ui/</code>.</h2>
+
+        <div class="grid-2">
+          <div>
+            <div class="card" style="margin-bottom: 0.75rem;">
+              <h3>🔍 Instant Stubs Explorer &amp; Filter</h3>
+              <p>Real-time fuzzy search by path, method, and tags. Filter by Active, Disabled, and Dynamic stubs with project-level lifecycle grouping.</p>
+            </div>
+            <div class="card" style="margin-bottom: 0.75rem;">
+              <h3>🚀 Integrated HTTP Tester</h3>
+              <p>Execute live API requests right inside the browser with syntax-highlighted responses, header inspectors, and execution timers.</p>
+            </div>
+            <div class="card">
+              <h3>🔀 Scenario DAG Visualizer</h3>
+              <p>Auto-renders state machine transitions into interactive directed acyclic graphs (DAGs) with live state badges and reset controls.</p>
+            </div>
+          </div>
+          <div class="media-card">
+            <img src="./images/demo-ui-tour.gif" alt="WireMock Console UI Tour" onerror="this.src='./images/screenshot-stubs-explorer.png'">
+            <div class="media-caption">
+              <span>WireMock Console • Port 8080</span>
+              <span>Zero Bundlers / Native ES6</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          Notice how fast this loads. Because there is zero NPM, no Webpack, and no heavy React runtime, the entire console is served as raw static ES modules directly from WireMock. In local dev mode, editing HTML/CSS hot-reloads with 0-second recompile time.
+        </div>
+      </section>
+
+      <!-- Slide 5: Deep Dive: OpenAPI Ingestion & Live Proxying -->
+      <section class="slide" data-slide="5">
+        <div class="slide-badge amber">Contract &amp; Traffic Virtualization</div>
+        <h1 class="slide-title">OpenAPI Ingestion &amp; Live Proxy Snapshotting</h1>
+        <h2 class="slide-subtitle">From API specification to offline simulation in less than 30 seconds.</h2>
+
+        <div class="grid-2">
+          <div>
+            <div class="card" style="margin-bottom: 0.75rem;">
+              <h3>📑 Instant Spec Ingestion</h3>
+              <p>Paste any OpenAPI 3.0 or 3.1 YAML/JSON. Synthesizes format-aware mock data (UUIDs, timestamps, emails, regexes) automatically.</p>
+            </div>
+            <div class="card" style="margin-bottom: 0.75rem;">
+              <h3>🌐 Live Proxy Mode</h3>
+              <p>Point WireMock to an upstream staging or production service. All incoming calls pass through transparently to live servers.</p>
+            </div>
+            <div class="card">
+              <h3>📷 Traffic Snapshot &amp; Offline Flip</h3>
+              <p>One click captures proxied traffic into <code>DISABLED</code> stubs. Flip project mode to <code>STUBS MODE</code> to sever upstream dependencies and run fully offline!</p>
+            </div>
+          </div>
+          <div class="media-card">
+            <img src="./images/demo-openapi-import.gif" alt="OpenAPI Import & Live Proxying" onerror="this.src='./images/screenshot-openapi-modal.png'">
+            <div class="media-caption">
+              <span>OpenAPI Ingestion • Live Proxy &amp; Snapshot</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          This is our killer workflow for microservices: import the spec in Live Proxy mode, run your automated smoke tests against the staging service once, hit Snapshot, and suddenly you have high-fidelity offline stubs recorded straight from reality.
+        </div>
+      </section>
+
+      <!-- Slide 6: Deep Dive: AST-Driven Stateful Simulation -->
+      <section class="slide" data-slide="6">
+        <div class="slide-badge emerald">Breakthrough Technology</div>
+        <h1 class="slide-title">Dynamic AST Stateful Simulation</h1>
+        <h2 class="slide-subtitle">Solves combinatorial state explosion &amp; parallel CI collisions via <code>X-Correlation-Id</code>.</h2>
+
+        <div class="grid-2">
+          <div>
+            <div class="card" style="margin-bottom: 0.75rem;">
+              <h3>🛡️ 100% RCE-Safe Sealed AST</h3>
+              <p>Java 21 sealed interfaces (<code>AstExpression</code>, <code>AstMutation</code>). Zero arbitrary code execution risk, unlike JavaScript or Groovy scripting.</p>
+            </div>
+            <div class="card" style="margin-bottom: 0.75rem;">
+              <h3>📦 In-Memory Collection Primitives</h3>
+              <p>Append items, mutate lists, enforce cross-entity invariants (e.g. <i>"Cannot close case while child tasks are pending"</i>).</p>
+            </div>
+            <div class="card">
+              <h3>🔒 Multi-Tenant Correlation Isolation</h3>
+              <p>State is scoped to <code>X-Correlation-Id</code>. 100 parallel tests can run against the same WireMock instance without collision!</p>
+            </div>
+          </div>
+          <div class="media-card">
+            <img src="./images/demo-stateful-simulation.gif" alt="Stateful Simulation Demo" onerror="this.src='./images/screenshot-http-tester.png'">
+            <div class="media-caption">
+              <span>Stateful AST Engine • Invariant Tracing</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          This is where WireMock Extended truly outperforms everything else on the market. Standard WireMock scenarios cannot model dynamic collections like adding an arbitrary number of items to a cart. With our AST engine, you model domain invariants cleanly in Java, and each test session gets its own isolated memory bucket.
+        </div>
+      </section>
+
+      <!-- Slide 7: Deep Dive: Production Observability -->
+      <section class="slide" data-slide="7">
+        <div class="slide-badge">Cloud-Native Observability</div>
+        <h1 class="slide-title">Production Logging &amp; OpenTelemetry</h1>
+        <h2 class="slide-subtitle">No more grep-debugging multiline logs. Built for Datadog, Grafana, and ELK.</h2>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>📑 Single-Line Structured JSON Logging</h3>
+            <p>Emits machine-parseable JSON lines with automatic MDC header extraction:</p>
+            <pre class="code-block"><code>{
+  <span class="str">"timestamp"</span>: <span class="str">"2026-10-10T06:15:00Z"</span>,
+  <span class="str">"method"</span>: <span class="str">"POST"</span>,
+  <span class="str">"url"</span>: <span class="str">"/api/v1/orders"</span>,
+  <span class="str">"status"</span>: 201,
+  <span class="str">"duration_ms"</span>: 12,
+  <span class="str">"x_correlation_id"</span>: <span class="str">"test-run-482"</span>,
+  <span class="str">"x_tenant_id"</span>: <span class="str">"enterprise-acme"</span>
+}</code></pre>
+          </div>
+          <div class="card">
+            <h3>📊 In-Process Prometheus / OTEL Metrics</h3>
+            <p>Scrape endpoint at <code>/__admin/metrics/prometheus</code>:</p>
+            <pre class="code-block"><code><span class="comment"># HELP wiremock_requests_total Total HTTP requests</span>
+<span class="comment"># TYPE wiremock_requests_total counter</span>
+wiremock_requests_total{status=<span class="str">"201"</span>,method=<span class="str">"POST"</span>} 42
+
+<span class="comment"># HELP wiremock_request_duration_seconds Histogram</span>
+wiremock_request_duration_seconds_bucket{le=<span class="str">"0.05"</span>} 39
+wiremock_request_duration_seconds_sum 0.84</code></pre>
+            <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);">
+              Directly visualizable in Grafana dashboards with zero external sidecars.
+            </p>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          When running WireMock in shared test clusters or staging environments, observability is non-negotiable. With our JSON logging filter, headers like correlation ID and tenant ID are automatically placed into the MDC. And Prometheus metrics let SREs track mock latency and error rates in real time.
+        </div>
+      </section>
+
+      <!-- Slide 8: Competitive Comparison Matrix -->
+      <section class="slide" data-slide="8">
+        <div class="slide-badge amber">Market Analysis</div>
+        <h1 class="slide-title">Competitive Landscape</h1>
+        <h2 class="slide-subtitle">How WireMock Extended / Plus compares across the industry.</h2>
+
+        <div class="comparison-table-wrapper">
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>WireMock OSS</th>
+                <th>WireMock Cloud</th>
+                <th>Mockoon</th>
+                <th>Microcks</th>
+                <th style="color: var(--accent-blue);">WireMock Plus / Extended</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Deployment Model</strong></td>
+                <td>Self-Hosted</td>
+                <td>SaaS Cloud</td>
+                <td>Desktop App</td>
+                <td>Kubernetes / K8s</td>
+                <td class="check">Self-Hosted / Zero-Cloud</td>
+              </tr>
+              <tr>
+                <td><strong>Embedded Web Console</strong></td>
+                <td class="cross">None</td>
+                <td class="check">Yes (Cloud)</td>
+                <td class="check">Yes (Electron)</td>
+                <td class="check">Yes (Web)</td>
+                <td class="check">Yes (Pure Vanilla ES6)</td>
+              </tr>
+              <tr>
+                <td><strong>OpenAPI Ingestion</strong></td>
+                <td class="cross">Manual / Plugin</td>
+                <td class="check">Yes</td>
+                <td class="partial">Partial</td>
+                <td class="check">Yes</td>
+                <td class="check">Yes (Live Proxy + Snap)</td>
+              </tr>
+              <tr>
+                <td><strong>Stateful Parallel Isolation</strong></td>
+                <td class="cross">No (Global Collision)</td>
+                <td class="partial">Manual Scenarios</td>
+                <td class="cross">No</td>
+                <td class="partial">Partial</td>
+                <td class="check">Yes (X-Correlation-Id AST)</td>
+              </tr>
+              <tr>
+                <td><strong>JVM / JUnit Embedding</strong></td>
+                <td class="check">Native</td>
+                <td class="partial">Hybrid Runner</td>
+                <td class="cross">CLI Only</td>
+                <td class="partial">Testcontainers</td>
+                <td class="check">Native JVM 21 &amp; CLI</td>
+              </tr>
+              <tr>
+                <td><strong>Licensing &amp; Compliance</strong></td>
+                <td class="check">Free Apache 2.0</td>
+                <td class="cross">Paid / SaaS Risk</td>
+                <td class="check">Free MIT</td>
+                <td class="check">Free Apache 2.0</td>
+                <td class="check">100% Free Apache 2.0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          Reviewing the field: Mockoon is great for frontends but doesn't embed in JVM tests. Microcks is powerful but heavy (requires Mongo and Kafka). WireMock Cloud is expensive and fails enterprise compliance. Our suite offers the sweet spot: the developer ergonomics of WireMock Cloud, completely open source and local.
+        </div>
+      </section>
+
+      <!-- Slide 9: 1-Minute Adoption -->
+      <section class="slide" data-slide="9">
+        <div class="slide-badge emerald">Frictionless Adoption</div>
+        <h1 class="slide-title">Get Started in Under 60 Seconds</h1>
+        <h2 class="slide-subtitle">Zero architectural overhaul. Works with your existing WireMock stubs and test suites.</h2>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>Option A: Standalone CLI Runner</h3>
+            <p style="margin-bottom: 0.5rem;">Run with your existing WireMock standalone JAR:</p>
+            <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+  com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
+  --port 8080 --verbose</code></pre>
+            <p style="margin-top: 0.6rem; font-size: 0.8rem; color: var(--accent-emerald);">
+              ✓ Instantly opens UI at <code>http://localhost:8080/__admin/ui/</code>
+            </p>
+          </div>
+          <div class="card">
+            <h3>Option B: Gradle / Maven Dependency</h3>
+            <p style="margin-bottom: 0.5rem;">Add to your test dependencies:</p>
+            <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'</span>
+
+<span class="comment">// Standard JUnit 5 @WireMockTest picks up all extensions via SPI</span>
+<span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)
+<span class="kw">class</span> OrderServiceTest { ... }</code></pre>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          Adoption friction is virtually zero. You don't need to rewrite your stubs or migrate your codebase. Adding the JAR to your classpath automatically upgrades your WireMock server via Java SPI auto-discovery.
+        </div>
+      </section>
+
+      <!-- Slide 10: Call to Action & Roadmap -->
+      <section class="slide" data-slide="10">
+        <div class="slide-badge">The Future</div>
+        <h1 class="slide-title">Roadmap &amp; Next Steps</h1>
+        <h2 class="slide-subtitle">Join us in making API simulation effortless, deterministic, and fast.</h2>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>🗺️ Near-Term Roadmap</h3>
+            <ul>
+              <li><strong>OpenAPI Contract Validation</strong>: Rejection of non-conforming requests.</li>
+              <li><strong>Stub Persistence</strong>: Storing disabled states and session snapshots to disk.</li>
+              <li><strong>Visual Stub Form Builder</strong>: No-code stub authoring in the web UI.</li>
+              <li><strong>Identity Provider Mock Preset</strong>: Mock OAuth2 / OIDC JWKS token generator.</li>
+            </ul>
+          </div>
+          <div class="card" style="text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+            <h3 style="margin-bottom: 0.75rem;">Experience It Live Right Now</h3>
+            <p style="margin-bottom: 1.25rem;">Explore the embedded console and test the interactive workflow:</p>
+            <a href="../" target="_blank" style="display: inline-block; background: var(--accent-blue); color: #000; font-weight: 700; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-size: 1rem;">
+              🚀 Launch WireMock Console
+            </a>
+            <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-muted);">
+              Repository: <code>github.com/mattiasgreen/wiremock-extensions</code>
+            </p>
+          </div>
+        </div>
+
+        <div class="speaker-note-content" hidden>
+          Thank you. We are actively expanding the suite with contract validation and identity mock presets. Let's open the floor for questions and walk through the live demo console together.
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Speaker Notes Drawer -->
+    <div class="speaker-notes-panel" id="speakerNotesPanel">
+      <div class="notes-label">Speaker Notes (Press 'N' to close)</div>
+      <div id="notesText">Welcome to the presentation.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Minimalistic Slide Engine (Pure Vanilla ES Modules, Zero NPM)
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const totalSlides = slides.length;
+    let currentIndex = 0;
+
+    const progressBar = document.getElementById('progressBar');
+    const slideCounter = document.getElementById('slideCounter');
+    const speakerNotesPanel = document.getElementById('speakerNotesPanel');
+    const notesText = document.getElementById('notesText');
+    const titleVariantSelect = document.getElementById('titleVariantSelect');
+    const brandNameDisplay = document.getElementById('brandNameDisplay');
+    const slide1Title = document.getElementById('slide1Title');
+
+    function updateSlide(newIndex) {
+      if (newIndex < 0 || newIndex >= totalSlides) return;
+
+      slides.forEach((slide, idx) => {
+        slide.classList.remove('active', 'prev');
+        if (idx === newIndex) {
+          slide.classList.add('active');
+        } else if (idx < newIndex) {
+          slide.classList.add('prev');
+        }
+      });
+
+      currentIndex = newIndex;
+      const progressPercent = ((currentIndex + 1) / totalSlides) * 100;
+      progressBar.style.width = `${progressPercent}%`;
+      slideCounter.textContent = `${String(currentIndex + 1).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`;
+
+      // Update speaker notes
+      const activeSlide = slides[currentIndex];
+      const noteEl = activeSlide.querySelector('.speaker-note-content');
+      notesText.textContent = noteEl ? noteEl.textContent.trim() : 'No notes for this slide.';
+
+      // Update URL hash
+      window.location.hash = `slide-${currentIndex + 1}`;
+    }
+
+    function nextSlide() {
+      if (currentIndex < totalSlides - 1) updateSlide(currentIndex + 1);
+    }
+
+    function prevSlide() {
+      if (currentIndex > 0) updateSlide(currentIndex - 1);
+    }
+
+    function toggleNotes() {
+      speakerNotesPanel.classList.toggle('open');
+    }
+
+    function toggleTheme() {
+      const currentTheme = document.body.getAttribute('data-theme');
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', newTheme);
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    // Event listeners
+    document.getElementById('btnNext').addEventListener('click', nextSlide);
+    document.getElementById('btnPrev').addEventListener('click', prevSlide);
+    document.getElementById('btnNotes').addEventListener('click', toggleNotes);
+    document.getElementById('btnTheme').addEventListener('click', toggleTheme);
+    document.getElementById('btnFullscreen').addEventListener('click', toggleFullscreen);
+
+    // Title variant selector
+    titleVariantSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      brandNameDisplay.textContent = val;
+      if (slide1Title) slide1Title.textContent = val;
+      document.title = `${val} — Pitch Deck`;
+    });
+
+    // Keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'PageDown':
+        case ' ':
+          e.preventDefault();
+          nextSlide();
+          break;
+        case 'ArrowLeft':
+        case 'PageUp':
+          e.preventDefault();
+          prevSlide();
+          break;
+        case 'Home':
+          e.preventDefault();
+          updateSlide(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          updateSlide(totalSlides - 1);
+          break;
+        case 'n':
+        case 'N':
+          toggleNotes();
+          break;
+        case 't':
+        case 'T':
+          toggleTheme();
+          break;
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
+      }
+    });
+
+    // Initialize from URL hash if present
+    const hashMatch = window.location.hash.match(/slide-(\d+)/);
+    if (hashMatch) {
+      const slideNum = parseInt(hashMatch[1], 10) - 1;
+      if (slideNum >= 0 && slideNum < totalSlides) {
+        updateSlide(slideNum);
+      } else {
+        updateSlide(0);
+      }
+    } else {
+      updateSlide(0);
+    }
+  </script>
+</body>
+</html>
