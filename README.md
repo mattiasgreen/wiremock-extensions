@@ -193,17 +193,17 @@ ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wi
 
 ## Roadmap & Unified Simulator Stack
 
-The suite is expanding into a **zero-sprawl Simulator Stack** running entirely in-process inside WireMock (sub-second startup, zero external container dependencies).
+The suite is expanding into a **zero-sprawl Simulator Stack** running entirely in-process inside WireMock (sub-second startup, zero external container dependencies), alongside complete embedded control plane and stub lifecycle management.
 
 > 📘 **Full Architecture Blueprint**: Read [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md) for technical design details, and [retrospective.md](retrospective.md) for release phasing.
 
-### Upcoming Simulator Modules
+### 1. Multi-Protocol Simulator Stack Modules
 
 * **🌪️ Network Chaos & Fault Injection (`wiremock-extension-chaos`)**:
   * Native re-implementation of Shopify's Toxiproxy in modern **Java 21 Virtual Threads** (`Thread.ofVirtual()`), running directly inside WireMock without external Go sidecars.
   * All 7 toxics supported: `latency` (with jitter), `bandwidth` throttling, `slow_close`, `timeout` (black hole), `reset_peer` (TCP RST via `setSoLinger(true,0)`), `slicer` (packet fragmentation), and `limit_data`.
   * Dual-layer control: L4 TCP Proxy with Toxiproxy v2 REST API compatibility (`POST /proxies/{name}/toxics`) + L7 WireMock HTTP chaos rules filtered by path, headers, or `X-Correlation-Id`.
-  * Web UI Chaos controller with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey").
+  * Web UI Chaos controller with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey") and live drop counters.
 
 * **📬 AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**:
   * Ingest AsyncAPI 2.x and 3.x specifications (`asyncapi.yaml`) via `POST /__admin/asyncapi/import` and synthesize mock event publishers and schema payload generators.
@@ -216,9 +216,34 @@ The suite is expanding into a **zero-sprawl Simulator Stack** running entirely i
   * Stateful workflow triggers: emit out-of-band callbacks upon state transitions in `wiremock-extension-stateful`.
   * Webhook Outbox Journal: UI audit log tracking dispatched callbacks, target endpoints, delivery status, retries, and an interactive "Trigger / Replay Now" button.
 
-### General Wishlist
-- [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying.
-- [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
+### 2. Embedded Control Plane & Web UI Authoring
+
+* **Visual Stub Creator & Live Editor**:
+  * Rich modal interface for authoring new stubs or editing existing mappings directly in the web UI without manual JSON authoring.
+  * Visual builders for URL matchers (`urlEqualTo`, `urlPathMatching`, `urlPattern`), header/query parameter grids, and multi-mode response body editors (JSON, Raw text, base64 binary).
+  * Direct synchronization with WireMock Admin API (`POST /__admin/mappings`, `PUT /__admin/mappings/{id}`) with instantaneous UI updates.
+* **Bulk Stub Portfolio Management**:
+  * One-Click Export: download all active mappings, scenarios, and dynamic models into a portable `stubs-bundle.json`.
+  * Drag-and-Drop Bulk Import: upload stub bundles with conflict resolution strategies (Overwrite, Append, Skip).
+  * State Snapshots & Checkpoints: save and restore named mock server checkpoints for deterministic, repeatable test suites.
+* **Live Proxy Recording & Journal Promotion**:
+  * Configure upstream reverse-proxy targets directly from the web console.
+  * Smart recording filters by URL pattern, method, and headers with automated ID regex parameterization.
+  * One-click promotion of any captured request in the Request Journal into a permanent stub mapping.
+
+### 3. Advanced OpenAPI & Scenario Synthesis
+
+* **State Machine & Scenario Inference**:
+  * Infer WireMock scenario progressions from resource lifecycles (e.g., `POST /items` transitioning `Started` to `CREATED`, followed by `GET /items/{id}` and `DELETE /items/{id}`).
+  * Support OpenAPI vendor extensions (`x-wiremock-scenario`, `x-wiremock-required-state`, `x-wiremock-new-state`, `x-wiremock-priority`).
+* **Dynamic Response Templating & Realistic Data**:
+  * Integrated Handlebars expressions (`{{request.path.[0]}}`, `{{now}}`, `{{randomValue type='UUID'}}`) directly inside synthesized OpenAPI responses.
+  * Zero-dependency realistic mock data helpers (`{{random.email}}`, `{{random.name}}`, `{{random.creditCard}}`).
+
+### 4. Enterprise Security & Networking
+
+* [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying.
+* [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
 
 ## License
 
