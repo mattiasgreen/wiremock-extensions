@@ -17,9 +17,9 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 
 ## Quick Preview
 
-| Overview Tour | OpenAPI Spec Import & Testing Workflow |
-| :--- | :--- |
-| ![WireMock Console Overview](docs/images/demo-ui-tour.gif) | ![OpenAPI Spec Import Workflow](docs/images/demo-openapi-import.gif) |
+| Overview Tour | OpenAPI Spec Import & Testing | Dynamic Stateful Simulation |
+| :--- | :--- | :--- |
+| ![WireMock Console Overview](docs/images/demo-ui-tour.gif) | ![OpenAPI Spec Import Workflow](docs/images/demo-openapi-import.gif) | ![Dynamic Stateful Simulation](docs/images/demo-stateful-simulation.gif) |
 
 ## Building
 

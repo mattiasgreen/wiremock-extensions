@@ -85,6 +85,17 @@ To prevent long idle wait times and maintain high velocity, always choose the ti
 ```
 Only proceed to `git commit` once both inner loop and outer gate are 100% green.
 
+#### D. Pull Request (PR) Preparation Protocol
+Before submitting or presenting a PR to the user, coding agents must complete the following checklist:
+1. **Documentation Review**:
+   - Verify that all relevant documentation (`README.md`, module-specific `README.md`, architectural notes) has been updated to reflect new features, CLI routes, and configuration options.
+2. **UI Demo Assets Check**:
+   - If UI changes, visual enhancements, or new user workflows were introduced, ensure demo GIF recordings in `docs/images/` and `UiDemoGifRecordingTest` have been updated/regenerated.
+3. **Copy-Pasteable PR Markdown**:
+   - Always output clean, complete, copy-pasteable markdown for the PR body (Summary, Key Features, Verification Checklist).
+4. **Direct PR Creation URL**:
+   - Always provide a clickable link to create the PR on GitHub using the current feature branch against the base branch (e.g. `https://github.com/mattiasgreen/wiremock-extensions/compare/main...<feature-branch>?expand=1`).
+
 ### Essential Task Reference
 * **Run all verification checks** (Tests, Spotless, and SpotBugs):
   ```bash

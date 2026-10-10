@@ -63,10 +63,18 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 - **Scenario DAG State Machine Visualizer**:
   - Automatic extraction of state machines and transitions across all configured stubs.
-  - Interactive pipeline flow showing all stages (Started, in-progress states, terminal states).
+  - Interactive pipeline flow showing all stages (Started, in-progress stages, terminal states).
   - Real-time active state glow indicator synchronized with live scenario progress.
   - State operations & rejection invariants inspector with one-click **⚡ Test** triggers.
   - Per-scenario targeted controls: override scenario state on the fly or reset individual scenarios to `Started`.
+
+- **Dynamic Stateful API Simulation**:
+  - Unified explorer listing both declarative stubs and `[⚡ DYNAMIC]` stateful simulation stubs with route scope indicators (e.g. `/api/v1/cases/*/close`).
+  - Dedicated **Stateful Specification Inspector** detailing entity schemas, path parameter mappings, mutations (`set_field`, `append_to_list`, `increment`), and invariant guard conditions.
+  - **Dynamic Stub Bootstrapper Modal**: Pre-packaged templates (*Case Management with tasks*, *Order Fulfillment with items*) with interactive JSON schema editing.
+  - **Invariant Violation Diagnostics**: Direct transition to HTTP Tester and immediate visual tracing of invariant rejections (e.g., HTTP 409 responses) in the Request Journal with passed/violated badges.
+
+![Dynamic Stateful API Simulation Demo](../docs/images/demo-stateful-simulation.gif)
 
 ![Scenarios DAG Visualizer Demo](../docs/images/demo-scenarios-dag.gif)
 
