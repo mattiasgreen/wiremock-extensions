@@ -9,4 +9,22 @@
     <Match>
         <Bug pattern="IMPROPER_UNICODE"/>
     </Match>
+
+    <!-- Exclude raw unencrypted TCP socket warnings and simulation pseudorandomness for tcp-netem -->
+    <Match>
+        <Package name="~com\.github\.mattiasgreen\.wiremock\.netem\..*"/>
+        <Bug pattern="UNENCRYPTED_SERVER_SOCKET,UNENCRYPTED_SOCKET,PREDICTABLE_RANDOM"/>
+    </Match>
+
+    <!-- Exclude singleton instance exposure for TcpNetEmRegistry -->
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+
+    <!-- Exclude browser launcher and local file operations in desktop client WireMockStudio -->
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.ui.WireMockStudio"/>
+        <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
+    </Match>
 </FindBugsFilter>

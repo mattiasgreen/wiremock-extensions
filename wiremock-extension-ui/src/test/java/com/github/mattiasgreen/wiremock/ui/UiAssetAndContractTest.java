@@ -61,6 +61,9 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"btn-copy-curl\"");
         assertThat(html).contains("id=\"btn-tester-send\"");
         assertThat(html).contains("id=\"btn-tester-share-link\"");
+        assertThat(html).contains("id=\"nav-tab-netem\"");
+        assertThat(html).contains("id=\"tab-netem\"");
+        assertThat(html).contains("id=\"netem-journal-table\"");
     }
 
     @Test
@@ -89,6 +92,16 @@ public class UiAssetAndContractTest {
         assertThat(cssResp.body()).contains(":root");
         assertThat(cssResp.body()).contains(".json-key");
         assertThat(cssResp.body()).contains(".tester-container");
+
+        HttpRequest netemJsReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/ui/modules/netem.js"))
+                .GET()
+                .build();
+        HttpResponse<String> netemJsResp = httpClient.send(netemJsReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(netemJsResp.statusCode()).isEqualTo(200);
+        assertThat(netemJsResp.headers().firstValue("Content-Type").get()).contains("application/javascript");
+        assertThat(netemJsResp.body()).contains("initNetEmTab");
+        assertThat(netemJsResp.body()).contains("applyPreset");
 
         HttpRequest missingReq = HttpRequest.newBuilder()
                 .uri(URI.create(server.baseUrl() + "/__admin/ui/nonexistent.xyz"))

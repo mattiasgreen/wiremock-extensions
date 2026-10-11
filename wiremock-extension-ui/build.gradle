@@ -1,6 +1,7 @@
 dependencies {
     testImplementation project(':wiremock-extension-openapi')
     testImplementation project(':wiremock-extension-stateful')
+    testImplementation project(':wiremock-extension-tcp-netem')
     testImplementation libs.playwright
     testImplementation libs.jackson.databind
     testImplementation libs.animated.gif.lib
@@ -24,5 +25,23 @@ tasks.register('recordPitchDeckScreenshots', Test) {
     useJUnitPlatform {
         includeTags 'pitch-deck'
     }
+}
+
+tasks.register('captureUiSnapshots', Test) {
+    group = 'verification'
+    description = 'Generates visual screenshots of Web SPA and Native Desktop Swing for agentic UX inspection'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'ui-snapshot'
+    }
+}
+
+tasks.register('runDesktop', JavaExec) {
+    group = 'application'
+    description = 'Launches the zero-dependency Swing desktop UI (WireMock Studio)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.github.mattiasgreen.wiremock.ui.WireMockStudio'
+    args = [project.findProperty('wiremock.url') ?: 'http://localhost:8080']
 }
 

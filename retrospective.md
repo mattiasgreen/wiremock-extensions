@@ -103,3 +103,24 @@ When running `wiremock-extension-ui` with only a subset of extensions loaded, th
 - [ ] **Visual Stub & Matcher Builder**: Add a guided visual form editor to create and edit stubs without manual JSON editing.
 - [ ] **Per-Correlation Dynamic Scenario Visualizer**: Graph dynamic state models and per-correlation session state machines directly inside the Scenarios tab.
 - [ ] **Realistic Data Generation Helpers**: Introduce lightweight, zero-dependency data synthesis Handlebars helpers (`{{random.uuid}}`, `{{random.email}}`, `{{random.dateTime}}`).
+
+### Phase 5: Network Chaos & Fault Injection (`wiremock-extension-chaos`)
+*Architecture Blueprint: [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md)*
+- [ ] **In-Process Virtual Thread TCP Proxy**: Re-implement Toxiproxy engine natively in Java 21 (`Thread.ofVirtual()`) without external Go/C sidecars, supporting all 7 toxics (`latency`, `bandwidth`, `slow_close`, `timeout`, `reset_peer` / TCP RST via `setSoLinger(true,0)`, `slicer`, `limit_data`).
+- [ ] **Toxiproxy v2 REST API Compatibility**: Expose `/__admin/chaos/proxies` endpoints so existing Toxiproxy SDKs (Java, Python, Go, Node) can configure chaos directly against WireMock.
+- [ ] **WireMock L7 Chaos Interceptor**: Declarative stub/filter chaos injection matching paths, headers, and `X-Correlation-Id` with probability weighting.
+- [ ] **Web UI Chaos Controller**: Dedicated dashboard tab with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey") and live drop counters.
+
+### Phase 6: AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)
+*Architecture Blueprint: [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md)*
+- [ ] **AsyncAPI 2.x & 3.x Ingestion**: Parse `asyncapi.yaml` channels, operations, and message payload schemas via `POST /__admin/asyncapi/import`.
+- [ ] **WebSockets & SSE Event Streaming**: In-process event stream channels (`ws://localhost:8080/__async/channels/{name}` and `GET /__async/channels/{name}` SSE) with zero external message broker dependencies.
+- [ ] **In-Memory Virtual Topic Broker**: Lightweight pub/sub topic broker with wildcard routing (`orders.*`), offset cursors, and consumer group simulation.
+- [ ] **Bidirectional HTTP ⇄ Event Bridge**: Trigger async topic publications automatically upon matching HTTP stubs (e.g. `POST /orders` -> publish `order-created`), and vice versa.
+- [ ] **Web UI Event Stream Console**: Live event inspector, manual event publishing console, and channel message schema viewer.
+
+### Phase 7: Webhook Outbox & OpenAPI Callbacks (`wiremock-extension-webhooks`)
+*Architecture Blueprint: [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md)*
+- [ ] **OpenAPI `callbacks` Ingestion**: Automatically synthesize stubs returning `202 Accepted` paired with async webhook dispatches targeting `{{jsonPath request.body '$.callbackUrl'}}`.
+- [ ] **Stateful AST Webhook Actions**: Support `Action.webhook(...)` in `wiremock-extension-stateful` to dispatch callbacks upon workflow state transitions.
+- [ ] **Webhook Outbox Journal**: Audit log tracking dispatched callbacks, target URLs, latency, retries, and delivery status with an interactive "Replay / Trigger Now" button in the Web UI.

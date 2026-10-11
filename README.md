@@ -16,6 +16,7 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
 | **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with type-safe Java DSL, 100% RCE-safe AST evaluation, and multi-tenant `X-Correlation-Id` isolation to prevent parallel test collision. | [Module README](wiremock-extension-stateful/README.md) |
+| **`wiremock-extension-tcp-netem`** | In-process Layer 4 TCP network emulator & fault injector (Toxiproxy re-implementation in Java 21 Virtual Threads) with dual-ingress architecture and zero blast-radius correlation-id scoping. | [Module README](wiremock-extension-tcp-netem/README.md) |
 | **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 | **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating stateful scenario modeling, parallel case collision pitfalls, best-practice isolated scenarios, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
@@ -97,6 +98,36 @@ Each extension can be used independently without pulling in the others:
   implementation 'io.github.mattiasgreen:wiremock-extension-stateful:0.1.0'
   ```
   See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
+
+- **L4 TCP Network Emulation & Chaos Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:0.1.0'
+  ```
+  See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md) for architecture, Toxiproxy API endpoints, and journal configuration.
+
+  #### Dual-Ingress Architecture & Port Separation
+  `tcp-netem` implements an in-process Dual-Ingress pattern using Java 21 Virtual Threads:
+  * **WireMock Core (Port `8080`)**: Admin API (`/__admin/...`), Web UI, Prometheus metrics (`/__admin/metrics/prometheus`), and direct functional stubs.
+  * **NetEm Ingress (Port `8081`)**: Transparent Layer 4 TCP proxy forwarding to `8080` while applying real-time network impairments (latency, bandwidth throttling, TCP resets, packet slicing, black holes).
+
+  #### L4 NetEm vs. Built-in WireMock L7 Faults
+  While WireMock provides HTTP-level delays (`withFixedDelay()`) and servlet faults (`Fault`), `tcp-netem` simulates true Layer 4 transport anomalies:
+  * **True Bandwidth Throttling**: Streams packets at fixed byte rates (e.g. 64 KB/s) rather than holding the entire response in memory before sending.
+  * **Hard TCP Reset (`ECONNRESET`)**: Abruptly resets the TCP connection via `setSoLinger(true, 0); socket.close();`, exercising client-side low-level socket reset handlers.
+  * **TCP Frame Slicing**: Splits TCP segments into micro-chunks with inter-frame delays (`slicer`), triggering OS reassembly and MTU edge cases.
+  * **Connection Black Hole**: Drops incoming/outgoing frames (`timeout`) to validate client connection and socket read timeouts.
+
+  #### Zero Blast-Radius Parallel Testing
+  Network impairments can be scoped to individual requests using header `X-Correlation-Id`:
+  * A chaos test thread targeting `X-Correlation-Id: test-chaos-42` experiences latency or drops.
+  * Concurrent functional tests running on the same WireMock instance without that header execute at line speed with 0% error cross-talk.
+  * See the complete reference implementation in [`wiremock-examples`](wiremock-examples/src/test/java/com/github/mattiasgreen/wiremock/examples/NetEmResilienceParallelIntegrationTest.java) demonstrating parallel Resilience4j circuit breaker verification.
+
+  #### Circular Event Journal & JVM Sizing
+  NetEm tracks all transfers in a lock-free, circular event journal (`AtomicReferenceArray`):
+  * **Memory Footprint**: Each compact event record is ~80–128 bytes. Sizing formula: $\text{Heap} = N_{\text{capacity}} \times 128 \text{ bytes}$.
+  * **Default (50,000 entries)**: Consumes only ~6 MB of heap with zero allocation churn on wrap-around.
+  * **Recommended JVM Options**: `-Xms512m -Xmx2g` for high-throughput enterprise mock clusters.
 
 ### 3. Local Development Runner
 
@@ -191,10 +222,60 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]
 ```
 
-## Roadmap & Wishlist
+## Roadmap & Unified Simulator Stack
 
-- [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying (WireMock reverse proxy currently defaults to trust-all certificates).
-- [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
+The suite is expanding into a **zero-sprawl Simulator Stack** running entirely in-process inside WireMock (sub-second startup, zero external container dependencies), alongside complete embedded control plane and stub lifecycle management.
+
+> 📘 **Full Architecture Blueprint**: Read [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md) for technical design details, and [retrospective.md](retrospective.md) for release phasing.
+
+### 1. Multi-Protocol Simulator Stack Modules
+
+* **✅ 🌪️ Network Chaos & Fault Injection (`wiremock-extension-tcp-netem`) [AVAILABLE]**:
+  * Native re-implementation of Shopify's Toxiproxy in modern **Java 21 Virtual Threads** (`Thread.ofVirtual()`), running directly inside WireMock without external Go sidecars.
+  * Dual-Ingress architecture: Port 8081 NetEm forwarding to Port 8080 WireMock Core.
+  * All 7 toxics supported: `latency` (with jitter), `bandwidth` throttling, `slow_close`, `timeout` (black hole), `reset_peer` (TCP RST via `setSoLinger(true,0)`), `slicer` (packet fragmentation), and `limit_data`.
+  * Zero blast-radius parallel testing via `X-Correlation-Id` scoping and declarative `metadata.netem` stubs.
+  * High-throughput circular event journal and Web UI NetEm console with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey").
+
+* **📬 AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**:
+  * Ingest AsyncAPI 2.x and 3.x specifications (`asyncapi.yaml`) via `POST /__admin/asyncapi/import` and synthesize mock event publishers and schema payload generators.
+  * Native WebSockets (`ws://...`) and Server-Sent Events (`GET /__async/channels/{name}` SSE) with zero external message broker containers.
+  * In-memory Virtual Topic Broker supporting pub/sub channels, topic wildcards (`orders.*`), offset cursors, and consumer group simulation.
+  * Bidirectional HTTP ⇄ Event triggers: automatically publish async events when HTTP endpoints are called, or fire webhooks when events are produced.
+
+* **🪝 Asynchronous Callbacks & Webhooks (`wiremock-extension-webhooks`)**:
+  * Automatic OpenAPI 3.0/3.1 `callbacks` parsing: synthesizes `202 Accepted` stubs paired with asynchronous webhook deliveries to dynamic URLs like `{{jsonPath request.body '$.callbackUrl'}}`.
+  * Stateful workflow triggers: emit out-of-band callbacks upon state transitions in `wiremock-extension-stateful`.
+  * Webhook Outbox Journal: UI audit log tracking dispatched callbacks, target endpoints, delivery status, retries, and an interactive "Trigger / Replay Now" button.
+
+### 2. Embedded Control Plane & Web UI Authoring
+
+* **Visual Stub Creator & Live Editor**:
+  * Rich modal interface for authoring new stubs or editing existing mappings directly in the web UI without manual JSON authoring.
+  * Visual builders for URL matchers (`urlEqualTo`, `urlPathMatching`, `urlPattern`), header/query parameter grids, and multi-mode response body editors (JSON, Raw text, base64 binary).
+  * Direct synchronization with WireMock Admin API (`POST /__admin/mappings`, `PUT /__admin/mappings/{id}`) with instantaneous UI updates.
+* **Bulk Stub Portfolio Management**:
+  * One-Click Export: download all active mappings, scenarios, and dynamic models into a portable `stubs-bundle.json`.
+  * Drag-and-Drop Bulk Import: upload stub bundles with conflict resolution strategies (Overwrite, Append, Skip).
+  * State Snapshots & Checkpoints: save and restore named mock server checkpoints for deterministic, repeatable test suites.
+* **Live Proxy Recording & Journal Promotion**:
+  * Configure upstream reverse-proxy targets directly from the web console.
+  * Smart recording filters by URL pattern, method, and headers with automated ID regex parameterization.
+  * One-click promotion of any captured request in the Request Journal into a permanent stub mapping.
+
+### 3. Advanced OpenAPI & Scenario Synthesis
+
+* **State Machine & Scenario Inference**:
+  * Infer WireMock scenario progressions from resource lifecycles (e.g., `POST /items` transitioning `Started` to `CREATED`, followed by `GET /items/{id}` and `DELETE /items/{id}`).
+  * Support OpenAPI vendor extensions (`x-wiremock-scenario`, `x-wiremock-required-state`, `x-wiremock-new-state`, `x-wiremock-priority`).
+* **Dynamic Response Templating & Realistic Data**:
+  * Integrated Handlebars expressions (`{{request.path.[0]}}`, `{{now}}`, `{{randomValue type='UUID'}}`) directly inside synthesized OpenAPI responses.
+  * Zero-dependency realistic mock data helpers (`{{random.email}}`, `{{random.name}}`, `{{random.creditCard}}`).
+
+### 4. Enterprise Security & Networking
+
+* [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying.
+* [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
 
 ## License
 

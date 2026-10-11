@@ -10,14 +10,17 @@ export const TAB_ROUTES = {
   'stubs': 'tab-stub-detail',
   'journal': 'tab-journal',
   'tester': 'tab-tester',
-  'scenarios': 'tab-scenarios'
+  'scenarios': 'tab-scenarios',
+  'netem': 'tab-netem',
+  'tab-netem': 'tab-netem'
 };
 
 export const ROUTE_FOR_TAB = {
   'tab-stub-detail': 'stubs',
   'tab-journal': 'journal',
   'tab-tester': 'tester',
-  'tab-scenarios': 'scenarios'
+  'tab-scenarios': 'scenarios',
+  'tab-netem': 'netem'
 };
 
 export function toBase64(str) {
@@ -115,11 +118,13 @@ export function activateTab(tabId, updateRoute = true) {
 let onApplyStubsRoute = null;
 let onApplyJournalRoute = null;
 let onApplyTesterRoute = null;
+let onApplyNetEmRoute = null;
 
-export function registerRouteHandlers({ applyStubs, applyJournal, applyTester }) {
+export function registerRouteHandlers({ applyStubs, applyJournal, applyTester, applyNetEm }) {
   onApplyStubsRoute = applyStubs;
   onApplyJournalRoute = applyJournal;
   onApplyTesterRoute = applyTester;
+  onApplyNetEmRoute = applyNetEm;
 }
 
 export function applyRouteFromUrl() {
@@ -135,6 +140,8 @@ export function applyRouteFromUrl() {
       if (onApplyJournalRoute) onApplyJournalRoute(params);
     } else if (route === 'tester') {
       if (onApplyTesterRoute) onApplyTesterRoute(params);
+    } else if (route === 'netem') {
+      if (onApplyNetEmRoute) onApplyNetEmRoute(params);
     }
   } finally {
     state.isSyncingRoute = false;

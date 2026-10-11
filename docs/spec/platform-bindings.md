@@ -1,0 +1,75 @@
+# Platform Bindings & Concrete Component Mappings
+
+> **Status**: Technical Implementation Binding  
+> **Complements**: `docs/spec/functional-specification.md` and `docs/spec/ui-guidelines.md`  
+> **Audience**: Frontend Developers, Test Automation Engineers, Coding Agents
+
+---
+
+## 1. Concrete Identifier Mapping
+
+| Abstract Semantic Component | Web Selector (HTML / CSS) | Desktop Swing Name (`component.setName`) | Target Capability / Role |
+| :--- | :--- | :--- | :--- |
+| **Server Connection URL** | `#server-url` | `"server-url"` | Input field for WireMock base URL (`http://localhost:8080`). |
+| **Connect / Refresh Trigger**| `#btn-connect` | `"btn-connect"` | Trigger to refresh all datasets. |
+| **Navigation Tab: Stubs** | `#nav-tab-stubs` | `"nav-tab-stubs"` / tab 0 | Switch to Stubs Catalog. |
+| **Navigation Tab: Journal** | `#nav-tab-journal` | `"nav-tab-journal"` / tab 1 | Switch to Traffic Journal. |
+| **Navigation Tab: Tester** | `#nav-tab-tester` | `"nav-tab-tester"` / tab 2 | Switch to HTTP Request Tester. |
+| **Navigation Tab: Scenarios**| `#nav-tab-scenarios` | `"nav-tab-scenarios"` / tab 3 | Switch to FSM Scenarios Inspector. |
+| **Stubs Filter Input** | `#search-box` | `"search-box"` | Case-insensitive text filter. |
+| **Stubs Status Filter** | `#status-filter` | `"status-filter"` | Status filter dropdown (`All`, `Active`, `Disabled`). |
+| **Stubs Table / Grid** | `#stub-table` | `"stub-table"` | Table view with columns: Status, Method, URL, Name. |
+| **Stub Details Panel** | `#stub-details` | `"stub-details"` | Formatted JSON editor/viewer of selected stub mapping. |
+| **Stub Toggle Action** | `#btn-toggle-stub` | `"btn-toggle-stub"` | Toggles active/disabled state without deletion. |
+| **Stub Delete Action** | `#btn-delete-stub` | `"btn-delete-stub"` | Deletes selected stub mapping. |
+| **Stub Test in Tester** | `#btn-test-stub` | `"btn-test-stub"` | Pre-populates tester with stub method & URL. |
+| **Stub Copy cURL** | `#btn-copy-curl` | `"btn-copy-curl"` | Copies valid `curl` command to system clipboard. |
+| **Stub Copy JSON** | `#btn-copy-json` | `"btn-copy-json"` | Copies raw mapping JSON to system clipboard. |
+| **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, method, url, status. |
+| **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (2-second interval). |
+| **Journal Clear Action** | `#btn-clear-journal` | `"btn-clear-journal"` | Clears recorded requests via `DELETE /__admin/requests`. |
+| **Journal Match Summary** | `#journal-summary` | `"journal-summary"` | Match status badge (`[MATCHED]` / `[UNMATCHED ⚠️]`). |
+| **Journal Replay Action** | `#btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
+| **Journal Copy cURL** | `#btn-journal-copy-curl` | `"btn-journal-copy-curl"` | Copies captured request as `curl` to system clipboard. |
+| **Tester Method Selector** | `#tester-method` | `"tester-method"` | HTTP method dropdown (GET, POST, PUT, DELETE, PATCH). |
+| **Tester URL Path** | `#tester-url` | `"tester-url"` | URL path to dispatch against WireMock. |
+| **Tester Headers Editor** | `#tester-headers` | `"tester-headers"` | Multiline header editor (`Key: Value`). |
+| **Tester Body Editor** | `#tester-request-body` | `"tester-request-body"` | Request payload text area. |
+| **Tester Send Action** | `#tester-send-btn` | `"tester-send-btn"` | Dispatches request asynchronously. |
+| **Tester Status Result** | `#tester-response-status`| `"tester-response-status"`| Displays HTTP response status and latency in ms. |
+| **Tester Response Body** | `#tester-response-body` | `"tester-response-body"` | Formatted response body viewer. |
+| **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
+| **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
+| **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |
+| **NetEm Active Toxics Stat** | `#netem-stat-active-toxics` | `"netem-stat-active-toxics"` | Metric counter for active toxic impairments. |
+| **NetEm Preset: 3G** | `#btn-preset-3g` | `"btn-preset-3g"` | Applies 3G Mobile preset (300ms latency, 64KB/s bandwidth). |
+| **NetEm Reset All** | `#btn-netem-reset-all` | `"btn-netem-reset-all"` | Clears all registered toxics on the active proxy. |
+| **NetEm Add Toxic Modal** | `#netem-add-toxic-modal` | `"netem-add-toxic-modal"` | Modal dialog for creating customized toxic impairments. |
+| **NetEm Journal Table** | `#netem-journal-table` | `"netem-journal-table"` | Table view of recorded network transfers and impairments. |
+| **NetEm Journal Filter** | `#netem-journal-filter-corr` | `"netem-journal-filter-corr"` | Correlation ID search filter for the NetEm journal. |
+
+---
+
+## 2. WireMock Admin API Protocol Bindings
+
+| Capability | HTTP Method | Route | Payload |
+| :--- | :--- | :--- | :--- |
+| **List Active Stubs** | `GET` | `/__admin/mappings` | None |
+| **List Disabled Stubs**| `GET` | `/__admin/stubs/disabled` | None |
+| **Create Stub** | `POST` | `/__admin/mappings` | Stub JSON definition |
+| **Update Stub** | `PUT` | `/__admin/mappings/{id}` | Stub JSON definition |
+| **Toggle Stub State** | `POST` | `/__admin/stubs/{id}/toggle` | None |
+| **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
+| **Fetch Journal** | `GET` | `/__admin/requests?limit=50` | None |
+| **Clear Journal** | `DELETE` | `/__admin/requests` | None |
+| **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
+| **Reset Scenarios** | `POST` | `/__admin/scenarios/reset` | None |
+| **Ingest OpenAPI** | `POST` | `/__admin/openapi/import` | OpenAPI YAML/JSON or file path |
+| **List NetEm Proxies** | `GET` | `/__admin/tcp-netem/proxies` | None |
+| **Add NetEm Toxic** | `POST` | `/__admin/tcp-netem/proxies/{name}/toxics` | Toxic JSON definition |
+| **Delete NetEm Toxic** | `DELETE` | `/__admin/tcp-netem/proxies/{name}/toxics/{toxic}` | None |
+| **Apply NetEm Preset** | `POST` | `/__admin/tcp-netem/proxies/{name}/presets/{preset}` | None |
+| **Fetch NetEm Journal**| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
+| **Clear NetEm Journal**| `DELETE` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
+| **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
+

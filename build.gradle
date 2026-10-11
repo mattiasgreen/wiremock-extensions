@@ -164,6 +164,7 @@ dependencies {
     nmcpAggregation project(':wiremock-extension-openapi')
     nmcpAggregation project(':wiremock-extension-otel')
     nmcpAggregation project(':wiremock-extension-stateful')
+    nmcpAggregation project(':wiremock-extension-tcp-netem')
     nmcpAggregation project(':wiremock-extension-ui')
 }
 

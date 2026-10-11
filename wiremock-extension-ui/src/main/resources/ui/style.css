@@ -769,6 +769,7 @@ body {
 
 #tester-url {
   flex: 1;
+  min-width: 0;
   font-family: monospace;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -781,6 +782,13 @@ body {
 
 #tester-url:focus {
   border-color: var(--accent-color);
+}
+
+.tester-url-bar #btn-tester-send {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 8px 16px;
+  font-weight: 600;
 }
 
 .tester-subcontrols {
@@ -833,6 +841,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-color);
 }
@@ -847,6 +857,7 @@ body {
 .tester-response-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -2321,5 +2332,271 @@ kbd {
 
 .target-host-dot.error {
   background-color: var(--color-danger, #ef4444);
+}
+
+/* --- TCP NetEm Styles --- */
+.netem-ingress-badge {
+  font-family: monospace;
+  font-size: 0.8rem;
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+.netem-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.netem-stat-card {
+  background-color: var(--bg-card, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.netem-stat-card .stat-label {
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.netem-stat-card .stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.netem-stat-card .stat-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+  margin-top: 4px;
+}
+
+.netem-presets-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background-color: rgba(30, 41, 59, 0.6);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.presets-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted, #cbd5e1);
+  margin-right: 4px;
+}
+
+.netem-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.netem-toxics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.netem-toxic-card {
+  background-color: var(--bg-card, #1e293b);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toxic-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toxic-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toxic-type-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.toxic-name {
+  font-size: 0.88rem;
+  color: #f1f5f9;
+}
+
+.toxic-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.netem-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+
+.badge-upstream {
+  background-color: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+}
+
+.badge-downstream {
+  background-color: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+.badge-corr {
+  background-color: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  font-family: monospace;
+}
+
+.badge-all {
+  background-color: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+}
+
+.toxic-attributes {
+  font-size: 0.76rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.4;
+}
+
+.netem-journal-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.netem-auto-refresh-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.netem-journal-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 6px;
+  background-color: var(--bg-card, #1e293b);
+}
+
+.netem-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.netem-table th {
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color, #334155);
+  color: var(--text-muted, #94a3b8);
+  font-weight: 600;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.netem-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+}
+
+.netem-table tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.cell-time {
+  white-space: nowrap;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.cell-corr {
+  font-family: monospace;
+}
+
+.badge-corr-table {
+  background-color: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+}
+
+.cell-addr {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.cell-num {
+  font-family: monospace;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.cell-toxics {
+  font-size: 0.76rem;
+  color: #cbd5e1;
+}
+
+.netem-outcome {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.outcome-normal {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.outcome-impaired {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
 }
 

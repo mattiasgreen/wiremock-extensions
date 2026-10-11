@@ -33,6 +33,9 @@
         <button class="tab nav-tab" data-tab="tab-scenarios" role="tab" id="nav-tab-scenarios" data-testid="nav-tab-scenarios">
           <span class="tab-icon">🔀</span> Scenarios <span id="stat-scenarios" class="nav-badge">0</span>
         </button>
+        <button class="tab nav-tab" data-tab="tab-netem" role="tab" id="nav-tab-netem" data-testid="nav-tab-netem">
+          <span class="tab-icon">📶</span> TCP NetEm <span id="stat-netem-toxics" class="nav-badge">0</span>
+        </button>
       </nav>
       <div class="nav-actions">
         <button id="btn-target-host" class="btn btn-secondary btn-target-host" data-testid="btn-target-host" title="Configure WireMock Target Server">
@@ -422,6 +425,97 @@
           <div class="empty-state">No active stateful scenarios found.</div>
         </div>
       </div>
+
+      <!-- Tab 5: TCP NetEm (Full Width) -->
+      <div id="tab-netem" class="tab-content" data-testid="tab-netem">
+        <div class="scenarios-header-bar">
+          <div class="scenarios-title-group">
+            <span class="scenarios-title">📶 TCP Network Impairment (NetEm)</span>
+            <span class="netem-ingress-badge" id="netem-ingress-info">Ingress: 127.0.0.1:8081 ➔ Target: 127.0.0.1:8080</span>
+          </div>
+          <div class="scenarios-actions-group">
+            <button id="btn-netem-refresh" data-testid="btn-netem-refresh" class="btn btn-small btn-secondary" title="Refresh NetEm status and journal">🔄 Refresh</button>
+            <button id="btn-netem-add-toxic" data-testid="btn-netem-add-toxic" class="btn btn-small btn-primary" title="Add toxic impairment">➕ Add Toxic</button>
+            <button id="btn-netem-reset-all" data-testid="btn-netem-reset-all" class="btn btn-small btn-secondary" title="Remove all toxics">↺ Reset All Toxics</button>
+          </div>
+        </div>
+
+        <!-- NetEm Metrics Summary -->
+        <div class="netem-stats-grid">
+          <div class="netem-stat-card">
+            <div class="stat-label">Normal Traffic</div>
+            <div class="stat-value text-success" id="netem-stat-normal-transfers">0</div>
+            <div class="stat-sub">unimpaired transfers</div>
+          </div>
+          <div class="netem-stat-card">
+            <div class="stat-label">Impaired Traffic</div>
+            <div class="stat-value text-warning" id="netem-stat-impaired-transfers">0</div>
+            <div class="stat-sub">chaos / throttled transfers</div>
+          </div>
+          <div class="netem-stat-card">
+            <div class="stat-label">Active Connections</div>
+            <div class="stat-value" id="netem-stat-active-conn">0</div>
+            <div class="stat-sub">in-flight TCP sockets</div>
+          </div>
+          <div class="netem-stat-card">
+            <div class="stat-label">Active Toxics</div>
+            <div class="stat-value text-primary" id="netem-stat-active-toxics">0</div>
+            <div class="stat-sub">configured impairments</div>
+          </div>
+        </div>
+
+        <!-- Presets Bar -->
+        <div class="netem-presets-bar">
+          <span class="presets-label">⚡ Quick Presets:</span>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="MOBILE_3G" id="btn-preset-3g">📱 3G Mobile</button>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="FLAKY_WIFI" id="btn-preset-wifi">📶 Flaky Wi-Fi</button>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="INSTANT_RST" id="btn-preset-rst">⚡ Instant RST</button>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="TIMEOUT_BLACKHOLE" id="btn-preset-timeout">⏳ Connection Timeout</button>
+        </div>
+
+        <!-- Active Toxics Grid -->
+        <div class="netem-section-title">
+          <span>Active Impairments (Toxics)</span>
+          <span class="muted-text text-small">Dynamically injected into Virtual Thread TCP pipeline</span>
+        </div>
+        <div id="netem-toxics-list" class="netem-toxics-grid" data-testid="netem-toxics-list">
+          <div class="empty-state">✅ No network impairments active. All traffic on port 8081 flows at line rate.</div>
+        </div>
+
+        <!-- Live NetEm Journal -->
+        <div class="netem-section-title" style="margin-top: 24px;">
+          <span>Live NetEm Event Journal</span>
+          <span class="muted-text text-small">Pre-allocated lock-free circular ring buffer (O(1) memory)</span>
+        </div>
+        <div class="netem-journal-controls">
+          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by X-Correlation-Id..." style="flex: 2;">
+          <select id="netem-journal-filter-outcome" class="form-control" style="flex: 1;">
+            <option value="">All Outcomes</option>
+            <option value="impaired">⚠️ Impaired Only</option>
+            <option value="normal">✅ Normal Only</option>
+          </select>
+          <label class="netem-auto-refresh-label"><input type="checkbox" id="netem-journal-auto-refresh" checked> Auto Refresh</label>
+          <button type="button" id="btn-netem-clear-journal" class="btn btn-tiny btn-secondary">🗑 Clear Journal</button>
+        </div>
+        <div class="netem-journal-table-wrapper">
+          <table id="netem-journal-table" class="netem-table" data-testid="netem-journal-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Correlation ID</th>
+                <th>Client</th>
+                <th>Duration</th>
+                <th>Bytes (Up / Down)</th>
+                <th>Applied Impairments</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="netem-journal-tbody">
+              <tr class="empty-state-row"><td colspan="7" class="empty-state-cell">No matching network events recorded in NetEm journal.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div> <!-- end .workspace-area -->
   </main>
 
@@ -748,6 +842,64 @@
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
         <button id="btn-cancel-dynamic" class="btn btn-secondary">Cancel</button>
         <button id="btn-save-dynamic" class="btn btn-primary" data-testid="btn-save-dynamic">⚡ Create Dynamic Model</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NetEm Add Toxic Modal -->
+  <div id="netem-add-toxic-modal" class="modal-backdrop hidden" data-testid="netem-add-toxic-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">➕</span>
+          <h3>Add Network Impairment (Toxic)</h3>
+        </div>
+        <button id="btn-netem-close-toxic-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="netem-toxic-name">Toxic Name:</label>
+          <input type="text" id="netem-toxic-name" class="form-control" placeholder="e.g. latency-downstream-mobile">
+        </div>
+        <div class="form-row" style="display: flex; gap: 12px;">
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-type">Impairment Type:</label>
+            <select id="netem-toxic-type" class="form-control">
+              <option value="latency">Latency / Jitter</option>
+              <option value="bandwidth">Bandwidth Throttling</option>
+              <option value="reset_peer">Reset Peer (TCP RST)</option>
+              <option value="timeout">Timeout (Blackhole)</option>
+              <option value="slow_close">Slow Close (FIN Delay)</option>
+              <option value="slicer">Packet Slicer (Fragmentation)</option>
+              <option value="limit_data">Limit Data (Close after N bytes)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-stream">Stream Direction:</label>
+            <select id="netem-toxic-stream" class="form-control">
+              <option value="downstream">Downstream (Target ➔ Client)</option>
+              <option value="upstream">Upstream (Client ➔ Target)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row" style="display: flex; gap: 12px;">
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-toxicity">Toxicity (Probability 0.0 - 1.0):</label>
+            <input type="number" id="netem-toxic-toxicity" class="form-control" value="1.0" min="0.0" max="1.0" step="0.1">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-correlation-id">Correlation ID Filter (Optional):</label>
+            <input type="text" id="netem-toxic-correlation-id" class="form-control" placeholder="e.g. chaos-test-session">
+          </div>
+        </div>
+        <div class="editor-section-header" style="margin-top: 12px;">Impairment Attributes</div>
+        <div id="netem-attribute-fields">
+          <!-- Dynamically populated based on type -->
+        </div>
+        <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 16px;">
+          <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
+          <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
+        </div>
       </div>
     </div>
   </div>
