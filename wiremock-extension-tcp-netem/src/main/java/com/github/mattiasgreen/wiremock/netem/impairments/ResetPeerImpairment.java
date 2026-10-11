@@ -45,7 +45,8 @@ public class ResetPeerImpairment implements NetEmImpairment {
     }
 
     private void resetSocket(NetEmContext context, NetEmStreamDirection direction) throws IOException {
-        context.getStats().incrementImpairmentsInjected();
+        context.markToxicApplied(config.getName());
+        context.setTerminationReason("RESET_PEER");
         Socket clientSocket = context.getClientSocket();
         if (!clientSocket.isClosed()) {
             try {

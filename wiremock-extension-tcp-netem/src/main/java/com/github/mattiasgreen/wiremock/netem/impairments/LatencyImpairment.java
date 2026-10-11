@@ -46,7 +46,7 @@ public class LatencyImpairment implements NetEmImpairment {
                     throw new IOException("NetEm latency interrupted", e);
                 }
             }
-            context.getStats().incrementImpairmentsInjected();
+            context.markToxicApplied(config.getName());
         }
         forwarder.accept(buffer, offset, length);
     }

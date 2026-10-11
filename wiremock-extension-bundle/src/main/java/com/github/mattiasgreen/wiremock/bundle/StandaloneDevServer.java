@@ -57,9 +57,21 @@ public class StandaloneDevServer {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"error\":\"Internal Server Error\",\"code\":500}")));
 
+        int netemPort = Integer.getInteger("wiremock.netem.port", port + 1);
+        try {
+            com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
+                    .register(new com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig(
+                            "wiremock-netem", netemPort, "127.0.0.1", port, true));
+        } catch (Exception e) {
+            System.err.println("Could not bind default TCP NetEm proxy on port " + netemPort + ": " + e.getMessage());
+        }
+
         System.out.println("=================================================================");
         System.out.println("🚀 WireMock Suite Server running at http://localhost:" + port);
         System.out.println("👉 WireMock Console UI: http://localhost:" + port + "/__admin/ui");
+        System.out.println(
+                "👉 TCP NetEm Ingress:   http://localhost:" + netemPort + " (dual-ingress -> :" + port + ")");
+        System.out.println("👉 NetEm Journal:       http://localhost:" + port + "/__admin/tcp-netem/journal");
         System.out.println("👉 Prometheus Metrics:  http://localhost:" + port + "/__admin/metrics/prometheus");
         System.out.println("👉 Tracing & Logging:   W3C Context Propagation & MDC Active");
         System.out.println("👉 Admin API:           http://localhost:" + port + "/__admin/mappings");

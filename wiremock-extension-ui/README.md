@@ -130,12 +130,42 @@ wm.start();
 
 When the JAR is on the classpath, the extension registers automatically via Java SPI.
 
-## Build & Test
+## WireMock Studio (Zero-Dependency Desktop Web Container & Reverse Proxy)
+
+In addition to serving the web console embedded in WireMock at `/__admin/ui/`, a standalone desktop container is provided as a **single, zero-dependency Java file** ([`WireMockStudio.java`](file:///c:/dev/repos/wiremock-extensions/WireMockStudio.java)).
+
+It combines an embedded JDK 21 `HttpServer` with a transparent, CORS-free reverse proxy:
+* **100% Web UI Reuse**: Serves the identical Vanilla JS Web UI at `http://localhost:19840/__admin/ui/`, completely eliminating double implementation and keeping every feature in sync.
+* **Zero CORS Restrictions**: All administrative and application routes are proxied directly to the upstream WireMock server over raw HTTP via JDK 21 `HttpClient`, enabling seamless connections to remote staging environments, Docker containers, or local instances without browser origin errors.
+* **Native Desktop Window**: Automatically launches in app mode using local Chromium (`--app=http://localhost:19840/__admin/ui/`) with fallback to the default system browser and a minimalist desktop companion controller.
+
+### Instant Run (No build or clone required)
+
+* **Linux / macOS**:
+  ```bash
+  curl -sLO https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockStudio.java
+  java WireMockStudio.java http://localhost:8080
+  ```
+
+* **Windows (PowerShell)**:
+  ```powershell
+  Invoke-WebRequest -Uri "https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockStudio.java" -OutFile "WireMockStudio.java"
+  java WireMockStudio.java http://localhost:8080
+  ```
+
+* **From within this repository**:
+  ```bash
+  # Option 1: Direct JEP 330 script
+  java WireMockStudio.java
+
+  # Option 2: Gradle task
+  ./gradlew :wiremock-extension-ui:runDesktop
+  ```
+
+### Automated Verification
+* Web SPA: Playwright integration tests (`UiPlaywrightTest`)
+* Desktop Container & Reverse Proxy: In-memory WireMock tests (`WireMockStudioTest`)
 
 ```bash
-# Build JAR
-./gradlew :wiremock-extension-ui:build
-
-# Run Playwright UI integration tests (Chromium)
 ./gradlew :wiremock-extension-ui:test
 ```

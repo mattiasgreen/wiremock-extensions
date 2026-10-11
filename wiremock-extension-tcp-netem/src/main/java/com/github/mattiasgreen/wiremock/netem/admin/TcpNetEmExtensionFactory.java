@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.netem.admin;
 
+import com.github.mattiasgreen.wiremock.netem.stub.NetEmStubListener;
 import com.github.tomakehurst.wiremock.extension.Extension;
 import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
@@ -9,6 +10,6 @@ public class TcpNetEmExtensionFactory implements ExtensionFactory {
 
     @Override
     public List<Extension> create(WireMockServices wireMockServices) {
-        return List.of(new TcpNetEmAdminEndpoint());
+        return List.of(new TcpNetEmAdminEndpoint(), new NetEmStubListener());
     }
 }

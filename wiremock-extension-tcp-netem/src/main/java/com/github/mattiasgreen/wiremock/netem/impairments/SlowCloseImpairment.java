@@ -23,7 +23,8 @@ public class SlowCloseImpairment implements NetEmImpairment {
     @Override
     public void onEof(NetEmContext context, NetEmStreamDirection direction, ByteConsumer forwarder) throws IOException {
         if (shouldApply(context, direction) && delayMs > 0) {
-            context.getStats().incrementImpairmentsInjected();
+            context.markToxicApplied(config.getName());
+            context.setTerminationReason("SLOW_CLOSE");
             try {
                 Thread.sleep(delayMs);
             } catch (InterruptedException e) {

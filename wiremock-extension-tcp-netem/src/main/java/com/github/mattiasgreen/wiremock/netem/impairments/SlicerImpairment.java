@@ -39,7 +39,7 @@ public class SlicerImpairment implements NetEmImpairment {
             return;
         }
 
-        context.getStats().incrementImpairmentsInjected();
+        context.markToxicApplied(config.getName());
         int remaining = length;
         int currentOffset = offset;
 

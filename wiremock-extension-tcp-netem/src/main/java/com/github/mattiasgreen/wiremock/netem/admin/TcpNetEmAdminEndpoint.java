@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
+import com.github.mattiasgreen.wiremock.netem.journal.NetEmJournalEntry;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicConfig;
 import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
+import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
 import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import java.io.IOException;
@@ -69,6 +71,12 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
                 "/tcp-netem/proxies/{name}/presets/{presetName}",
                 (admin, serveEvent, pathParams) -> applyPreset(pathParams.get("name"), pathParams.get("presetName")));
         router.add(RequestMethod.POST, "/tcp-netem/reset", (admin, serveEvent, pathParams) -> resetAll());
+        router.add(
+                RequestMethod.GET,
+                "/tcp-netem/journal",
+                (admin, serveEvent, pathParams) -> getJournalJson(serveEvent.getRequest()));
+        router.add(RequestMethod.DELETE, "/tcp-netem/journal", (admin, serveEvent, pathParams) -> clearJournal());
+        router.add(RequestMethod.POST, "/tcp-netem/journal/reset", (admin, serveEvent, pathParams) -> clearJournal());
 
         // --- Toxiproxy v2 API compatibility routes ---
         router.add(RequestMethod.GET, "/proxies", (admin, serveEvent, pathParams) -> listToxiproxyMap());
@@ -290,6 +298,42 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
             return Integer.parseInt(hostPort.substring(idx + 1).trim());
         }
         return Integer.parseInt(hostPort.trim());
+    }
+
+    private ResponseDefinition getJournalJson(Request request) {
+        int limit = 100;
+        if (request.queryParameter("limit") != null
+                && request.queryParameter("limit").isPresent()) {
+            try {
+                limit = Integer.parseInt(request.queryParameter("limit").firstValue());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        String correlationId = request.queryParameter("correlationId") != null
+                        && request.queryParameter("correlationId").isPresent()
+                ? request.queryParameter("correlationId").firstValue()
+                : null;
+        String proxy = request.queryParameter("proxy") != null
+                        && request.queryParameter("proxy").isPresent()
+                ? request.queryParameter("proxy").firstValue()
+                : null;
+        Boolean impaired = null;
+        if (request.queryParameter("impaired") != null
+                && request.queryParameter("impaired").isPresent()) {
+            impaired = Boolean.parseBoolean(request.queryParameter("impaired").firstValue());
+        }
+
+        List<NetEmJournalEntry> entries = registry.getJournal().query(limit, proxy, correlationId, impaired);
+        try {
+            return jsonResponse(200, MAPPER.writeValueAsString(entries));
+        } catch (IOException e) {
+            return errorResponse(500, e.getMessage());
+        }
+    }
+
+    private ResponseDefinition clearJournal() {
+        registry.getJournal().clear();
+        return jsonResponse(200, "{\"status\":\"cleared\"}");
     }
 
     private static ResponseDefinition jsonResponse(int status, String body) {

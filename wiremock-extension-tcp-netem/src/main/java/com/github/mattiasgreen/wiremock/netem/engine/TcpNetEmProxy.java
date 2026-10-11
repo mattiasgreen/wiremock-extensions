@@ -3,6 +3,8 @@ package com.github.mattiasgreen.wiremock.netem.engine;
 import com.github.mattiasgreen.wiremock.netem.impairments.NetEmContext;
 import com.github.mattiasgreen.wiremock.netem.impairments.NetEmImpairment;
 import com.github.mattiasgreen.wiremock.netem.impairments.NetEmImpairmentFactory;
+import com.github.mattiasgreen.wiremock.netem.journal.NetEmCircularJournal;
+import com.github.mattiasgreen.wiremock.netem.journal.NetEmJournalEntry;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmPreset;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmStats;
@@ -24,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TcpNetEmProxy implements AutoCloseable {
 
     private volatile NetEmProxyConfig config;
+    private final NetEmCircularJournal journal;
     private final NetEmStats stats = new NetEmStats();
     private final ConcurrentMap<String, NetEmImpairment> impairments = new ConcurrentHashMap<>();
     private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
@@ -34,7 +37,12 @@ public class TcpNetEmProxy implements AutoCloseable {
     private volatile int boundPort;
 
     public TcpNetEmProxy(NetEmProxyConfig config) {
+        this(config, new NetEmCircularJournal());
+    }
+
+    public TcpNetEmProxy(NetEmProxyConfig config, NetEmCircularJournal journal) {
         this.config = Objects.requireNonNull(config, "config must not be null");
+        this.journal = Objects.requireNonNull(journal, "journal must not be null");
     }
 
     public synchronized void start() throws IOException {
@@ -65,7 +73,7 @@ public class TcpNetEmProxy implements AutoCloseable {
                     continue;
                 }
                 Thread.ofVirtual()
-                        .name("netem-" + config.getName() + "-init-" + connectionCounter.incrementAndGet())
+                        .name("netem-" + config.getName() + "-conn-" + connectionCounter.incrementAndGet())
                         .start(() -> handleConnection(clientSocket));
             } catch (IOException e) {
                 if (!running.get()) {
@@ -88,26 +96,23 @@ public class TcpNetEmProxy implements AutoCloseable {
 
             long connId = connectionCounter.get();
             final Socket targetSocket = rawTargetSocket;
-            NetEmContext context = new NetEmContext(connId, clientSocket, targetSocket, stats);
+            NetEmContext context = new NetEmContext(connId, config.getName(), clientSocket, targetSocket, stats);
             stats.incrementActiveConnections();
 
-            Thread.ofVirtual()
+            Thread upThread = Thread.ofVirtual()
                     .name("netem-" + config.getName() + "-up-" + connId)
                     .start(() -> {
-                        try {
-                            new NetEmPipe(
-                                            clientSocket,
-                                            targetSocket,
-                                            NetEmStreamDirection.UPSTREAM,
-                                            context,
-                                            impairments::values)
-                                    .run();
-                        } finally {
-                            stats.decrementActiveConnections();
-                        }
+                        new NetEmPipe(
+                                        clientSocket,
+                                        targetSocket,
+                                        NetEmStreamDirection.UPSTREAM,
+                                        context,
+                                        impairments::values,
+                                        journal)
+                                .run();
                     });
 
-            Thread.ofVirtual()
+            Thread downThread = Thread.ofVirtual()
                     .name("netem-" + config.getName() + "-down-" + connId)
                     .start(() -> {
                         new NetEmPipe(
@@ -115,13 +120,72 @@ public class TcpNetEmProxy implements AutoCloseable {
                                         clientSocket,
                                         NetEmStreamDirection.DOWNSTREAM,
                                         context,
-                                        impairments::values)
+                                        impairments::values,
+                                        journal)
                                 .run();
                     });
+
+            try {
+                upThread.join();
+                downThread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                stats.decrementActiveConnections();
+                activeSockets.remove(clientSocket);
+                activeSockets.remove(targetSocket);
+
+                if (context.isTransactionActive()) {
+                    context.completeTransaction(journal, context.getTerminationReason());
+                } else if (context.getBytesUpstream() == 0
+                        && context.getBytesDownstream() == 0
+                        && context.isImpaired()) {
+                    long connUpBytes = context.getBytesUpstream();
+                    long connDownBytes = context.getBytesDownstream();
+                    boolean impaired = context.isImpaired();
+                    stats.recordTransferCompletion(impaired, connUpBytes, connDownBytes);
+
+                    String clientAddr = clientSocket.getRemoteSocketAddress() != null
+                            ? clientSocket.getRemoteSocketAddress().toString()
+                            : "unknown";
+
+                    NetEmJournalEntry entry = new NetEmJournalEntry(
+                            journal.getTotalRecordedCount(),
+                            context.getStartTimeEpochMs(),
+                            config.getName(),
+                            clientAddr,
+                            context.getCorrelationId(),
+                            context.getDurationMs(),
+                            connUpBytes,
+                            connDownBytes,
+                            impaired,
+                            context.getAppliedToxicsString(),
+                            context.getTerminationReason());
+                    journal.record(entry);
+                }
+            }
 
         } catch (IOException e) {
             closeQuietly(clientSocket);
             closeQuietly(rawTargetSocket);
+            activeSockets.remove(clientSocket);
+            activeSockets.remove(rawTargetSocket);
+            String clientAddr = clientSocket.getRemoteSocketAddress() != null
+                    ? clientSocket.getRemoteSocketAddress().toString()
+                    : "unknown";
+            NetEmJournalEntry entry = new NetEmJournalEntry(
+                    journal.getTotalRecordedCount(),
+                    System.currentTimeMillis(),
+                    config.getName(),
+                    clientAddr,
+                    null,
+                    0,
+                    0,
+                    0,
+                    false,
+                    "",
+                    "CONNECT_FAILED: " + e.getMessage());
+            journal.record(entry);
         }
     }
 
@@ -161,6 +225,10 @@ public class TcpNetEmProxy implements AutoCloseable {
 
     public NetEmStats getStats() {
         return stats;
+    }
+
+    public NetEmCircularJournal getJournal() {
+        return journal;
     }
 
     public void setEnabled(boolean enabled) {

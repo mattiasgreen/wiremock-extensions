@@ -12,7 +12,8 @@ Guidelines, constraints, architecture, and commands for autonomous coding agents
 | :--- | :--- | :--- |
 | **`wiremock-extension-json-logging`** | Single-line JSON traffic logging with corporate header MDC propagation (`x-correlation-id`, `x-tenant-id`). | `RequestFilterV2` (`MdcRequestFilter`), `ServeEventListener` (`JsonLoggingListener`) |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, duration histograms) + Prometheus scrape route (`/__admin/metrics/prometheus`). | `ServeEventListener` (`OtelMetricsListener`), `AdminApiExtension` (`PrometheusAdminEndpoint`) |
-| **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification ingestion, schema data synthesis, and live proxy/recording routes (`/__admin/openapi/import`). | `AdminApiExtension` (`OpenApiAdminEndpoint`) |
+| **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with AST evaluation and multi-tenant isolation. | `AdminApiExtension` (`StatefulAdminApiEndpoint`), `RequestFilterV2` |
+| **`wiremock-extension-tcp-netem`** | In-process L4 TCP network emulation & Toxiproxy-compatible fault injection with dual-ingress architecture. | `AdminApiExtension` (`TcpNetEmAdminEndpoint`), `ServeEventListener` (`NetEmStubListener`) |
 | **`wiremock-extension-ui`** | Embedded Vanilla JS single-page web UI at `/__admin/ui/` with stub viewer, scenario DAG visualizer, request journal, and HTTP tester. | `AdminApiExtension` (`UiAdminApiEndpoint`, `StubLifecycleAdminEndpoint`) |
 | **`wiremock-extension-bundle`** | Meta-jar aggregating all extensions with auto-discovery (`ExtensionFactory`) + `StandaloneDevServer` runner. | Meta-packaging & standalone JavaExec runner |
 | **`wiremock-examples`** | Case Management reference implementation modeling stateful FSM scenarios, parallel collision pitfalls, and integration tests. | Reference implementation & test suite |
@@ -63,7 +64,24 @@ To prevent long idle wait times and maintain high velocity, always choose the ti
     ./gradlew :wiremock-extension-ui:spotlessApply
     ```
 
-#### B. Backend / Java Workflows (`json-logging`, `otel`, `openapi`, etc.)
+#### B. Native Desktop UI Workflows (`WireMockStudio.java`)
+* **Loop 1: Instant Script Run (0-second compilation)**
+  * Run the uncompiled `.java` file directly via JDK 21 JEP 330:
+    ```bash
+    java WireMockStudio.java
+    ```
+  * Or via Gradle: `./gradlew :wiremock-extension-ui:runDesktop`
+* **Loop 2: Targeted Swing E2E Component Verification (< 5s)**
+  * Filter to a single test method:
+    ```bash
+    ./gradlew :wiremock-extension-ui:test --tests "WireMockStudioSwingTest.shouldCopyCurlAndJsonToClipboard"
+    ```
+* **Loop 3: Full Desktop Component Suite (< 15s)**
+  * ```bash
+    ./gradlew :wiremock-extension-ui:test --tests "WireMockStudioSwingTest"
+    ```
+
+#### C. Backend / Java Workflows (`json-logging`, `otel`, `openapi`, etc.)
 * **Loop 1: Targeted Class or Method Test (< 5s)**
   * ```bash
     ./gradlew :wiremock-extension-openapi:test --tests "OpenApiSpecParserTest.shouldParseSimpleSpec"
@@ -77,7 +95,18 @@ To prevent long idle wait times and maintain high velocity, always choose the ti
     ./gradlew :wiremock-extension-openapi:spotbugsMain
     ```
 
-#### C. Outer Loop Gate (Pre-Commit & Pre-PR)
+#### D. Visual Snapshot Capture & Inspection Workflow
+* **Loop 1: Generate Visual Snapshots (Web SPA + Swing Desktop)**
+  * ```bash
+    ./gradlew :wiremock-extension-ui:captureUiSnapshots
+    ```
+  * Generates high-resolution PNGs in:
+    * `wiremock-extension-ui/build/reports/screenshots/web/`
+    * `wiremock-extension-ui/build/reports/screenshots/desktop/`
+* **Loop 2: Agent Visual Inspection**
+  * Autonomous agents **must inspect the generated images** using `view_file` to visually verify layout balance, text truncation, visual hierarchy, and color contrast.
+
+#### E. Outer Loop Gate (Pre-Commit & Pre-PR)
 **MANDATORY**: The final outer check MUST ALWAYS be run after the inner loop is green, before committing or creating a PR:
 ```bash
 ./gradlew spotlessApply
@@ -85,46 +114,70 @@ To prevent long idle wait times and maintain high velocity, always choose the ti
 ```
 Only proceed to `git commit` once both inner loop and outer gate are 100% green.
 
-#### D. Pull Request (PR) Preparation Protocol
+#### F. Pull Request (PR) Preparation Protocol
 Before submitting or presenting a PR to the user, coding agents must complete the following checklist:
-1. **Documentation Review**:
-   - Verify that all relevant documentation (`README.md`, module-specific `README.md`, architectural notes) has been updated to reflect new features, CLI routes, and configuration options.
-2. **UI Demo Assets Check**:
-   - If UI changes, visual enhancements, or new user workflows were introduced, ensure demo GIF recordings in `docs/images/` and `UiDemoGifRecordingTest` have been updated/regenerated.
-3. **Copy-Pasteable PR Markdown**:
-   - Always output clean, complete, copy-pasteable markdown for the PR body (Summary, Key Features, Verification Checklist).
-4. **Direct PR Creation URL**:
-   - Always provide a clickable link to create the PR on GitHub using the current feature branch against the base branch (e.g. `https://github.com/mattiasgreen/wiremock-extensions/compare/main...<feature-branch>?expand=1`).
-
-### Essential Task Reference
-* **Run all verification checks** (Tests, Spotless, and SpotBugs):
-  ```bash
-  ./gradlew check
-  ```
-* **Run standalone development server with sample stubs**:
-  ```bash
-  ./gradlew :wiremock-extension-bundle:runStandalone
-  # Accessible at:
-  #   UI:         http://localhost:8080/__admin/ui/
-  #   Metrics:    http://localhost:8080/__admin/metrics/prometheus
-  #   Admin API:  http://localhost:8080/__admin/mappings
-  ```
-* **Run UI integration tests (Playwright)**:
-  ```bash
-  ./gradlew :wiremock-extension-ui:test
-  ```
-* **Format codebase (Java & web assets)**:
-  ```bash
-  ./gradlew spotlessApply
-  ```
-* **Regenerate documentation demo GIFs** (only when UI visual changes are made):
-  ```bash
-  ./gradlew :wiremock-extension-ui:recordDemoGifs
-  ```
+1. **Abstract Spec Alignment**: Verify that the feature is documented in `docs/spec/functional-specification.md` and mapped in `docs/spec/platform-bindings.md`.
+2. **Senior Self-Review Reflection**: Include a brief self-critique using the **5 Lenses of Senior UX Review** in the PR summary.
+3. **Documentation Review**: Verify that all relevant documentation (`README.md`, module-specific `README.md`, architectural notes) has been updated.
+4. **UI Demo Assets Check**: Ensure demo GIFs (`UiDemoGifRecordingTest`) and visual snapshots (`UiSnapshotCaptureTest`) have been updated.
+5. **Copy-Pasteable PR Markdown**: Output clean, complete, copy-pasteable markdown for the PR body (Summary, Key Features, Verification Checklist).
+6. **Direct PR Creation URL**: Clickable link to create the PR on GitHub (`https://github.com/mattiasgreen/wiremock-extensions/compare/main...<feature-branch>?expand=1`).
 
 ---
 
-## 4. Extension Implementation Conventions
+## 4. Autonomous Agentic Iteration Workflow & Senior Review Protocol
+
+Autonomous agents must not act like junior developers who randomly drop buttons into panels and stop at deterministic green tests. Every feature iteration must follow this 5-phase discipline:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Senior Agentic Development Loop                      │
+│                                                                        │
+│  [1. Abstract Spec] ──► [2. Platform Bindings] ──► [3. Implementation] │
+│                                                            │           │
+│  [5. Senior Reflection] ◄── [4. Visual Snapshot Inspection] ◄──┘       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Phase 1: Abstract Product & Functional Spec Alignment
+- **Never start in concrete UI code (HTML/Swing/divs)**: First place the capability in [`docs/spec/functional-specification.md`](docs/spec/functional-specification.md).
+- Write or update the **Compact E2E User Story** (Given/When/Then format). The story must remain valid whether the backend is Java or Rust, and whether the frontend is Web, Swing, or iOS.
+
+### Phase 2: Platform Mapping & Implementation
+- Bind the abstract concepts to concrete components in [`docs/spec/platform-bindings.md`](docs/spec/platform-bindings.md) (DOM IDs for Web, `component.setName(...)` for Swing).
+- Implement the functionality following the zero-dependency rule and subproject constraints.
+
+### Phase 3: Automated E2E Verification
+- Implement deterministic E2E verification tests (`UiPlaywrightTest` for Web, `WireMockStudioSwingTest` for Desktop) directly validating the compact user stories.
+
+### Phase 4: Visual Capture & Multimodal Inspection
+- Execute `./gradlew :wiremock-extension-ui:captureUiSnapshots`.
+- Call `view_file` on the resulting PNG images in `build/reports/screenshots/`.
+- Critically evaluate the actual rendered pixels: is text clipped? Is visual weight balanced? Are buttons awkwardly floating?
+
+### Phase 5: Senior UX & Cognitive Self-Review (The 5 Lenses)
+Before declaring any task done or presenting to the user, the agent must evaluate the solution through the **5 Lenses of Senior Product Engineering**:
+1. **CRUD & State Lifecycle Completeness (The Law of Symmetry)**:
+   - Does this entity have creation, editing, deletion, toggling, search, and sorting?
+   - Never implement half a lifecycle (e.g. adding a filter without a clear button, or adding an item without deletion).
+2. **The Negative Space (Empty, Error, and Boundary States)**:
+   - What happens when 0 items exist? Is there a helpful call-to-action?
+   - What happens if the server is offline or returns an error?
+3. **Cognitive Ergonomics & Visual Hierarchy**:
+   - **Hick's Law**: Group actions logically; do not create unorganized button soups. Distinguish Primary (Send/Save), Secondary (Copy/Export), and Destructive (Delete/Clear) actions.
+   - **Fitts's Law**: Place actions directly adjacent to the data they affect.
+   - **Immediate Sensory Feedback**: Always provide instant confirmation (e.g. `"Copied to clipboard!"` toast, spinners during requests).
+4. **Persona Ergonomics (The 30-Second Rule)**:
+   - Can an integration debugger trace an unmatched 404 and replay it in the tester in under 30 seconds?
+5. **Platform Idioms & Power-User Accelerators**:
+   - Keyboard shortcuts (`Enter` to send, `Escape` to dismiss, `Ctrl+F` to search).
+   - Clipboard integration and focus management.
+
+**Mandatory Rule**: Every major feature summary from the agent must include a concise **Senior Self-Review Reflection** addressing these lenses.
+
+---
+
+## 5. Extension Implementation Conventions
 
 ### WireMock Extension SPI Auto-Discovery
 Each extension must be registered in its module's `META-INF/services/com.github.tomakehurst.wiremock.extension.ExtensionFactory`.

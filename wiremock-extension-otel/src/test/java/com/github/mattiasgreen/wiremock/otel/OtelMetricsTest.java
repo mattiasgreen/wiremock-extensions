@@ -95,4 +95,46 @@ public class OtelMetricsTest {
         assertThat(aliasResp.statusCode()).isEqualTo(200);
         assertThat(aliasResp.body()).contains("wiremock_requests_total");
     }
+
+    @Test
+    void testPrometheusEndpointIncludesNetEmMetricsWhenActive() throws Exception {
+        com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
+                .closeAll();
+        com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy proxy =
+                com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
+                        .register(new com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig(
+                                "otel-test-proxy", 0, "127.0.0.1", server.port(), true));
+
+        try {
+            // Send request via NetEm proxy
+            server.stubFor(get(urlEqualTo("/api/netem")).willReturn(ok("netem-ok")));
+
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("http://127.0.0.1:" + proxy.getPort() + "/api/netem"))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            assertThat(resp.statusCode()).isEqualTo(200);
+
+            // Scrape Prometheus
+            HttpRequest metricsReq = HttpRequest.newBuilder()
+                    .uri(URI.create(server.baseUrl() + "/__admin/metrics/prometheus"))
+                    .GET()
+                    .build();
+            HttpResponse<String> metricsResp = httpClient.send(metricsReq, HttpResponse.BodyHandlers.ofString());
+            assertThat(metricsResp.statusCode()).isEqualTo(200);
+
+            String body = metricsResp.body();
+            assertThat(body).contains("wiremock_netem_connections_active{proxy=\"otel-test-proxy\"}");
+            assertThat(body)
+                    .contains(
+                            "wiremock_netem_transfers_total{proxy=\"otel-test-proxy\",outcome=\"normal\",toxic=\"none\"}");
+            assertThat(body)
+                    .contains(
+                            "wiremock_netem_bytes_transferred_total{proxy=\"otel-test-proxy\",direction=\"upstream\",outcome=\"normal\"}");
+        } finally {
+            com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
+                    .closeAll();
+        }
+    }
 }

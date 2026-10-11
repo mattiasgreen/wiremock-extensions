@@ -69,6 +69,8 @@ public class LimitDataImpairment implements NetEmImpairment {
     }
 
     private void closeSocket(NetEmContext context, NetEmStreamDirection direction) throws IOException {
+        context.markToxicApplied(config.getName());
+        context.setTerminationReason("LIMIT_DATA");
         Socket dest = context.getDestinationSocket(direction);
         if (!dest.isClosed()) {
             dest.close();

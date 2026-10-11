@@ -7,5 +7,7 @@ dependencies {
     implementation libs.prometheus.metrics.exporter.common
     implementation libs.prometheus.metrics.exposition.formats
 
+    compileOnly project(':wiremock-extension-tcp-netem')
+    testImplementation project(':wiremock-extension-tcp-netem')
     testImplementation libs.opentelemetry.sdk.testing
 }

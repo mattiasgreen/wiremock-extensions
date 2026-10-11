@@ -16,6 +16,7 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
 | **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with type-safe Java DSL, 100% RCE-safe AST evaluation, and multi-tenant `X-Correlation-Id` isolation to prevent parallel test collision. | [Module README](wiremock-extension-stateful/README.md) |
+| **`wiremock-extension-tcp-netem`** | In-process Layer 4 TCP network emulator & fault injector (Toxiproxy re-implementation in Java 21 Virtual Threads) with dual-ingress architecture and zero blast-radius correlation-id scoping. | [Module README](wiremock-extension-tcp-netem/README.md) |
 | **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 | **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating stateful scenario modeling, parallel case collision pitfalls, best-practice isolated scenarios, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
@@ -97,6 +98,36 @@ Each extension can be used independently without pulling in the others:
   implementation 'io.github.mattiasgreen:wiremock-extension-stateful:0.1.0'
   ```
   See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
+
+- **L4 TCP Network Emulation & Chaos Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:0.1.0'
+  ```
+  See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md) for architecture, Toxiproxy API endpoints, and journal configuration.
+
+  #### Dual-Ingress Architecture & Port Separation
+  `tcp-netem` implements an in-process Dual-Ingress pattern using Java 21 Virtual Threads:
+  * **WireMock Core (Port `8080`)**: Admin API (`/__admin/...`), Web UI, Prometheus metrics (`/__admin/metrics/prometheus`), and direct functional stubs.
+  * **NetEm Ingress (Port `8081`)**: Transparent Layer 4 TCP proxy forwarding to `8080` while applying real-time network impairments (latency, bandwidth throttling, TCP resets, packet slicing, black holes).
+
+  #### L4 NetEm vs. Built-in WireMock L7 Faults
+  While WireMock provides HTTP-level delays (`withFixedDelay()`) and servlet faults (`Fault`), `tcp-netem` simulates true Layer 4 transport anomalies:
+  * **True Bandwidth Throttling**: Streams packets at fixed byte rates (e.g. 64 KB/s) rather than holding the entire response in memory before sending.
+  * **Hard TCP Reset (`ECONNRESET`)**: Abruptly resets the TCP connection via `setSoLinger(true, 0); socket.close();`, exercising client-side low-level socket reset handlers.
+  * **TCP Frame Slicing**: Splits TCP segments into micro-chunks with inter-frame delays (`slicer`), triggering OS reassembly and MTU edge cases.
+  * **Connection Black Hole**: Drops incoming/outgoing frames (`timeout`) to validate client connection and socket read timeouts.
+
+  #### Zero Blast-Radius Parallel Testing
+  Network impairments can be scoped to individual requests using header `X-Correlation-Id`:
+  * A chaos test thread targeting `X-Correlation-Id: test-chaos-42` experiences latency or drops.
+  * Concurrent functional tests running on the same WireMock instance without that header execute at line speed with 0% error cross-talk.
+  * See the complete reference implementation in [`wiremock-examples`](wiremock-examples/src/test/java/com/github/mattiasgreen/wiremock/examples/NetEmResilienceParallelIntegrationTest.java) demonstrating parallel Resilience4j circuit breaker verification.
+
+  #### Circular Event Journal & JVM Sizing
+  NetEm tracks all transfers in a lock-free, circular event journal (`AtomicReferenceArray`):
+  * **Memory Footprint**: Each compact event record is ~80–128 bytes. Sizing formula: $\text{Heap} = N_{\text{capacity}} \times 128 \text{ bytes}$.
+  * **Default (50,000 entries)**: Consumes only ~6 MB of heap with zero allocation churn on wrap-around.
+  * **Recommended JVM Options**: `-Xms512m -Xmx2g` for high-throughput enterprise mock clusters.
 
 ### 3. Local Development Runner
 
@@ -199,11 +230,12 @@ The suite is expanding into a **zero-sprawl Simulator Stack** running entirely i
 
 ### 1. Multi-Protocol Simulator Stack Modules
 
-* **🌪️ Network Chaos & Fault Injection (`wiremock-extension-chaos`)**:
+* **✅ 🌪️ Network Chaos & Fault Injection (`wiremock-extension-tcp-netem`) [AVAILABLE]**:
   * Native re-implementation of Shopify's Toxiproxy in modern **Java 21 Virtual Threads** (`Thread.ofVirtual()`), running directly inside WireMock without external Go sidecars.
+  * Dual-Ingress architecture: Port 8081 NetEm forwarding to Port 8080 WireMock Core.
   * All 7 toxics supported: `latency` (with jitter), `bandwidth` throttling, `slow_close`, `timeout` (black hole), `reset_peer` (TCP RST via `setSoLinger(true,0)`), `slicer` (packet fragmentation), and `limit_data`.
-  * Dual-layer control: L4 TCP Proxy with Toxiproxy v2 REST API compatibility (`POST /proxies/{name}/toxics`) + L7 WireMock HTTP chaos rules filtered by path, headers, or `X-Correlation-Id`.
-  * Web UI Chaos controller with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey") and live drop counters.
+  * Zero blast-radius parallel testing via `X-Correlation-Id` scoping and declarative `metadata.netem` stubs.
+  * High-throughput circular event journal and Web UI NetEm console with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey").
 
 * **📬 AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**:
   * Ingest AsyncAPI 2.x and 3.x specifications (`asyncapi.yaml`) via `POST /__admin/asyncapi/import` and synthesize mock event publishers and schema payload generators.

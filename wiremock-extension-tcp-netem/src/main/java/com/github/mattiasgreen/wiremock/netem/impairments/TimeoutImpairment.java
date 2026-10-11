@@ -32,7 +32,8 @@ public class TimeoutImpairment implements NetEmImpairment {
             ByteConsumer forwarder)
             throws IOException {
         if (shouldApply(context, direction)) {
-            context.getStats().incrementImpairmentsInjected();
+            context.markToxicApplied(config.getName());
+            context.setTerminationReason("TIMEOUT");
             try {
                 if (timeoutMs > 0) {
                     Thread.sleep(timeoutMs);

@@ -5,5 +5,7 @@ dependencies {
     implementation libs.jackson.datatype.jsr310
 
     testImplementation libs.playwright
+    testImplementation libs.resilience4j.circuitbreaker
+    testImplementation libs.resilience4j.retry
 }
 

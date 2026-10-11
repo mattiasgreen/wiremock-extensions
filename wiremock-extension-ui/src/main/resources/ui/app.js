@@ -86,6 +86,11 @@ import {
   setupDynamicStubModal,
   normalizeStatefulModelsToStubs
 } from './modules/dynamic-stubs.js';
+import {
+  initNetEmTab,
+  activateNetEm,
+  deactivateNetEm
+} from './modules/netem.js';
 
 export function getAllStubs() {
   return [...state.currentStubs, ...state.disabledStubs, ...normalizeStatefulModelsToStubs(state.statefulModels || [])];
@@ -153,6 +158,9 @@ registerRouteHandlers({
     if (h && elements.testerHeaders) elements.testerHeaders.value = fromBase64(h);
     const b = params.get('b');
     if (b && elements.testerBody) elements.testerBody.value = fromBase64(b);
+  },
+  applyNetEm: () => {
+    activateNetEm();
   }
 });
 
@@ -161,6 +169,11 @@ elements.tabs.forEach(tab => {
   tab.addEventListener('click', () => {
     const target = tab.getAttribute('data-tab') || (tab.dataset && tab.dataset.tab);
     activateTab(target, true);
+    if (target === 'tab-netem') {
+      activateNetEm();
+    } else {
+      deactivateNetEm();
+    }
   });
 });
 
@@ -687,11 +700,20 @@ export function updateTargetHostDisplay() {
 }
 
 function setupTargetHostControls() {
+  // Auto-detect if running behind WireMockStudio local reverse proxy
+  if (typeof window !== 'undefined' && window.__WIREMOCK_STUDIO__) {
+    state.isProxyMode = true;
+    state.proxyTargetUrl = window.__WIREMOCK_STUDIO__.targetUrl || '';
+    if (elements.targetHostLabel && state.proxyTargetUrl) {
+      elements.targetHostLabel.textContent = `Target: ${state.proxyTargetUrl}`;
+    }
+  }
+
   if (elements.btnTargetHost && elements.targetHostModal) {
     elements.btnTargetHost.addEventListener('click', () => {
       elements.targetHostModal.classList.remove('hidden');
       if (elements.inputTargetHost) {
-        elements.inputTargetHost.value = state.apiBaseUrl || '';
+        elements.inputTargetHost.value = state.proxyTargetUrl || state.apiBaseUrl || '';
         elements.inputTargetHost.focus();
       }
       if (elements.targetHostStatus) {
@@ -721,6 +743,31 @@ function setupTargetHostControls() {
   }
 
   const applyTargetHost = (newTarget) => {
+    if (state.isProxyMode) {
+      const finalTarget = newTarget || 'http://localhost:8080';
+      fetch('/__admin/ui/api/target', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUrl: finalTarget })
+      })
+        .then(r => r.json())
+        .then(data => {
+          state.proxyTargetUrl = data.targetUrl;
+          if (elements.targetHostLabel) {
+            elements.targetHostLabel.textContent = `Target: ${data.targetUrl}`;
+          }
+          closeTargetModal();
+          loadData();
+        })
+        .catch(() => {
+          setTargetUrlInLocation(newTarget);
+          updateTargetHostDisplay();
+          closeTargetModal();
+          loadData();
+          loadVersionInfo();
+        });
+      return;
+    }
     setTargetUrlInLocation(newTarget);
     updateTargetHostDisplay();
     closeTargetModal();
@@ -776,6 +823,11 @@ function boot() {
   setupTargetHostControls();
   loadData();
   loadVersionInfo();
+  initNetEmTab();
+  const { route } = parseHash();
+  if (route === 'netem') {
+    activateNetEm();
+  }
 }
 
 // Initial Boot

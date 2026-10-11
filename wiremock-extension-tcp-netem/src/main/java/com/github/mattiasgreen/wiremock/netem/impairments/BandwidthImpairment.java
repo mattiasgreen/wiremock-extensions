@@ -41,7 +41,7 @@ public class BandwidthImpairment implements NetEmImpairment {
                     throw new IOException("NetEm bandwidth throttling interrupted", e);
                 }
             }
-            context.getStats().incrementImpairmentsInjected();
+            context.markToxicApplied(config.getName());
         }
         forwarder.accept(buffer, offset, length);
     }
