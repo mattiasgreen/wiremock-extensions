@@ -38,6 +38,13 @@ Guidelines, constraints, architecture, and commands for autonomous coding agents
    - Always use explicit `Locale.ROOT` on case conversions (e.g., `toLowerCase(Locale.ROOT)`).
    - Always sanitize potential CRLF (`\r`, `\n`) characters before logging dynamic inputs.
    - Always load classpath assets using static class literals (`MyClass.class.getResourceAsStream(...)`), never dynamic `getClass()`.
+5. **Strict Zero-Credential-Inspection & No-Circumvention Policy**:
+   - **NEVER** attempt to extract, dump, or query credentials, tokens, passwords, or secrets from the host system or environment.
+   - Specifically forbidden:
+     - Querying credential helpers (e.g., `git credential fill`, OS credential managers, keychains, secret services).
+     - Inspecting private user files (`~/.ssh`, `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.config/gh`, etc.).
+     - Dumping environment variables that may contain API keys or auth tokens.
+   - **Respect Access Boundaries**: If a remote resource, API, or CI log returns `401 Unauthorized` or `403 Forbidden`, do **NOT** attempt credential harvesting or circumvention. Instead, reproduce the issue locally or explicitly ask the user for the relevant log snippet or details.
 
 ---
 
@@ -64,21 +71,21 @@ To prevent long idle wait times and maintain high velocity, always choose the ti
     ./gradlew :wiremock-extension-ui:spotlessApply
     ```
 
-#### B. Native Desktop UI Workflows (`WireMockStudio.java`)
+#### B. Headless Standalone Proxy Workflows (`WireMockConsoleProxy.java`)
 * **Loop 1: Instant Script Run (0-second compilation)**
   * Run the uncompiled `.java` file directly via JDK 21 JEP 330:
     ```bash
-    java WireMockStudio.java
+    java WireMockConsoleProxy.java
     ```
-  * Or via Gradle: `./gradlew :wiremock-extension-ui:runDesktop`
-* **Loop 2: Targeted Swing E2E Component Verification (< 5s)**
+  * Or via Gradle: `./gradlew :wiremock-extension-ui:runProxy`
+* **Loop 2: Targeted Console Proxy Verification (< 5s)**
   * Filter to a single test method:
     ```bash
-    ./gradlew :wiremock-extension-ui:test --tests "WireMockStudioSwingTest.shouldCopyCurlAndJsonToClipboard"
+    ./gradlew :wiremock-extension-ui:test --tests "WireMockConsoleProxyTest.shouldRouteDynamicallyViaForwardedHeaders"
     ```
-* **Loop 3: Full Desktop Component Suite (< 15s)**
+* **Loop 3: Full Console Proxy Suite (< 10s)**
   * ```bash
-    ./gradlew :wiremock-extension-ui:test --tests "WireMockStudioSwingTest"
+    ./gradlew :wiremock-extension-ui:test --tests "WireMockConsoleProxyTest"
     ```
 
 #### C. Backend / Java Workflows (`json-logging`, `otel`, `openapi`, etc.)
@@ -96,13 +103,12 @@ To prevent long idle wait times and maintain high velocity, always choose the ti
     ```
 
 #### D. Visual Snapshot Capture & Inspection Workflow
-* **Loop 1: Generate Visual Snapshots (Web SPA + Swing Desktop)**
+* **Loop 1: Generate Visual Snapshots (Web SPA)**
   * ```bash
     ./gradlew :wiremock-extension-ui:captureUiSnapshots
     ```
   * Generates high-resolution PNGs in:
     * `wiremock-extension-ui/build/reports/screenshots/web/`
-    * `wiremock-extension-ui/build/reports/screenshots/desktop/`
 * **Loop 2: Agent Visual Inspection**
   * Autonomous agents **must inspect the generated images** using `view_file` to visually verify layout balance, text truncation, visual hierarchy, and color contrast.
 
@@ -148,7 +154,7 @@ Autonomous agents must not act like junior developers who randomly drop buttons 
 - Implement the functionality following the zero-dependency rule and subproject constraints.
 
 ### Phase 3: Automated E2E Verification
-- Implement deterministic E2E verification tests (`UiPlaywrightTest` for Web, `WireMockStudioSwingTest` for Desktop) directly validating the compact user stories.
+- Implement deterministic E2E verification tests (`UiPlaywrightTest` for Web, `WireMockConsoleProxyTest` for Proxy) directly validating the compact user stories.
 
 ### Phase 4: Visual Capture & Multimodal Inspection
 - Execute `./gradlew :wiremock-extension-ui:captureUiSnapshots`.

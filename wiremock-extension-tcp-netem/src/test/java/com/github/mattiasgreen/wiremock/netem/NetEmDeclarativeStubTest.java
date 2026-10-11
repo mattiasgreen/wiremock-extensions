@@ -81,7 +81,7 @@ class NetEmDeclarativeStubTest {
                                                 "type", "latency",
                                                 "stream", "downstream",
                                                 "toxicity", 1.0,
-                                                "attributes", Map.of("latency", 80L))))))
+                                                "attributes", Map.of("latency", 200L))))))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
@@ -134,7 +134,7 @@ class NetEmDeclarativeStubTest {
         long latencyDuration = System.currentTimeMillis() - t1;
         assertThat(latencyResp.statusCode()).isEqualTo(200);
         assertThat(latencyResp.body()).contains("delayed");
-        assertThat(latencyDuration).isGreaterThanOrEqualTo(70);
+        assertThat(latencyDuration).isGreaterThanOrEqualTo(150);
 
         // Call 3: Declarative RST request -> throws IOException (connection reset)
         assertThatThrownBy(() -> httpClient.send(
@@ -155,5 +155,12 @@ class NetEmDeclarativeStubTest {
                 HttpResponse.BodyHandlers.ofString());
         assertThat(postNormalResp.statusCode()).isEqualTo(200);
         assertThat(postNormalResp.body()).contains("fast");
+
+        // Call 5: Wait for asynchronous cleanup after grace period & TTL
+        long deadline = System.currentTimeMillis() + 4000;
+        while (System.currentTimeMillis() < deadline && !netEmProxy.getToxics().isEmpty()) {
+            Thread.sleep(50);
+        }
+        assertThat(netEmProxy.getToxics()).isEmpty();
     }
 }

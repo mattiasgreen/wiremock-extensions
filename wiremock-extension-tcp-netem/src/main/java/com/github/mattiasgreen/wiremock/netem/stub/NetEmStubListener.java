@@ -114,6 +114,23 @@ public class NetEmStubListener implements ServeEventListener {
         }
 
         activeStubToxics.put(serveEvent.getId().toString(), addedNames);
+
+        // Schedule guaranteed TTL cleanup in case Jetty aborts or fails to call afterComplete
+        // (e.g. during reset_peer or client disconnections where the servlet lifecycle aborts)
+        Thread.ofVirtual().name("netem-stub-ttl-" + serveEvent.getId()).start(() -> {
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            activeStubToxics.remove(serveEvent.getId().toString());
+            for (TcpNetEmProxy proxy : TcpNetEmRegistry.getInstance().list()) {
+                for (String name : addedNames) {
+                    proxy.removeToxic(name);
+                }
+            }
+        });
     }
 
     @Override
@@ -123,12 +140,20 @@ public class NetEmStubListener implements ServeEventListener {
         }
 
         List<String> addedNames = activeStubToxics.remove(serveEvent.getId().toString());
-        if (addedNames != null) {
-            for (TcpNetEmProxy proxy : TcpNetEmRegistry.getInstance().list()) {
-                for (String name : addedNames) {
-                    proxy.removeToxic(name);
+        if (addedNames != null && !addedNames.isEmpty()) {
+            Thread.ofVirtual().name("netem-stub-cleanup-" + serveEvent.getId()).start(() -> {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
                 }
-            }
+                for (TcpNetEmProxy proxy : TcpNetEmRegistry.getInstance().list()) {
+                    for (String name : addedNames) {
+                        proxy.removeToxic(name);
+                    }
+                }
+            });
         }
     }
 
