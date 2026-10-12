@@ -3,6 +3,28 @@
  * Holds active data collections, selection pointers, filters, and inspector mode toggles.
  */
 
+export function parseTargetUrl(rawUrl) {
+  if (!rawUrl || !rawUrl.trim()) return null;
+  let clean = rawUrl.trim().replace(/\/+$/, '');
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    clean = 'http://' + clean;
+  }
+  try {
+    const parsed = new URL(clean);
+    const proto = parsed.protocol.replace(':', '');
+    const host = parsed.host;
+    const prefix = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname.replace(/\/+$/, '') : '';
+    return {
+      proto,
+      host,
+      prefix,
+      fullUrl: `${parsed.protocol}//${parsed.host}${prefix}`
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function getInitialTargetUrl() {
   if (typeof window === 'undefined') return '';
   const searchParams = new URLSearchParams(window.location.search || '');
@@ -22,23 +44,47 @@ export function getInitialTargetUrl() {
   return '';
 }
 
-export function setTargetUrlInLocation(newTarget) {
+export function getInitialConnectionStrategy() {
+  if (typeof window === 'undefined') return 'proxy';
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const strat = searchParams.get('strategy');
+  if (strat === 'direct' || strat === 'proxy') return strat;
+  const hash = window.location.hash || '';
+  const qIdx = hash.indexOf('?');
+  if (qIdx !== -1) {
+    const hashParams = new URLSearchParams(hash.substring(qIdx + 1));
+    const hashStrat = hashParams.get('strategy');
+    if (hashStrat === 'direct' || hashStrat === 'proxy') return hashStrat;
+  }
+  return 'proxy';
+}
+
+export function setTargetUrlInLocation(newTarget, strategy = 'proxy') {
   if (typeof window === 'undefined') return;
   const clean = (newTarget || '').trim().replace(/\/+$/, '');
   state.apiBaseUrl = clean;
+  state.targetConfig = parseTargetUrl(clean);
+  state.connectionStrategy = strategy === 'direct' ? 'direct' : 'proxy';
 
   const url = new URL(window.location.href);
   if (clean) {
     url.searchParams.set('wiremock', clean);
+    if (state.connectionStrategy === 'direct') {
+      url.searchParams.set('strategy', 'direct');
+    } else {
+      url.searchParams.delete('strategy');
+    }
   } else {
     url.searchParams.delete('wiremock');
     url.searchParams.delete('target');
+    url.searchParams.delete('strategy');
   }
   if (url.hash && url.hash.includes('?')) {
     const parts = url.hash.split('?');
     const hashParams = new URLSearchParams(parts[1]);
     hashParams.delete('wiremock');
     hashParams.delete('target');
+    hashParams.delete('strategy');
     const newHashQ = hashParams.toString();
     url.hash = parts[0] + (newHashQ ? '?' + newHashQ : '');
   }
@@ -50,8 +96,13 @@ export function setTargetUrlInLocation(newTarget) {
   }
 }
 
+const initialTarget = getInitialTargetUrl();
+const initialStrategy = getInitialConnectionStrategy();
+
 export const state = {
-  apiBaseUrl: getInitialTargetUrl(),
+  apiBaseUrl: initialTarget,
+  targetConfig: parseTargetUrl(initialTarget),
+  connectionStrategy: initialStrategy,
   currentStubs: [],
   disabledStubs: [],
   selectedStubId: null,

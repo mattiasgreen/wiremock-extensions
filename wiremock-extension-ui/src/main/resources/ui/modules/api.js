@@ -24,25 +24,37 @@ export function apiUrl(endpoint) {
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
     return endpoint;
   }
-  const base = (state.apiBaseUrl || '').trim().replace(/\/+$/, '');
   const clean = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return base ? `${base}${clean}` : clean;
+  if (state.connectionStrategy === 'direct' && state.targetConfig) {
+    return `${state.targetConfig.fullUrl}${clean}`;
+  }
+  return clean;
 }
 
 export function doFetch(url, options = {}) {
   const targetUrl = apiUrl(url);
+  const headers = Object.assign({}, options.headers || {});
+  if (state.connectionStrategy === 'proxy' && state.targetConfig) {
+    headers['X-Forwarded-Host'] = state.targetConfig.host;
+    headers['X-Forwarded-Proto'] = state.targetConfig.proto;
+    if (state.targetConfig.prefix) {
+      headers['X-Forwarded-Prefix'] = state.targetConfig.prefix;
+    }
+  }
+  const fetchOptions = Object.assign({}, options, { headers });
+
   if (typeof fetch !== 'undefined') {
-    return fetch(targetUrl, options);
+    return fetch(targetUrl, fetchOptions);
   }
   return new Promise((resolve, reject) => {
     try {
       const xhr = new XMLHttpRequest();
-      xhr.open(options.method || 'GET', targetUrl);
-      if (options.headers) {
-        Object.entries(options.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+      xhr.open(fetchOptions.method || 'GET', targetUrl);
+      if (fetchOptions.headers) {
+        Object.entries(fetchOptions.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
       }
       xhr.onload = () => {
-        const headers = {
+        const respHeaders = {
           forEach(cb) {
             const raw = xhr.getAllResponseHeaders() || '';
             raw.trim().split(/[\r\n]+/).forEach(line => {
@@ -54,14 +66,14 @@ export function doFetch(url, options = {}) {
         resolve({
           status: xhr.status,
           statusText: xhr.statusText,
-          headers: headers,
+          headers: respHeaders,
           text: () => Promise.resolve(xhr.responseText),
           json: () => Promise.resolve(JSON.parse(xhr.responseText)),
           ok: xhr.status >= 200 && xhr.status < 300
         });
       };
       xhr.onerror = () => reject(new Error('Network error from ' + targetUrl));
-      xhr.send(options.body || null);
+      xhr.send(fetchOptions.body || null);
     } catch (err) {
       reject(err);
     }
@@ -69,21 +81,19 @@ export function doFetch(url, options = {}) {
 }
 
 export function apiGet(endpoint) {
-  const targetUrl = apiUrl(endpoint);
-  return doFetch(targetUrl, { method: 'GET' }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
+  return doFetch(endpoint, { method: 'GET' }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
     return res.json();
   });
 }
 
 export function apiPost(endpoint, body = {}) {
-  const targetUrl = apiUrl(endpoint);
-  return doFetch(targetUrl, {
+  return doFetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body)
   }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
     return res.text().then(text => {
       if (!text || !text.trim()) return {};
       try {
@@ -96,13 +106,12 @@ export function apiPost(endpoint, body = {}) {
 }
 
 export function apiPut(endpoint, body = {}) {
-  const targetUrl = apiUrl(endpoint);
-  return doFetch(targetUrl, {
+  return doFetch(endpoint, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body)
   }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
     return res.text().then(text => {
       if (!text || !text.trim()) return {};
       try {
@@ -115,9 +124,8 @@ export function apiPut(endpoint, body = {}) {
 }
 
 export function apiDelete(endpoint) {
-  const targetUrl = apiUrl(endpoint);
-  return doFetch(targetUrl, { method: 'DELETE' }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${targetUrl}`);
+  return doFetch(endpoint, { method: 'DELETE' }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
     return res.status === 204 ? {} : res.json().catch(() => ({}));
   });
 }

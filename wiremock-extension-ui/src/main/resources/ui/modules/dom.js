@@ -187,6 +187,8 @@ export const elements = {
   targetHostDot: document.getElementById('target-host-dot'),
   targetHostModal: document.getElementById('target-host-modal'),
   inputTargetHost: document.getElementById('input-target-host'),
+  radioStrategyProxy: document.getElementById('radio-strategy-proxy'),
+  radioStrategyDirect: document.getElementById('radio-strategy-direct'),
   btnSaveTargetHost: document.getElementById('btn-save-target-host'),
   btnResetTargetHost: document.getElementById('btn-reset-target-host'),
   btnCancelTargetHost: document.getElementById('btn-cancel-target-host'),

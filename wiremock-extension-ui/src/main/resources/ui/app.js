@@ -678,43 +678,43 @@ if (elements.btnResetScenarios) {
 // Target Host Display & Switcher
 export function updateTargetHostDisplay() {
   if (elements.targetHostLabel) {
-    elements.targetHostLabel.textContent = state.apiBaseUrl
-      ? `Target: ${state.apiBaseUrl}`
-      : 'Target: (same-origin)';
+    if (state.targetConfig) {
+      const modeStr = state.connectionStrategy === 'direct' ? 'direct' : 'proxied';
+      elements.targetHostLabel.textContent = `Target: ${state.targetConfig.fullUrl} (${modeStr})`;
+    } else {
+      elements.targetHostLabel.textContent = 'Target: (same-origin)';
+    }
   }
   if (elements.targetHostDot) {
-    elements.targetHostDot.className = state.apiBaseUrl
+    elements.targetHostDot.className = state.targetConfig
       ? 'target-host-dot remote'
       : 'target-host-dot';
   }
+  const upstreamUrl = state.targetConfig ? state.targetConfig.fullUrl : '';
   if (elements.linkSwaggerUi) {
-    elements.linkSwaggerUi.href = state.apiBaseUrl
-      ? `${state.apiBaseUrl}/__admin/swagger-ui/`
+    elements.linkSwaggerUi.href = upstreamUrl
+      ? `${upstreamUrl}/__admin/swagger-ui/`
       : '../swagger-ui/';
   }
   if (elements.linkMetrics) {
-    elements.linkMetrics.href = state.apiBaseUrl
-      ? `${state.apiBaseUrl}/__admin/metrics/prometheus`
+    elements.linkMetrics.href = upstreamUrl
+      ? `${upstreamUrl}/__admin/metrics/prometheus`
       : '../metrics/prometheus';
   }
 }
 
 function setupTargetHostControls() {
-  // Auto-detect if running behind WireMockStudio local reverse proxy
-  if (typeof window !== 'undefined' && window.__WIREMOCK_STUDIO__) {
-    state.isProxyMode = true;
-    state.proxyTargetUrl = window.__WIREMOCK_STUDIO__.targetUrl || '';
-    if (elements.targetHostLabel && state.proxyTargetUrl) {
-      elements.targetHostLabel.textContent = `Target: ${state.proxyTargetUrl}`;
-    }
-  }
-
   if (elements.btnTargetHost && elements.targetHostModal) {
     elements.btnTargetHost.addEventListener('click', () => {
       elements.targetHostModal.classList.remove('hidden');
       if (elements.inputTargetHost) {
-        elements.inputTargetHost.value = state.proxyTargetUrl || state.apiBaseUrl || '';
+        elements.inputTargetHost.value = (state.targetConfig && state.targetConfig.fullUrl) || state.apiBaseUrl || '';
         elements.inputTargetHost.focus();
+      }
+      if (state.connectionStrategy === 'direct') {
+        if (elements.radioStrategyDirect) elements.radioStrategyDirect.checked = true;
+      } else {
+        if (elements.radioStrategyProxy) elements.radioStrategyProxy.checked = true;
       }
       if (elements.targetHostStatus) {
         elements.targetHostStatus.classList.add('hidden');
@@ -742,33 +742,8 @@ function setupTargetHostControls() {
     });
   }
 
-  const applyTargetHost = (newTarget) => {
-    if (state.isProxyMode) {
-      const finalTarget = newTarget || 'http://localhost:8080';
-      fetch('/__admin/ui/api/target', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUrl: finalTarget })
-      })
-        .then(r => r.json())
-        .then(data => {
-          state.proxyTargetUrl = data.targetUrl;
-          if (elements.targetHostLabel) {
-            elements.targetHostLabel.textContent = `Target: ${data.targetUrl}`;
-          }
-          closeTargetModal();
-          loadData();
-        })
-        .catch(() => {
-          setTargetUrlInLocation(newTarget);
-          updateTargetHostDisplay();
-          closeTargetModal();
-          loadData();
-          loadVersionInfo();
-        });
-      return;
-    }
-    setTargetUrlInLocation(newTarget);
+  const applyTargetHost = (newTarget, strategy) => {
+    setTargetUrlInLocation(newTarget, strategy);
     updateTargetHostDisplay();
     closeTargetModal();
     loadData();
@@ -781,13 +756,15 @@ function setupTargetHostControls() {
       if (val && !val.startsWith('http://') && !val.startsWith('https://')) {
         val = `http://${val}`;
       }
-      applyTargetHost(val);
+      const isDirect = elements.radioStrategyDirect && elements.radioStrategyDirect.checked;
+      const strategy = isDirect ? 'direct' : 'proxy';
+      applyTargetHost(val, strategy);
     });
   }
 
   if (elements.btnResetTargetHost) {
     elements.btnResetTargetHost.addEventListener('click', () => {
-      applyTargetHost('');
+      applyTargetHost('', 'proxy');
     });
   }
 

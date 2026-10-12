@@ -123,3 +123,13 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the request experiences 300ms latency and throttled bandwidth, while traffic without the matching header or requests sent directly to port `8080` complete at normal line speed with zero blast radius.
 - **And** the NetEm Circular Event Journal logs both impaired and normal transfers, filterable by correlation ID.
 
+### Story 8: Remote WireMock Target & Forwarded Proxy Strategy
+- **Given** the Web Console is accessed at `http://localhost:8090/__admin/ui/`.
+- **When** the user clicks the target status button (`#btn-target-host`) and configures target `https://gateway.corp:8443/test-envs/env1/wiremock` with strategy `proxy`.
+- **Then** the browser URL updates to include `?wiremock=https%3A%2F%2Fgateway.corp%3A8443%2Ftest-envs%2Fenv1%2Fwiremock`.
+- **And** the navbar indicator displays `Target: https://gateway.corp:8443/test-envs/env1/wiremock (proxied)`.
+- **When** the browser refreshes stubs or dispatches test requests.
+- **Then** requests remain relative to the console origin while injecting `X-Forwarded-Host`, `X-Forwarded-Proto`, and `X-Forwarded-Prefix` headers to avoid browser CORS restrictions.
+- **When** the user copies a cURL command from any stub mapping or the HTTP Tester.
+- **Then** the copied command uses the authentic remote upstream base URL (`https://gateway.corp:8443/test-envs/env1/wiremock`) without proxy routing headers.
+
