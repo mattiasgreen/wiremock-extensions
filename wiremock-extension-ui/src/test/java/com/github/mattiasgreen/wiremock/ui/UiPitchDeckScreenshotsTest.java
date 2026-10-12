@@ -53,7 +53,8 @@ public class UiPitchDeckScreenshotsTest {
                         new StubLifecycleAdminEndpoint(new DisabledStubStore()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
                         new StatefulAdminEndpoint(stateEngine),
-                        new StatefulResponseTransformer(stateEngine)));
+                        new StatefulResponseTransformer(stateEngine),
+                        new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint()));
         wireMockServer.start();
 
         setupInitialStubs();
@@ -99,6 +100,8 @@ public class UiPitchDeckScreenshotsTest {
     }
 
     private void setupInitialStubs() {
+        wireMockServer.stubFor(
+                get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));
         wireMockServer.stubFor(
                 get(urlEqualTo("/api/v1/users"))
                         .withMetadata(Map.of("project", "Core API"))

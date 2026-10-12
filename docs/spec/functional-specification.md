@@ -133,3 +133,17 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** the user copies a cURL command from any stub mapping or the HTTP Tester.
 - **Then** the copied command uses the authentic remote upstream base URL (`https://gateway.corp:8443/test-envs/env1/wiremock`) without proxy routing headers.
 
+### Story 9: Remote WireMock Capability Detection & Graceful Degradation
+- **Given** the Web Console is pointing to a remote WireMock instance (e.g. standard vanilla WireMock lacking custom extensions).
+- **When** the console loads or connects to the remote target.
+- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/stubs/disabled`), Stateful Simulation (`/__admin/stateful/models`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
+- **And** features backed by missing extensions gracefully degrade:
+  - TCP NetEm tab (`#nav-tab-netem`) is hidden.
+  - Metrics link (`#link-metrics`) is hidden.
+  - Dynamic stub controls (`#btn-create-dynamic-stub`, `#btn-filter-dynamic`) are hidden.
+  - Stub pause/lifecycle controls (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk disable) are hidden.
+  - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational.
+- **When** the user opens the Target Server modal (`#btn-target-host`).
+- **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing the active ratio (e.g. `1/5 active (Degraded)` or `All 5 extensions active`) and clear `Active` / `Not Installed` status badges for each capability.
+
+

@@ -54,6 +54,9 @@
 | **Strategy Proxy Radio**| `#radio-strategy-proxy` | `"radio-strategy-proxy"` | Proxy via standard gateway headers (`X-Forwarded-*`). |
 | **Strategy Direct Radio**| `#radio-strategy-direct`| `"radio-strategy-direct"`| Cross-origin direct browser requests. |
 | **Reset Target Trigger**| `#btn-reset-target-host`| `"btn-reset-target-host"`| Resets target to same-origin and clears query params. |
+| **Capabilities Section** | `#target-capabilities-section` | `"target-capabilities-section"` | Container displaying detected extension matrix. |
+| **Capabilities Status**  | `#target-capabilities-status`  | `"target-capabilities-status"`  | Active count badge (e.g. `All 5 active` or `1/5 (Degraded)`). |
+| **Capabilities List**    | `#target-capabilities-list`    | `"target-capabilities-list"`    | Capability rows with `data-testid="cap-badge-{key}"`. |
 
 ---
 
@@ -79,4 +82,7 @@
 | **Fetch NetEm Journal**| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
 | **Clear NetEm Journal**| `DELETE` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
 | **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
+| **Probe Stateful API** | `GET` | `/__admin/stateful/models` | None |
+| **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
+
 

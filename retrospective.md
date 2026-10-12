@@ -88,7 +88,7 @@ When running `wiremock-extension-ui` with only a subset of extensions loaded, th
 ## 6. Prioritized Roadmap & TODO
 
 ### Phase 1: Robustness & Decoupling
-- [ ] **UI Feature Discovery Handshake**: Implement `GET /__admin/ui/features` route to advertise active extensions (`hasOpenApi`, `hasOtel`, `hasStateful`). Update `app.js` to conditionally hide or badge links and modal triggers when companion extensions are not loaded.
+- [x] **UI Feature Discovery Handshake & Graceful Degradation**: Remote capability probing across Core, Lifecycle, Stateful, NetEm, and Metrics endpoints with automatic UI degradation and visual capability matrix in Target Server modal.
 - [ ] **Separate Domain Lifecycle from UI**: Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module (or merge into `wiremock-extension-stateful`), keeping `wiremock-extension-ui` strictly as a frontend asset presenter.
 
 ### Phase 2: Persistence & Storage
@@ -104,12 +104,12 @@ When running `wiremock-extension-ui` with only a subset of extensions loaded, th
 - [ ] **Per-Correlation Dynamic Scenario Visualizer**: Graph dynamic state models and per-correlation session state machines directly inside the Scenarios tab.
 - [ ] **Realistic Data Generation Helpers**: Introduce lightweight, zero-dependency data synthesis Handlebars helpers (`{{random.uuid}}`, `{{random.email}}`, `{{random.dateTime}}`).
 
-### Phase 5: Network Chaos & Fault Injection (`wiremock-extension-chaos`)
+### Phase 5: Network Chaos & Fault Injection (`wiremock-extension-tcp-netem`)
 *Architecture Blueprint: [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md)*
-- [ ] **In-Process Virtual Thread TCP Proxy**: Re-implement Toxiproxy engine natively in Java 21 (`Thread.ofVirtual()`) without external Go/C sidecars, supporting all 7 toxics (`latency`, `bandwidth`, `slow_close`, `timeout`, `reset_peer` / TCP RST via `setSoLinger(true,0)`, `slicer`, `limit_data`).
-- [ ] **Toxiproxy v2 REST API Compatibility**: Expose `/__admin/chaos/proxies` endpoints so existing Toxiproxy SDKs (Java, Python, Go, Node) can configure chaos directly against WireMock.
-- [ ] **WireMock L7 Chaos Interceptor**: Declarative stub/filter chaos injection matching paths, headers, and `X-Correlation-Id` with probability weighting.
-- [ ] **Web UI Chaos Controller**: Dedicated dashboard tab with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey") and live drop counters.
+- [x] **In-Process Virtual Thread TCP Proxy**: Re-implement Toxiproxy engine natively in Java 21 (`Thread.ofVirtual()`) without external Go/C sidecars, supporting all 7 toxics (`latency`, `bandwidth`, `slow_close`, `timeout`, `reset_peer` / TCP RST via `setSoLinger(true,0)`, `slicer`, `limit_data`).
+- [x] **Toxiproxy v2 REST API Compatibility**: Expose `/__admin/tcp-netem/proxies` endpoints so existing Toxiproxy SDKs (Java, Python, Go, Node) can configure chaos directly against WireMock.
+- [x] **WireMock L7 Chaos Interceptor**: Declarative stub/filter chaos injection matching paths, headers, and `X-Correlation-Id` with probability weighting.
+- [x] **Web UI Chaos Controller**: Dedicated dashboard tab with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey") and live event journal.
 
 ### Phase 6: AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)
 *Architecture Blueprint: [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md)*
@@ -124,3 +124,16 @@ When running `wiremock-extension-ui` with only a subset of extensions loaded, th
 - [ ] **OpenAPI `callbacks` Ingestion**: Automatically synthesize stubs returning `202 Accepted` paired with async webhook dispatches targeting `{{jsonPath request.body '$.callbackUrl'}}`.
 - [ ] **Stateful AST Webhook Actions**: Support `Action.webhook(...)` in `wiremock-extension-stateful` to dispatch callbacks upon workflow state transitions.
 - [ ] **Webhook Outbox Journal**: Audit log tracking dispatched callbacks, target URLs, latency, retries, and delivery status with an interactive "Replay / Trigger Now" button in the Web UI.
+
+### Phase 8: Developer Experience & Inner Loop Performance (TODO)
+- [ ] **Gradle Parallelism & Build Caching**:
+  - Add `org.gradle.parallel=true` to enable concurrent execution across subprojects.
+  - Add `org.gradle.caching=true` (Build Cache) to eliminate redundant Java compilation.
+  - Tune JVM memory (`org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8`) to prevent daemon crashes and memory thrashing.
+  - Implement automated daemon pruning (`./gradlew --stop`) to eliminate dead zombie daemons.
+- [ ] **Fast Inner-Loop Test Strategy**:
+  - Enforce strict method-level test filtering (`--tests "MyTest.method"`) during active authoring instead of running multi-suite E2E tests.
+  - Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
+  - Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
+- [ ] **Concurrent Subagent Task Delegation**:
+  - Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).

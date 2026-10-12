@@ -194,8 +194,12 @@ export const elements = {
   btnCancelTargetHost: document.getElementById('btn-cancel-target-host'),
   btnCloseTargetHost: document.getElementById('btn-close-target-host'),
   targetHostStatus: document.getElementById('target-host-status'),
+  targetCapabilitiesSection: document.getElementById('target-capabilities-section'),
+  targetCapabilitiesList: document.getElementById('target-capabilities-list'),
+  targetCapabilitiesStatus: document.getElementById('target-capabilities-status'),
   linkSwaggerUi: document.getElementById('link-swagger-ui'),
-  linkMetrics: document.getElementById('link-metrics')
+  linkMetrics: document.getElementById('link-metrics'),
+  navTabNetem: document.getElementById('nav-tab-netem')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */
