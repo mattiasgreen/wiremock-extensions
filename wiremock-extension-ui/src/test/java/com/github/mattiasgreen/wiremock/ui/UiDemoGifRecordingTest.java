@@ -57,7 +57,8 @@ public class UiDemoGifRecordingTest {
                         new StubLifecycleAdminEndpoint(new DisabledStubStore()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
                         new StatefulAdminEndpoint(stateEngine),
-                        new StatefulResponseTransformer(stateEngine)));
+                        new StatefulResponseTransformer(stateEngine),
+                        new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint()));
         wireMockServer.start();
 
         setupInitialStubs();
@@ -531,6 +532,8 @@ public class UiDemoGifRecordingTest {
 
     private void setupInitialStubs() {
         wireMockServer.resetAll();
+        wireMockServer.stubFor(
+                get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));
         wireMockServer.stubFor(
                 get(urlEqualTo("/api/v1/users"))
                         .withName("List Users API")
