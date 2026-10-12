@@ -5,6 +5,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.2.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.1.0...v1.2.0) (2026-10-12)
+
+
+### Features
+
+* add launchPrebuilt task and standalone launch.gradle script ([afede78](https://github.com/mattiasgreen/wiremock-extensions/commit/afede785990a95deb992dbec0f41c9127c0f5edb))
+* implement in-process TCP network emulator and fault injector (wiremock-extension-tcp-netem) ([f066598](https://github.com/mattiasgreen/wiremock-extensions/commit/f0665980bca5d74268b159e08f1b5ac26d8caee2))
+* **stateful:** add AST-driven stateful API simulation extension and client DSL ([4c9aa2c](https://github.com/mattiasgreen/wiremock-extensions/commit/4c9aa2c8c356db0dae9802dc8b2627dee6c4347d))
+* **tcp-netem:** complete dual-ingress L4 network emulator, circular journal, declarative metadata, and web UI console ([e0574d9](https://github.com/mattiasgreen/wiremock-extensions/commit/e0574d983186a359ced67b0b43968948d1acaf80))
+* **ui:** add remote capability detection and graceful degradation for vanilla WireMock ([b00fc9d](https://github.com/mattiasgreen/wiremock-extensions/commit/b00fc9d440277f60122c659cee5f352209ebb00d))
+* **ui:** add standalone headless console proxy ([e6e7321](https://github.com/mattiasgreen/wiremock-extensions/commit/e6e732163aa9f632c64ebabb7640cbe6a169f98a))
+* **ui:** add standalone headless console proxy and configurable remote targets ([782fe9a](https://github.com/mattiasgreen/wiremock-extensions/commit/782fe9aee951ebb258cf4f93d46ef06c3e85964e))
+* **ui:** add stub creation templates, request body matching, and OpenAPI guidance ([877e3b4](https://github.com/mattiasgreen/wiremock-extensions/commit/877e3b440ae0f856c8679ab6119cd5b21f828e8d))
+* **ui:** add stub creation templates, request body matching, and OpenAPI guidance ([245bf1e](https://github.com/mattiasgreen/wiremock-extensions/commit/245bf1e9b33d1eccbc3c6a9a8c9750c4fd33ee08))
+* **ui:** integrate dynamic stateful simulation stubs, inspection, creation templates, and E2E tests ([ef915e5](https://github.com/mattiasgreen/wiremock-extensions/commit/ef915e57d636dc49aa8865e6c01b8c39cc13aa2e))
+* **ui:** support relative static assets and configurable WireMock target in URL ([3a1dd9c](https://github.com/mattiasgreen/wiremock-extensions/commit/3a1dd9ce37bdc4e2ac418103cd555eed5024f211))
+
+
+### Bug Fixes
+
+* **build:** register subprojects in nmcpAggregation dependencies ([8dfad93](https://github.com/mattiasgreen/wiremock-extensions/commit/8dfad937d0c21d7e13b8f73661eeed0e4c46dcbf))
+* **tcp-netem:** resolve declarative stub toxic cleanup race condition and enshrine zero-credential policy in AGENTS.md ([e42e3b2](https://github.com/mattiasgreen/wiremock-extensions/commit/e42e3b23fd88db31457f9b5b529c2924f4b1f63f))
+
 ## [1.1.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.0.0...v1.1.0) (2026-10-08)
 
 
