@@ -772,20 +772,48 @@
 
   <!-- Target Host Configuration Modal -->
   <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
-    <div class="modal-card" style="max-width: 480px;">
+    <div class="modal-card" style="max-width: 520px;">
       <div class="modal-header">
         <h3>🎯 WireMock Target Server</h3>
         <button id="btn-close-target-host" class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
         <p class="modal-description" style="margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted);">
-          Point this console to any WireMock instance. The target URL is kept in the browser URL query parameter (<code>?wiremock=...</code>).
+          Point this console to any WireMock instance. Target configuration is stored in the browser URL (<code>?wiremock=...&amp;strategy=...</code>) for shareability.
         </p>
         <div class="form-group">
-          <label for="input-target-host">WireMock Base URL:</label>
-          <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080" autocomplete="off" data-testid="input-target-host">
+          <label for="input-target-host"><strong>WireMock Target Base URL:</strong></label>
+          <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080 or https://gateway:8443/prefix" autocomplete="off" data-testid="input-target-host">
+          <div style="margin-top: 4px; font-size: 0.78rem; color: var(--text-muted);">
+            Supports full scheme, hostname, port, and gateway reverse-proxy path prefixes.
+          </div>
         </div>
-        <div id="target-host-status" class="hidden" style="margin-top: 10px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600;">Connection Strategy:</label>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
+              <input type="radio" name="target-strategy" id="radio-strategy-proxy" value="proxy" checked style="margin-top: 3px;" data-testid="radio-strategy-proxy">
+              <div>
+                <div style="font-weight: 500;">Proxy via Gateway Headers (CORS-free, Recommended)</div>
+                <div style="font-size: 0.78rem; color: var(--text-muted);">
+                  Browser requests stay relative to this console; console forwards upstream using <code>X-Forwarded-Host</code>, <code>X-Forwarded-Proto</code>, and <code>X-Forwarded-Prefix</code>.
+                </div>
+              </div>
+            </label>
+            <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
+              <input type="radio" name="target-strategy" id="radio-strategy-direct" value="direct" style="margin-top: 3px;" data-testid="radio-strategy-direct">
+              <div>
+                <div style="font-weight: 500;">Direct Browser Request (CORS Required)</div>
+                <div style="font-size: 0.78rem; color: var(--text-muted);">
+                  Browser sends cross-origin requests directly to target URL. Remote WireMock instance must have CORS enabled.
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div id="target-host-status" class="hidden" style="margin-top: 12px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
         <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>

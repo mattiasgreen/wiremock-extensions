@@ -1481,7 +1481,8 @@ kbd {
 }
 
 /* Modal Backdrop & Dialog */
-.modal-backdrop {
+.modal-backdrop,
+.modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -1495,11 +1496,13 @@ kbd {
   z-index: 1000;
 }
 
-.modal-backdrop.hidden {
+.modal-backdrop.hidden,
+.modal-overlay.hidden {
   display: none;
 }
 
-.modal-dialog {
+.modal-dialog,
+.modal-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -1530,22 +1533,54 @@ kbd {
   gap: 10px;
 }
 
-.modal-title-group h3 {
+.modal-title-group h3,
+.modal-header h3 {
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-main);
+  margin: 0;
 }
 
-.modal-close-btn {
+.modal-close-btn,
+.modal-close {
   background: transparent;
   border: none;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
+  line-height: 1;
   color: var(--text-muted);
   cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
 }
 
-.modal-close-btn:hover {
+.modal-close-btn:hover,
+.modal-close:hover {
   color: var(--text-main);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-control {
+  width: 100%;
+  padding: 8px 12px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
 .modal-body {

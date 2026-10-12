@@ -1211,7 +1211,7 @@ public class UiPlaywrightTest {
         // 3. Verify modal closes and label updates
         page.waitForSelector(
                 "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
-        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: " + targetUrl);
+        assertThat(page.locator("#target-host-label").textContent()).contains(targetUrl);
         assertThat(page.url())
                 .contains("wiremock=" + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8));
 
@@ -1234,7 +1234,7 @@ public class UiPlaywrightTest {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?wiremock="
                 + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8) + "#stubs");
         page.waitForSelector(".stub-card");
-        assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: " + targetUrl);
+        assertThat(page.locator("#target-host-label").textContent()).contains(targetUrl);
 
         assertThat(pageErrors).isEmpty();
         assertThat(consoleErrors).isEmpty();
@@ -1448,6 +1448,63 @@ public class UiPlaywrightTest {
         assertThat(pageErrors).isEmpty();
         assertThat(consoleErrors.stream().filter(e -> !e.contains("409")).toList())
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "Scenario 26: Target server modal configures base URL, strategy, updates browser query params and cURL")
+    void testTargetHostModalAndStrategyConfiguration() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#stub-list");
+
+        // 1. Initial state: same-origin
+        assertThat(page.locator("#target-host-label").textContent()).contains("(same-origin)");
+
+        // 2. Open Target Host modal
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+
+        // 3. Configure remote WireMock target with reverse-proxy prefix and proxy strategy
+        page.locator("#input-target-host").fill("https://gateway.corp:8443/test-envs/env1/wiremock");
+        page.locator("#radio-strategy-proxy").check();
+        page.locator("#btn-save-target-host").click();
+
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 4. Verify navbar label and browser URL query addressability
+        assertThat(page.locator("#target-host-label").textContent())
+                .contains("https://gateway.corp:8443/test-envs/env1/wiremock (proxied)");
+        assertThat(page.url()).contains("wiremock=https%3A%2F%2Fgateway.corp%3A8443%2Ftest-envs%2Fenv1%2Fwiremock");
+
+        // 5. Select a stub and check that Copy cURL uses the authentic remote base URL
+        page.locator(".stub-card").first().click();
+        page.locator("#btn-copy-curl").click();
+        String copiedCurl = (String) page.evaluate("() => navigator.clipboard.readText()");
+        assertThat(copiedCurl).contains("https://gateway.corp:8443/test-envs/env1/wiremock");
+
+        // 6. Re-open modal, switch to direct strategy
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.locator("#radio-strategy-direct").check();
+        page.locator("#btn-save-target-host").click();
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        assertThat(page.locator("#target-host-label").textContent())
+                .contains("https://gateway.corp:8443/test-envs/env1/wiremock (direct)");
+        assertThat(page.url()).contains("strategy=direct");
+
+        // 7. Reset to same-origin
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.locator("#btn-reset-target-host").click();
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        assertThat(page.locator("#target-host-label").textContent()).contains("(same-origin)");
+        assertThat(page.url()).doesNotContain("wiremock=");
+        assertThat(page.url()).doesNotContain("strategy=");
     }
 
     private void resetDefaultStubs() {

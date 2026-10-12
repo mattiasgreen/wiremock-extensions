@@ -25,7 +25,10 @@ export function getStubUrl(req) {
 }
 
 export function generateCurl(method, path, headers = {}, body = '') {
-  const origin = state.apiBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '') || 'http://localhost:8080';
+  const origin = (state.targetConfig && state.targetConfig.fullUrl) ||
+    state.apiBaseUrl ||
+    (typeof window !== 'undefined' ? window.location.origin : '') ||
+    'http://localhost:8080';
   const cleanPath = path || '/';
   const fullUrl = cleanPath.startsWith('http') ? cleanPath : `${origin}${cleanPath.startsWith('/') ? '' : '/'}${cleanPath}`;
   const parts = [`curl -X ${method || 'GET'} "${fullUrl}"`];

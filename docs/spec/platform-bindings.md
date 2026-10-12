@@ -47,6 +47,13 @@
 | **NetEm Add Toxic Modal** | `#netem-add-toxic-modal` | `"netem-add-toxic-modal"` | Modal dialog for creating customized toxic impairments. |
 | **NetEm Journal Table** | `#netem-journal-table` | `"netem-journal-table"` | Table view of recorded network transfers and impairments. |
 | **NetEm Journal Filter** | `#netem-journal-filter-corr` | `"netem-journal-filter-corr"` | Correlation ID search filter for the NetEm journal. |
+| **Target Host Trigger** | `#btn-target-host` | `"btn-target-host"` | Button opening Target Server configuration modal. |
+| **Target Host Label** | `#target-host-label` | `"target-host-label"` | Displays active remote target origin and proxy strategy. |
+| **Target Host Modal** | `#target-host-modal` | `"target-host-modal"` | Modal dialog for remote WireMock base URL and strategy. |
+| **Target Host Input** | `#input-target-host` | `"input-target-host"` | Input for remote base URL and path prefix. |
+| **Strategy Proxy Radio**| `#radio-strategy-proxy` | `"radio-strategy-proxy"` | Proxy via standard gateway headers (`X-Forwarded-*`). |
+| **Strategy Direct Radio**| `#radio-strategy-direct`| `"radio-strategy-direct"`| Cross-origin direct browser requests. |
+| **Reset Target Trigger**| `#btn-reset-target-host`| `"btn-reset-target-host"`| Resets target to same-origin and clears query params. |
 
 ---
 

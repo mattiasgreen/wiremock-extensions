@@ -37,11 +37,11 @@ tasks.register('captureUiSnapshots', Test) {
     }
 }
 
-tasks.register('runDesktop', JavaExec) {
+tasks.register('runProxy', JavaExec) {
     group = 'application'
-    description = 'Launches the zero-dependency Swing desktop UI (WireMock Studio)'
+    description = 'Launches the headless WireMock Console Proxy (WireMockConsoleProxy)'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.github.mattiasgreen.wiremock.ui.WireMockStudio'
+    mainClass = 'com.github.mattiasgreen.wiremock.ui.WireMockConsoleProxy'
     args = [project.findProperty('wiremock.url') ?: 'http://localhost:8080']
 }
 
