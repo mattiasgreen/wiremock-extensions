@@ -27,4 +27,10 @@
         <Class name="com.github.mattiasgreen.wiremock.ui.WireMockStudio"/>
         <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
     </Match>
+
+    <!-- Exclude local asset reading, proxy selection, and optional insecure TLS in WireMockConsoleProxy -->
+    <Match>
+        <Class name="~com\.github\.mattiasgreen\.wiremock\.ui\.WireMockConsoleProxy.*"/>
+        <Bug pattern="PATH_TRAVERSAL_IN,WEAK_TRUST_MANAGER"/>
+    </Match>
 </FindBugsFilter>

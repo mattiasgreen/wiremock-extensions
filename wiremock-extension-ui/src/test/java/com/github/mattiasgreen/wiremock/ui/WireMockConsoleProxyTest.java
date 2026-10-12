@@ -9,6 +9,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -175,5 +177,81 @@ class WireMockConsoleProxyTest {
         assertThat(resp.body()).contains("version");
         assertThat(resp.headers().firstValue("Access-Control-Allow-Origin").orElse(""))
                 .contains("*");
+    }
+
+    @Test
+    @DisplayName("Default local proxy port is configured to 8888")
+    void shouldDefaultToPort8888() {
+        assertThat(WireMockConsoleProxy.DEFAULT_LOCAL_PORT).isEqualTo(8888);
+    }
+
+    @Test
+    @DisplayName("Serves static assets from custom local directory")
+    void shouldServeAssetsFromCustomLocalDirectory() throws Exception {
+        Path tempDir = Files.createTempDirectory("test-local-assets-");
+        try {
+            Files.writeString(tempDir.resolve("custom-script.js"), "console.log('custom local asset');");
+
+            WireMockConsoleProxy customProxy =
+                    new WireMockConsoleProxy(defaultWireMock.baseUrl(), 0, tempDir.toString(), false);
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(
+                                "http://localhost:" + customProxy.getLocalPort() + "/__admin/ui/custom-script.js"))
+                        .GET()
+                        .build();
+
+                HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+                assertThat(resp.statusCode()).isEqualTo(200);
+                assertThat(resp.headers().firstValue("Content-Type").orElse("")).contains("application/javascript");
+                assertThat(resp.body()).isEqualTo("console.log('custom local asset');");
+            } finally {
+                customProxy.stop();
+            }
+        } finally {
+            try (var stream = Files.walk(tempDir)) {
+                stream.sorted(java.util.Comparator.reverseOrder())
+                        .map(Path::toFile)
+                        .forEach(java.io.File::delete);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Fetches remote assets over HTTP and caches them locally")
+    void shouldFetchRemoteAssetsAndCacheLocally() throws Exception {
+        WireMockServer remoteAssetServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        remoteAssetServer.start();
+        try {
+            remoteAssetServer.stubFor(get(urlEqualTo("/remote-component.js"))
+                    .willReturn(ok("export const remoteAnswer = 42;")
+                            .withHeader("Content-Type", "application/javascript")));
+
+            WireMockConsoleProxy remoteProxy =
+                    new WireMockConsoleProxy(defaultWireMock.baseUrl(), 0, remoteAssetServer.baseUrl(), false, true);
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(
+                                "http://localhost:" + remoteProxy.getLocalPort() + "/__admin/ui/remote-component.js"))
+                        .GET()
+                        .build();
+
+                HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+                assertThat(resp.statusCode()).isEqualTo(200);
+                assertThat(resp.body()).isEqualTo("export const remoteAnswer = 42;");
+
+                // Verify asset was saved in cache directory
+                Path cacheDir = remoteProxy.getCacheDirectory();
+                assertThat(cacheDir).isNotNull();
+                Path cachedFile = cacheDir.resolve("remote-component.js");
+                assertThat(Files.isRegularFile(cachedFile)).isTrue();
+                assertThat(Files.readString(cachedFile)).isEqualTo("export const remoteAnswer = 42;");
+            } finally {
+                remoteProxy.stop();
+            }
+        } finally {
+            remoteAssetServer.stop();
+        }
     }
 }

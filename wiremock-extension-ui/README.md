@@ -130,41 +130,54 @@ wm.start();
 
 When the JAR is on the classpath, the extension registers automatically via Java SPI.
 
-## WireMock Studio (Zero-Dependency Desktop Web Container & Reverse Proxy)
+## WireMock Console Proxy (Zero-Dependency Standalone Web Console & Reverse Proxy)
 
-In addition to serving the web console embedded in WireMock at `/__admin/ui/`, a standalone desktop container is provided as a **single, zero-dependency Java file** ([`WireMockStudio.java`](file:///c:/dev/repos/wiremock-extensions/WireMockStudio.java)).
+In addition to serving the web console embedded in WireMock at `/__admin/ui/`, a standalone headless proxy is provided as a **single, zero-dependency Java file** ([`WireMockConsoleProxy.java`](file:///c:/dev/repos/wiremock-extensions/WireMockConsoleProxy.java)).
 
 It combines an embedded JDK 21 `HttpServer` with a transparent, CORS-free reverse proxy:
-* **100% Web UI Reuse**: Serves the identical Vanilla JS Web UI at `http://localhost:19840/__admin/ui/`, completely eliminating double implementation and keeping every feature in sync.
+* **100% Web UI Reuse**: Serves the identical Vanilla JS Web UI at `http://localhost:8888/__admin/ui/`, completely eliminating double implementation and keeping every feature in sync.
 * **Zero CORS Restrictions**: All administrative and application routes are proxied directly to the upstream WireMock server over raw HTTP via JDK 21 `HttpClient`, enabling seamless connections to remote staging environments, Docker containers, or local instances without browser origin errors.
-* **Native Desktop Window**: Automatically launches in app mode using local Chromium (`--app=http://localhost:19840/__admin/ui/`) with fallback to the default system browser and a minimalist desktop companion controller.
+* **On-Demand Remote Asset Fetching & Local Disk Caching**: Resolves UI static assets from local disk if present, falls back to disk cache (`~/.cache/wiremock-console/ui/`), or fetches directly from the official GitHub Pages CDN on demand.
+* **Enterprise Network Ready**: Automatically respects standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` environment variables and provides `--insecure` for corporate TLS re-signing proxies.
 
 ### Instant Run (No build or clone required)
 
-* **Linux / macOS**:
-  ```bash
-  curl -sLO https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockStudio.java
-  java WireMockStudio.java http://localhost:8080
-  ```
+1. **Download the single Java file (once)**:
+   ```bash
+   # Linux / macOS
+   curl -O https://mattiasgreen.github.io/wiremock-extensions/WireMockConsoleProxy.java
 
-* **Windows (PowerShell)**:
-  ```powershell
-  Invoke-WebRequest -Uri "https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockStudio.java" -OutFile "WireMockStudio.java"
-  java WireMockStudio.java http://localhost:8080
-  ```
+   # Windows (PowerShell)
+   Invoke-WebRequest -Uri "https://mattiasgreen.github.io/wiremock-extensions/WireMockConsoleProxy.java" -OutFile "WireMockConsoleProxy.java"
+   ```
 
-* **From within this repository**:
-  ```bash
-  # Option 1: Direct JEP 330 script
-  java WireMockStudio.java
+2. **Launch directly via JDK 21 single-file source runner**:
+   ```bash
+   # Connect to local WireMock on default port 8080 (UI on http://localhost:8888/__admin/ui/)
+   java WireMockConsoleProxy.java
 
-  # Option 2: Gradle task
-  ./gradlew :wiremock-extension-ui:runDesktop
-  ```
+   # Connect to custom upstream WireMock
+   java WireMockConsoleProxy.java http://localhost:8080
+
+   # Custom local port and custom static assets (local folder or enterprise mirror)
+   java WireMockConsoleProxy.java --target https://wiremock.staging.corp --port 8888 --assets ./my-ui
+
+   # Corporate proxy with self-signed CA interception
+   java WireMockConsoleProxy.java --target https://wiremock.staging.corp --insecure
+   ```
+
+3. **From within this repository**:
+   ```bash
+   # Option 1: Direct JEP 330 script
+   java WireMockConsoleProxy.java
+
+   # Option 2: Gradle task
+   ./gradlew :wiremock-extension-ui:runProxy
+   ```
 
 ### Automated Verification
 * Web SPA: Playwright integration tests (`UiPlaywrightTest`)
-* Desktop Container & Reverse Proxy: In-memory WireMock tests (`WireMockStudioTest`)
+* Standalone Proxy & Asset Server: In-memory WireMock tests (`WireMockConsoleProxyTest`)
 
 ```bash
 ./gradlew :wiremock-extension-ui:test
