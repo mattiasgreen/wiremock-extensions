@@ -75,13 +75,16 @@ Analysis, architectural design, feasibility assessment, and implementation plan 
 - [x] Push baseline to remote.
 
 ### Phase 2: Proof-of-Concept (PoC) & Lightweight Test Suite
-- [ ] Implement standalone `CasualWireMockServer` (Netty-based TCP listener).
-- [ ] Support handshake and domain discovery requests.
-- [ ] Implement `CasualToHttpBridge`: translate `CasualServiceCallRequestMessage` to WireMock HTTP dispatch.
-- [ ] Build standalone test client without requiring a real C++ Casual domain.
-- [ ] Validate end-to-end: Casual client connects $\rightarrow$ `tpcall` $\rightarrow$ WireMock stub matched $\rightarrow$ Casual client receives stubbed buffer.
+- [x] Implement standalone `CasualWireMockGateway` (Netty-based TCP listener).
+- [x] Support handshake (`DOMAIN_CONNECT_REQUEST`) and dynamic domain discovery (`DOMAIN_DISCOVERY_REQUEST`).
+- [x] Implement `CasualToHttpBridge`: translate `CasualServiceCallRequestMessage` to WireMock HTTP dispatch (`POST /__casual/services/{serviceName}`).
+- [x] Build standalone `CasualTcpClient` without requiring a real C++ Casual domain or Jakarta EE.
+- [x] Validate end-to-end: Casual client connects $\rightarrow$ `tpcall` $\rightarrow$ WireMock stub matched $\rightarrow$ Casual client receives stubbed buffer.
+- [x] Implement stub match discrimination: distinguish matched stubs (regardless of status code, using `Matched-Stub-Id`) from unmatched requests.
+- [x] Implement transparent L7 Casual-to-Casual TCP proxy forwarding: forward unmatched service calls to configured upstream Casual domain.
+- [x] Implement record-and-replay: automatically record successful upstream replies back to WireMock stubs (`POST /__admin/mappings`) for subsequent instant replay.
 
 ### Phase 3: WireMock Extension Integration
-- [ ] Implement WireMock `ExtensionFactory` and lifecycle listener.
+- [ ] Implement WireMock `ExtensionFactory` and lifecycle listener (`ServerLifecycleListener`).
 - [ ] Support Fielded Buffer $\leftrightarrow$ JSON conversion.
 - [ ] Wire into `wiremock-extension-bundle` and Admin API.
