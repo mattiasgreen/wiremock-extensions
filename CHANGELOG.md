@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.2.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.2.0...v1.2.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **tcp-netem:** escape ampersand in NetEmCircularJournal javadoc and enforce javadoc in check ([0102a4a](https://github.com/mattiasgreen/wiremock-extensions/commit/0102a4a6085876a3f1842b40bdba4e48892d59a7))
+
 ## [1.2.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.1.0...v1.2.0) (2026-10-12)
 
 
