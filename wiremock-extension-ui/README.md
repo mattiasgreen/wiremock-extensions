@@ -130,41 +130,42 @@ wm.start();
 
 When the JAR is on the classpath, the extension registers automatically via Java SPI.
 
-## WireMock Studio (Zero-Dependency Desktop Web Container & Reverse Proxy)
+## WireMock Console Standalone Proxy (Zero-Dependency Reverse Proxy & Desktop Container)
 
-In addition to serving the web console embedded in WireMock at `/__admin/ui/`, a standalone desktop container is provided as a **single, zero-dependency Java file** ([`WireMockStudio.java`](file:///c:/dev/repos/wiremock-extensions/WireMockStudio.java)).
+In addition to serving the web console embedded in WireMock at `/__admin/ui/`, a standalone proxy is provided as a **single, zero-dependency Java file** ([`WireMockConsoleProxy.java`](file:///c:/dev/repos/wiremock-extensions/WireMockConsoleProxy.java)).
 
 It combines an embedded JDK 21 `HttpServer` with a transparent, CORS-free reverse proxy:
-* **100% Web UI Reuse**: Serves the identical Vanilla JS Web UI at `http://localhost:19840/__admin/ui/`, completely eliminating double implementation and keeping every feature in sync.
+* **100% Web UI Reuse**: Serves the identical Vanilla JS Web UI at `http://localhost:19840/__admin/ui/` (redirects `/` automatically), completely eliminating duplicate implementation and keeping every feature in sync.
 * **Zero CORS Restrictions**: All administrative and application routes are proxied directly to the upstream WireMock server over raw HTTP via JDK 21 `HttpClient`, enabling seamless connections to remote staging environments, Docker containers, or local instances without browser origin errors.
-* **Native Desktop Window**: Automatically launches in app mode using local Chromium (`--app=http://localhost:19840/__admin/ui/`) with fallback to the default system browser and a minimalist desktop companion controller.
+* **Dynamic Header Routing**: Supports per-request target resolution via `X-Forwarded-Host`, `X-Forwarded-Proto`, and `X-Forwarded-Prefix` headers.
+* **Native Desktop / Headless Mode**: Automatically launches local Chromium or the default system browser upon startup, or runs as a headless reverse proxy companion.
 
 ### Instant Run (No build or clone required)
 
 * **Linux / macOS**:
   ```bash
-  curl -sLO https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockStudio.java
-  java WireMockStudio.java http://localhost:8080
+  curl -sLO https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockConsoleProxy.java
+  java WireMockConsoleProxy.java http://localhost:8080
   ```
 
 * **Windows (PowerShell)**:
   ```powershell
-  Invoke-WebRequest -Uri "https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockStudio.java" -OutFile "WireMockStudio.java"
-  java WireMockStudio.java http://localhost:8080
+  Invoke-WebRequest -Uri "https://raw.githubusercontent.com/mattiasgreen/wiremock-extensions/main/WireMockConsoleProxy.java" -OutFile "WireMockConsoleProxy.java"
+  java WireMockConsoleProxy.java http://localhost:8080
   ```
 
 * **From within this repository**:
   ```bash
   # Option 1: Direct JEP 330 script
-  java WireMockStudio.java
+  java WireMockConsoleProxy.java
 
   # Option 2: Gradle task
-  ./gradlew :wiremock-extension-ui:runDesktop
+  ./gradlew :wiremock-extension-ui:runProxy
   ```
 
 ### Automated Verification
 * Web SPA: Playwright integration tests (`UiPlaywrightTest`)
-* Desktop Container & Reverse Proxy: In-memory WireMock tests (`WireMockStudioTest`)
+* Console Proxy & Reverse Proxy: In-memory WireMock tests (`WireMockConsoleProxyTest`)
 
 ```bash
 ./gradlew :wiremock-extension-ui:test
