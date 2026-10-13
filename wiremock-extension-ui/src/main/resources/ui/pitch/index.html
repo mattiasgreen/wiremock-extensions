@@ -851,7 +851,7 @@ wiremock_request_duration_seconds_sum 0.84</code></pre>
           <div class="card">
             <h3>Option A: Standalone CLI Runner</h3>
             <p style="margin-bottom: 0.5rem;">Run with your existing WireMock standalone JAR:</p>
-            <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+            <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar"</span> \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 --verbose</code></pre>
             <p style="margin-top: 0.6rem; font-size: 0.8rem; color: var(--accent-emerald);">
@@ -862,7 +862,7 @@ wiremock_request_duration_seconds_sum 0.84</code></pre>
             <h3>Option B: Gradle / Maven Dependency</h3>
             <p style="margin-bottom: 0.5rem;">Add to your test dependencies:</p>
             <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
-testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'</span>
 
 <span class="comment">// Standard JUnit 5 @WireMockTest picks up all extensions via SPI</span>
 <span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)

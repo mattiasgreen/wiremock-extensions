@@ -56,7 +56,7 @@ wiremock_request_duration_ms_sum 328.5
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-otel:0.1.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
 ```
 
 **Maven**:
@@ -64,7 +64,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-otel:0.1.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-otel</artifactId>
-    <version>0.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -73,7 +73,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-otel:0.1.0'
 Place the extension JAR on the classpath alongside WireMock Standalone:
 
 ```bash
-java -cp "wiremock-extension-otel-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-otel-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080
 ```
