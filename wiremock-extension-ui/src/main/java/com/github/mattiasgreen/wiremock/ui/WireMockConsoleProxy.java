@@ -180,7 +180,7 @@ public final class WireMockConsoleProxy {
         }
 
         if ("/version".equals(assetPath)) {
-            byte[] json = "{\"version\":\"0.1.0-SNAPSHOT\",\"commit\":\"HEAD\",\"branch\":\"standalone\"}"
+            byte[] json = "{\"version\":\"1.2.0\",\"commit\":\"HEAD\",\"branch\":\"standalone\"}"
                     .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache, no-store, must-revalidate");

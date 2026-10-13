@@ -54,12 +54,12 @@ If you want all extensions together, add `wiremock-extension-bundle` to your pro
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
 ```
 
 **WireMock Standalone CLI**:
 ```bash
-java -cp "wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose
@@ -77,31 +77,31 @@ Each extension can be used independently without pulling in the others:
 
 - **JSON Logging Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
   ```
   See [wiremock-extension-json-logging/README.md](wiremock-extension-json-logging/README.md) for details.
 
 - **OpenTelemetry & Prometheus Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-otel:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
   ```
   See [wiremock-extension-otel/README.md](wiremock-extension-otel/README.md) for details.
 
 - **Web UI Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
   ```
   See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
 
 - **Dynamic Stateful Simulation Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:1.2.0'
   ```
   See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
 
 - **L4 TCP Network Emulation & Chaos Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.2.0'
   ```
   See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md) for architecture, Toxiproxy API endpoints, and journal configuration.
 
@@ -189,7 +189,7 @@ repositories {
 
 dependencies {
     runtimeOnly 'org.wiremock:wiremock-standalone:3.12.1'
-    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'
+    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
 }
 
 application {
@@ -213,7 +213,7 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /wiremock
 
 ARG WIREMOCK_VERSION=3.12.1
-ARG BUNDLE_VERSION=0.1.0
+ARG BUNDLE_VERSION=1.2.0
 
 RUN wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
  && wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar

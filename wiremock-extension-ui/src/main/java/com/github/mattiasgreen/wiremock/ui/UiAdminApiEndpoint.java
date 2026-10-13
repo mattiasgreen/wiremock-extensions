@@ -63,7 +63,7 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
 
     private String resolveVersion() {
         String ver = getClass().getPackage().getImplementationVersion();
-        return (ver != null && !ver.isBlank()) ? ver : "0.1.0-SNAPSHOT";
+        return (ver != null && !ver.isBlank()) ? ver : "1.2.0";
     }
 
     private String resolveGitCommit() {
