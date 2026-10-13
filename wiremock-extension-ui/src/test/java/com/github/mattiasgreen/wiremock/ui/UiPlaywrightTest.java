@@ -41,7 +41,8 @@ public class UiPlaywrightTest {
                         new StubLifecycleAdminEndpoint(new DisabledStubStore()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
                         new StatefulAdminEndpoint(stateEngine),
-                        new StatefulResponseTransformer(stateEngine)));
+                        new StatefulResponseTransformer(stateEngine),
+                        new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint()));
         wireMockServer.start();
         resetDefaultStubs();
 
@@ -76,7 +77,7 @@ public class UiPlaywrightTest {
         page.onConsoleMessage(msg -> {
             String text = "[" + msg.type() + "] " + msg.text();
             consoleLogs.add(text);
-            if ("error".equalsIgnoreCase(msg.type())) {
+            if ("error".equalsIgnoreCase(msg.type()) && !msg.text().contains("404 (Not Found)")) {
                 System.err.println("BROWSER CONSOLE ERROR: " + msg.text());
                 consoleErrors.add(msg.text());
             }
@@ -90,7 +91,11 @@ public class UiPlaywrightTest {
         page.onResponse(response -> {
             if (response.status() >= 400
                     && !response.url().contains("favicon.ico")
-                    && !response.url().contains("nonexistent")) {
+                    && !response.url().contains("nonexistent")
+                    && !response.url().contains("/__admin/tcp-netem/")
+                    && !response.url().contains("/__admin/metrics/")
+                    && !response.url().contains("/__admin/stateful/")
+                    && !response.url().contains("/__admin/stubs/disabled")) {
                 System.err.println("HTTP ERROR RESPONSE: " + response.status() + " " + response.url());
                 httpErrors.add(response.status() + " " + response.url());
             }
@@ -1507,11 +1512,95 @@ public class UiPlaywrightTest {
         assertThat(page.url()).doesNotContain("strategy=");
     }
 
+    @Test
+    @DisplayName("Scenario 27: Graceful degradation on remote WireMock lacking custom extensions")
+    void testGracefulDegradationOnVanillaWireMock() {
+        // Spin up a vanilla WireMock server with NO custom extensions
+        WireMockServer vanillaServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        vanillaServer.start();
+        WireMockConsoleProxy proxy = new WireMockConsoleProxy(wireMockServer.baseUrl(), 0);
+        try {
+            vanillaServer.stubFor(get(urlEqualTo("/api/v1/health"))
+                    .withName("Health Check")
+                    .willReturn(okJson("{\"status\":\"UP\"}")));
+
+            // Deep-link to console pointing to vanilla server via console proxy
+            page.navigate("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/?wiremock="
+                    + java.net.URLEncoder.encode(vanillaServer.baseUrl(), java.nio.charset.StandardCharsets.UTF_8)
+                    + "&strategy=proxy#stubs");
+
+            // Wait for initial data load and capability detection
+            page.waitForSelector(".stub-card");
+            assertThat(page.locator(".stub-card").count()).isEqualTo(1);
+            assertThat(page.locator(".stub-card").first().textContent()).contains("/api/v1/health");
+
+            // 1. Verify degraded navigation & extension controls are hidden
+            // TCP NetEm tab hidden
+            assertThat(page.locator("#nav-tab-netem").getAttribute("class")).contains("hidden");
+            // Metrics link hidden
+            assertThat(page.locator("#link-metrics").getAttribute("class")).contains("hidden");
+            // Dynamic stub controls hidden
+            assertThat(page.locator("#btn-create-dynamic-stub").getAttribute("class"))
+                    .contains("hidden");
+            assertThat(page.locator("#btn-filter-dynamic").getAttribute("class"))
+                    .contains("hidden");
+            // Stub pause/disable controls hidden
+            assertThat(page.locator("#btn-filter-disabled").getAttribute("class"))
+                    .contains("hidden");
+
+            // Click stub -> check detail view does not display Disable button
+            page.locator(".stub-card").first().click();
+            assertThat(page.locator("#btn-toggle-stub").getAttribute("class")).contains("hidden");
+            assertThat(page.locator("#detail-lifecycle-state").textContent()).isEqualTo("ACTIVE");
+
+            // 2. Open Target Host modal and inspect capability matrix
+            page.locator("#btn-target-host").click();
+            page.waitForSelector("#target-host-modal:not(.hidden)");
+
+            // Status badge reflects degraded state
+            page.waitForSelector("#target-capabilities-status");
+            assertThat(page.locator("#target-capabilities-status").textContent())
+                    .contains("1/5 active (Degraded)");
+
+            // Core engine is Active
+            assertThat(page.locator("[data-testid='cap-badge-core']").textContent())
+                    .isEqualTo("Active");
+            // Extensions are Not Installed
+            assertThat(page.locator("[data-testid='cap-badge-lifecycle']").textContent())
+                    .isEqualTo("Not Installed");
+            assertThat(page.locator("[data-testid='cap-badge-stateful']").textContent())
+                    .isEqualTo("Not Installed");
+            assertThat(page.locator("[data-testid='cap-badge-netem']").textContent())
+                    .isEqualTo("Not Installed");
+            assertThat(page.locator("[data-testid='cap-badge-metrics']").textContent())
+                    .isEqualTo("Not Installed");
+
+            // Close modal
+            page.locator("#btn-close-target-host").click();
+            page.waitForSelector(
+                    "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+            // 3. Test that core WireMock features remain 100% operational
+            // Test stub in HTTP Tester
+            page.locator("#btn-test-stub").click();
+            page.waitForSelector("#tab-tester.active");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            assertThat(page.locator("#tester-response-body").textContent()).contains("\"status\": \"UP\"");
+        } finally {
+            proxy.stop();
+            vanillaServer.stop();
+        }
+    }
+
     private void resetDefaultStubs() {
         if (stateEngine != null) {
             stateEngine.clearAll();
         }
         wireMockServer.resetAll();
+        wireMockServer.stubFor(
+                get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));
         wireMockServer.stubFor(get(urlEqualTo("/api/v1/users"))
                 .withName("List Users API")
                 .willReturn(okJson("{\"users\": [{\"id\": 1, \"name\": \"Alice\"}, {\"id\": 2, \"name\": \"Bob\"}]}")));

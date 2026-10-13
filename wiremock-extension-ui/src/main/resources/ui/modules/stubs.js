@@ -241,6 +241,9 @@ export function selectStub(stub, updateRoute = true) {
     if (isDynamic) {
       detailState.textContent = 'DYNAMIC SIMULATION';
       detailState.className = 'card-value text-dynamic';
+    } else if (!state.capabilities.lifecycle) {
+      detailState.textContent = 'ACTIVE';
+      detailState.className = 'card-value text-success';
     } else {
       detailState.textContent = isDisabled ? 'DISABLED' : 'ACTIVE';
       detailState.className = `card-value ${isDisabled ? 'text-warning' : 'text-success'}`;
@@ -250,7 +253,7 @@ export function selectStub(stub, updateRoute = true) {
   // Toggle button label
   const btnToggle = document.getElementById('btn-toggle-stub');
   if (btnToggle) {
-    if (isDynamic) {
+    if (isDynamic || !state.capabilities.lifecycle) {
       btnToggle.classList.add('hidden');
     } else {
       btnToggle.classList.remove('hidden');

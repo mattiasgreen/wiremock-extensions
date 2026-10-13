@@ -772,44 +772,54 @@
 
   <!-- Target Host Configuration Modal -->
   <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
-    <div class="modal-card" style="max-width: 520px;">
+    <div class="modal-card" style="max-width: 580px;">
       <div class="modal-header">
         <h3>🎯 WireMock Target Server</h3>
         <button id="btn-close-target-host" class="modal-close">&times;</button>
       </div>
-      <div class="modal-body">
-        <p class="modal-description" style="margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted);">
-          Point this console to any WireMock instance. Target configuration is stored in the browser URL (<code>?wiremock=...&amp;strategy=...</code>) for shareability.
+      <div class="modal-body" style="padding: 16px 20px; gap: 8px;">
+        <p class="modal-description" style="margin-bottom: 6px; font-size: 0.83rem; color: var(--text-muted);">
+          Point this console to any WireMock instance. Configuration is stored in the browser URL (<code>?wiremock=...&amp;strategy=...</code>).
         </p>
         <div class="form-group">
           <label for="input-target-host"><strong>WireMock Target Base URL:</strong></label>
           <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080 or https://gateway:8443/prefix" autocomplete="off" data-testid="input-target-host">
-          <div style="margin-top: 4px; font-size: 0.78rem; color: var(--text-muted);">
+          <div style="margin-top: 3px; font-size: 0.75rem; color: var(--text-muted);">
             Supports full scheme, hostname, port, and gateway reverse-proxy path prefixes.
           </div>
         </div>
 
-        <div class="form-group" style="margin-top: 14px;">
-          <label style="display: block; margin-bottom: 8px; font-weight: 600;">Connection Strategy:</label>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div class="form-group" style="margin-top: 6px;">
+          <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.82rem;">Connection Strategy:</label>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
             <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
-              <input type="radio" name="target-strategy" id="radio-strategy-proxy" value="proxy" checked style="margin-top: 3px;" data-testid="radio-strategy-proxy">
+              <input type="radio" name="target-strategy" id="radio-strategy-proxy" value="proxy" checked style="margin-top: 2px;" data-testid="radio-strategy-proxy">
               <div>
-                <div style="font-weight: 500;">Proxy via Gateway Headers (CORS-free, Recommended)</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted);">
-                  Browser requests stay relative to this console; console forwards upstream using <code>X-Forwarded-Host</code>, <code>X-Forwarded-Proto</code>, and <code>X-Forwarded-Prefix</code>.
+                <div style="font-weight: 500; font-size: 0.82rem;">Proxy via Gateway Headers (CORS-free, Recommended)</div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                  Browser requests stay relative to console; forwarded upstream using <code>X-Forwarded-*</code> headers.
                 </div>
               </div>
             </label>
             <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
-              <input type="radio" name="target-strategy" id="radio-strategy-direct" value="direct" style="margin-top: 3px;" data-testid="radio-strategy-direct">
+              <input type="radio" name="target-strategy" id="radio-strategy-direct" value="direct" style="margin-top: 2px;" data-testid="radio-strategy-direct">
               <div>
-                <div style="font-weight: 500;">Direct Browser Request (CORS Required)</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted);">
-                  Browser sends cross-origin requests directly to target URL. Remote WireMock instance must have CORS enabled.
+                <div style="font-weight: 500; font-size: 0.82rem;">Direct Browser Request (CORS Required)</div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                  Browser sends cross-origin requests directly to target URL. Remote instance must have CORS enabled.
                 </div>
               </div>
             </label>
+          </div>
+        </div>
+
+        <div id="target-capabilities-section" class="target-capabilities-section" style="margin-top: 8px;" data-testid="target-capabilities-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-weight: 600; font-size: 0.82rem; color: var(--text-main);">Detected Server Capabilities:</label>
+            <span id="target-capabilities-status" class="muted-text" style="font-size: 0.75rem;" data-testid="target-capabilities-status">Probing...</span>
+          </div>
+          <div id="target-capabilities-list" class="capabilities-grid" data-testid="target-capabilities-list">
+            <!-- Populated dynamically by renderTargetCapabilities -->
           </div>
         </div>
 

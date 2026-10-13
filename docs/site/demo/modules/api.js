@@ -18,6 +18,7 @@ import {
   loadTesterHistoryFromStorage
 } from './tester.js';
 import { applyRouteFromUrl } from './router.js';
+import { detectCapabilities } from './capabilities.js';
 
 export function apiUrl(endpoint) {
   if (!endpoint) return '';
@@ -263,7 +264,21 @@ export function deleteStatefulSession(correlationId) {
 
 export function loadData() {
   loadTesterHistoryFromStorage();
-  return Promise.all([loadMappings(), loadDisabledStubs(), loadJournal(), loadStatefulModels()])
+  return detectCapabilities(doFetch)
+    .then(caps => {
+      const promises = [loadMappings(), loadJournal()];
+      if (caps.lifecycle) {
+        promises.push(loadDisabledStubs());
+      } else {
+        state.disabledStubs = [];
+      }
+      if (caps.stateful) {
+        promises.push(loadStatefulModels());
+      } else {
+        state.statefulModels = [];
+      }
+      return Promise.all(promises);
+    })
     .then(() => {
       renderStubList();
       renderProjectSelector();
@@ -273,9 +288,17 @@ export function loadData() {
       const totalStubs = state.currentStubs.length + state.disabledStubs.length + dynamicCount;
       if (elements.statStubs) elements.statStubs.textContent = totalStubs;
       if (elements.stubsCountLabel) {
-        elements.stubsCountLabel.textContent = dynamicCount > 0
-          ? `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled · ${dynamicCount} dynamic`
-          : `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
+        if (!state.capabilities.lifecycle && !state.capabilities.stateful) {
+          elements.stubsCountLabel.textContent = `${state.currentStubs.length} active`;
+        } else if (!state.capabilities.lifecycle) {
+          elements.stubsCountLabel.textContent = dynamicCount > 0
+            ? `${state.currentStubs.length} active · ${dynamicCount} dynamic`
+            : `${state.currentStubs.length} active`;
+        } else {
+          elements.stubsCountLabel.textContent = dynamicCount > 0
+            ? `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled · ${dynamicCount} dynamic`
+            : `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
+        }
       }
       return loadScenarios();
     })
@@ -403,3 +426,5 @@ export function setProjectMode(project, mode) {
   const enc = encodeURIComponent(project);
   return apiPost(`/__admin/projects/${enc}/mode`, { mode });
 }
+
+export { detectCapabilities };

@@ -157,9 +157,9 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ### Phase 5: Architecture Decoupling & Storage Persistence
 
-- [ ] **5.1. UI Feature Discovery Handshake**
-  - [ ] Implement `GET /__admin/ui/features` endpoint advertising active capabilities (`hasOpenApi`, `hasOtel`, `hasStateful`, `hasNetEm`).
-  - [ ] Conditionally badge or disable UI links and modal triggers when optional companion extensions are absent.
+- [x] **5.1. UI Feature Discovery Handshake & Graceful Degradation**
+  - [x] Implement remote capability probing across Core, Lifecycle, Stateful, NetEm, and Metrics endpoints.
+  - [x] Automatic UI degradation and visual capability matrix in Target Server modal.
 
 - [ ] **5.2. Decouple Domain Lifecycle from UI Presentation**
   - [ ] Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module or merge with stateful domain logic, keeping `wiremock-extension-ui` purely presentation-focused.
@@ -199,3 +199,22 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] Automatically synthesize callback stubs returning `202 Accepted` paired with async webhook dispatches targeting `{{jsonPath request.body '$.callbackUrl'}}`.
   - [ ] Support `Action.webhook(...)` in stateful AST transitions.
   - [ ] Webhook Outbox Journal in UI for auditing and replaying dispatches.
+
+---
+
+### Phase 8: Developer Experience & Inner Loop Performance
+
+- [ ] **8.1. Gradle Parallelism & Build Caching**
+  - [ ] Add `org.gradle.parallel=true` to enable concurrent execution across subprojects.
+  - [ ] Add `org.gradle.caching=true` (Build Cache) to eliminate redundant Java compilation.
+  - [ ] Tune JVM memory (`org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8`) to prevent daemon crashes and memory thrashing.
+  - [ ] Implement automated daemon pruning (`./gradlew --stop`) to eliminate dead zombie daemons.
+
+- [ ] **8.2. Fast Inner-Loop Test Strategy**
+  - [ ] Enforce strict method-level test filtering (`--tests "MyTest.method"`) during active authoring instead of running multi-suite E2E tests.
+  - [ ] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
+  - [ ] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
+
+- [ ] **8.3. Concurrent Subagent Task Delegation**
+  - [ ] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
+

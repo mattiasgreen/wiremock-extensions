@@ -91,6 +91,10 @@ import {
   activateNetEm,
   deactivateNetEm
 } from './modules/netem.js';
+import {
+  renderTargetCapabilities,
+  applyCapabilityVisibility
+} from './modules/capabilities.js';
 
 export function getAllStubs() {
   return [...state.currentStubs, ...state.disabledStubs, ...normalizeStatefulModelsToStubs(state.statefulModels || [])];
@@ -106,7 +110,9 @@ export {
   parseHash,
   setRoute,
   activateTab,
-  exportStubs
+  exportStubs,
+  renderTargetCapabilities,
+  applyCapabilityVisibility
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)
@@ -719,6 +725,7 @@ function setupTargetHostControls() {
       if (elements.targetHostStatus) {
         elements.targetHostStatus.classList.add('hidden');
       }
+      renderTargetCapabilities();
     });
   }
 
@@ -743,8 +750,10 @@ function setupTargetHostControls() {
   }
 
   const applyTargetHost = (newTarget, strategy) => {
+    state.capabilitiesDetected = false;
     setTargetUrlInLocation(newTarget, strategy);
     updateTargetHostDisplay();
+    renderTargetCapabilities();
     closeTargetModal();
     loadData();
     loadVersionInfo();

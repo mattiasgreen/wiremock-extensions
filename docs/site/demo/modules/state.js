@@ -119,6 +119,14 @@ export const state = {
   lastRawResponseBody: '',
   activeInspectorTab: 'response',
   activeTab: 'tab-stub-detail',
-  isSyncingRoute: false
+  isSyncingRoute: false,
+  capabilities: {
+    core: true,
+    lifecycle: true,
+    stateful: true,
+    netem: true,
+    metrics: true
+  },
+  capabilitiesDetected: false
 };
 
