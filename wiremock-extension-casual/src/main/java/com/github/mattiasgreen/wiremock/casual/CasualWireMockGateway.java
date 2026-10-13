@@ -260,6 +260,7 @@ public class CasualWireMockGateway implements AutoCloseable {
             }
 
             CasualServiceCallReplyMessage reply = CasualServiceCallReplyMessage.createBuilder()
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_0)
                     .setExecution(req.getExecution())
                     .setXid(req.getXid())
                     .setError(errorState)

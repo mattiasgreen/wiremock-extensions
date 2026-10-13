@@ -112,10 +112,12 @@ public class SimpleCasualTestClient implements AutoCloseable {
     public CasualServiceCallReplyMessage tpcall(String serviceName, String jsonPayload) throws Exception {
         ServiceBuffer buffer = ServiceBuffer.of(JsonBuffer.of(jsonPayload));
         CasualServiceCallRequestMessage callReq = CasualServiceCallRequestMessage.createBuilder()
+                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
                 .setExecution(UUID.randomUUID())
                 .setServiceName(serviceName)
                 .setTimeout(10000L)
                 .setParentName(domainName)
+                .setXid(se.laz.casual.api.xa.XID.NULL_XID)
                 .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
                 .setServiceBuffer(buffer)
                 .build();
