@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 /**
  * High-performance, lock-free circular ring buffer journal for TCP NetEm proxy events.
  *
- * <p><strong>Memory & Heap Sizing:</strong>
+ * <p><strong>Memory &amp; Heap Sizing:</strong>
  * Designed for central mock servers handling concurrent high-volume CI/CD test suites.
  * Uses a pre-allocated {@link AtomicReferenceArray} of {@link NetEmJournalEntry} records.
  * <ul>

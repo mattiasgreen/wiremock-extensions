@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WireMock Extended — Production API Simulation Studio</title>
+  <meta name="description" content="Production-grade, zero-cloud API simulation studio for WireMock. Embedded Web Console, OpenAPI stub synthesis, correlation-isolated stateful simulation, and TCP network emulation.">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-theme="dark">
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <a href="#" class="nav-brand">
+      <span class="logo-icon">⚡</span>
+      <span>WireMock Extended</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#comparison">Compare</a></li>
+      <li><a href="#quickstart">Quickstart</a></li>
+      <li><a href="docs/">Documentation</a></li>
+      <li><a href="demo/">Interactive Demo</a></li>
+    </ul>
+    <div class="nav-actions">
+      <button class="btn-icon" id="btnThemeToggle" title="Toggle Light/Dark Theme">🌓</button>
+      <a href="demo/" class="btn btn-secondary">🚀 Launch Demo</a>
+      <a href="https://github.com/mattiasgreen/wiremock-extensions" target="_blank" class="btn btn-primary">GitHub ↗</a>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badges">
+        <span class="badge emerald">Zero Cloud • 100% On-Premises</span>
+        <span class="badge indigo">JDK 21 Virtual Threads</span>
+        <span class="badge">Air-Gapped &amp; 0-NPM</span>
+        <span class="badge amber">Apache 2.0 Free OSS</span>
+      </div>
+      <h1>The Production API Simulation Studio<br>for WireMock Standalone</h1>
+      <p class="hero-subtitle">
+        Upgrade WireMock with an embedded web console, automatic OpenAPI mock generation,
+        deterministic correlation-isolated stateful workflows, and in-process L4 network chaos.
+      </p>
+      <div class="hero-cta">
+        <a href="demo/" class="btn btn-primary" style="padding: 0.8rem 1.75rem; font-size: 1.05rem;">
+          🚀 Try Interactive Demo
+        </a>
+        <a href="docs/" class="btn btn-secondary" style="padding: 0.8rem 1.75rem; font-size: 1.05rem;">
+          📚 Read Documentation
+        </a>
+      </div>
+
+      <div class="hero-media">
+        <img src="assets/demo-ui-tour.gif" alt="WireMock Console Live Interactive UI Tour" onerror="this.src='assets/screenshot-stubs-explorer.png'">
+      </div>
+    </div>
+  </section>
+
+  <!-- The Problem vs Solution (Pitch Value) -->
+  <section id="why" style="background: var(--bg-secondary);">
+    <div class="container">
+      <div class="section-header">
+        <span class="badge rose">The Enterprise Bottleneck</span>
+        <h2 style="margin-top: 0.5rem;">Why Legacy Mocking Slows Engineering Down</h2>
+        <p>Parallel test runs colliding, manual OpenAPI mapping, and SaaS compliance roadblocks.</p>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <h3 style="color: var(--accent-rose);">❌ Global Scenario Collisions</h3>
+          <p>Standard WireMock scenarios share global state. When concurrent CI workers mutate the same scenario, parallel tests overwrite each other and cause non-deterministic flakes.</p>
+        </div>
+        <div class="card">
+          <h3 style="color: var(--accent-amber);">❌ Blindness &amp; Tool Sprawl</h3>
+          <p>Developers are forced to juggle Postman, inspect raw JSON mappings, or grep through multiline logs just to see why an incoming request returned a 404 unmatched error.</p>
+        </div>
+        <div class="card">
+          <h3 style="color: var(--accent-blue);">❌ SaaS &amp; Compliance Blockers</h3>
+          <p>Commercial SaaS mocking platforms require sending proprietary schemas and payloads to third-party clouds—strictly forbidden in banking, healthcare, and defense.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Features Showcase -->
+  <section id="features">
+    <div class="container">
+      <div class="section-header">
+        <span class="badge emerald">Comprehensive Suite</span>
+        <h2 style="margin-top: 0.5rem;">Modular Yet Unified Capabilities</h2>
+        <p>Available as individual lightweight library extensions or a 1-line All-in-One meta bundle.</p>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <h3>🖥️ Embedded WireMock Console</h3>
+          <p>Pure Vanilla ES6 Single-Page App at <code>/__admin/ui/</code>. Real-time fuzzy stub search, scenario DAG visualizer, request journal, and ad-hoc HTTP tester. Zero NPM.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>Zero build tools / 0 NPM dependencies</li>
+            <li>Interactive Scenario DAG state machines</li>
+            <li>Request Journal with diffs and cURL export</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>📑 OpenAPI Ingestion &amp; Live Proxy</h3>
+          <p>Import OpenAPI 3.0 / 3.1 specifications into synthetic stubs. Pass traffic through to live upstream staging services, record snapshots, and sever connections to run 100% offline.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>Format-aware data generation (UUID, email, date)</li>
+            <li>Live proxy recording &amp; journal promotion</li>
+            <li>Bulk project-level stub toggling</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>⚡ Correlation-Isolated Stateful AST</h3>
+          <p>Model complex business rules (e.g. <i>"Cannot close case while child tasks are pending"</i>) in a 100% RCE-safe sealed AST engine with session isolation via <code>X-Correlation-Id</code>.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>No parallel CI test collisions</li>
+            <li>In-memory collection &amp; relation primitives</li>
+            <li>Zero Groovy/JS arbitrary execution risk</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>🌪️ TCP NetEm Network Chaos</h3>
+          <p>In-process Layer 4 TCP network impairment engine running on Java 21 Virtual Threads. Compatible with Shopify Toxiproxy REST APIs and declarative stub listeners.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>All 7 toxics: Latency, Bandwidth, Slicer, TCP RST</li>
+            <li>Dual-ingress architecture (Port 8081 &rarr; 8080)</li>
+            <li>Zero blast-radius correlation scoping</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>📊 OpenTelemetry &amp; Prometheus</h3>
+          <p>In-process request counters and duration histograms exposed via standard Prometheus scrape route at <code>/__admin/metrics/prometheus</code>. W3C traceparent server spans.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>Standard Prometheus metrics endpoint</li>
+            <li>W3C distributed tracing context propagation</li>
+            <li>OTLP export to Jaeger, Tempo, and Zipkin</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>📝 Structured JSON MDC Logging</h3>
+          <p>Single-line machine-parseable JSON log format capturing method, URL, status code, latency, and corporate headers (<code>x-correlation-id</code>, <code>x-tenant-id</code>) directly in MDC.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>Instant Datadog, ELK &amp; CloudWatch parsing</li>
+            <li>CRLF-sanitized dynamic input fields</li>
+            <li>MDC correlation propagation across threads</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Competitive Comparison Matrix -->
+  <section id="comparison" style="background: var(--bg-secondary);">
+    <div class="container">
+      <div class="section-header">
+        <span class="badge amber">Market Analysis</span>
+        <h2 style="margin-top: 0.5rem;">How WireMock Extended Compares</h2>
+        <p>The developer experience of commercial platforms with the compliance safety of 100% on-premises open source.</p>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>WireMock OSS</th>
+              <th>WireMock Cloud</th>
+              <th>Mockoon</th>
+              <th>Microcks</th>
+              <th style="color: var(--accent-blue);">WireMock Extended</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Deployment Model</strong></td>
+              <td>Self-Hosted</td>
+              <td>SaaS Cloud</td>
+              <td>Desktop App</td>
+              <td>Kubernetes (K8s)</td>
+              <td class="check">Self-Hosted / Zero-Cloud</td>
+            </tr>
+            <tr>
+              <td><strong>Embedded Web Console</strong></td>
+              <td class="cross">None</td>
+              <td class="check">Yes (Cloud)</td>
+              <td class="check">Yes (Electron)</td>
+              <td class="check">Yes (Web)</td>
+              <td class="check">Yes (Pure Vanilla ES6)</td>
+            </tr>
+            <tr>
+              <td><strong>OpenAPI Ingestion</strong></td>
+              <td class="cross">Manual / Plugin</td>
+              <td class="check">Yes</td>
+              <td class="partial">Partial</td>
+              <td class="check">Yes</td>
+              <td class="check">Yes (Live Proxy + Snap)</td>
+            </tr>
+            <tr>
+              <td><strong>Stateful Parallel Isolation</strong></td>
+              <td class="cross">No (Global Collision)</td>
+              <td class="partial">Manual Scenarios</td>
+              <td class="cross">No</td>
+              <td class="partial">Partial</td>
+              <td class="check">Yes (X-Correlation-Id AST)</td>
+            </tr>
+            <tr>
+              <td><strong>In-Process L4 Network Chaos</strong></td>
+              <td class="cross">Delay Only</td>
+              <td class="partial">Latency Only</td>
+              <td class="cross">Delay Only</td>
+              <td class="cross">No</td>
+              <td class="check">Yes (Toxiproxy / Java 21)</td>
+            </tr>
+            <tr>
+              <td><strong>JVM / JUnit Embedding</strong></td>
+              <td class="check">Native</td>
+              <td class="partial">Hybrid Runner</td>
+              <td class="cross">CLI Only</td>
+              <td class="partial">Testcontainers</td>
+              <td class="check">Native JVM 21 &amp; CLI</td>
+            </tr>
+            <tr>
+              <td><strong>Licensing &amp; Cost</strong></td>
+              <td class="check">Free Apache 2.0</td>
+              <td class="cross">Paid / Commercial SaaS</td>
+              <td class="check">Free MIT</td>
+              <td class="check">Free Apache 2.0</td>
+              <td class="check">100% Free Apache 2.0</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quickstart & Adoption -->
+  <section id="quickstart">
+    <div class="container">
+      <div class="section-header">
+        <span class="badge emerald">60-Second Adoption</span>
+        <h2 style="margin-top: 0.5rem;">Get Started in Under a Minute</h2>
+        <p>Drop onto your classpath or standalone runner. Automatic Java SPI auto-discovery handles the rest.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Option A: Standalone CLI Runner</h3>
+          <p>Drop the bundle JAR alongside your standard WireMock Standalone JAR:</p>
+          <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+  com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
+  --port 8080 --verbose</code></pre>
+          <p style="margin-top: 1rem; color: var(--accent-emerald); font-weight: 600;">
+            ✓ Instantly open <code>http://localhost:8080/__admin/ui/</code> in your browser!
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Option B: Gradle &amp; JUnit 5 Test Suite</h3>
+          <p>Add the extension bundle as a test dependency:</p>
+          <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'</span>
+
+<span class="comment">// In your tests, standard WireMock auto-discovers all extensions:</span>
+<span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)
+<span class="kw">class</span> OrderServiceTest {
+    <span class="comment">// All endpoints, metrics, and state engines active!</span>
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-grid">
+      <div>
+        <strong style="color: var(--text-main);">WireMock Extended Suite</strong>
+        <p style="margin-top: 0.25rem;">Open Source Apache 2.0 • Zero Cloud • Air-Gapped Production Tooling</p>
+      </div>
+      <div>
+        <a href="demo/" style="color: var(--accent-blue); text-decoration: none; margin-right: 1.5rem;">Live Demo</a>
+        <a href="docs/" style="color: var(--accent-blue); text-decoration: none; margin-right: 1.5rem;">Documentation</a>
+        <a href="https://github.com/mattiasgreen/wiremock-extensions" target="_blank" style="color: var(--accent-blue); text-decoration: none;">GitHub ↗</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module">
+    const btnThemeToggle = document.getElementById('btnThemeToggle');
+    btnThemeToggle.addEventListener('click', () => {
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+    });
+  </script>
+</body>
+</html>

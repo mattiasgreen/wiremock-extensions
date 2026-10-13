@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation — WireMock Extended Suite</title>
+  <meta name="description" content="Technical documentation, extension architecture, configuration guides, and code examples for WireMock Extended.">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-theme="dark">
+
+  <header class="navbar">
+    <a href="../" class="nav-brand">
+      <span class="logo-icon">⚡</span>
+      <span>WireMock Extended Docs</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="../">Home</a></li>
+      <li><a href="#quickstart" class="active">Documentation</a></li>
+      <li><a href="#extensions">Extensions</a></li>
+      <li><a href="#use-cases">Use Cases</a></li>
+      <li><a href="../demo/">Live Demo</a></li>
+    </ul>
+    <div class="nav-actions">
+      <button class="btn-icon" id="btnThemeToggle" title="Toggle Light/Dark Theme">🌓</button>
+      <a href="../demo/" class="btn btn-secondary">🚀 Launch Demo</a>
+      <a href="https://github.com/mattiasgreen/wiremock-extensions" target="_blank" class="btn btn-primary">GitHub ↗</a>
+    </div>
+  </header>
+
+  <div class="container docs-layout">
+    <aside class="docs-sidebar">
+      <h4>Getting Started</h4>
+      <ul>
+        <li><a href="#quickstart" class="active">Quickstart Matrix</a></li>
+        <li><a href="#standalone-cli">Standalone Runner</a></li>
+        <li><a href="#docker">Docker Deployment</a></li>
+        <li><a href="#jvm-junit">JUnit 5 Embedding</a></li>
+      </ul>
+
+      <h4>Extension Modules</h4>
+      <ul>
+        <li><a href="#ext-ui">WireMock Console UI</a></li>
+        <li><a href="#ext-stateful">Stateful AST Engine</a></li>
+        <li><a href="#ext-netem">TCP NetEm Chaos</a></li>
+        <li><a href="#ext-openapi">OpenAPI Ingestion</a></li>
+        <li><a href="#ext-otel">OpenTelemetry &amp; Scrape</a></li>
+        <li><a href="#ext-logging">JSON MDC Logging</a></li>
+      </ul>
+
+      <h4>Architecture &amp; Best Practices</h4>
+      <ul>
+        <li><a href="#architecture">Zero-Sprawl SPI Architecture</a></li>
+        <li><a href="#use-cases">Flake-Free CI Scenarios</a></li>
+        <li><a href="#zero-npm">Zero-NPM Web Principles</a></li>
+      </ul>
+    </aside>
+
+    <main class="docs-content">
+      <span class="badge emerald">Official Documentation</span>
+      <h1>WireMock Extensions Suite Guide</h1>
+      <p style="font-size: 1.15rem; color: var(--text-main);">
+        Comprehensive reference documentation, API routes, Gradle/Maven coordinates, and design patterns
+        for production-grade API simulation on the JVM and Standalone.
+      </p>
+
+      <!-- Section: Quickstart Matrix -->
+      <section id="quickstart" style="padding: 1.5rem 0 2.5rem;">
+        <h2>1. Quickstart &amp; Subproject Topology</h2>
+        <p>
+          The suite is built for JDK 21+ and WireMock Standalone 3.x. You can include all extensions via the meta-bundle
+          or pick individual modules for lightweight containerized testing.
+        </p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Extension Subproject</th>
+                <th>Responsibility</th>
+                <th>Primary Admin Route / SPI Hook</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong><code>wiremock-extension-bundle</code></strong></td>
+                <td>Meta-packaging aggregating all extensions with Java SPI auto-discovery.</td>
+                <td>Includes all endpoints + local dev runner</td>
+              </tr>
+              <tr>
+                <td><strong><code>wiremock-extension-ui</code></strong></td>
+                <td>Embedded Vanilla JS web console with stubs viewer, scenario DAG, and tester.</td>
+                <td><code>/__admin/ui/</code> (Static assets)</td>
+              </tr>
+              <tr>
+                <td><strong><code>wiremock-extension-stateful</code></strong></td>
+                <td>In-memory dynamic AST simulation with correlation-id session isolation.</td>
+                <td><code>/__admin/stateful/models</code> + Filter</td>
+              </tr>
+              <tr>
+                <td><strong><code>wiremock-extension-tcp-netem</code></strong></td>
+                <td>In-process L4 network emulation &amp; fault injection (Toxiproxy in Java 21).</td>
+                <td><code>/__admin/netem/proxies</code> (Port 8081)</td>
+              </tr>
+              <tr>
+                <td><strong><code>wiremock-extension-openapi</code></strong></td>
+                <td>OAS 3.0/3.1 parser, mock data synthesizer, and live proxy recorder.</td>
+                <td><code>/__admin/openapi/import</code></td>
+              </tr>
+              <tr>
+                <td><strong><code>wiremock-extension-otel</code></strong></td>
+                <td>In-process request counters, latency histograms, and W3C tracing spans.</td>
+                <td><code>/__admin/metrics/prometheus</code></td>
+              </tr>
+              <tr>
+                <td><strong><code>wiremock-extension-json-logging</code></strong></td>
+                <td>Single-line structured JSON logs with MDC header propagation.</td>
+                <td><code>RequestFilterV2</code>, <code>ServeEventListener</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: Deployment Options -->
+      <section id="standalone-cli" style="padding: 1.5rem 0 2.5rem;">
+        <h2>2. Standalone &amp; Docker Execution</h2>
+
+        <h3>Standalone CLI Execution</h3>
+        <p>WireMock discovers extensions via standard Java SPI (<code>java.util.ServiceLoader</code>). Place both JARs on the classpath:</p>
+        <pre class="code-block"><code><span class="comment"># Download WireMock Standalone &amp; the Extension Bundle:</span>
+java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+  com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
+  --port 8080 --verbose</code></pre>
+
+        <h3 id="docker" style="margin-top: 2rem;">Production Dockerfile Reference</h3>
+        <p>Assemble a minimal alpine container running the unified server:</p>
+        <pre class="code-block"><code><span class="kw">FROM</span> eclipse-temurin:21-jre-alpine
+<span class="kw">WORKDIR</span> /wiremock
+
+<span class="kw">ARG</span> WIREMOCK_VERSION=3.12.1
+<span class="kw">ARG</span> BUNDLE_VERSION=0.1.0
+
+<span class="kw">RUN</span> wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
+ &amp;&amp; wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
+
+<span class="kw">EXPOSE</span> 8080 8081
+<span class="kw">ENTRYPOINT</span> ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]</code></pre>
+      </section>
+
+      <!-- Section: Extensions Deep Dive -->
+      <section id="extensions" style="padding: 1.5rem 0 2.5rem;">
+        <h2>3. Extension Module Reference</h2>
+
+        <!-- UI Extension -->
+        <div id="ext-ui" class="card" style="margin-bottom: 2rem;">
+          <h3>🖥️ WireMock Console (`wiremock-extension-ui`)</h3>
+          <p>
+            An embedded, zero-dependency web dashboard served natively under <code>http://localhost:8080/__admin/ui/</code>.
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><strong>Stubs Explorer</strong>: Fuzzy search by URL path, HTTP method, stub name, or tag. Filter by Active, Disabled, and Dynamic stubs.</li>
+            <li><strong>Scenario DAG Visualizer</strong>: Renders complex multi-step scenario transitions as interactive directed acyclic graphs with reset controls.</li>
+            <li><strong>Request Journal</strong>: Inspect captured requests with payload diffs, match explanations, and one-click cURL export.</li>
+            <li><strong>HTTP Tester</strong>: Execute test requests against stubs with real-time response rendering and execution timers.</li>
+          </ul>
+          <p>
+            <strong>Headless Console Proxy</strong>: The UI can also run in decoupled standalone mode (<code>java WireMockConsoleProxy.java</code>) to control remote WireMock instances in staging clusters without installing anything on the remote host.
+          </p>
+        </div>
+
+        <!-- Stateful Extension -->
+        <div id="ext-stateful" class="card" style="margin-bottom: 2rem;">
+          <h3>⚡ Stateful AST Engine (`wiremock-extension-stateful`)</h3>
+          <p>
+            Solves parallel test collision pitfalls. Standard WireMock scenarios mutate global singleton state. When tests execute concurrently in parallel CI workers, they overwrite each other's scenario states.
+          </p>
+          <p style="margin-top: 0.5rem;">
+            <code>wiremock-extension-stateful</code> introduces an in-memory Abstract Syntax Tree (AST) evaluator with <code>X-Correlation-Id</code> session partitioning. Each test worker gets its own isolated state world.
+          </p>
+          <pre class="code-block"><code><span class="comment">// Define model with type-safe Java DSL:</span>
+StateModel model = StateModel.named(<span class="str">"CaseManagement"</span>)
+    .initialState(<span class="str">"DRAFT"</span>)
+    .transition(<span class="str">"SUBMIT"</span>, <span class="str">"DRAFT"</span>, <span class="str">"PENDING_REVIEW"</span>)
+    .transition(<span class="str">"APPROVE"</span>, <span class="str">"PENDING_REVIEW"</span>, <span class="str">"APPROVED"</span>)
+    .invariant(<span class="str">"NoPendingTasks"</span>, expr -&gt; expr.collection(<span class="str">"tasks"</span>).noneMatch(t -&gt; t.is(<span class="str">"PENDING"</span>)));</code></pre>
+        </div>
+
+        <!-- NetEm Extension -->
+        <div id="ext-netem" class="card" style="margin-bottom: 2rem;">
+          <h3>🌪️ TCP NetEm Chaos (`wiremock-extension-tcp-netem`)</h3>
+          <p>
+            In-process Layer 4 network impairment engine inspired by Shopify Toxiproxy, re-implemented natively using modern <strong>Java 21 Virtual Threads</strong> (<code>Thread.ofVirtual()</code>).
+          </p>
+          <p style="margin-top: 0.5rem;">
+            Exposes Toxiproxy v2-compatible REST routes on Port 8080 under <code>/__admin/netem/proxies</code>, routing traffic through Port 8081 down to Port 8080 with zero external C or Go containers.
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><code>latency</code>: Inject delay with configurable normal-distribution jitter.</li>
+            <li><code>bandwidth</code>: Throttle data rate in kilobytes per second.</li>
+            <li><code>slow_close</code>: Delay socket FIN packet on teardown.</li>
+            <li><code>timeout</code>: Black hole socket stream (hangs until client timeout).</li>
+            <li><code>reset_peer</code>: Immediate TCP RST packet injection via <code>Socket.setSoLinger(true, 0)</code>.</li>
+            <li><code>slicer</code>: Fragment application packets into micro-chunks.</li>
+            <li><code>limit_data</code>: Closes connection after N bytes transferred.</li>
+          </ul>
+        </div>
+
+        <!-- OpenAPI Extension -->
+        <div id="ext-openapi" class="card" style="margin-bottom: 2rem;">
+          <h3>📑 OpenAPI Ingestion (`wiremock-extension-openapi`)</h3>
+          <p>
+            Ingest OpenAPI 3.0 / 3.1 specifications in JSON or YAML via <code>POST /__admin/openapi/import</code>.
+            Synthesizes realistic format-aware responses (valid UUIDs, RFC-3339 timestamps, realistic emails, postal codes).
+          </p>
+          <p style="margin-top: 0.5rem;">
+            Supports <strong>Live Proxy Recording</strong>: forwards unmatched calls to an upstream API, logs traffic into the Request Journal, and lets you snapshot recorded sessions into offline stubs with one click.
+          </p>
+        </div>
+
+        <!-- OTEL Extension -->
+        <div id="ext-otel" class="card" style="margin-bottom: 2rem;">
+          <h3>📊 OpenTelemetry &amp; Metrics (`wiremock-extension-otel`)</h3>
+          <p>
+            Production observability for WireMock. Records request counts, response codes, and latency histograms:
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li>Scrape route: <code>GET /__admin/metrics/prometheus</code> directly scrapeable by Prometheus / Grafana Agent.</li>
+            <li>Distributed Tracing: Extracts W3C <code>traceparent</code> headers, creates in-process <code>SERVER</code> spans, and correlates log events.</li>
+            <li>Optional OTLP Export: Ships spans via gRPC / HTTP to Jaeger, Tempo, or Datadog.</li>
+          </ul>
+        </div>
+
+        <!-- JSON Logging -->
+        <div id="ext-logging" class="card" style="margin-bottom: 2rem;">
+          <h3>📝 JSON MDC Logging (`wiremock-extension-json-logging`)</h3>
+          <p>
+            Replaces noisy multiline console logs with structured single-line JSON records formatted for log aggregators:
+          </p>
+          <pre class="code-block"><code>{
+  <span class="str">"timestamp"</span>: <span class="str">"2026-10-13T03:30:00Z"</span>,
+  <span class="str">"method"</span>: <span class="str">"GET"</span>,
+  <span class="str">"url"</span>: <span class="str">"/api/v1/cases/482"</span>,
+  <span class="str">"status"</span>: 200,
+  <span class="str">"duration_ms"</span>: 4,
+  <span class="str">"x_correlation_id"</span>: <span class="str">"ci-runner-worker-3"</span>,
+  <span class="str">"x_tenant_id"</span>: <span class="str">"tenant-alpha"</span>
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Use Cases -->
+      <section id="use-cases" style="padding: 1.5rem 0 2.5rem;">
+        <h2>4. Key Architectural Use Cases</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Flake-Free Parallel CI Pipelines</h3>
+            <p>
+              By passing <code>X-Correlation-Id: ${testRunId}</code> on all HTTP requests, 50 parallel test runners can mutate stateful workflows against a single shared WireMock server without race conditions or state collisions.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Offline API Flight Mode</h3>
+            <p>
+              Import your service's OpenAPI spec in Live Proxy mode, exercise your regression suite once against staging, click <strong>Snapshot Traffic</strong>, and flip to Stubs Mode to run completely detached from the network.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Mobile Resiliency &amp; Chaos Drills</h3>
+            <p>
+              Use TCP NetEm to simulate realistic 3G tunnel dropouts, erratic latency jitter, and abrupt TCP reset disconnects right before checkout requests complete to test retry loops.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Air-Gapped Compliance Mocking</h3>
+            <p>
+              100% on-premises with zero cloud callbacks, zero external CDN links, and zero telemetry beacons. Meets the highest compliance criteria in banking, healthcare, and defense.
+            </p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer>
+    <div class="container footer-grid">
+      <div>
+        <strong style="color: var(--text-main);">WireMock Extended Documentation</strong>
+        <p style="margin-top: 0.25rem;">Apache 2.0 • Zero Cloud • Pure JVM 21 Tooling</p>
+      </div>
+      <div>
+        <a href="../" style="color: var(--accent-blue); text-decoration: none; margin-right: 1.5rem;">Home</a>
+        <a href="../demo/" style="color: var(--accent-blue); text-decoration: none; margin-right: 1.5rem;">Live Demo</a>
+        <a href="https://github.com/mattiasgreen/wiremock-extensions" target="_blank" style="color: var(--accent-blue); text-decoration: none;">GitHub ↗</a>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module">
+    const btnThemeToggle = document.getElementById('btnThemeToggle');
+    btnThemeToggle.addEventListener('click', () => {
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+    });
+  </script>
+</body>
+</html>

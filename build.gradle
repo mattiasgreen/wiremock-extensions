@@ -99,6 +99,10 @@ subprojects {
         }
     }
 
+    tasks.named('check') {
+        dependsOn tasks.named('javadoc')
+    }
+
     if (project.name != 'wiremock-examples') {
         publishing {
             publications {

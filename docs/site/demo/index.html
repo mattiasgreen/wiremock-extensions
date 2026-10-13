@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WireMock Console</title>
+  <script>
+    if (window.location.pathname.endsWith('/ui')) {
+      window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="navbar" data-testid="navbar">
+      <div class="brand">
+        <span class="logo">⚡</span>
+        <h1>WireMock <span class="brand-title">Console</span></h1>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions Version and Git Branch">v0.1.0-SNAPSHOT (feat/openapi-proxy-recording@27d3381)</span>
+      </div>
+      <nav class="nav-tabs" role="tablist">
+        <button class="tab nav-tab active" data-tab="tab-stub-detail" role="tab" id="nav-tab-stubs" data-testid="nav-tab-stubs">
+          <span class="tab-icon">📋</span> Stubs <span id="stat-stubs" class="nav-badge">0</span>
+        </button>
+        <button class="tab nav-tab" data-tab="tab-journal" role="tab" id="nav-tab-journal" data-testid="nav-tab-journal">
+          <span class="tab-icon">📜</span> Request Journal <span id="stat-requests" class="nav-badge">0</span>
+          <span id="journal-count" class="hidden">0</span>
+        </button>
+        <button class="tab nav-tab" data-tab="tab-tester" role="tab" id="nav-tab-tester" data-testid="nav-tab-tester">
+          <span class="tab-icon">🚀</span> HTTP Tester
+        </button>
+        <button class="tab nav-tab" data-tab="tab-scenarios" role="tab" id="nav-tab-scenarios" data-testid="nav-tab-scenarios">
+          <span class="tab-icon">🔀</span> Scenarios <span id="stat-scenarios" class="nav-badge">0</span>
+        </button>
+        <button class="tab nav-tab" data-tab="tab-netem" role="tab" id="nav-tab-netem" data-testid="nav-tab-netem">
+          <span class="tab-icon">📶</span> TCP NetEm <span id="stat-netem-toxics" class="nav-badge">0</span>
+        </button>
+      </nav>
+      <div class="nav-actions">
+        <button id="btn-target-host" class="btn btn-secondary btn-target-host" data-testid="btn-target-host" title="Configure WireMock Target Server">
+          <span class="target-host-dot" id="target-host-dot"></span>
+          <span id="target-host-label">Target: (same-origin)</span>
+        </button>
+        <a href="https://mattiasgreen.github.io/wiremock-extensions/docs/" target="_blank" class="btn btn-link" id="link-docs" title="Open WireMock Extensions Documentation">📚 Docs</a>
+        <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
+        <a href="../metrics/prometheus" target="_blank" class="btn btn-link" id="link-metrics" title="Open Prometheus Metrics">📊 Metrics</a>
+      </div>
+    </header>
+
+    <main class="main-container" data-active-tab="tab-stub-detail">
+      <!-- Sidebar / Stub List (Persistent for Stubs Explorer & HTTP Tester) -->
+      <aside class="sidebar" id="sidebar-stubs" data-testid="sidebar-stubs">
+        <div class="search-bar">
+          <input type="text" id="search-box" data-testid="search-box" placeholder="Filter stubs by URL, method, name, or tag..." autocomplete="off">
+        </div>
+        
+        <div class="project-filter-bar">
+          <select id="project-filter-select" data-testid="project-filter-select" class="project-filter-select" title="Filter by Project">
+            <option value="">📁 All Projects</option>
+          </select>
+          <div class="status-filter-pills">
+            <button class="filter-pill active" data-filter="all" id="btn-filter-all" data-testid="btn-filter-all">All (<span id="count-filter-all">0</span>)</button>
+            <button class="filter-pill" data-filter="active" id="btn-filter-active" data-testid="btn-filter-active">Active (<span id="count-filter-active">0</span>)</button>
+            <button class="filter-pill" data-filter="disabled" id="btn-filter-disabled" data-testid="btn-filter-disabled">Disabled (<span id="count-filter-disabled">0</span>)</button>
+            <button class="filter-pill" data-filter="dynamic" id="btn-filter-dynamic" data-testid="btn-filter-dynamic">⚡ Dynamic (<span id="count-filter-dynamic">0</span>)</button>
+          </div>
+        </div>
+
+        <div id="project-lifecycle-bar" class="project-lifecycle-bar hidden" data-testid="project-lifecycle-bar">
+          <div class="project-lifecycle-left">
+            <span id="project-mode-badge" class="project-mode-badge mode-proxy" data-testid="project-mode-badge">LIVE PROXY</span>
+            <span id="project-active-name" class="project-active-name"></span>
+          </div>
+          <div class="project-lifecycle-actions">
+            <button id="btn-project-mode-toggle" data-testid="btn-project-mode-toggle" class="btn btn-tiny btn-secondary" title="Switch project between Live Proxy mode and offline Stubs mode">🔄 Switch Mode</button>
+            <button id="btn-project-snapshot" data-testid="btn-project-snapshot" class="btn btn-tiny btn-primary" title="Snapshot recorded live traffic into disabled stubs for this project">📸 Snapshot</button>
+          </div>
+        </div>
+
+        <div class="stub-list-header">
+          <div class="stub-list-title-group">
+            <label class="select-all-label" title="Select all visible stubs">
+              <input type="checkbox" id="chk-select-all" data-testid="chk-select-all">
+              <span>Stubs</span>
+            </label>
+            <span id="stubs-count-label" class="muted-text">0 mappings</span>
+          </div>
+          <div class="stub-list-header-actions">
+            <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping">➕ New</button>
+            <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create a dynamic / stateful simulation stub">⚡ Dynamic</button>
+            <button id="btn-open-openapi-modal" data-testid="btn-open-openapi-modal" class="btn btn-tiny btn-secondary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
+            <button id="btn-export-stubs" data-testid="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
+            <button id="btn-refresh-stubs" data-testid="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <div id="stub-list" class="stub-list" data-testid="stub-list" data-state="loading">
+          <div class="loading-state">Loading stub mappings...</div>
+        </div>
+
+        <!-- Sticky Bulk Actions Bar -->
+        <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
+          <div class="bulk-bar-left">
+            <span id="bulk-selected-count">0 selected</span>
+          </div>
+          <div class="bulk-bar-actions">
+            <button id="btn-bulk-enable" class="btn btn-tiny btn-success" title="Enable selected stubs">🟢 Enable</button>
+            <button id="btn-bulk-disable" class="btn btn-tiny btn-warning" title="Disable selected stubs">⏸️ Disable</button>
+            <button id="btn-bulk-export" class="btn btn-tiny btn-secondary" title="Export selected stubs">📤 Export</button>
+            <button id="btn-bulk-delete" class="btn btn-tiny btn-danger" title="Delete selected stubs">🗑️ Delete</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Workspace Area for Active Tabs -->
+      <div class="workspace-area">
+        <!-- Tab 1: Stub Details (Master-Detail Inspector) -->
+        <div id="tab-stub-detail" class="tab-content active" data-testid="tab-stub-detail">
+          <!-- Stub Detail Inspector (Detail) -->
+          <section class="stub-detail-panel" data-testid="stub-detail-panel">
+            <div id="stub-detail-empty" class="empty-state" data-testid="stub-detail-empty">
+              <div id="stub-detail-empty-default">
+                <p>Select a stub mapping from the left panel to inspect its configuration.</p>
+              </div>
+              <div id="stub-detail-empty-welcome" class="welcome-guide hidden" data-testid="stub-detail-welcome">
+                <div class="welcome-header">
+                  <span class="welcome-logo">⚡</span>
+                  <h2>Welcome to WireMock Console</h2>
+                  <p class="welcome-subtitle">Get started by bootstrapping your API stubs or defining a new stub from scratch.</p>
+                </div>
+                <div class="welcome-cards">
+                  <div class="welcome-card welcome-card-primary">
+                    <div class="welcome-badge">Recommended</div>
+                    <div class="welcome-icon">📥</div>
+                    <h3>Bootstrap from OpenAPI</h3>
+                    <p>Import an OpenAPI 3.0 / 3.1 specification to synthesize mock stubs or live proxies instantly.</p>
+                    <button type="button" id="btn-welcome-openapi" class="btn btn-primary" title="Import stubs from OpenAPI spec">📥 Import OpenAPI Spec</button>
+                  </div>
+                  <div class="welcome-card">
+                    <div class="welcome-icon">➕</div>
+                    <h3>Create Stub from Scratch</h3>
+                    <p>Define custom stubs matching URIs, request bodies ("contains string X"), or JSON matchers using built-in examples.</p>
+                    <button type="button" id="btn-welcome-create" class="btn btn-secondary" title="Create a new stub from scratch">➕ Create New Stub</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <div id="stub-detail-view" class="detail-view hidden" data-testid="stub-detail-view">
+            <div class="detail-header">
+              <div class="detail-title-group">
+                <span id="detail-method" data-testid="detail-method" class="http-badge">GET</span>
+                <span id="detail-url" data-testid="detail-url" class="detail-url">/path</span>
+                <span id="detail-name" data-testid="detail-name" class="detail-name"></span>
+              </div>
+              <div class="detail-actions">
+                <button id="btn-test-stub" data-testid="btn-test-stub" class="btn btn-small btn-primary" title="Open and test this stub in the HTTP Tester">⚡ Test Stub</button>
+                <button id="btn-edit-stub" data-testid="btn-edit-stub" class="btn btn-small" title="Edit this stub mapping configuration">✏️ Edit</button>
+                <button id="btn-clone-stub" data-testid="btn-clone-stub" class="btn btn-small" title="Duplicate this stub mapping">📄 Duplicate</button>
+                <button id="btn-toggle-stub" data-testid="btn-toggle-stub" class="btn btn-small btn-warning" title="Toggle active/disabled state">⏸️ Disable Stub</button>
+                <button id="btn-delete-stub" data-testid="btn-delete-stub" class="btn btn-small btn-danger" title="Permanently delete this stub">🗑️ Delete</button>
+                <button id="btn-view-stub-in-journal" data-testid="btn-view-stub-in-journal" class="btn btn-small" title="Search for this stub in Request Journal">🔍 View in Journal</button>
+                <button id="btn-copy-curl" data-testid="btn-copy-curl" class="btn btn-small" title="Copy request as cURL command">📋 Copy cURL</button>
+                <button id="btn-copy-json" data-testid="btn-copy-json" class="btn btn-small" title="Copy stub mapping JSON">📋 Copy JSON</button>
+              </div>
+            </div>
+
+            <div class="detail-summary-cards">
+              <div class="summary-card">
+                <div class="card-label">Response Status</div>
+                <div id="detail-status" data-testid="detail-status" class="card-value status-200">200</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Priority</div>
+                <div id="detail-priority" data-testid="detail-priority" class="card-value">5</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Project</div>
+                <div id="detail-project" data-testid="detail-project" class="card-value card-project">Ungrouped</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Lifecycle State</div>
+                <div id="detail-lifecycle-state" data-testid="detail-lifecycle-state" class="card-value text-success">ACTIVE</div>
+              </div>
+              <div class="summary-card">
+                <div class="card-label">Scenario</div>
+                <div id="detail-scenario" data-testid="detail-scenario" class="card-value">None</div>
+              </div>
+            </div>
+
+            <!-- Dynamic / Stateful Simulation Specification Panel -->
+            <div id="detail-stateful-section" class="detail-stateful-section hidden" data-testid="detail-stateful-section">
+              <div class="stateful-spec-card">
+                <div class="stateful-card-header">
+                  <div class="stateful-title">⚡ Stateful Simulation Engine: <strong id="stateful-entity-label">cases</strong></div>
+                  <span class="stateful-scope-pill" id="stateful-route-scope">/api/v1/cases/**</span>
+                </div>
+                <div class="stateful-details-grid">
+                  <div class="stateful-subcard">
+                    <div class="stateful-subcard-title">🛡️ Invariant Preconditions (<span id="stateful-invariants-count">0</span>)</div>
+                    <div id="stateful-invariants-list" class="stateful-rule-list">None</div>
+                  </div>
+                  <div class="stateful-subcard">
+                    <div class="stateful-subcard-title">🔄 State Mutations (<span id="stateful-mutations-count">0</span>)</div>
+                    <div id="stateful-mutations-list" class="stateful-rule-list">None</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="code-viewer-container">
+              <div class="code-viewer-header">Stub Mapping JSON</div>
+              <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Tab 2: Request Journal (Full Width) -->
+      <div id="tab-journal" class="tab-content" data-testid="tab-journal">
+        <!-- Contextual Dismissible Filter Banner (When viewing requests for a stub) -->
+        <div id="journal-context-banner" class="journal-context-banner hidden" data-testid="journal-context-banner">
+          <div class="journal-filter-chip">
+            <span class="chip-icon">🏷️</span>
+            <span id="journal-filter-chip-text">Filtered by Stub</span>
+            <button id="btn-journal-clear-stub-filter" title="Clear filter to view all global requests and unmatched 404s">✕</button>
+          </div>
+          <span class="journal-filter-hint">Showing matched requests only. Click ✕ to view all global requests & unmatched 404s.</span>
+        </div>
+
+        <div class="journal-controls">
+          <div class="journal-controls-top">
+            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, method, status code..." autocomplete="off">
+          </div>
+          <div class="journal-controls-bottom">
+            <div class="journal-filters-group">
+              <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched (404) only</label>
+              <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh" data-testid="journal-auto-refresh"> Live auto-refresh (3s)</label>
+              <span id="journal-filtered-count" class="muted-text"></span>
+            </div>
+            <div class="journal-actions-group">
+              <button id="btn-refresh-journal" data-testid="btn-refresh-journal" class="btn btn-small btn-secondary" title="Refresh request journal">🔄 Refresh</button>
+              <button id="btn-reset-journal" data-testid="btn-reset-journal" class="btn btn-small btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="journal-table" data-testid="journal-table">
+            <thead>
+              <tr>
+                <th style="width: 24px;"></th>
+                <th>Time</th>
+                <th>Method</th>
+                <th>URL</th>
+                <th>Status</th>
+                <th>Matched</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody id="journal-list" data-testid="journal-list" data-state="ready">
+              <tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 3: HTTP Tester (Full Width) -->
+      <div id="tab-tester" class="tab-content" data-testid="tab-tester">
+        <!-- Contextual Pre-Fill Banner -->
+        <div id="tester-context-banner" class="tester-context-banner hidden" data-testid="tester-context-banner">
+          <div class="tester-context-left">
+            <span class="context-icon">🔗</span>
+            <span id="tester-context-title">Pre-filled from stub</span>
+          </div>
+          <div class="tester-context-actions">
+            <button id="btn-tester-reset-stub" class="btn btn-tiny btn-secondary" title="Reset tester back to selected stub configuration">↺ Reset to Stub</button>
+            <button id="btn-tester-clear-context" class="btn btn-tiny btn-secondary" title="Clear pre-filled values for ad-hoc request">Clear for Ad-hoc</button>
+          </div>
+        </div>
+
+        <div class="tester-container">
+          <div class="tester-workspace">
+            <!-- Left Vertical History Panel (Horizontally Collapsible) -->
+            <aside class="tester-history-panel" id="tester-history-panel" data-testid="tester-history-panel">
+              <!-- Expanded View Header -->
+              <div class="tester-history-header">
+                <span class="history-title">⏱️ History (<span id="tester-history-count">0</span>)</span>
+                <div class="tester-history-header-actions">
+                  <button id="btn-tester-clear-history" data-testid="btn-tester-clear-history" class="btn btn-tiny" title="Clear request history">Clear</button>
+                  <button id="btn-toggle-tester-history" data-testid="btn-toggle-tester-history" class="btn btn-tiny btn-history-collapse" title="Collapse history sidebar">◀</button>
+                </div>
+              </div>
+              <div id="tester-history-list" data-testid="tester-history-list" class="tester-history-list">
+                <div class="empty-state text-small">No requests sent yet.</div>
+              </div>
+
+              <!-- Collapsed Mini Rail -->
+              <div class="tester-history-collapsed-bar" id="tester-history-collapsed-bar" title="Expand Request History">
+                <button id="btn-expand-tester-history" class="btn btn-tiny btn-history-expand" title="Expand history sidebar">▶</button>
+                <span class="collapsed-history-icon" title="Request History">⏱️</span>
+                <span id="tester-history-collapsed-count" class="badge-count" title="History item count">0</span>
+                <span class="collapsed-history-label">History</span>
+              </div>
+            </aside>
+
+            <!-- Center & Right Split Panels: Request Builder & Response Inspector -->
+            <div class="tester-main-panel">
+              <!-- Request Builder Panel -->
+              <div class="tester-request-panel" data-testid="tester-request-panel">
+                <div class="tester-url-bar">
+                  <select id="tester-method" data-testid="tester-method" class="tester-method-select">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                    <option value="DELETE">DELETE</option>
+                    <option value="HEAD">HEAD</option>
+                    <option value="OPTIONS">OPTIONS</option>
+                  </select>
+                  <input type="text" id="tester-url" data-testid="tester-url" placeholder="/api/v1/..." value="/api/v1/users" autocomplete="off">
+                  <button id="btn-tester-send" data-testid="btn-tester-send" class="btn btn-primary" title="Send Request (Ctrl+Enter)">🚀 Send</button>
+                </div>
+
+                <div class="tester-subcontrols">
+                  <div class="tester-section">
+                    <div class="tester-section-header">
+                      <span>Request Headers</span>
+                      <div class="preset-badges">
+                        <span class="preset-badge" id="btn-preset-json" title="Add Content-Type: application/json">+ JSON</span>
+                        <span class="preset-badge" id="btn-preset-bearer" title="Add Authorization: Bearer token">+ Bearer</span>
+                        <span class="preset-badge" id="btn-preset-accept" title="Add Accept: application/json">+ Accept</span>
+                      </div>
+                    </div>
+                    <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
+                  </div>
+
+                  <div class="tester-section" id="tester-body-section">
+                    <div class="tester-section-header">
+                      <span>Request Body</span>
+                      <button id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
+                    </div>
+                    <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
+                  </div>
+                </div>
+
+                <div class="tester-action-bar">
+                  <button id="btn-tester-copy-curl" class="btn btn-small" title="Copy as cURL">📋 Copy cURL</button>
+                  <button id="btn-tester-share-link" class="btn btn-small" title="Copy shareable link with encoded request">🔗 Copy Share Link</button>
+                  <button id="btn-tester-reset-form" class="btn btn-small" title="Reset request builder">↺ Reset</button>
+                  <span class="muted-text text-small" style="margin-left: auto;">Press <kbd>Ctrl+Enter</kbd> to send</span>
+                </div>
+              </div>
+
+              <!-- Execution Inspector Panel (Request & Response) -->
+              <div class="tester-response-panel">
+                <div class="tester-response-header">
+                  <div class="tester-response-meta">
+                    <span class="muted-text">Status:</span>
+                    <span id="tester-response-status" class="card-value" style="font-size: 0.95rem; margin: 0;">—</span>
+                    <span id="tester-response-time" class="muted-text text-small">—</span>
+                    <span id="tester-response-size" class="muted-text text-small">—</span>
+                  </div>
+                  <div class="tester-response-actions">
+                    <div class="view-mode-toggle" id="tester-view-switcher">
+                      <button class="btn btn-small active" id="btn-tester-tab-response" title="View Response">Response</button>
+                      <button class="btn btn-small" id="btn-tester-tab-request" title="View Sent Request">Sent Request</button>
+                      <button class="btn btn-small" id="btn-tester-tab-both" title="View Both">Both</button>
+                    </div>
+                    <div class="view-mode-toggle" id="tester-format-switcher">
+                      <button class="btn btn-small active" id="btn-view-highlighted">Formatted</button>
+                      <button class="btn btn-small" id="btn-view-raw">Raw</button>
+                    </div>
+                    <button id="btn-tester-copy-response" class="btn btn-small" title="Copy response body">📋 Copy</button>
+                  </div>
+                </div>
+
+                <div id="tester-inspector-content" class="tester-inspector-content">
+                  <!-- Response View Container -->
+                  <div id="tester-view-response" class="inspector-view active">
+                    <div class="headers-permanent-section">
+                      <div class="headers-section-label">Response Headers (<span id="tester-response-header-count">0</span>)</div>
+                      <pre id="tester-response-headers" class="code-block-mini">(no headers yet)</pre>
+                    </div>
+                    <div class="code-viewer-container" style="flex: 1;">
+                      <div class="headers-section-label">Response Body</div>
+                      <pre id="tester-response-body" class="code-block">(no response yet - press Send)</pre>
+                    </div>
+                  </div>
+
+                  <!-- Sent Request View Container -->
+                  <div id="tester-view-request" class="inspector-view hidden">
+                    <div class="sent-summary-bar">
+                      <span id="tester-sent-method" class="http-badge">GET</span>
+                      <span id="tester-sent-url" class="detail-url">/api/v1/users</span>
+                    </div>
+                    <div class="headers-permanent-section">
+                      <div class="headers-section-label">Sent Request Headers</div>
+                      <pre id="tester-sent-headers" class="code-block-mini">(no headers sent)</pre>
+                    </div>
+                    <div class="code-viewer-container" style="flex: 1;">
+                      <div class="headers-section-label">Sent Request Body</div>
+                      <pre id="tester-sent-body" class="code-block">(empty body)</pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Scenarios (Full Width) -->
+      <div id="tab-scenarios" class="tab-content" data-testid="tab-scenarios">
+        <div class="scenarios-header-bar">
+          <div class="scenarios-title-group">
+            <span class="scenarios-title">Active Scenarios</span>
+            <span class="muted-text text-small">Stateful scenario progression</span>
+          </div>
+          <div class="scenarios-actions-group">
+            <button id="btn-refresh-scenarios" data-testid="btn-refresh-scenarios" class="btn btn-small btn-secondary" title="Refresh scenario states">🔄 Refresh</button>
+            <button id="btn-reset-scenarios" data-testid="btn-reset-scenarios" class="btn btn-small btn-secondary" title="Reset all scenarios to Started state">↺ Reset Scenarios</button>
+          </div>
+        </div>
+        <div id="scenarios-container" class="scenarios-container" data-testid="scenarios-container">
+          <div class="empty-state">No active stateful scenarios found.</div>
+        </div>
+      </div>
+
+      <!-- Tab 5: TCP NetEm (Full Width) -->
+      <div id="tab-netem" class="tab-content" data-testid="tab-netem">
+        <div class="scenarios-header-bar">
+          <div class="scenarios-title-group">
+            <span class="scenarios-title">📶 TCP Network Impairment (NetEm)</span>
+            <span class="netem-ingress-badge" id="netem-ingress-info">Ingress: 127.0.0.1:8081 ➔ Target: 127.0.0.1:8080</span>
+          </div>
+          <div class="scenarios-actions-group">
+            <button id="btn-netem-refresh" data-testid="btn-netem-refresh" class="btn btn-small btn-secondary" title="Refresh NetEm status and journal">🔄 Refresh</button>
+            <button id="btn-netem-add-toxic" data-testid="btn-netem-add-toxic" class="btn btn-small btn-primary" title="Add toxic impairment">➕ Add Toxic</button>
+            <button id="btn-netem-reset-all" data-testid="btn-netem-reset-all" class="btn btn-small btn-secondary" title="Remove all toxics">↺ Reset All Toxics</button>
+          </div>
+        </div>
+
+        <!-- NetEm Metrics Summary -->
+        <div class="netem-stats-grid">
+          <div class="netem-stat-card">
+            <div class="stat-label">Normal Traffic</div>
+            <div class="stat-value text-success" id="netem-stat-normal-transfers">0</div>
+            <div class="stat-sub">unimpaired transfers</div>
+          </div>
+          <div class="netem-stat-card">
+            <div class="stat-label">Impaired Traffic</div>
+            <div class="stat-value text-warning" id="netem-stat-impaired-transfers">0</div>
+            <div class="stat-sub">chaos / throttled transfers</div>
+          </div>
+          <div class="netem-stat-card">
+            <div class="stat-label">Active Connections</div>
+            <div class="stat-value" id="netem-stat-active-conn">0</div>
+            <div class="stat-sub">in-flight TCP sockets</div>
+          </div>
+          <div class="netem-stat-card">
+            <div class="stat-label">Active Toxics</div>
+            <div class="stat-value text-primary" id="netem-stat-active-toxics">0</div>
+            <div class="stat-sub">configured impairments</div>
+          </div>
+        </div>
+
+        <!-- Presets Bar -->
+        <div class="netem-presets-bar">
+          <span class="presets-label">⚡ Quick Presets:</span>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="MOBILE_3G" id="btn-preset-3g">📱 3G Mobile</button>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="FLAKY_WIFI" id="btn-preset-wifi">📶 Flaky Wi-Fi</button>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="INSTANT_RST" id="btn-preset-rst">⚡ Instant RST</button>
+          <button type="button" class="btn btn-tiny btn-secondary netem-preset-btn" data-preset="TIMEOUT_BLACKHOLE" id="btn-preset-timeout">⏳ Connection Timeout</button>
+        </div>
+
+        <!-- Active Toxics Grid -->
+        <div class="netem-section-title">
+          <span>Active Impairments (Toxics)</span>
+          <span class="muted-text text-small">Dynamically injected into Virtual Thread TCP pipeline</span>
+        </div>
+        <div id="netem-toxics-list" class="netem-toxics-grid" data-testid="netem-toxics-list">
+          <div class="empty-state">✅ No network impairments active. All traffic on port 8081 flows at line rate.</div>
+        </div>
+
+        <!-- Live NetEm Journal -->
+        <div class="netem-section-title" style="margin-top: 24px;">
+          <span>Live NetEm Event Journal</span>
+          <span class="muted-text text-small">Pre-allocated lock-free circular ring buffer (O(1) memory)</span>
+        </div>
+        <div class="netem-journal-controls">
+          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by X-Correlation-Id..." style="flex: 2;">
+          <select id="netem-journal-filter-outcome" class="form-control" style="flex: 1;">
+            <option value="">All Outcomes</option>
+            <option value="impaired">⚠️ Impaired Only</option>
+            <option value="normal">✅ Normal Only</option>
+          </select>
+          <label class="netem-auto-refresh-label"><input type="checkbox" id="netem-journal-auto-refresh" checked> Auto Refresh</label>
+          <button type="button" id="btn-netem-clear-journal" class="btn btn-tiny btn-secondary">🗑 Clear Journal</button>
+        </div>
+        <div class="netem-journal-table-wrapper">
+          <table id="netem-journal-table" class="netem-table" data-testid="netem-journal-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Correlation ID</th>
+                <th>Client</th>
+                <th>Duration</th>
+                <th>Bytes (Up / Down)</th>
+                <th>Applied Impairments</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="netem-journal-tbody">
+              <tr class="empty-state-row"><td colspan="7" class="empty-state-cell">No matching network events recorded in NetEm journal.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div> <!-- end .workspace-area -->
+  </main>
+
+    <!-- Unified Import Hub Modal -->
+    <div id="openapi-modal" class="modal-backdrop hidden" data-testid="openapi-modal">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">📥</span>
+            <h3>Import Stubs & Specifications</h3>
+          </div>
+          <button id="btn-close-openapi-modal" data-testid="btn-close-openapi-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+        </div>
+        <div class="modal-tabs">
+          <button type="button" id="import-tab-openapi" class="modal-tab active">📄 OpenAPI Spec</button>
+          <button type="button" id="import-tab-bundle" class="modal-tab">📦 WireMock JSON Bundle</button>
+        </div>
+        <div class="modal-body">
+          <!-- OpenAPI Import Subview -->
+          <div id="import-view-openapi">
+            <p class="modal-description">Paste or upload an OpenAPI 3.0 or 3.1 specification (YAML or JSON) to synthesize WireMock stub mappings.</p>
+            
+            <div class="openapi-dropzone" id="openapi-dropzone">
+              <input type="file" id="openapi-file-input" accept=".yaml,.yml,.json" style="display: none;">
+              <div class="dropzone-content">
+                <span class="dropzone-icon">📁</span>
+                <span class="dropzone-text">Drag & drop OpenAPI YAML/JSON file here, or <button type="button" class="btn btn-tiny btn-secondary" id="btn-browse-openapi-file">Browse File</button></span>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <label for="openapi-spec-content">Or paste specification directly:</label>
+              <textarea id="openapi-spec-content" class="code-input" rows="8" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
+            </div>
+
+            <div class="openapi-mode-selector" style="margin-top: 12px; display: flex; gap: 16px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);">
+              <label class="radio-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
+                <input type="radio" name="openapi-gen-mode" id="opt-openapi-mode-synthetic" value="SYNTHETIC" checked>
+                <span>🎨 Synthetic Mocks (Offline)</span>
+              </label>
+              <label class="radio-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
+                <input type="radio" name="openapi-gen-mode" id="opt-openapi-mode-proxy" value="PROXY">
+                <span>🌐 Live Proxy & Recording</span>
+              </label>
+            </div>
+
+            <div id="openapi-proxy-config" class="hidden" style="margin-top: 10px; padding: 10px 12px; border-radius: 6px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2);">
+              <div class="form-group">
+                <label for="openapi-proxy-url" style="color: #38bdf8; font-weight: 500;">Target Upstream Base URL (proxyBaseUrl):</label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="url" id="openapi-proxy-url" class="form-control" placeholder="https://api.example.com" style="flex: 2;">
+                  <select id="openapi-server-select" class="form-control" style="flex: 1;" title="Servers found in OpenAPI spec">
+                    <option value="">Spec Servers (Auto)...</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row" style="display: flex; gap: 12px; margin-top: 8px;">
+                <div class="form-group" style="flex: 1;">
+                  <label for="openapi-project-name">Project Group Name:</label>
+                  <input type="text" id="openapi-project-name" class="form-control" placeholder="e.g. Petstore API">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label for="openapi-proxy-headers">Upstream Headers (optional):</label>
+                  <input type="text" id="openapi-proxy-headers" class="form-control" placeholder="Authorization: Bearer token">
+                </div>
+              </div>
+              <small style="color: var(--text-muted); display: block; margin-top: 6px;">Incoming request headers (Authorization, MDC, etc.) are auto-propagated to upstream per default.</small>
+            </div>
+
+            <div class="openapi-options-grid" style="margin-top: 12px;">
+              <label class="checkbox-label"><input type="checkbox" id="opt-openapi-success-only"> Success responses only (2xx)</label>
+              <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-headers" checked> Match required headers</label>
+              <label class="checkbox-label"><input type="checkbox" id="opt-openapi-match-queries" checked> Match required query params</label>
+            </div>
+
+            <div id="openapi-import-feedback" class="modal-feedback hidden"></div>
+            
+            <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
+              <button id="btn-cancel-openapi" class="btn btn-secondary">Cancel</button>
+              <button id="btn-submit-openapi-import" class="btn btn-primary">🚀 Generate Stubs</button>
+            </div>
+          </div>
+
+          <!-- WireMock Bundle Import Subview -->
+          <div id="import-view-bundle" class="hidden">
+            <p class="modal-description">Import existing WireMock mappings from a JSON bundle file or raw JSON payload.</p>
+
+            <div class="openapi-dropzone" id="bundle-dropzone">
+              <input type="file" id="bundle-file-input" accept=".json" style="display: none;">
+              <div class="dropzone-content">
+                <span class="dropzone-icon">📦</span>
+                <span class="dropzone-text">Drag & drop WireMock JSON file here, or <button type="button" class="btn btn-tiny btn-secondary" id="btn-browse-bundle-file">Browse File</button></span>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+              <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+              <textarea id="bundle-content" class="code-input" rows="8" placeholder='{&#10;  "mappings": [&#10;    { "request": { "method": "GET", "url": "/example" }, "response": { "status": 200 } }&#10;  ]&#10;}'></textarea>
+            </div>
+
+            <div class="form-row" style="margin-top: 12px; display: flex; gap: 12px;">
+              <div class="form-group" style="flex: 1;">
+                <label for="bundle-conflict-policy">Conflict Policy:</label>
+                <select id="bundle-conflict-policy" class="form-control">
+                  <option value="OVERWRITE">Overwrite duplicates (by ID)</option>
+                  <option value="APPEND">Append as new (generate new IDs)</option>
+                  <option value="IGNORE">Ignore duplicates</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="bundle-target-project">Target Project (optional):</label>
+                <input type="text" id="bundle-target-project" class="form-control" placeholder="e.g. Payments API">
+              </div>
+            </div>
+
+            <div id="bundle-import-feedback" class="modal-feedback hidden"></div>
+
+            <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
+              <button type="button" class="btn btn-secondary" onclick="document.getElementById('openapi-modal').classList.add('hidden')">Cancel</button>
+              <button id="btn-submit-bundle-import" class="btn btn-primary">📥 Import Stubs</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stub Editor & Clone Modal -->
+    <div id="stub-editor-modal" class="modal-backdrop hidden" data-testid="stub-editor-modal">
+      <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">✏️</span>
+            <h3 id="editor-modal-title">Edit Stub Mapping</h3>
+          </div>
+          <button id="btn-close-editor-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <!-- OpenAPI Bootstrap Banner (Primary way to bootstrap) -->
+          <div id="editor-openapi-banner" class="editor-openapi-banner" data-testid="editor-openapi-banner">
+            <div class="editor-openapi-banner-text">
+              <span class="banner-icon">💡</span>
+              <span><strong>Bootstrapping a full API?</strong> The primary way is to point to an OpenAPI spec to generate all stubs automatically.</span>
+            </div>
+            <button type="button" id="btn-editor-open-openapi" class="btn btn-tiny btn-secondary" title="Switch to OpenAPI Spec Import">📥 Import OpenAPI Spec</button>
+          </div>
+
+          <!-- Template / Example Selector -->
+          <div id="editor-template-group" class="form-group editor-template-group" data-testid="editor-template-group">
+            <div class="template-label-row">
+              <label for="editor-template-select"><strong>Example Templates:</strong> <span class="muted-text">Choose an example to pre-fill configuration</span></label>
+            </div>
+            <div class="template-select-row">
+              <select id="editor-template-select" class="form-control" data-testid="editor-template-select">
+                <option value="custom">Blank / Custom Stub</option>
+                <option value="uri-get" selected>Matching URI only (GET /api/v1/items)</option>
+                <option value="body-contains">Matching Request Body ("body contains string X")</option>
+                <option value="body-json">Matching Request JSON Body (POST /api/v1/orders)</option>
+                <option value="url-pattern">Matching URL Regex Pattern (GET /api/v1/items/[0-9]+)</option>
+                <option value="error-response">Error Response (404 Not Found)</option>
+              </select>
+              <button type="button" id="btn-apply-template" class="btn btn-tiny btn-secondary">Apply Example</button>
+            </div>
+          </div>
+
+          <div class="editor-section-header">Metadata &amp; Routing</div>
+          <div class="form-row" style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 2;">
+              <label for="editor-name">Stub Name:</label>
+              <input type="text" id="editor-name" class="form-control" placeholder="Descriptive stub name...">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-priority">Priority (1 = highest):</label>
+              <input type="number" id="editor-priority" class="form-control" value="5" min="1" max="100">
+            </div>
+          </div>
+
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-project">Project / API Group:</label>
+              <input type="text" id="editor-project" class="form-control" placeholder="e.g. Warehouse Service">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-tags">Tags (comma-separated):</label>
+              <input type="text" id="editor-tags" class="form-control" placeholder="e.g. inventory, v1, core">
+            </div>
+          </div>
+
+          <div class="editor-section-header" style="margin-top: 14px;">Request Matching</div>
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 6px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-method">HTTP Method:</label>
+              <select id="editor-method" class="form-control">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+                <option value="PATCH">PATCH</option>
+                <option value="HEAD">HEAD</option>
+                <option value="OPTIONS">OPTIONS</option>
+                <option value="ANY">ANY</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex: 3;">
+              <label for="editor-url">URL / Path Pattern / Path Template:</label>
+              <input type="text" id="editor-url" class="form-control" placeholder="/api/v1/resource or /resource/{id}">
+            </div>
+          </div>
+
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-body-match-type">Request Body Matcher:</label>
+              <select id="editor-body-match-type" class="form-control" data-testid="editor-body-match-type">
+                <option value="none">None (Match any request body)</option>
+                <option value="contains">Body contains string ("contains")</option>
+                <option value="equalToJson">JSON match (equalToJson)</option>
+                <option value="equalTo">Exact string match (equalTo)</option>
+                <option value="matchesJsonPath">JSONPath expression (matchesJsonPath)</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="editor-body-match-container" class="form-group hidden" style="margin-top: 10px;">
+            <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
+            <textarea id="editor-body-match-pattern" class="code-input" rows="3" placeholder="Expected pattern or substring..."></textarea>
+          </div>
+
+          <div class="editor-section-header" style="margin-top: 14px;">Response Definition</div>
+          <div class="form-row" style="display: flex; gap: 12px; margin-top: 6px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="editor-status">Status Code:</label>
+              <input type="number" id="editor-status" class="form-control" value="200">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label for="editor-headers">Response Headers (key: value per line):</label>
+            <textarea id="editor-headers" class="code-input" rows="3" placeholder="Content-Type: application/json"></textarea>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="editor-body">Response Body:</label>
+              <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
+            </div>
+            <textarea id="editor-body" class="code-input" rows="7" placeholder="{ &quot;key&quot;: &quot;value&quot; }"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-cancel-editor" class="btn btn-secondary">Cancel</button>
+          <button id="btn-save-editor" class="btn btn-primary">💾 Save Mapping</button>
+        </div>
+      </div>
+    </div>
+
+  <!-- Target Host Configuration Modal -->
+  <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3>🎯 WireMock Target Server</h3>
+        <button id="btn-close-target-host" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px; gap: 8px;">
+        <p class="modal-description" style="margin-bottom: 6px; font-size: 0.83rem; color: var(--text-muted);">
+          Point this console to any WireMock instance. Configuration is stored in the browser URL (<code>?wiremock=...&amp;strategy=...</code>).
+        </p>
+        <div class="form-group">
+          <label for="input-target-host"><strong>WireMock Target Base URL:</strong></label>
+          <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080 or https://gateway:8443/prefix" autocomplete="off" data-testid="input-target-host">
+          <div style="margin-top: 3px; font-size: 0.75rem; color: var(--text-muted);">
+            Supports full scheme, hostname, port, and gateway reverse-proxy path prefixes.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 6px;">
+          <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.82rem;">Connection Strategy:</label>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
+              <input type="radio" name="target-strategy" id="radio-strategy-proxy" value="proxy" checked style="margin-top: 2px;" data-testid="radio-strategy-proxy">
+              <div>
+                <div style="font-weight: 500; font-size: 0.82rem;">Proxy via Gateway Headers (CORS-free, Recommended)</div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                  Browser requests stay relative to console; forwarded upstream using <code>X-Forwarded-*</code> headers.
+                </div>
+              </div>
+            </label>
+            <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
+              <input type="radio" name="target-strategy" id="radio-strategy-direct" value="direct" style="margin-top: 2px;" data-testid="radio-strategy-direct">
+              <div>
+                <div style="font-weight: 500; font-size: 0.82rem;">Direct Browser Request (CORS Required)</div>
+                <div style="font-size: 0.74rem; color: var(--text-muted);">
+                  Browser sends cross-origin requests directly to target URL. Remote instance must have CORS enabled.
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div id="target-capabilities-section" class="target-capabilities-section" style="margin-top: 8px;" data-testid="target-capabilities-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-weight: 600; font-size: 0.82rem; color: var(--text-main);">Detected Server Capabilities:</label>
+            <span id="target-capabilities-status" class="muted-text" style="font-size: 0.75rem;" data-testid="target-capabilities-status">Probing...</span>
+          </div>
+          <div id="target-capabilities-list" class="capabilities-grid" data-testid="target-capabilities-list">
+            <!-- Populated dynamically by renderTargetCapabilities -->
+          </div>
+        </div>
+
+        <div id="target-host-status" class="hidden" style="margin-top: 12px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-cancel-target-host" class="btn btn-secondary">Cancel</button>
+          <button id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic / Stateful Stub Creation Modal -->
+  <div id="dynamic-stub-modal" class="modal-overlay hidden" data-testid="dynamic-stub-modal">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">⚡</span>
+          <h3 id="dynamic-modal-title">New Dynamic Stateful Simulation</h3>
+        </div>
+        <button id="btn-close-dynamic-modal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+        <p class="modal-description" style="margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted);">
+          Define a stateful entity model with relational state, automatic sub-resource arrays, and invariant guards. In-process isolation is automatically partitioned by <code>X-Correlation-Id</code>.
+        </p>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="dynamic-template-select"><strong>Model Template:</strong></label>
+          <select id="dynamic-template-select" class="form-control" data-testid="dynamic-template-select">
+            <option value="case-management" selected>Case Management (Cases &amp; Tasks with Invariant Guard)</option>
+            <option value="order-fulfillment">Order Fulfillment (Orders &amp; Items)</option>
+          </select>
+        </div>
+
+        <div class="form-row" style="display: flex; gap: 12px; margin-bottom: 12px;">
+          <div class="form-group" style="flex: 1;">
+            <label for="dynamic-entity-name">Entity Name:</label>
+            <input type="text" id="dynamic-entity-name" class="form-control" value="cases" data-testid="dynamic-entity-name">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="dynamic-id-param">ID Path Parameter:</label>
+            <input type="text" id="dynamic-id-param" class="form-control" value="caseId" data-testid="dynamic-id-param">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="dynamic-id-prefix">ID Prefix:</label>
+            <input type="text" id="dynamic-id-prefix" class="form-control" value="case-" data-testid="dynamic-id-prefix">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="dynamic-model-json"><strong>Model Specification JSON (AST):</strong></label>
+          <textarea id="dynamic-model-json" class="code-input" rows="12" data-testid="dynamic-model-json"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-cancel-dynamic" class="btn btn-secondary">Cancel</button>
+        <button id="btn-save-dynamic" class="btn btn-primary" data-testid="btn-save-dynamic">⚡ Create Dynamic Model</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NetEm Add Toxic Modal -->
+  <div id="netem-add-toxic-modal" class="modal-backdrop hidden" data-testid="netem-add-toxic-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">➕</span>
+          <h3>Add Network Impairment (Toxic)</h3>
+        </div>
+        <button id="btn-netem-close-toxic-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="netem-toxic-name">Toxic Name:</label>
+          <input type="text" id="netem-toxic-name" class="form-control" placeholder="e.g. latency-downstream-mobile">
+        </div>
+        <div class="form-row" style="display: flex; gap: 12px;">
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-type">Impairment Type:</label>
+            <select id="netem-toxic-type" class="form-control">
+              <option value="latency">Latency / Jitter</option>
+              <option value="bandwidth">Bandwidth Throttling</option>
+              <option value="reset_peer">Reset Peer (TCP RST)</option>
+              <option value="timeout">Timeout (Blackhole)</option>
+              <option value="slow_close">Slow Close (FIN Delay)</option>
+              <option value="slicer">Packet Slicer (Fragmentation)</option>
+              <option value="limit_data">Limit Data (Close after N bytes)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-stream">Stream Direction:</label>
+            <select id="netem-toxic-stream" class="form-control">
+              <option value="downstream">Downstream (Target ➔ Client)</option>
+              <option value="upstream">Upstream (Client ➔ Target)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row" style="display: flex; gap: 12px;">
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-toxicity">Toxicity (Probability 0.0 - 1.0):</label>
+            <input type="number" id="netem-toxic-toxicity" class="form-control" value="1.0" min="0.0" max="1.0" step="0.1">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="netem-toxic-correlation-id">Correlation ID Filter (Optional):</label>
+            <input type="text" id="netem-toxic-correlation-id" class="form-control" placeholder="e.g. chaos-test-session">
+          </div>
+        </div>
+        <div class="editor-section-header" style="margin-top: 12px;">Impairment Attributes</div>
+        <div id="netem-attribute-fields">
+          <!-- Dynamically populated based on type -->
+        </div>
+        <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 16px;">
+          <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
+          <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
