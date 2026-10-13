@@ -2,9 +2,9 @@
 
 A collection of lightweight, production-grade extensions for [WireMock](https://wiremock.org/) and WireMock Standalone.
 
-> 📊 **Customer Pitch Deck**: View the interactive slide deck at [https://mattiasgreen.github.io/wiremock-extensions/pitch/](https://mattiasgreen.github.io/wiremock-extensions/pitch/) (or locally at `http://localhost:8080/__admin/ui/pitch/`).
+> 🌐 **Documentation & Interactive Demo**: Visit [https://mattiasgreen.github.io/wiremock-extensions/](https://mattiasgreen.github.io/wiremock-extensions/) for our product landing page, interactive live console sandbox, and technical docs.
 >
-> 🔍 **Retrospective & Roadmap**: See [retrospective.md](retrospective.md) for the architecture audit, failure mode analysis, and prioritized feature roadmap.
+> 📋 **Roadmap & Architecture Backlog**: See [TODO.md](TODO.md) for current progress and future release milestones.
 
 Each extension is **modular and standalone**: you can pick and choose only the extensions you need, or use the all-in-one bundle to include everything.
 
@@ -226,7 +226,7 @@ ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wi
 
 The suite is expanding into a **zero-sprawl Simulator Stack** running entirely in-process inside WireMock (sub-second startup, zero external container dependencies), alongside complete embedded control plane and stub lifecycle management.
 
-> 📘 **Full Architecture Blueprint**: Read [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md) for technical design details, and [retrospective.md](retrospective.md) for release phasing.
+> 📘 **Full Architecture Blueprint**: Read [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md) for technical design details, and [TODO.md](TODO.md) for release phasing.
 
 ### 1. Multi-Protocol Simulator Stack Modules
 

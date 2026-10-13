@@ -150,5 +150,52 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] Configure `wiremock-extension-bundle` standalone fat JAR / shadow distribution for single-command CLI execution (`java -jar wiremock-standalone-qol-all.jar`).
   - [ ] Provide production-ready `Dockerfile` and `docker-compose.yml` reference.
 
-- [ ] **4.4. Interactive GitHub Pages Demo**
-  - [ ] Build a zero-dependency static demo site hosted on GitHub Pages with simulated Admin API responses to allow instant evaluation of the UI, scenario DAG visualizer, and HTTP tester without running Java.
+- [ ] **4.4. Interactive GitHub Pages Demo & Documentation Hub**
+  - [ ] Build a zero-dependency static documentation and landing page hosted on GitHub Pages with simulated Admin API responses to allow instant evaluation of the UI, scenario DAG visualizer, and HTTP tester without running Java.
+
+---
+
+### Phase 5: Architecture Decoupling & Storage Persistence
+
+- [ ] **5.1. UI Feature Discovery Handshake**
+  - [ ] Implement `GET /__admin/ui/features` endpoint advertising active capabilities (`hasOpenApi`, `hasOtel`, `hasStateful`, `hasNetEm`).
+  - [ ] Conditionally badge or disable UI links and modal triggers when optional companion extensions are absent.
+
+- [ ] **5.2. Decouple Domain Lifecycle from UI Presentation**
+  - [ ] Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module or merge with stateful domain logic, keeping `wiremock-extension-ui` purely presentation-focused.
+
+- [ ] **5.3. File-Backed Persistence for Disabled Stubs & Dynamic Sessions**
+  - [ ] Persist disabled stubs to WireMock mapping JSON files using `"metadata": { "disabled": true }` or a dedicated `.disabled/` store across server restarts.
+  - [ ] Allow dynamic stateful simulation sessions to be serialized/deserialized to JSON for bug reporting and replay.
+
+---
+
+### Phase 6: Contract Conformance & Security
+
+- [ ] **6.1. OpenAPI Request & Response Schema Validation**
+  - [ ] Request filter validating incoming payloads and headers against imported OpenAPI specs, returning HTTP 400/422 on violations.
+
+- [ ] **6.2. In-Process OAuth2 & OIDC Mock Provider**
+  - [ ] Built-in mock authorization server issuing RSA-signed JWTs with standard `/.well-known/jwks.json` endpoint.
+
+- [ ] **6.3. Zero-Dependency Realistic Mock Data Templating Helpers**
+  - [ ] Introduce Handlebars helpers (`{{random.uuid}}`, `{{random.email}}`, `{{random.dateTime}}`, `{{random.name}}`).
+
+- [ ] **6.4. Per-Correlation Dynamic Scenario Visualizer & Form Builder**
+  - [ ] Visual form editor in Web UI for crafting stubs and matchers without writing raw JSON.
+  - [ ] Inspect dynamic state machines registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.
+
+---
+
+### Phase 7: Event-Driven Mocking & Webhooks
+
+- [ ] **7.1. AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**
+  - [ ] Parse `asyncapi.yaml` channels and schemas via `POST /__admin/asyncapi/import`.
+  - [ ] In-process SSE and WebSocket stream channels (`ws://localhost:8080/__async/channels/{name}` and `GET /__async/channels/{name}`).
+  - [ ] Virtual in-memory pub/sub broker with wildcard routing (`orders.*`) and offset simulation.
+  - [ ] Bidirectional HTTP ⇄ Event Bridge (HTTP stub match triggers event publication).
+
+- [ ] **7.2. Webhook Outbox & OpenAPI Callbacks (`wiremock-extension-webhooks`)**
+  - [ ] Automatically synthesize callback stubs returning `202 Accepted` paired with async webhook dispatches targeting `{{jsonPath request.body '$.callbackUrl'}}`.
+  - [ ] Support `Action.webhook(...)` in stateful AST transitions.
+  - [ ] Webhook Outbox Journal in UI for auditing and replaying dispatches.
