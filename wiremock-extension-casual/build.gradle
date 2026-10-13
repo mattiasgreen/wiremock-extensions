@@ -1,0 +1,6 @@
+dependencies {
+    implementation libs.casual.api
+    implementation libs.casual.network.protocol
+    implementation libs.netty.all
+    implementation libs.jackson.databind
+}
