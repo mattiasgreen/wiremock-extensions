@@ -50,6 +50,7 @@ public class CasualWireMockGateway implements AutoCloseable {
     private final int upstreamPort;
     private final boolean recordStubs;
     private final boolean recordFaults;
+    private final boolean recordNotFound;
     private final UUID domainId;
     private final String domainName;
     private final HttpClient httpClient;
@@ -59,12 +60,12 @@ public class CasualWireMockGateway implements AutoCloseable {
     private CasualTcpClient upstreamClient;
 
     public CasualWireMockGateway(int port, String wireMockBaseUrl) {
-        this(port, wireMockBaseUrl, null, 0, false, true);
+        this(port, wireMockBaseUrl, null, 0, false, true, false);
     }
 
     public CasualWireMockGateway(
             int port, String wireMockBaseUrl, String upstreamHost, int upstreamPort, boolean recordStubs) {
-        this(port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, true);
+        this(port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, true, false);
     }
 
     public CasualWireMockGateway(
@@ -74,12 +75,24 @@ public class CasualWireMockGateway implements AutoCloseable {
             int upstreamPort,
             boolean recordStubs,
             boolean recordFaults) {
+        this(port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, recordFaults, false);
+    }
+
+    public CasualWireMockGateway(
+            int port,
+            String wireMockBaseUrl,
+            String upstreamHost,
+            int upstreamPort,
+            boolean recordStubs,
+            boolean recordFaults,
+            boolean recordNotFound) {
         this.port = port;
         this.wireMockBaseUrl = wireMockBaseUrl.replaceAll("/+$", "");
         this.upstreamHost = upstreamHost;
         this.upstreamPort = upstreamPort;
         this.recordStubs = recordStubs;
         this.recordFaults = recordFaults;
+        this.recordNotFound = recordNotFound;
         this.domainId = UUID.randomUUID();
         this.domainName = "wiremock-casual-domain";
         this.httpClient =
@@ -98,6 +111,7 @@ public class CasualWireMockGateway implements AutoCloseable {
         private int upstreamPort = 0;
         private boolean recordStubs = false;
         private boolean recordFaults = true;
+        private boolean recordNotFound = false;
 
         public Builder port(int port) {
             this.port = port;
@@ -125,12 +139,17 @@ public class CasualWireMockGateway implements AutoCloseable {
             return this;
         }
 
+        public Builder recordNotFound(boolean recordNotFound) {
+            this.recordNotFound = recordNotFound;
+            return this;
+        }
+
         public CasualWireMockGateway build() {
             if (wireMockBaseUrl == null || wireMockBaseUrl.isBlank()) {
                 throw new IllegalStateException("wireMockBaseUrl must be specified");
             }
             return new CasualWireMockGateway(
-                    port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, recordFaults);
+                    port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, recordFaults, recordNotFound);
         }
     }
 
@@ -231,6 +250,8 @@ public class CasualWireMockGateway implements AutoCloseable {
             CasualServiceCallRequestMessage req, HttpResponse<String> response) {
         int statusCode = response.statusCode();
         ErrorState errorState;
+        long userSuppliedError = 0;
+        TransactionState transactionState = TransactionState.TX_ACTIVE;
         ServiceBuffer replyBuffer = ServiceBuffer.empty();
 
         Optional<String> customErrorHeader = response.headers().firstValue("X-Casual-Error-State");
@@ -242,10 +263,38 @@ public class CasualWireMockGateway implements AutoCloseable {
             }
         } else if (statusCode >= 200 && statusCode < 300) {
             errorState = ErrorState.OK;
+        } else if (statusCode == 400) {
+            errorState = ErrorState.TPEINVAL;
         } else if (statusCode == 404) {
             errorState = ErrorState.TPENOENT;
+        } else if (statusCode == 408 || statusCode == 504) {
+            errorState = ErrorState.TPETIME;
+        } else if (statusCode == 429) {
+            errorState = ErrorState.TPELIMIT;
+        } else if (statusCode == 502 || statusCode == 503) {
+            errorState = ErrorState.TPESVCERR;
         } else {
             errorState = ErrorState.TPESVCFAIL;
+        }
+
+        Optional<String> userErrorHeader = response.headers()
+                .firstValue("X-Casual-User-Supplied-Error")
+                .or(() -> response.headers().firstValue("X-Casual-User-Code"))
+                .or(() -> response.headers().firstValue("X-Casual-User-Defined-Code"));
+        if (userErrorHeader.isPresent()) {
+            try {
+                userSuppliedError = Long.parseLong(userErrorHeader.get().trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        Optional<String> txStateHeader = response.headers().firstValue("X-Casual-Transaction-State");
+        if (txStateHeader.isPresent()) {
+            try {
+                transactionState =
+                        TransactionState.valueOf(txStateHeader.get().trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+            }
         }
 
         String respBody = response.body();
@@ -258,7 +307,8 @@ public class CasualWireMockGateway implements AutoCloseable {
                 .setExecution(req.getExecution())
                 .setXid(req.getXid())
                 .setError(errorState)
-                .setTransactionState(TransactionState.TX_ACTIVE)
+                .setUserSuppliedError(userSuppliedError)
+                .setTransactionState(transactionState)
                 .setServiceBuffer(replyBuffer)
                 .build();
     }
@@ -272,11 +322,13 @@ public class CasualWireMockGateway implements AutoCloseable {
             CasualServiceCallReplyMessage upstreamReply = upstreamReplyMsg.getMessage();
 
             ErrorState errorState = upstreamReply.getError();
-            boolean shouldRecord = recordStubs && (errorState == ErrorState.OK || recordFaults);
+            boolean isRecordable = (errorState == ErrorState.OK)
+                    || (recordFaults && errorState == ErrorState.TPESVCFAIL)
+                    || (recordNotFound && errorState == ErrorState.TPENOENT);
 
-            if (shouldRecord) {
+            if (recordStubs && isRecordable) {
                 String replyPayload = CasualBufferUtils.extractPayload(upstreamReply.getServiceBuffer());
-                recordStubToWireMock(serviceName, requestPayload, replyPayload, errorState);
+                recordStubToWireMock(serviceName, requestPayload, replyPayload, upstreamReply);
             }
 
             return upstreamReply;
@@ -287,8 +339,12 @@ public class CasualWireMockGateway implements AutoCloseable {
     }
 
     private void recordStubToWireMock(
-            String serviceName, String requestPayload, String replyPayload, ErrorState errorState) {
+            String serviceName,
+            String requestPayload,
+            String replyPayload,
+            CasualServiceCallReplyMessage upstreamReply) {
         try {
+            ErrorState errorState = upstreamReply.getError();
             Map<String, Object> mapping = new LinkedHashMap<>();
             Map<String, Object> requestMap = new LinkedHashMap<>();
             requestMap.put("method", "POST");
@@ -302,6 +358,10 @@ public class CasualWireMockGateway implements AutoCloseable {
             int statusCode = 200;
             if (errorState == ErrorState.TPENOENT) {
                 statusCode = 404;
+            } else if (errorState == ErrorState.TPEINVAL) {
+                statusCode = 400;
+            } else if (errorState == ErrorState.TPETIME) {
+                statusCode = 504;
             } else if (errorState != ErrorState.OK) {
                 statusCode = 500;
             }
@@ -309,6 +369,14 @@ public class CasualWireMockGateway implements AutoCloseable {
             Map<String, String> responseHeaders = new LinkedHashMap<>();
             responseHeaders.put("Content-Type", "application/json");
             responseHeaders.put("X-Casual-Error-State", errorState.name());
+            if (upstreamReply.getUserDefinedCode() != 0) {
+                responseHeaders.put("X-Casual-User-Supplied-Error", String.valueOf(upstreamReply.getUserDefinedCode()));
+            }
+            if (upstreamReply.getTransactionState() != TransactionState.TX_ACTIVE) {
+                responseHeaders.put(
+                        "X-Casual-Transaction-State",
+                        upstreamReply.getTransactionState().name());
+            }
 
             Map<String, Object> responseMap = new LinkedHashMap<>();
             responseMap.put("status", statusCode);

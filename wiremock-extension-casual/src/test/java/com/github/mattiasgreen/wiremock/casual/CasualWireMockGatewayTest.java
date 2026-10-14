@@ -17,6 +17,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
+import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
@@ -336,6 +337,126 @@ class CasualWireMockGatewayTest {
 
                 // Upstream was still only called once!
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/upstreamAccountBlocked")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Should stub Casual failure mode with custom ErrorState, user code, and transaction state")
+    void shouldStubCasualFailureModeWithCustomErrorStateUserCodeAndTxState() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/failingTxService"))
+                .willReturn(aResponse()
+                        .withStatus(500)
+                        .withHeader("Content-Type", "application/json")
+                        .withHeader("X-Casual-Error-State", "TPETRAN")
+                        .withHeader("X-Casual-User-Supplied-Error", "8877")
+                        .withHeader("X-Casual-Transaction-State", "ROLLBACK_ONLY")
+                        .withBody("{\"error\": \"Transaction aborted\", \"retry\": false}")));
+
+        CasualServiceCallReplyMessage reply = client.tpcall("failingTxService", "{\"txId\": \"TX-001\"}");
+
+        assertThat(reply).isNotNull();
+        assertThat(reply.getError()).isEqualTo(ErrorState.TPETRAN);
+        assertThat(reply.getUserDefinedCode()).isEqualTo(8877L);
+        assertThat(reply.getTransactionState()).isEqualTo(TransactionState.ROLLBACK_ONLY);
+
+        String body = new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+        assertThat(body).contains("Transaction aborted");
+    }
+
+    @Test
+    @DisplayName("Should map standard HTTP status codes to appropriate Casual error states when header is omitted")
+    void shouldMapStandardHttpStatusCodesToCasualErrorStates() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/invalidArgs"))
+                .willReturn(aResponse().withStatus(400).withBody("Bad request")));
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/timedOut"))
+                .willReturn(aResponse().withStatus(504)));
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/rateLimited"))
+                .willReturn(aResponse().withStatus(429)));
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/backendError"))
+                .willReturn(aResponse().withStatus(502)));
+
+        assertThat(client.tpcall("invalidArgs", "{}").getError()).isEqualTo(ErrorState.TPEINVAL);
+        assertThat(client.tpcall("timedOut", "{}").getError()).isEqualTo(ErrorState.TPETIME);
+        assertThat(client.tpcall("rateLimited", "{}").getError()).isEqualTo(ErrorState.TPELIMIT);
+        assertThat(client.tpcall("backendError", "{}").getError()).isEqualTo(ErrorState.TPESVCERR);
+    }
+
+    @Test
+    @DisplayName("Should NOT record TPENOENT by default so subsequent calls continue to forward upstream")
+    void shouldNotRecordTpenoentByDefault() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            // Upstream returns TPENOENT (no stub / 404)
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(true)
+                    .recordFaults(true)
+                    // recordNotFound is false by default
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("missingService", "{}");
+                assertThat(reply1.getError()).isEqualTo(ErrorState.TPENOENT);
+
+                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("missingService", "{}");
+                assertThat(reply2.getError()).isEqualTo(ErrorState.TPENOENT);
+
+                // Both calls reached upstream because TPENOENT was NOT recorded as a matching stub!
+                upstreamWireMock.verify(2, postRequestedFor(urlEqualTo("/__casual/services/missingService")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Should record TPENOENT when recordNotFound is explicitly enabled")
+    void shouldRecordTpenoentWhenRecordNotFoundExplicitlyEnabled() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(true)
+                    .recordFaults(true)
+                    .recordNotFound(true)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("notFoundService", "{}");
+                assertThat(reply1.getError()).isEqualTo(ErrorState.TPENOENT);
+
+                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("notFoundService", "{}");
+                assertThat(reply2.getError()).isEqualTo(ErrorState.TPENOENT);
+
+                // Upstream called only once because TPENOENT was recorded into wireMockServer!
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/notFoundService")));
             } finally {
                 proxyGateway.close();
             }
