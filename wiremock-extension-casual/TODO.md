@@ -64,6 +64,8 @@ When accepted upstream, these components can be deleted from this extension and 
 - [x] Automatic stub record-and-replay via WireMock Admin API (`POST /__admin/mappings`).
 - [x] Refactor upstream candidate classes into their target `se.laz.casual.*` packages for seamless deletion once upstreamed.
 - [x] Record and replay upstream faults (`TPESVCFAIL`) with sensible defaults (`TPENOENT` not recorded by default).
+- [ ] Implement Transparent 2PC Protocol Forwarding (`PREPARE_REQUEST`, `COMMIT_REQUEST`, `REQUEST_ROLLBACK`) to prevent breaking upstream distributed transactions.
+- [ ] Implement Synthetic XA Resource Participant (automatic `XA_OK` voting for offline stubs) and chaos simulation (`XAER_RMERR`).
 - [ ] Implement Path A: In-process WireMock `Request` adapter (bypass HTTP loopback, evaluate directly against `StubMappings`).
 - [ ] Implement Custom Matchers (`CasualFieldedMatcher`, `CasualBufferMatcher`) for non-JSON (`.FIELDED`, `.X_OCTET`) payloads.
 - [ ] Implement WireMock `ExtensionFactory` and `ServerLifecycleListener` to bind gateway lifecycle to WireMock start/stop.
@@ -102,4 +104,69 @@ A standalone matcher engine inside the extension using WireMock's `ValueMatcher`
 ### Evolutionary Roadmap Recommendation:
 1. **Milestone 1**: Transition from HTTP loopback to **Path A (In-Process `Request` Adapter)** to eliminate socket overhead while preserving 100% WireMock feature parity.
 2. **Milestone 2**: Introduce a `RequestMatcherExtension` (`CasualFieldedMatcher`) to support native `.FIELDED` buffer inspection without breaking standard JSON stub definitions.
+
+---
+
+## 4. Architectural Analysis: 2PC / XA & JEE Transaction Managers (Coordinator vs. Participant)
+
+### Executive Summary: Coordinator vs. Participant
+In distributed 2PC/XA architectures, there is a fundamental distinction between two roles:
+1. **The Transaction Coordinator (Transaction Manager / TM)**: Initiates transactions (`tpbegin` / `@Transactional`), manages transaction boundaries, and coordinates 2PC across multiple downstream resources by issuing `PREPARE` and `COMMIT/ROLLBACK` orders.
+2. **The Resource Participant (Resource Manager / RM / Gateway)**: Intercepts service calls, associates work with an `Xid`, reports transaction health (`TransactionState`), votes during `PREPARE`, and finalizes changes upon `COMMIT`.
+
+* **`casual-quarkus` is a client application runtime**: A Quarkus app executes business logic, writes to local databases (e.g. PostgreSQL via Hibernate), and calls remote Casual services within `@Transactional`. It **must** have a JEE Transaction Manager (Narayana JTA via `quarkus-narayana-jta`) to coordinate 2PC across local database `XAResource`s and outbound Casual JCA resource adapters.
+* **`wiremock-extension-casual` is a mock server / test double**: WireMock is the **target participant / transit gateway**, not the coordinator. The application under test (e.g. Quarkus, Spring Boot with Narayana, or Tuxedo C services) is already the coordinator.
+
+> **Conclusion**: Introducing a JEE/JTA Transaction Manager into WireMock would add **heavy overhead and zero architectural value**. WireMock needs to be a **faithful XA protocol participant and proxy**, not a transaction coordinator.
+
+---
+
+### Comparison: Embedding a JEE TM vs. Native Protocol Participant
+
+| Dimension | Embedding a JEE TM (Narayana / Atomikos / JCA) | Lightweight Protocol Participant (Our Native Engine) |
+| :--- | :--- | :--- |
+| **Classpath & Binary Weight** | **Heavy (+25–40 MB)**: JBoss Logging, JTA APIs, Arjuna Core, JBoss Remoting, JCA specs. | **Zero additional deps**: Pure Java SE 21 + existing Netty framing. |
+| **Filesystem Side-Effects** | **Intrusive**: Requires writing persistent XA transaction log files (`ObjectStore` directory) to disk on every test. | **Zero footprint**: 100% in-memory and ephemeral. |
+| **Startup / Teardown Latency** | **Slow (+500–1500ms)**: Recovery daemons, reaper threads, and transaction log initialization. | **Instant (< 5ms)**: Starts alongside WireMock dynamically. |
+| **Chaos & Fault Injection** | **Extremely difficult**: Hardcoded to adhere strictly to XA spec; cannot easily force a timeout or partial heuristic hazard. | **Trivial & Declarative**: Easily configured in WireMock stubs (`withHeader("X-Casual-XA-Prepare-Vote", "XAER_RMERR")`). |
+
+---
+
+### What's Supported vs. What Breaks During Proxying
+
+#### Current Support:
+* **XID Propagation**: `req.getXid()` is extracted from incoming requests, passed through during transparent proxying, and mirrored in stub replies (`CasualServiceCallReplyMessage.setXid(...)`).
+* **Transaction State Reporting**: Stubs can return `X-Casual-Transaction-State`: `TX_ACTIVE`, `ROLLBACK_ONLY`, `TIMEOUT_ROLLBACK_ONLY`, or `ERROR`.
+* **Transaction State Proxying & Recording**: Transparent proxying records upstream `TransactionState` into WireMock stubs and faithfully replays it.
+* **Transaction Error Codes**: `ErrorState.TPETRAN` can be stubbed or proxied.
+
+#### Why Upstream 2PC Currently Breaks During Proxying:
+1. **During `tpcall`**: The RPC executes fine; `req.getXid()` is forwarded to upstream, and upstream marks the transaction branch active.
+2. **During `tpcommit()` / `tpabort()`**: The client’s Transaction Manager sends a Casual 2PC protocol message (`PREPARE_REQUEST`, `COMMIT_REQUEST`, or `REQUEST_ROLLBACK`) to the gateway.
+3. **The Gateway Drops It**: Because `CasualServer` only listens for `DOMAIN_CONNECT`, `DOMAIN_DISCOVERY`, and `SERVICE_CALL`, it logs a warning (`"Unsupported Casual message type received: PREPARE_REQUEST"`) and drops the message.
+4. **The Consequence**: The client’s Transaction Coordinator times out waiting for `PREPARE_REPLY`, aborts the global transaction with `XAER_RMERR` or `TPESYSTEM`, and the upstream domain is left with an in-doubt / dangling transaction branch.
+
+---
+
+### The Recommended 2PC Roadmap
+
+1. **Feature A: Transparent 2PC Protocol Forwarding (Fixes Proxying)**:
+   * Add handlers in `CasualServer` and `CasualWireMockGateway` for:
+     * `PREPARE_REQUEST` $\rightarrow$ forward to upstream $\rightarrow$ return `PREPARE_REQUEST_REPLY` (`XAReturnCode`).
+     * `COMMIT_REQUEST` $\rightarrow$ forward to upstream $\rightarrow$ return `COMMIT_REQUEST_REPLY`.
+     * `REQUEST_ROLLBACK` $\rightarrow$ forward to upstream $\rightarrow$ return `REQUEST_ROLLBACK_REPLY`.
+   * **Result**: Proxied distributed transactions will commit and roll back cleanly without breaking!
+
+2. **Feature B: Synthetic XA Resource Participant (For Offline Stubbing)**:
+   * When running offline (no upstream), WireMock automatically responds to `PREPARE_REQUEST` with `XA_OK` (or `XA_RDONLY` if no state was modified) and to `COMMIT_REQUEST` with `XA_OK`.
+   * Enables full end-to-end `@Transactional` test suites in Quarkus / Spring Boot against WireMock stubs without requiring a real Casual backend.
+
+3. **Feature C: 2PC Chaos & Failure Injection**:
+   * Allow stubs to simulate 2PC failures:
+     * Simulate `XAER_RMERR` or `XAER_NOTA` during Phase 1 prepare to test client rollback logic.
+     * Simulate timeout during Phase 2 commit to test how client applications handle **Heuristic Hazards (`HEURHAZ`)**.
+
+4. **Feature D: Transaction Stickiness / Connection Affinity**:
+   * Like `casual-quarkus` (`transactionStickyEnabled`), track connections per `Xid` so multiple calls within the same transaction branch route over the same upstream channel.
+
 
