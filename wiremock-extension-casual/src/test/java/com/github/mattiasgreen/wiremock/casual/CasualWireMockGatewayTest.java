@@ -283,4 +283,65 @@ class CasualWireMockGatewayTest {
             upstreamWireMock.stop();
         }
     }
+
+    @Test
+    @DisplayName("Should record and replay upstream faults when recordStubs and recordFaults are enabled")
+    void shouldRecordAndReplayUpstreamFaultsWhenRecordStubsEnabled() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/upstreamAccountBlocked"))
+                    .willReturn(aResponse()
+                            .withStatus(500)
+                            .withHeader("Content-Type", "application/json")
+                            .withHeader("X-Casual-Error-State", "TPESVCFAIL")
+                            .withBody("{\"error\": \"Account blocked\", \"code\": \"ACC-BLOCKED\"}")));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(true)
+                    .recordFaults(true)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                // 1st Call: Forwarded to upstream and recorded as a fault stub
+                CasualServiceCallReplyMessage firstReply =
+                        proxyClient.tpcall("upstreamAccountBlocked", "{\"accountId\": \"ACC-999\"}");
+
+                assertThat(firstReply).isNotNull();
+                assertThat(firstReply.getError()).isEqualTo(ErrorState.TPESVCFAIL);
+                String firstBody =
+                        new String(firstReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(firstBody).contains("Account blocked").contains("ACC-BLOCKED");
+
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/upstreamAccountBlocked")));
+
+                // 2nd Call: Replayed directly from the newly recorded fault stub in wireMockServer
+                CasualServiceCallReplyMessage secondReply =
+                        proxyClient.tpcall("upstreamAccountBlocked", "{\"accountId\": \"ACC-999\"}");
+
+                assertThat(secondReply).isNotNull();
+                assertThat(secondReply.getError()).isEqualTo(ErrorState.TPESVCFAIL);
+                String secondBody =
+                        new String(secondReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(secondBody).contains("Account blocked").contains("ACC-BLOCKED");
+
+                // Upstream was still only called once!
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/upstreamAccountBlocked")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
 }

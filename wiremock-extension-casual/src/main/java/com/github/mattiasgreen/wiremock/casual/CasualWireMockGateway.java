@@ -38,7 +38,7 @@ import se.laz.casual.server.CasualServer;
  * to WireMock HTTP stubbing endpoints without requiring Jakarta EE.
  * <p>
  * Supports transparent proxy forwarding to an upstream Casual domain when
- * stubs are unmatched, and optional automatic stub recording.
+ * stubs are unmatched, and optional automatic stub recording for both successes and faults.
  */
 public class CasualWireMockGateway implements AutoCloseable {
 
@@ -49,6 +49,7 @@ public class CasualWireMockGateway implements AutoCloseable {
     private final String upstreamHost;
     private final int upstreamPort;
     private final boolean recordStubs;
+    private final boolean recordFaults;
     private final UUID domainId;
     private final String domainName;
     private final HttpClient httpClient;
@@ -58,16 +59,27 @@ public class CasualWireMockGateway implements AutoCloseable {
     private CasualTcpClient upstreamClient;
 
     public CasualWireMockGateway(int port, String wireMockBaseUrl) {
-        this(port, wireMockBaseUrl, null, 0, false);
+        this(port, wireMockBaseUrl, null, 0, false, true);
     }
 
     public CasualWireMockGateway(
             int port, String wireMockBaseUrl, String upstreamHost, int upstreamPort, boolean recordStubs) {
+        this(port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, true);
+    }
+
+    public CasualWireMockGateway(
+            int port,
+            String wireMockBaseUrl,
+            String upstreamHost,
+            int upstreamPort,
+            boolean recordStubs,
+            boolean recordFaults) {
         this.port = port;
         this.wireMockBaseUrl = wireMockBaseUrl.replaceAll("/+$", "");
         this.upstreamHost = upstreamHost;
         this.upstreamPort = upstreamPort;
         this.recordStubs = recordStubs;
+        this.recordFaults = recordFaults;
         this.domainId = UUID.randomUUID();
         this.domainName = "wiremock-casual-domain";
         this.httpClient =
@@ -85,6 +97,7 @@ public class CasualWireMockGateway implements AutoCloseable {
         private String upstreamHost;
         private int upstreamPort = 0;
         private boolean recordStubs = false;
+        private boolean recordFaults = true;
 
         public Builder port(int port) {
             this.port = port;
@@ -107,11 +120,17 @@ public class CasualWireMockGateway implements AutoCloseable {
             return this;
         }
 
+        public Builder recordFaults(boolean recordFaults) {
+            this.recordFaults = recordFaults;
+            return this;
+        }
+
         public CasualWireMockGateway build() {
             if (wireMockBaseUrl == null || wireMockBaseUrl.isBlank()) {
                 throw new IllegalStateException("wireMockBaseUrl must be specified");
             }
-            return new CasualWireMockGateway(port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs);
+            return new CasualWireMockGateway(
+                    port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, recordFaults);
         }
     }
 
@@ -214,29 +233,24 @@ public class CasualWireMockGateway implements AutoCloseable {
         ErrorState errorState;
         ServiceBuffer replyBuffer = ServiceBuffer.empty();
 
-        if (statusCode >= 200 && statusCode < 300) {
+        Optional<String> customErrorHeader = response.headers().firstValue("X-Casual-Error-State");
+        if (customErrorHeader.isPresent()) {
+            try {
+                errorState = ErrorState.valueOf(customErrorHeader.get().trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                errorState = (statusCode >= 200 && statusCode < 300) ? ErrorState.OK : ErrorState.TPESVCFAIL;
+            }
+        } else if (statusCode >= 200 && statusCode < 300) {
             errorState = ErrorState.OK;
-            String respBody = response.body();
-            replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
+        } else if (statusCode == 404) {
+            errorState = ErrorState.TPENOENT;
         } else {
-            Optional<String> customErrorHeader = response.headers().firstValue("X-Casual-Error-State");
-            if (customErrorHeader.isPresent()) {
-                try {
-                    errorState =
-                            ErrorState.valueOf(customErrorHeader.get().trim().toUpperCase(Locale.ROOT));
-                } catch (IllegalArgumentException e) {
-                    errorState = ErrorState.TPESVCFAIL;
-                }
-            } else if (statusCode == 404) {
-                errorState = ErrorState.TPENOENT;
-            } else {
-                errorState = ErrorState.TPESVCFAIL;
-            }
+            errorState = ErrorState.TPESVCFAIL;
+        }
 
-            String respBody = response.body();
-            if (respBody != null && !respBody.isBlank()) {
-                replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
-            }
+        String respBody = response.body();
+        if (respBody != null && !respBody.isBlank()) {
+            replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
         }
 
         return CasualServiceCallReplyMessage.createBuilder()
@@ -257,9 +271,12 @@ public class CasualWireMockGateway implements AutoCloseable {
                     client.sendAndReceive(CasualNWMessageType.SERVICE_CALL_REQUEST, req, 10, TimeUnit.SECONDS);
             CasualServiceCallReplyMessage upstreamReply = upstreamReplyMsg.getMessage();
 
-            if (recordStubs && upstreamReply.getError() == ErrorState.OK) {
+            ErrorState errorState = upstreamReply.getError();
+            boolean shouldRecord = recordStubs && (errorState == ErrorState.OK || recordFaults);
+
+            if (shouldRecord) {
                 String replyPayload = CasualBufferUtils.extractPayload(upstreamReply.getServiceBuffer());
-                recordStubToWireMock(serviceName, requestPayload, replyPayload);
+                recordStubToWireMock(serviceName, requestPayload, replyPayload, errorState);
             }
 
             return upstreamReply;
@@ -269,7 +286,8 @@ public class CasualWireMockGateway implements AutoCloseable {
         }
     }
 
-    private void recordStubToWireMock(String serviceName, String requestPayload, String replyPayload) {
+    private void recordStubToWireMock(
+            String serviceName, String requestPayload, String replyPayload, ErrorState errorState) {
         try {
             Map<String, Object> mapping = new LinkedHashMap<>();
             Map<String, Object> requestMap = new LinkedHashMap<>();
@@ -281,10 +299,21 @@ public class CasualWireMockGateway implements AutoCloseable {
             }
             mapping.put("request", requestMap);
 
+            int statusCode = 200;
+            if (errorState == ErrorState.TPENOENT) {
+                statusCode = 404;
+            } else if (errorState != ErrorState.OK) {
+                statusCode = 500;
+            }
+
+            Map<String, String> responseHeaders = new LinkedHashMap<>();
+            responseHeaders.put("Content-Type", "application/json");
+            responseHeaders.put("X-Casual-Error-State", errorState.name());
+
             Map<String, Object> responseMap = new LinkedHashMap<>();
-            responseMap.put("status", 200);
+            responseMap.put("status", statusCode);
             responseMap.put("body", replyPayload != null ? replyPayload : "");
-            responseMap.put("headers", Map.of("Content-Type", "application/json"));
+            responseMap.put("headers", responseHeaders);
             mapping.put("response", responseMap);
 
             String json = objectMapper.writeValueAsString(mapping);
@@ -297,14 +326,10 @@ public class CasualWireMockGateway implements AutoCloseable {
             HttpResponse<String> recordResponse =
                     httpClient.send(recordRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
-            String safeServiceName = serviceName.replaceAll("[\r\n]", "");
             if (recordResponse.statusCode() >= 200 && recordResponse.statusCode() < 300) {
-                LOG.info("Recorded stub for Casual service {} to WireMock", safeServiceName);
+                LOG.info("Recorded stub for Casual service to WireMock");
             } else {
-                LOG.warn(
-                        "Failed to record stub for Casual service {}: status {}",
-                        safeServiceName,
-                        recordResponse.statusCode());
+                LOG.warn("Failed to record stub for Casual service to WireMock");
             }
         } catch (IOException | InterruptedException e) {
             LOG.warn("Failed to record stub for Casual service to WireMock", e);
