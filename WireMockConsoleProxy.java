@@ -117,7 +117,16 @@ public final class WireMockConsoleProxy {
     }
 
     public String getLocalUiUrl() {
-        return "http://localhost:" + localPort + "/__admin/ui/";
+        return getLocalUiUrl(true);
+    }
+
+    public String getLocalUiUrl(boolean includeTargetParams) {
+        if (!includeTargetParams || defaultTargetUrl == null || defaultTargetUrl.isBlank()) {
+            return "http://localhost:" + localPort + "/__admin/ui/";
+        }
+        return "http://localhost:" + localPort + "/__admin/ui/?wiremock="
+                + java.net.URLEncoder.encode(defaultTargetUrl, StandardCharsets.UTF_8)
+                + "&strategy=proxy";
     }
 
     public String getDefaultTargetUrl() {

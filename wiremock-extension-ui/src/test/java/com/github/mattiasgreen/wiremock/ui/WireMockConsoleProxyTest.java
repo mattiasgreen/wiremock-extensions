@@ -9,6 +9,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -175,5 +176,18 @@ class WireMockConsoleProxyTest {
         assertThat(resp.body()).contains("version");
         assertThat(resp.headers().firstValue("Access-Control-Allow-Origin").orElse(""))
                 .contains("*");
+    }
+
+    @Test
+    @DisplayName("Outputs complete local URI with target url and proxy mode pre-built")
+    void shouldGenerateUiUrlWithPrebuiltTargetAndProxyStrategy() {
+        String urlWithParams = proxy.getLocalUiUrl();
+        assertThat(urlWithParams).startsWith("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/?wiremock=");
+        assertThat(urlWithParams).contains("&strategy=proxy");
+        assertThat(urlWithParams)
+                .contains(java.net.URLEncoder.encode(defaultWireMock.baseUrl(), StandardCharsets.UTF_8));
+
+        String rawUrl = proxy.getLocalUiUrl(false);
+        assertThat(rawUrl).isEqualTo("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/");
     }
 }
