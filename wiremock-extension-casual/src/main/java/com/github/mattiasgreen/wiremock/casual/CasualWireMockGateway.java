@@ -1,26 +1,16 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
+import com.github.mattiasgreen.wiremock.casual.upstream.client.CasualTcpClient;
+import com.github.mattiasgreen.wiremock.casual.upstream.server.CasualServer;
+import com.github.mattiasgreen.wiremock.casual.upstream.util.CasualBufferUtils;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -38,19 +28,13 @@ import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
-import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
-import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
-import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMessage;
-import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage;
-import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
-import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryRequestMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 
 /**
- * Super-lightweight in-process Casual Domain Gateway server.
- * Listens on a TCP port using Netty and bridges Casual XATMI protocol messages
+ * Super-lightweight in-process Casual Domain Gateway server for WireMock.
+ * Listens on a TCP port and bridges Casual XATMI protocol messages
  * to WireMock HTTP stubbing endpoints without requiring Jakarta EE.
  * <p>
  * Supports transparent proxy forwarding to an upstream Casual domain when
@@ -70,10 +54,7 @@ public class CasualWireMockGateway implements AutoCloseable {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    private EventLoopGroup bossGroup;
-    private EventLoopGroup workerGroup;
-    private ChannelFuture channelFuture;
-    private volatile int boundPort;
+    private CasualServer server;
     private CasualTcpClient upstreamClient;
 
     public CasualWireMockGateway(int port, String wireMockBaseUrl) {
@@ -135,32 +116,19 @@ public class CasualWireMockGateway implements AutoCloseable {
     }
 
     public synchronized void start() throws InterruptedException {
-        bossGroup = new NioEventLoopGroup(1);
-        workerGroup = new NioEventLoopGroup();
-
-        ServerBootstrap bootstrap = new ServerBootstrap();
-        bootstrap
-                .group(bossGroup, workerGroup)
-                .channel(NioServerSocketChannel.class)
-                .childOption(ChannelOption.SO_KEEPALIVE, true)
-                .childOption(ChannelOption.TCP_NODELAY, true)
-                .childHandler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new CasualFrameDecoder());
-                        ch.pipeline().addLast(new CasualGatewayHandler());
-                    }
-                });
-
-        channelFuture = bootstrap.bind(port).sync();
-        InetSocketAddress socketAddress =
-                (InetSocketAddress) channelFuture.channel().localAddress();
-        this.boundPort = socketAddress.getPort();
-        LOG.info("CasualWireMockGateway listening on TCP port {}", boundPort);
+        server = CasualServer.builder()
+                .port(port)
+                .domainId(domainId)
+                .domainName(domainName)
+                .discoveryHandler(this::handleDiscovery)
+                .serviceHandler(this::handleServiceCall)
+                .build();
+        server.start();
+        LOG.info("CasualWireMockGateway listening on TCP port {}", server.getPort());
     }
 
     public synchronized int getPort() {
-        return boundPort > 0 ? boundPort : port;
+        return server != null ? server.getPort() : port;
     }
 
     public boolean hasUpstream() {
@@ -184,278 +152,176 @@ public class CasualWireMockGateway implements AutoCloseable {
             upstreamClient.close();
             upstreamClient = null;
         }
-        if (channelFuture != null) {
-            channelFuture.channel().close();
-            channelFuture = null;
-        }
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
-            workerGroup = null;
-        }
-        if (bossGroup != null) {
-            bossGroup.shutdownGracefully();
-            bossGroup = null;
+        if (server != null) {
+            server.close();
+            server = null;
         }
         LOG.info("CasualWireMockGateway stopped");
     }
 
-    /**
-     * Inbound handler that translates Casual messages, dispatches to WireMock,
-     * and transparently proxies unmatched calls to upstream Casual servers.
-     */
-    private class CasualGatewayHandler extends SimpleChannelInboundHandler<CasualNWMessage<?>> {
+    private List<Service> handleDiscovery(List<String> serviceNames) {
+        return serviceNames.stream()
+                .map(name -> Service.of(name, "wiremock-category", TransactionType.AUTOMATIC))
+                .toList();
+    }
 
-        @Override
-        @SuppressWarnings("unchecked")
-        protected void channelRead0(ChannelHandlerContext ctx, CasualNWMessage<?> msg) {
-            CasualNWMessageType type = msg.getType();
+    private CasualServiceCallReplyMessage handleServiceCall(CasualServiceCallRequestMessage req) {
+        String serviceName = req.getServiceName();
+        ServiceBuffer requestBuffer = req.getServiceBuffer();
 
-            if (type == CasualNWMessageType.DOMAIN_CONNECT_REQUEST) {
-                handleDomainConnect(ctx, (CasualNWMessage<CasualDomainConnectRequestMessage>) msg);
-            } else if (type == CasualNWMessageType.DOMAIN_DISCOVERY_REQUEST) {
-                handleDomainDiscovery(ctx, (CasualNWMessage<CasualDomainDiscoveryRequestMessage>) msg);
-            } else if (type == CasualNWMessageType.SERVICE_CALL_REQUEST) {
-                handleServiceCall(ctx, (CasualNWMessage<CasualServiceCallRequestMessage>) msg);
-            } else {
-                String safeType = String.valueOf(type).replaceAll("[\r\n]", "");
-                LOG.warn("Unsupported Casual message type received: {}", safeType);
+        String requestPayload = CasualBufferUtils.extractPayload(requestBuffer);
+        String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
+
+        // Bridge to WireMock HTTP endpoint
+        String wireMockUrl = wireMockBaseUrl + "/__casual/services/" + serviceName;
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockUrl))
+                .header("Content-Type", "application/json")
+                .header("X-Casual-Service", serviceName)
+                .header("X-Casual-Buffer-Type", bufferType)
+                .POST(HttpRequest.BodyPublishers.ofString(requestPayload, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (IOException | InterruptedException e) {
+            LOG.error("Failed to dispatch Casual service call to WireMock", e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
             }
+            return buildErrorReply(req, ErrorState.TPESVCERR);
         }
 
-        private void handleDomainConnect(
-                ChannelHandlerContext ctx, CasualNWMessage<CasualDomainConnectRequestMessage> msg) {
-            CasualDomainConnectRequestMessage req = msg.getMessage();
-            CasualDomainConnectReplyMessage reply = CasualDomainConnectReplyMessage.createBuilder()
-                    .withExecution(req.getExecution())
-                    .withDomainId(domainId)
-                    .withDomainName(domainName)
-                    .withProtocolVersion(ProtocolVersion.VERSION_1_0.getVersion())
-                    .build();
+        // A request was matched if WireMock provided a Matched-Stub-Id header
+        boolean wasMatched = response.headers().firstValue("Matched-Stub-Id").isPresent();
 
-            CasualNWMessage<CasualDomainConnectReplyMessage> replyMsg =
-                    CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
+        if (wasMatched) {
+            // Matched stub: serve response directly from WireMock
+            return buildMatchedReply(req, response);
+        } else if (hasUpstream()) {
+            // Unmatched request: transparently forward to upstream Casual server
+            return forwardToUpstream(req, serviceName, requestPayload);
+        } else {
+            // Unmatched request and no upstream configured: return TPENOENT
+            return buildErrorReply(req, ErrorState.TPENOENT);
         }
+    }
 
-        private void handleDomainDiscovery(
-                ChannelHandlerContext ctx, CasualNWMessage<CasualDomainDiscoveryRequestMessage> msg) {
-            CasualDomainDiscoveryRequestMessage req = msg.getMessage();
-            CasualDomainDiscoveryReplyMessage reply = CasualDomainDiscoveryReplyMessage.of(
-                    req.getExecution(), domainId, domainName, ProtocolVersion.VERSION_1_0);
+    private CasualServiceCallReplyMessage buildMatchedReply(
+            CasualServiceCallRequestMessage req, HttpResponse<String> response) {
+        int statusCode = response.statusCode();
+        ErrorState errorState;
+        ServiceBuffer replyBuffer = ServiceBuffer.empty();
 
-            // Dynamically declare requested services as known/discoverable
-            List<Service> services = req.getServiceNames().stream()
-                    .map(name -> Service.of(name, "wiremock-category", TransactionType.AUTOMATIC))
-                    .toList();
-            reply.setServices(services);
-            reply.setQueues(Collections.emptyList());
-
-            CasualNWMessage<CasualDomainDiscoveryReplyMessage> replyMsg =
-                    CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
-        }
-
-        private void handleServiceCall(
-                ChannelHandlerContext ctx, CasualNWMessage<CasualServiceCallRequestMessage> msg) {
-            CasualServiceCallRequestMessage req = msg.getMessage();
-            String serviceName = req.getServiceName();
-            ServiceBuffer requestBuffer = req.getServiceBuffer();
-
-            String requestPayload = extractPayload(requestBuffer);
-            String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
-
-            // Bridge to WireMock HTTP endpoint
-            String wireMockUrl = wireMockBaseUrl + "/__casual/services/" + serviceName;
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(wireMockUrl))
-                    .header("Content-Type", "application/json")
-                    .header("X-Casual-Service", serviceName)
-                    .header("X-Casual-Buffer-Type", bufferType)
-                    .POST(HttpRequest.BodyPublishers.ofString(requestPayload, StandardCharsets.UTF_8))
-                    .build();
-
-            HttpResponse<String> response = null;
-            try {
-                response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            } catch (IOException | InterruptedException e) {
-                LOG.error("Failed to dispatch Casual service call to WireMock", e);
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                sendErrorReply(ctx, msg, ErrorState.TPESVCERR);
-                return;
-            }
-
-            // A request was matched if WireMock provided a Matched-Stub-Id header
-            boolean wasMatched =
-                    response.headers().firstValue("Matched-Stub-Id").isPresent();
-
-            if (wasMatched) {
-                // Matched stub: serve response directly from WireMock
-                handleMatchedResponse(ctx, msg, response);
-            } else if (hasUpstream()) {
-                // Unmatched request: transparently forward to upstream Casual server
-                handleUpstreamForward(ctx, msg, serviceName, requestPayload);
-            } else {
-                // Unmatched request and no upstream configured: return TPENOENT
-                sendErrorReply(ctx, msg, ErrorState.TPENOENT);
-            }
-        }
-
-        private void handleMatchedResponse(
-                ChannelHandlerContext ctx,
-                CasualNWMessage<CasualServiceCallRequestMessage> msg,
-                HttpResponse<String> response) {
-            CasualServiceCallRequestMessage req = msg.getMessage();
-            int statusCode = response.statusCode();
-            ErrorState errorState;
-            ServiceBuffer replyBuffer = ServiceBuffer.empty();
-
-            if (statusCode >= 200 && statusCode < 300) {
-                errorState = ErrorState.OK;
-                String respBody = response.body();
-                replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
-            } else {
-                Optional<String> customErrorHeader = response.headers().firstValue("X-Casual-Error-State");
-                if (customErrorHeader.isPresent()) {
-                    try {
-                        errorState = ErrorState.valueOf(
-                                customErrorHeader.get().trim().toUpperCase(Locale.ROOT));
-                    } catch (IllegalArgumentException e) {
-                        errorState = ErrorState.TPESVCFAIL;
-                    }
-                } else if (statusCode == 404) {
-                    errorState = ErrorState.TPENOENT;
-                } else {
+        if (statusCode >= 200 && statusCode < 300) {
+            errorState = ErrorState.OK;
+            String respBody = response.body();
+            replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
+        } else {
+            Optional<String> customErrorHeader = response.headers().firstValue("X-Casual-Error-State");
+            if (customErrorHeader.isPresent()) {
+                try {
+                    errorState =
+                            ErrorState.valueOf(customErrorHeader.get().trim().toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException e) {
                     errorState = ErrorState.TPESVCFAIL;
                 }
-
-                String respBody = response.body();
-                if (respBody != null && !respBody.isBlank()) {
-                    replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
-                }
+            } else if (statusCode == 404) {
+                errorState = ErrorState.TPENOENT;
+            } else {
+                errorState = ErrorState.TPESVCFAIL;
             }
 
-            CasualServiceCallReplyMessage reply = CasualServiceCallReplyMessage.createBuilder()
-                    .setProtocolVersion(ProtocolVersion.VERSION_1_0)
-                    .setExecution(req.getExecution())
-                    .setXid(req.getXid())
-                    .setError(errorState)
-                    .setTransactionState(TransactionState.TX_ACTIVE)
-                    .setServiceBuffer(replyBuffer)
+            String respBody = response.body();
+            if (respBody != null && !respBody.isBlank()) {
+                replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
+            }
+        }
+
+        return CasualServiceCallReplyMessage.createBuilder()
+                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+                .setExecution(req.getExecution())
+                .setXid(req.getXid())
+                .setError(errorState)
+                .setTransactionState(TransactionState.TX_ACTIVE)
+                .setServiceBuffer(replyBuffer)
+                .build();
+    }
+
+    private CasualServiceCallReplyMessage forwardToUpstream(
+            CasualServiceCallRequestMessage req, String serviceName, String requestPayload) {
+        try {
+            CasualTcpClient client = getUpstreamClient();
+            CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg =
+                    client.sendAndReceive(CasualNWMessageType.SERVICE_CALL_REQUEST, req, 10, TimeUnit.SECONDS);
+            CasualServiceCallReplyMessage upstreamReply = upstreamReplyMsg.getMessage();
+
+            if (recordStubs && upstreamReply.getError() == ErrorState.OK) {
+                String replyPayload = CasualBufferUtils.extractPayload(upstreamReply.getServiceBuffer());
+                recordStubToWireMock(serviceName, requestPayload, replyPayload);
+            }
+
+            return upstreamReply;
+        } catch (Exception e) {
+            LOG.error("Failed to forward Casual service call to upstream", e);
+            return buildErrorReply(req, ErrorState.TPESVCERR);
+        }
+    }
+
+    private void recordStubToWireMock(String serviceName, String requestPayload, String replyPayload) {
+        try {
+            Map<String, Object> mapping = new LinkedHashMap<>();
+            Map<String, Object> requestMap = new LinkedHashMap<>();
+            requestMap.put("method", "POST");
+            requestMap.put("url", "/__casual/services/" + serviceName);
+
+            if (requestPayload != null && !requestPayload.trim().isEmpty()) {
+                requestMap.put("bodyPatterns", List.of(Map.of("equalToJson", requestPayload)));
+            }
+            mapping.put("request", requestMap);
+
+            Map<String, Object> responseMap = new LinkedHashMap<>();
+            responseMap.put("status", 200);
+            responseMap.put("body", replyPayload != null ? replyPayload : "");
+            responseMap.put("headers", Map.of("Content-Type", "application/json"));
+            mapping.put("response", responseMap);
+
+            String json = objectMapper.writeValueAsString(mapping);
+            HttpRequest recordRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(wireMockBaseUrl + "/__admin/mappings"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
                     .build();
 
-            CasualNWMessage<CasualServiceCallReplyMessage> replyMsg =
-                    CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
-        }
+            HttpResponse<String> recordResponse =
+                    httpClient.send(recordRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
-        private void handleUpstreamForward(
-                ChannelHandlerContext ctx,
-                CasualNWMessage<CasualServiceCallRequestMessage> msg,
-                String serviceName,
-                String requestPayload) {
-            try {
-                CasualTcpClient client = getUpstreamClient();
-                CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg =
-                        client.forwardCall(msg, 10, TimeUnit.SECONDS);
-                CasualServiceCallReplyMessage upstreamReply = upstreamReplyMsg.getMessage();
-
-                if (recordStubs && upstreamReply.getError() == ErrorState.OK) {
-                    String replyPayload = extractPayload(upstreamReply.getServiceBuffer());
-                    recordStubToWireMock(serviceName, requestPayload, replyPayload);
-                }
-
-                // Return upstream reply to client echoing original correlation ID
-                CasualNWMessage<CasualServiceCallReplyMessage> replyToClient =
-                        CasualNWMessageImpl.of(msg.getCorrelationId(), upstreamReply);
-                writeMessage(ctx, replyToClient);
-            } catch (Exception e) {
-                LOG.error("Failed to forward Casual service call to upstream", e);
-                sendErrorReply(ctx, msg, ErrorState.TPESVCERR);
+            String safeServiceName = serviceName.replaceAll("[\r\n]", "");
+            if (recordResponse.statusCode() >= 200 && recordResponse.statusCode() < 300) {
+                LOG.info("Recorded stub for Casual service {} to WireMock", safeServiceName);
+            } else {
+                LOG.warn(
+                        "Failed to record stub for Casual service {}: status {}",
+                        safeServiceName,
+                        recordResponse.statusCode());
+            }
+        } catch (IOException | InterruptedException e) {
+            LOG.warn("Failed to record stub for Casual service to WireMock", e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
             }
         }
+    }
 
-        private void recordStubToWireMock(String serviceName, String requestPayload, String replyPayload) {
-            try {
-                Map<String, Object> mapping = new LinkedHashMap<>();
-                Map<String, Object> requestMap = new LinkedHashMap<>();
-                requestMap.put("method", "POST");
-                requestMap.put("url", "/__casual/services/" + serviceName);
-
-                if (requestPayload != null && !requestPayload.trim().isEmpty()) {
-                    requestMap.put("bodyPatterns", List.of(Map.of("equalToJson", requestPayload)));
-                }
-                mapping.put("request", requestMap);
-
-                Map<String, Object> responseMap = new LinkedHashMap<>();
-                responseMap.put("status", 200);
-                responseMap.put("body", replyPayload != null ? replyPayload : "");
-                responseMap.put("headers", Map.of("Content-Type", "application/json"));
-                mapping.put("response", responseMap);
-
-                String json = objectMapper.writeValueAsString(mapping);
-                HttpRequest recordRequest = HttpRequest.newBuilder()
-                        .uri(URI.create(wireMockBaseUrl + "/__admin/mappings"))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
-                        .build();
-
-                HttpResponse<String> recordResponse =
-                        httpClient.send(recordRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-                String safeServiceName = serviceName.replaceAll("[\r\n]", "");
-                if (recordResponse.statusCode() >= 200 && recordResponse.statusCode() < 300) {
-                    LOG.info("Recorded stub for Casual service {} to WireMock", safeServiceName);
-                } else {
-                    LOG.warn(
-                            "Failed to record stub for Casual service {}: status {}",
-                            safeServiceName,
-                            recordResponse.statusCode());
-                }
-            } catch (IOException | InterruptedException e) {
-                LOG.warn("Failed to record stub for Casual service to WireMock", e);
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }
-
-        private void sendErrorReply(
-                ChannelHandlerContext ctx,
-                CasualNWMessage<CasualServiceCallRequestMessage> msg,
-                ErrorState errorState) {
-            CasualServiceCallRequestMessage req = msg.getMessage();
-            CasualServiceCallReplyMessage reply = CasualServiceCallReplyMessage.createBuilder()
-                    .setProtocolVersion(ProtocolVersion.VERSION_1_0)
-                    .setExecution(req.getExecution())
-                    .setXid(req.getXid())
-                    .setError(errorState)
-                    .setTransactionState(TransactionState.TX_ACTIVE)
-                    .setServiceBuffer(ServiceBuffer.empty())
-                    .build();
-
-            CasualNWMessage<CasualServiceCallReplyMessage> replyMsg =
-                    CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
-        }
-
-        private String extractPayload(ServiceBuffer buffer) {
-            if (buffer == null || buffer.isEmpty()) {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder();
-            for (byte[] part : buffer.getBytes()) {
-                sb.append(new String(part, StandardCharsets.UTF_8));
-            }
-            return sb.toString();
-        }
-
-        private <T extends se.laz.casual.api.network.protocol.messages.CasualNetworkTransmittable> void writeMessage(
-                ChannelHandlerContext ctx, CasualNWMessage<T> msg) {
-            ByteBuf buf = ctx.alloc().buffer();
-            CasualMessageEncoder.write(buf, msg);
-            ctx.writeAndFlush(buf);
-        }
+    private CasualServiceCallReplyMessage buildErrorReply(CasualServiceCallRequestMessage req, ErrorState errorState) {
+        return CasualServiceCallReplyMessage.createBuilder()
+                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+                .setExecution(req.getExecution())
+                .setXid(req.getXid())
+                .setError(errorState)
+                .setTransactionState(TransactionState.TX_ACTIVE)
+                .setServiceBuffer(ServiceBuffer.empty())
+                .build();
     }
 }
