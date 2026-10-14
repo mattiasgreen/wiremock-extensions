@@ -10,6 +10,7 @@ import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
 import { handleStubCheckboxClick, updateBulkToolbar } from './bulk-actions.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
+import { matchesStub } from './filter.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -61,13 +62,9 @@ export function renderStubList() {
     }
 
     if (!filter) return true;
-    const method = (s.request && s.request.method ? s.request.method : 'ANY').toLowerCase();
-    const url = getStubUrl(s.request).toLowerCase();
-    const name = (s.name || '').toLowerCase();
-    const tags = (s.metadata && Array.isArray(s.metadata.tags)) ? s.metadata.tags.join(' ').toLowerCase() : '';
-    const proj = (isDynamic ? (s.metadata && s.metadata.project || '') : getStubProject(s)).toLowerCase();
-    const entity = (s.entity || '').toLowerCase();
-    return method.includes(filter) || url.includes(filter) || name.includes(filter) || tags.includes(filter) || proj.includes(filter) || entity.includes(filter);
+    const url = getStubUrl(s.request);
+    const proj = isDynamic ? (s.metadata && s.metadata.project || '') : getStubProject(s);
+    return matchesStub(s, filter, url, proj);
   });
 
   if (allStubs.length === 0) {
