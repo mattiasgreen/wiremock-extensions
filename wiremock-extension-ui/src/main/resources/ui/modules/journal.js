@@ -6,6 +6,7 @@ import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
 import { setRoute } from './router.js';
+import { matchesJournalEntry } from './filter.js';
 
 let journalAutoRefreshTimer = null;
 let loadJournalFn = null;
@@ -36,19 +37,15 @@ function getHeader(headers, name) {
 }
 
 export function renderJournal() {
-  const filter = (elements.journalSearch ? elements.journalSearch.value : '').toLowerCase().trim();
+  const filter = (elements.journalSearch ? elements.journalSearch.value : '').trim();
   const unmatchedOnly = elements.filterUnmatchedOnly.checked;
 
   const filtered = state.currentRequests.filter(r => {
     if (unmatchedOnly && r.wasMatched) return false;
     if (!filter) return true;
-    const method = (r.request && r.request.method ? r.request.method : '').toLowerCase();
-    const url = (r.request && r.request.url ? r.request.url : '').toLowerCase();
-    const status = String((r.response && r.response.status) || (r.responseDefinition && r.responseDefinition.status) || '');
-    const stubName = (r.stubMapping && r.stubMapping.name ? r.stubMapping.name : '').toLowerCase();
     const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
-    const statefulEntity = (getHeader(rHeaders, 'x-wiremock-stateful-entity') || '').toLowerCase();
-    return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter) || statefulEntity.includes(filter);
+    const statefulEntity = getHeader(rHeaders, 'x-wiremock-stateful-entity') || '';
+    return matchesJournalEntry(r, filter, statefulEntity);
   });
 
   if (elements.journalFilteredCount) {

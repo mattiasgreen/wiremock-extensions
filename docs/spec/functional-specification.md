@@ -66,12 +66,16 @@
 
 These stories define the **inviolable acceptance criteria** for any client frontend (Web, Desktop, CLI, Mobile).
 
-### Story 1: Explore and Filter Stubs
-- **Given** registered stubs: `[GET /api/cases, ACTIVE]`, `[POST /api/cases, ACTIVE]`, and `[GET /health, DISABLED]`.
+### Story 1: Explore and Filter Stubs (Deep Free-Text & Boolean Expressions)
+- **Given** registered stubs: `[GET /api/cases, ACTIVE]`, `[POST /api/cases, ACTIVE, header: X-Correlation-Id: CORR-1234]`, and `[GET /health, DISABLED]`.
 - **When** the user searches for text `"cases"`.
 - **Then** only `/api/cases` stubs are visible.
+- **When** the user filters by correlation ID or header matcher `"CORR-1234"`.
+- **Then** only the `POST /api/cases` stub with that correlation ID is displayed.
+- **When** the user filters using boolean expressions `"cases AND CORR-1234"` or `"health OR CORR-1234"`.
+- **Then** the catalog evaluates the boolean predicate across both shallow and deep attributes (headers, body patterns, metadata).
 - **When** the user filters by status `"Disabled"`.
-- **Then** the list is empty (no disabled stubs match `"cases"`).
+- **Then** only `/health` is visible.
 - **When** the user clears the search filter and selects status `"All"`.
 - **Then** all three stubs are visible.
 

@@ -147,6 +147,22 @@ public class UiPlaywrightTest {
         page.locator("#search-box").fill("non-existent-filter-query");
         assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
 
+        // Deep free-text filtering: match json path expression from request bodyPatterns
+        page.locator("#search-box").fill("item");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
+        assertThat(page.locator(".stub-card:visible").textContent()).contains("orders");
+
+        // Boolean AND filtering: "orders AND item" matches 1, "orders AND nonexistent" matches 0
+        page.locator("#search-box").fill("orders AND item");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
+
+        page.locator("#search-box").fill("orders AND nonexistent");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(0);
+
+        // Boolean OR filtering: "orders OR nonexistent" matches orders stub
+        page.locator("#search-box").fill("orders OR nonexistent");
+        assertThat(page.locator(".stub-card:visible").count()).isEqualTo(1);
+
         // Clear search box to restore listing
         page.locator("#search-box").fill("");
         assertThat(page.locator(".stub-card:visible").count()).isGreaterThanOrEqualTo(2);
@@ -341,6 +357,20 @@ public class UiPlaywrightTest {
 
         page.locator("#journal-search").fill("nonexistent-endpoint-xyz");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(0);
+
+        // Deep free-text filtering on journal headers/content and boolean queries
+        page.locator("#journal-search").fill("users AND 200");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
+
+        page.locator("#journal-search").fill("users AND 500");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(0);
+
+        page.locator("#journal-search").fill("users OR nonexistent");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
+
+        // Clear filter
+        page.locator("#journal-search").fill("");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         assertThat(pageErrors).isEmpty();
     }
