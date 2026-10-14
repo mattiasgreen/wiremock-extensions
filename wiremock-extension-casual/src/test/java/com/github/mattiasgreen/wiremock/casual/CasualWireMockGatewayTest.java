@@ -15,6 +15,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
@@ -457,6 +459,92 @@ class CasualWireMockGatewayTest {
 
                 // Upstream called only once because TPENOENT was recorded into wireMockServer!
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/notFoundService")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(TransactionState.class)
+    @DisplayName("Should faithfully stub all Casual TransactionState enum modes")
+    void shouldStubAllTransactionStatesCorrectly(TransactionState txState) throws Exception {
+        String serviceName = "txStateService_" + txState.name();
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/" + serviceName))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withHeader("X-Casual-Transaction-State", txState.name())
+                        .withBody("{\"txStatus\": \"" + txState.name() + "\"}")));
+
+        CasualServiceCallReplyMessage reply = client.tpcall(serviceName, "{}");
+        assertThat(reply).isNotNull();
+        assertThat(reply.getTransactionState()).isEqualTo(txState);
+    }
+
+    @Test
+    @DisplayName("Should default TransactionState to TX_ACTIVE when header is absent or invalid")
+    void shouldDefaultToTxActiveWhenTransactionStateHeaderIsMissingOrInvalid() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/missingTxHeader"))
+                .willReturn(aResponse().withStatus(200).withBody("{}")));
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/invalidTxHeader"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("X-Casual-Transaction-State", "NON_EXISTENT_STATE")
+                        .withBody("{}")));
+
+        CasualServiceCallReplyMessage reply1 = client.tpcall("missingTxHeader", "{}");
+        assertThat(reply1.getTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+
+        CasualServiceCallReplyMessage reply2 = client.tpcall("invalidTxHeader", "{}");
+        assertThat(reply2.getTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+    }
+
+    @Test
+    @DisplayName("Should record and replay non-default upstream TransactionState")
+    void shouldRecordAndReplayUpstreamTransactionState() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/timedOutTxService"))
+                    .willReturn(aResponse()
+                            .withStatus(500)
+                            .withHeader("Content-Type", "application/json")
+                            .withHeader("X-Casual-Error-State", "TPESVCFAIL")
+                            .withHeader("X-Casual-Transaction-State", "TIMEOUT_ROLLBACK_ONLY")
+                            .withBody("{\"error\": \"Transaction deadline exceeded\"}")));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(true)
+                    .recordFaults(true)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                // 1st call: Forwarded upstream & recorded
+                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("timedOutTxService", "{}");
+                assertThat(reply1.getTransactionState()).isEqualTo(TransactionState.TIMEOUT_ROLLBACK_ONLY);
+                assertThat(reply1.getError()).isEqualTo(ErrorState.TPESVCFAIL); // Recorded as 500 fault
+
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/timedOutTxService")));
+
+                // 2nd call: Replayed from recorded WireMock stub
+                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("timedOutTxService", "{}");
+                assertThat(reply2.getTransactionState()).isEqualTo(TransactionState.TIMEOUT_ROLLBACK_ONLY);
+
+                // Upstream was not called again
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/timedOutTxService")));
             } finally {
                 proxyGateway.close();
             }

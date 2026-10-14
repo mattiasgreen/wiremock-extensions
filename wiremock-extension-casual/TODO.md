@@ -63,6 +63,43 @@ When accepted upstream, these components can be deleted from this extension and 
 - [x] Transparent L7 Casual TCP proxy forwarding to upstream Casual domains.
 - [x] Automatic stub record-and-replay via WireMock Admin API (`POST /__admin/mappings`).
 - [x] Refactor upstream candidate classes into their target `se.laz.casual.*` packages for seamless deletion once upstreamed.
+- [x] Record and replay upstream faults (`TPESVCFAIL`) with sensible defaults (`TPENOENT` not recorded by default).
+- [ ] Implement Path A: In-process WireMock `Request` adapter (bypass HTTP loopback, evaluate directly against `StubMappings`).
+- [ ] Implement Custom Matchers (`CasualFieldedMatcher`, `CasualBufferMatcher`) for non-JSON (`.FIELDED`, `.X_OCTET`) payloads.
 - [ ] Implement WireMock `ExtensionFactory` and `ServerLifecycleListener` to bind gateway lifecycle to WireMock start/stop.
-- [ ] Support `fielded` buffer conversion via `casual-fielded-annotations`.
 - [ ] Admin API and UI visualization for Casual service mappings and stats.
+
+---
+
+## 3. Investigation: Native Casual/XATMI Stubbing vs. HTTP Loopback Bridge
+
+### Current Architecture: HTTP Loopback Gateway
+$$\text{Casual TCP Client} \xrightarrow{\text{XATMI}} \text{Gateway} \xrightarrow{\text{HTTP Loopback (Jetty)}} \text{WireMock} \xrightarrow{\text{HTTP}} \text{Gateway} \xrightarrow{\text{XATMI}} \text{Casual TCP Client}$$
+* **Pros**: Simple PoC, reuses standard WireMock JSON mappings (`POST /__casual/services/<name>`) and Admin API out of the box.
+* **Cons**: Incurs TCP loopback socket hops and HTTP parsing overhead ($\sim 2\text{--}10\text{ms}$); requires converting all payloads to JSON strings, making non-JSON buffers awkward.
+
+### Evaluated Alternatives:
+
+#### Path A: The In-Process WireMock `Request` Adapter (Recommended Next Step)
+Wrap incoming `CasualServiceCallRequestMessage` in a class implementing WireMock's core SPI `com.github.tomakehurst.wiremock.http.Request`:
+```java
+Request wiremockRequest = new CasualWireMockRequestAdapter(casualMsg);
+ServeEvent serveEvent = wireMockServer.serveStubFor(wiremockRequest);
+```
+* **Latency**: Sub-millisecond ($\sim 50\mu\text{s}$) via direct in-memory JVM calls.
+* **Zero HTTP Overhead**: Bypasses sockets, ALPN, TLS, and Jetty servlets entirely.
+* **Journal & Web UI Integration**: 100% native; requests appear directly in WireMock's Request Journal and Web UI (`/__admin/ui/`).
+* **Scenarios & State**: WireMock Scenarios (`newScenarioState`), priority, and response transformations work out of the box.
+
+#### Path B: Dedicated Native Matcher Engine
+A standalone matcher engine inside the extension using WireMock's `ValueMatcher` pattern library (`com.github.tomakehurst.wiremock.matching.*`):
+* **When to use**: When first-class support for legacy binary buffers is required:
+  * `.FIELDED` / FML: Match directly on integer field IDs (e.g., `field(1001).equalTo("ACC-99")`).
+  * `.X_OCTET` / Raw bytes: Match byte chunks or binary schemas.
+  * XATMI-specific attributes: Native matchers on `Xid`, `flags`, or conversational call descriptors (`cd`).
+* **Trade-off**: Requires custom stub storage, custom admin endpoints, and custom UI panels; diverges from standard WireMock mappings unless bridged.
+
+### Evolutionary Roadmap Recommendation:
+1. **Milestone 1**: Transition from HTTP loopback to **Path A (In-Process `Request` Adapter)** to eliminate socket overhead while preserving 100% WireMock feature parity.
+2. **Milestone 2**: Introduce a `RequestMatcherExtension` (`CasualFieldedMatcher`) to support native `.FIELDED` buffer inspection without breaking standard JSON stub definitions.
+
