@@ -40,7 +40,7 @@ export function evaluateQuery(query, matcherFn) {
 
 /**
  * Extracts all searchable text values from an arbitrary object/value.
- * Flattened strings are cached or joined for fast substring testing.
+ * Converts strings, numbers, booleans, nested objects, and arrays into a lowercase string.
  *
  * @param {any} obj
  * @returns {string} Lowercase concatenated searchable string
@@ -59,6 +59,8 @@ export function extractSearchableText(obj) {
 
 /**
  * Evaluates whether a stub mapping matches a given query string (with AND / OR support).
+ * Searches standard fields (method, URL, name, tags, project, entity) as well as
+ * deep attributes (request matchers, headers, queryParameters, bodyPatterns, response body, metadata).
  *
  * @param {object} stub The stub mapping object
  * @param {string} query The raw filter string
@@ -76,18 +78,34 @@ export function matchesStub(stub, query, stubUrl = '', stubProject = '') {
   const proj = (stubProject || '').toLowerCase();
   const entity = (stub.entity || '').toLowerCase();
 
+  // Lazy cache deep text representation for multi-term queries
+  let deepSearchable = null;
+
   return evaluateQuery(query, token => {
-    return method.includes(token) ||
+    // 1. Fast shallow check against common attributes
+    if (
+      method.includes(token) ||
       url.includes(token) ||
       name.includes(token) ||
       tags.includes(token) ||
       proj.includes(token) ||
-      entity.includes(token);
+      entity.includes(token)
+    ) {
+      return true;
+    }
+
+    // 2. Deep attribute & free-text JSON check (headers, queryParams, bodyPatterns, metadata)
+    if (deepSearchable === null) {
+      deepSearchable = extractSearchableText(stub);
+    }
+    return deepSearchable.includes(token);
   });
 }
 
 /**
  * Evaluates whether a journal entry matches a given query string (with AND / OR support).
+ * Searches standard fields (method, URL, status, stubName, entity) as well as
+ * deep attributes (request headers, query params, request body, response body, response headers).
  *
  * @param {object} req The journal request serve event
  * @param {string} query The raw filter string
@@ -103,11 +121,25 @@ export function matchesJournalEntry(req, query, statefulEntity = '') {
   const stubName = (req.stubMapping && req.stubMapping.name ? req.stubMapping.name : '').toLowerCase();
   const entity = (statefulEntity || '').toLowerCase();
 
+  // Lazy cache deep text representation for multi-term queries
+  let deepSearchable = null;
+
   return evaluateQuery(query, token => {
-    return method.includes(token) ||
+    // 1. Fast shallow check against common row attributes
+    if (
+      method.includes(token) ||
       url.includes(token) ||
       status.includes(token) ||
       stubName.includes(token) ||
-      entity.includes(token);
+      entity.includes(token)
+    ) {
+      return true;
+    }
+
+    // 2. Deep check across request headers, query, body, and response body
+    if (deepSearchable === null) {
+      deepSearchable = extractSearchableText(req);
+    }
+    return deepSearchable.includes(token);
   });
 }

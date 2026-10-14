@@ -37,7 +37,7 @@ function getHeader(headers, name) {
 }
 
 export function renderJournal() {
-  const filter = (elements.journalSearch ? elements.journalSearch.value : '').toLowerCase().trim();
+  const filter = (elements.journalSearch ? elements.journalSearch.value : '').trim();
   const unmatchedOnly = elements.filterUnmatchedOnly.checked;
 
   const filtered = state.currentRequests.filter(r => {

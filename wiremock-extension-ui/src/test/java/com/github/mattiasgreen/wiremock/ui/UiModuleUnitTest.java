@@ -190,4 +190,146 @@ public class UiModuleUnitTest {
         assertThat(result.get("matchAnd")).isTrue();
         assertThat(result.get("matchOr")).isTrue();
     }
+
+    @Test
+    @DisplayName("matchesStub: Deep search across headers, bodyPatterns, metadata, and correlation IDs with AND / OR")
+    void testMatchesStubDeepInspection() {
+        String script =
+                """
+            async () => {
+                const { matchesStub } = await import('./modules/filter.js');
+
+                // 2 stubs on identical URL with different correlation IDs in headers/metadata
+                const stub1 = {
+                    id: "stub-order-1",
+                    name: "Create Order",
+                    request: {
+                        method: "POST",
+                        url: "/api/orders",
+                        headers: {
+                            "X-Correlation-Id": {
+                                "equalTo": "CORR-AAA-1234"
+                            }
+                        },
+                        bodyPatterns: [
+                            { "matches": ".*product_type=abc5.*" }
+                        ]
+                    },
+                    metadata: {
+                        customerId: "1234",
+                        productType: "abc5"
+                    }
+                };
+
+                const stub2 = {
+                    id: "stub-order-2",
+                    name: "Create Order",
+                    request: {
+                        method: "POST",
+                        url: "/api/orders",
+                        headers: {
+                            "X-Correlation-Id": {
+                                "equalTo": "CORR-BBB-789"
+                            }
+                        }
+                    },
+                    metadata: {
+                        customerId: "789"
+                    }
+                };
+
+                return {
+                    // Match header matcher value
+                    matchStub1Header: matchesStub(stub1, "CORR-AAA-1234", "/api/orders"),
+                    missStub2Header: matchesStub(stub2, "CORR-AAA-1234", "/api/orders"),
+                    // Match body pattern matcher
+                    matchStub1BodyPattern: matchesStub(stub1, "product_type=abc5", "/api/orders"),
+                    // Match metadata
+                    matchStub1Customer: matchesStub(stub1, "customerId", "/api/orders"),
+                    // AND boolean: "1234 AND abc5" matches stub1 but not stub2
+                    stub1AndMatches: matchesStub(stub1, "1234 AND abc5", "/api/orders"),
+                    stub2AndMisses: matchesStub(stub2, "1234 AND abc5", "/api/orders"),
+                    // OR boolean: "1234 OR 789" matches both
+                    stub1OrMatches: matchesStub(stub1, "1234 OR 789", "/api/orders"),
+                    stub2OrMatches: matchesStub(stub2, "1234 OR 789", "/api/orders")
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Boolean> result = (java.util.Map<String, Boolean>) evalJs(script);
+
+        assertThat(result.get("matchStub1Header")).isTrue();
+        assertThat(result.get("missStub2Header")).isFalse();
+        assertThat(result.get("matchStub1BodyPattern")).isTrue();
+        assertThat(result.get("matchStub1Customer")).isTrue();
+        assertThat(result.get("stub1AndMatches")).isTrue();
+        assertThat(result.get("stub2AndMisses")).isFalse();
+        assertThat(result.get("stub1OrMatches")).isTrue();
+        assertThat(result.get("stub2OrMatches")).isTrue();
+    }
+
+    @Test
+    @DisplayName("matchesJournalEntry: Deep search across request headers, queryParams, and payload bodies")
+    void testMatchesJournalEntryDeepInspection() {
+        String script =
+                """
+            async () => {
+                const { matchesJournalEntry } = await import('./modules/filter.js');
+
+                const req1 = {
+                    id: "req-1",
+                    request: {
+                        method: "POST",
+                        url: "/api/orders",
+                        headers: {
+                            "X-Correlation-Id": "J-CORR-1234",
+                            "Content-Type": "application/json"
+                        },
+                        body: '{"customerId": "1234", "product": "abc5"}'
+                    },
+                    response: {
+                        status: 201,
+                        body: '{"orderId": "ORD-999"}'
+                    }
+                };
+
+                const req2 = {
+                    id: "req-2",
+                    request: {
+                        method: "POST",
+                        url: "/api/orders",
+                        headers: {
+                            "X-Correlation-Id": "J-CORR-789"
+                        },
+                        body: '{"customerId": "789"}'
+                    },
+                    response: {
+                        status: 200
+                    }
+                };
+
+                return {
+                    matchHeaderCorrId: matchesJournalEntry(req1, "J-CORR-1234"),
+                    missHeaderCorrId: matchesJournalEntry(req2, "J-CORR-1234"),
+                    matchResponseBody: matchesJournalEntry(req1, "ORD-999"),
+                    matchAndCustomerAndProduct: matchesJournalEntry(req1, "1234 AND abc5"),
+                    missAndCustomerAndProduct: matchesJournalEntry(req2, "1234 AND abc5"),
+                    matchOrCustomer: matchesJournalEntry(req1, "1234 OR 789"),
+                    matchOrCustomer2: matchesJournalEntry(req2, "1234 OR 789")
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Boolean> result = (java.util.Map<String, Boolean>) evalJs(script);
+
+        assertThat(result.get("matchHeaderCorrId")).isTrue();
+        assertThat(result.get("missHeaderCorrId")).isFalse();
+        assertThat(result.get("matchResponseBody")).isTrue();
+        assertThat(result.get("matchAndCustomerAndProduct")).isTrue();
+        assertThat(result.get("missAndCustomerAndProduct")).isFalse();
+        assertThat(result.get("matchOrCustomer")).isTrue();
+        assertThat(result.get("matchOrCustomer2")).isTrue();
+    }
 }

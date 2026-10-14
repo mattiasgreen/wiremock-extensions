@@ -44,7 +44,7 @@ export function generateCurl(method, path, headers = {}, body = '') {
 }
 
 export function renderStubList() {
-  const filter = (elements.searchBox && elements.searchBox.value || '').toLowerCase().trim();
+  const filter = (elements.searchBox && elements.searchBox.value || '').trim();
   const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
   const allStubs = [...state.currentStubs, ...state.disabledStubs, ...dynamicStubs];
 
