@@ -1,9 +1,6 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.mattiasgreen.wiremock.casual.upstream.client.CasualTcpClient;
-import com.github.mattiasgreen.wiremock.casual.upstream.server.CasualServer;
-import com.github.mattiasgreen.wiremock.casual.upstream.util.CasualBufferUtils;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,17 +17,20 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.client.CasualTcpClient;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
+import se.laz.casual.server.CasualServer;
 
 /**
  * Super-lightweight in-process Casual Domain Gateway server for WireMock.

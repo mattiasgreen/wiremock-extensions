@@ -1,4 +1,4 @@
-package com.github.mattiasgreen.wiremock.casual.upstream.server;
+package se.laz.casual.server;
 
 import java.util.List;
 import se.laz.casual.network.protocol.messages.domain.Service;
@@ -6,7 +6,7 @@ import se.laz.casual.network.protocol.messages.domain.Service;
 /**
  * Functional interface for resolving service discovery queries.
  * <p>
- * Candidate for upstream contribution to {@code casualcore/casual-java}.
+ * Intended for upstream contribution to {@code se.laz.casual:casual-server}.
  */
 @FunctionalInterface
 public interface CasualDiscoveryHandler {

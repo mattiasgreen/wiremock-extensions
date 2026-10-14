@@ -1,6 +1,5 @@
-package com.github.mattiasgreen.wiremock.casual.upstream.server;
+package se.laz.casual.server;
 
-import com.github.mattiasgreen.wiremock.casual.upstream.codec.CasualFrameDecoder;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
@@ -22,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.network.ProtocolVersion;
+import se.laz.casual.network.protocol.decoding.CasualFrameDecoder;
 import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
 import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMessage;
@@ -36,7 +36,7 @@ import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestM
  * Super-lightweight in-process Casual Domain Gateway server.
  * Listens on a TCP port using Netty and delegates service invocations to a {@link CasualServiceHandler}.
  * <p>
- * Candidate for upstream contribution to {@code casualcore/casual-java}.
+ * Intended for upstream contribution to {@code se.laz.casual:casual-server}.
  */
 public class CasualServer implements AutoCloseable {
 

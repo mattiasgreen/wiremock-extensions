@@ -11,7 +11,7 @@ When accepted upstream, these components can be deleted from this extension and 
 ### Item 1: Reusable Netty Framing Decoder (`CasualFrameDecoder`)
 * **Target Module**: `se.laz.casual:casual-network` or `casual-network-protocol`
 * **Description**: A standard Netty `ByteToMessageDecoder` assembling 32-byte header + variable payload chunks into `CasualNWMessage<?>` instances without downstream projects needing custom byte buffering.
-* **Current Local Class**: `com.github.mattiasgreen.wiremock.casual.upstream.codec.CasualFrameDecoder`
+* **Current Local Class**: `se.laz.casual.network.protocol.decoding.CasualFrameDecoder`
 
 ### Item 2: Standalone Java SE TCP Client (`CasualTcpClient`)
 * **Target Module**: `se.laz.casual:casual-client-standalone` (new module in `casual-java`)
@@ -20,7 +20,7 @@ When accepted upstream, these components can be deleted from this extension and 
   * Outbound TCP connection establishment and domain connect handshake (`DOMAIN_CONNECT_REQUEST`).
   * Dynamic service discovery (`DOMAIN_DISCOVERY_REQUEST`).
   * High-level synchronous/asynchronous XATMI invocations (`tpcall`, `tpacall`).
-* **Current Local Class**: `com.github.mattiasgreen.wiremock.casual.upstream.client.CasualTcpClient`
+* **Current Local Class**: `se.laz.casual.client.CasualTcpClient`
 
 ### Item 3: Standalone Inbound Server Engine & SPI (`CasualServer`)
 * **Target Module**: `se.laz.casual:casual-server-standalone` (new module in `casual-java`)
@@ -34,7 +34,7 @@ When accepted upstream, these components can be deleted from this extension and 
       List<Service> discover(List<String> serviceNames);
   }
   ```
-* **Current Local Classes**: `com.github.mattiasgreen.wiremock.casual.upstream.server.CasualServer`, `CasualServiceHandler`, `CasualDiscoveryHandler`
+* **Current Local Classes**: `se.laz.casual.server.CasualServer`, `se.laz.casual.server.CasualServiceHandler`, `se.laz.casual.server.CasualDiscoveryHandler`
 * **Benefit to WireMock**: `wiremock-extension-casual` reduces to an adapter implementing `CasualServiceHandler` that translates requests to WireMock HTTP endpoints.
 
 ### Item 4: Protocol Builder Defaults & Fluent Helpers
@@ -51,7 +51,7 @@ When accepted upstream, these components can be deleted from this extension and 
 * **Description**:
   * Add `buffer.asString(Charset charset)` and `buffer.asBytes()` to `ServiceBuffer` to eliminate manual byte-chunk iteration loops.
   * Direct payload extraction on `JsonBuffer`.
-* **Current Local Class**: `com.github.mattiasgreen.wiremock.casual.upstream.util.CasualBufferUtils`
+* **Current Local Class**: `se.laz.casual.api.buffer.CasualBufferUtils`
 
 ---
 
@@ -62,7 +62,7 @@ When accepted upstream, these components can be deleted from this extension and 
 - [x] Stub match discrimination (`Matched-Stub-Id`) distinguishing deliberate 404/error mocks from unmatched requests.
 - [x] Transparent L7 Casual TCP proxy forwarding to upstream Casual domains.
 - [x] Automatic stub record-and-replay via WireMock Admin API (`POST /__admin/mappings`).
-- [x] Refactor upstream candidate classes into isolated `upstream` packages for seamless deletion once upstreamed.
+- [x] Refactor upstream candidate classes into their target `se.laz.casual.*` packages for seamless deletion once upstreamed.
 - [ ] Implement WireMock `ExtensionFactory` and `ServerLifecycleListener` to bind gateway lifecycle to WireMock start/stop.
 - [ ] Support `fielded` buffer conversion via `casual-fielded-annotations`.
 - [ ] Admin API and UI visualization for Casual service mappings and stats.

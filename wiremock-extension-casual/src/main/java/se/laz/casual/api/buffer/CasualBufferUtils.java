@@ -1,4 +1,4 @@
-package com.github.mattiasgreen.wiremock.casual.upstream.util;
+package se.laz.casual.api.buffer;
 
 import java.nio.charset.StandardCharsets;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
@@ -6,7 +6,7 @@ import se.laz.casual.api.buffer.type.ServiceBuffer;
 /**
  * Utility functions for Casual buffers.
  * <p>
- * Candidate for upstream contribution to {@code casualcore/casual-java}.
+ * Intended for upstream contribution to {@code se.laz.casual:casual-api}.
  */
 public final class CasualBufferUtils {
 

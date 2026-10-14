@@ -1,6 +1,6 @@
 package com.github.mattiasgreen.wiremock.casual;
 
-import com.github.mattiasgreen.wiremock.casual.upstream.client.CasualTcpClient;
+import se.laz.casual.client.CasualTcpClient;
 
 /**
  * Super-lightweight client for testing Casual wire protocol interactions.

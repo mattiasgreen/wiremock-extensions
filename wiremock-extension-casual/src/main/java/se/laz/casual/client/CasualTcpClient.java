@@ -1,6 +1,5 @@
-package com.github.mattiasgreen.wiremock.casual.upstream.client;
+package se.laz.casual.client;
 
-import com.github.mattiasgreen.wiremock.casual.upstream.codec.CasualFrameDecoder;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -31,6 +30,7 @@ import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.network.ProtocolVersion;
+import se.laz.casual.network.protocol.decoding.CasualFrameDecoder;
 import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
 import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMessage;
@@ -44,7 +44,7 @@ import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestM
  * Lightweight Netty client for communicating with Casual domains over raw TCP.
  * Supports domain connect handshake, discovery, and service calls (tpcall).
  * <p>
- * Candidate for upstream contribution to {@code casualcore/casual-java}.
+ * Intended for upstream contribution to {@code se.laz.casual:casual-client}.
  */
 public class CasualTcpClient implements AutoCloseable {
 

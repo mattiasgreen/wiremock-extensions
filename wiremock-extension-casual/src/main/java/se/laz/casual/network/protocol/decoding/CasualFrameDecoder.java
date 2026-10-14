@@ -1,4 +1,4 @@
-package com.github.mattiasgreen.wiremock.casual.upstream.codec;
+package se.laz.casual.network.protocol.decoding;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -6,7 +6,6 @@ import io.netty.handler.codec.ByteToMessageDecoder;
 import java.util.List;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.network.ProtocolVersion;
-import se.laz.casual.network.protocol.decoding.CasualMessageDecoder;
 import se.laz.casual.network.protocol.messages.CasualNWMessageHeader;
 import se.laz.casual.network.protocol.messages.parseinfo.MessageHeaderSizes;
 
@@ -14,7 +13,7 @@ import se.laz.casual.network.protocol.messages.parseinfo.MessageHeaderSizes;
  * Netty frame decoder for Casual network protocol messages.
  * Decodes 32-byte header followed by variable-length payload.
  * <p>
- * Candidate for upstream contribution to {@code casualcore/casual-java}.
+ * Intended for upstream contribution to {@code se.laz.casual:casual-network-protocol}.
  */
 public class CasualFrameDecoder extends ByteToMessageDecoder {
 
