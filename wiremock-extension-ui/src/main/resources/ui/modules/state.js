@@ -112,6 +112,7 @@ export const state = {
   statefulModels: [],
   currentRequests: [],
   expandedRequestId: null,
+  journalLimit: 100,
   allScenarios: [],
   testerHistory: [],
   testerHistoryCollapsed: false,

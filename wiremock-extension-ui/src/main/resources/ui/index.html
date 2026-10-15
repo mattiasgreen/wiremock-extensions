@@ -223,9 +223,9 @@
           <div class="journal-filter-chip">
             <span class="chip-icon">🏷️</span>
             <span id="journal-filter-chip-text">Filtered by Stub</span>
-            <button id="btn-journal-clear-stub-filter" title="Clear filter to view all global requests and unmatched 404s">✕</button>
+            <button id="btn-journal-clear-stub-filter" title="Clear filter to view all global requests and unmatched traffic">✕</button>
           </div>
-          <span class="journal-filter-hint">Showing matched requests only. Click ✕ to view all global requests & unmatched 404s.</span>
+          <span class="journal-filter-hint">Showing matched requests only. Click ✕ to view all global requests & unmatched traffic.</span>
         </div>
 
         <div class="journal-controls">
@@ -234,8 +234,12 @@
           </div>
           <div class="journal-controls-bottom">
             <div class="journal-filters-group">
-              <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched (404) only</label>
+              <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched only</label>
               <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh" data-testid="journal-auto-refresh"> Live auto-refresh (3s)</label>
+              <label class="select-label" title="Maximum requests to fetch from WireMock journal">
+                Limit:
+                <input type="number" id="journal-limit-input" data-testid="journal-limit-input" min="1" step="50" value="100" class="input-tiny" style="width: 75px;">
+              </label>
               <span id="journal-filtered-count" class="muted-text"></span>
             </div>
             <div class="journal-actions-group">

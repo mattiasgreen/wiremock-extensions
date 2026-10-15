@@ -57,6 +57,9 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"tab-tester\"");
         assertThat(html).contains("id=\"journal-search\"");
         assertThat(html).contains("id=\"journal-auto-refresh\"");
+        assertThat(html).contains("id=\"journal-limit-input\"");
+        assertThat(html).contains("id=\"filter-unmatched-only\"");
+        assertThat(html).contains("id=\"journal-filtered-count\"");
         assertThat(html).contains("id=\"btn-test-stub\"");
         assertThat(html).contains("id=\"btn-copy-curl\"");
         assertThat(html).contains("id=\"btn-tester-send\"");
@@ -142,6 +145,26 @@ public class UiAssetAndContractTest {
         assertThat(requestsResp.statusCode()).isEqualTo(200);
         JsonNode requestsJson = objectMapper.readTree(requestsResp.body());
         assertThat(requestsJson.has("requests")).isTrue();
+
+        // Unmatched request test
+        httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(server.baseUrl() + "/non-existent"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        HttpRequest requestsUnmatchedFilterReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/requests?unmatched=true"))
+                .GET()
+                .build();
+        HttpResponse<String> filterResp =
+                httpClient.send(requestsUnmatchedFilterReq, HttpResponse.BodyHandlers.ofString());
+        JsonNode filterJson = objectMapper.readTree(filterResp.body());
+        assertThat(filterJson.has("requests")).isTrue();
+        assertThat(filterJson.get("requests").size()).isEqualTo(1);
+        assertThat(filterJson.get("requests").get(0).get("wasMatched").asBoolean())
+                .isFalse();
 
         HttpRequest scenariosReq = HttpRequest.newBuilder()
                 .uri(URI.create(server.baseUrl() + "/__admin/scenarios"))
