@@ -56,7 +56,7 @@
 1. **Stub Exploration & Discovery**: Search by text across URL, method, and name. Filter by lifecycle status (`All`, `Active`, `Disabled`). Sortable by any metadata attribute.
 2. **Lifecycle Manipulation**: Toggle active/disabled state without destroying mappings. Add new stubs from templates. Duplicate existing stubs. Delete stubs with user assurance.
 3. **Ad-Hoc Request Replay (HTTP Tester)**: Execute arbitrary HTTP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`). Record and navigate execution history.
-4. **Traffic Observability & Diffs (Request Journal)**: Live stream of served traffic. Clear visual distinction between matched (`200`-`3xx`) and unmatched (`404`) requests. 1-click promotion of captured requests into the HTTP Tester or export as cURL. Deep comparison between actual incoming traffic and stub definitions.
+4. **Traffic Observability & Diffs (Request Journal)**: Live stream of served traffic. Clear visual distinction between matched (`200`-`3xx`) and unmatched requests. Server-side isolation of unmatched traffic. Configurable custom journal fetch limit (positive integer) and in-memory progressive/lazy DOM rendering. 1-click promotion of captured requests into the HTTP Tester or export as cURL. Deep comparison between actual incoming traffic and stub definitions.
 5. **Stateful Scenario Inspection & Reset**: Live visual inspection of FSM scenario states. Instant reset of all scenarios to `"Started"`.
 6. **Contract Ingestion**: Ingest OpenAPI 3.0 / 3.1 definitions to synthesize realistic stubs and state models automatically.
 
@@ -149,5 +149,17 @@ These stories define the **inviolable acceptance criteria** for any client front
   - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational.
 - **When** the user opens the Target Server modal (`#btn-target-host`).
 - **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing the active ratio (e.g. `1/5 active (Degraded)` or `All 5 extensions active`) and clear `Active` / `Not Installed` status badges for each capability.
+
+### Story 10: High-Volume Request Journal Lazy Rendering, Custom Limit, and Server-Side Unmatched Filtering
+- **Given** WireMock has recorded thousands of events in the Request Journal, with isolated unmatched requests buried among high-volume traffic.
+- **When** the user checks "Show unmatched only" (`#filter-unmatched-only`).
+- **Then** the journal fetches directly from the server using `?unmatched=true`, immediately surfacing all unmatched requests regardless of total journal depth.
+- **When** the user enters a custom positive integer in the limit field (`#journal-limit-input`, default `100`).
+- **Then** the journal fetches up to the specified volume of recent events from WireMock.
+- **When** the number of displayed events exceeds the initial lazy viewport batch (50 items).
+- **Then** the counter shows `Showing 50 of <total>`.
+- **When** the user scrolls down the table container.
+- **Then** additional rows from in-memory JSON are lazily appended to the DOM, preserving fast frame rates without pagination UI complexity.
+
 
 

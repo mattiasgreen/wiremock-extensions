@@ -27,6 +27,7 @@
 | **Stub Copy JSON** | `#btn-copy-json` | `"btn-copy-json"` | Copies raw mapping JSON to system clipboard. |
 | **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, method, url, status. |
 | **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (2-second interval). |
+| **Journal Limit Input** | `#journal-limit-input` | `"journal-limit-input"` | Configurable volume limit number input (positive integer, default 100). |
 | **Journal Clear Action** | `#btn-clear-journal` | `"btn-clear-journal"` | Clears recorded requests via `DELETE /__admin/requests`. |
 | **Journal Match Summary** | `#journal-summary` | `"journal-summary"` | Match status badge (`[MATCHED]` / `[UNMATCHED ⚠️]`). |
 | **Journal Replay Action** | `#btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
@@ -70,7 +71,7 @@
 | **Update Stub** | `PUT` | `/__admin/mappings/{id}` | Stub JSON definition |
 | **Toggle Stub State** | `POST` | `/__admin/stubs/{id}/toggle` | None |
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
-| **Fetch Journal** | `GET` | `/__admin/requests?limit=50` | None |
+| **Fetch Journal** | `GET` | `/__admin/requests?limit={limit}` (or `?unmatched=true`) | None |
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
 | **Reset Scenarios** | `POST` | `/__admin/scenarios/reset` | None |

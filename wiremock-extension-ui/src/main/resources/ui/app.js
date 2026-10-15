@@ -149,11 +149,17 @@ registerRouteHandlers({
       elements.journalSearch.value = q;
     }
     const unmatched = params.get('unmatched') === 'true';
+    const prevUnmatched = elements.filterUnmatchedOnly ? elements.filterUnmatchedOnly.checked : false;
     if (elements.filterUnmatchedOnly) {
       elements.filterUnmatchedOnly.checked = unmatched;
     }
     state.expandedRequestId = params.get('reqId') || null;
-    renderJournal();
+    if (unmatched !== prevUnmatched) {
+      renderJournal();
+      loadJournal();
+    } else {
+      renderJournal();
+    }
   },
   applyTester: (params) => {
     const m = params.get('m');
@@ -281,6 +287,7 @@ if (elements.btnViewStubInJournal) {
     const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (!stub) return;
     const path = getStubUrl(stub.request);
+    state.journalCurrentPage = 1;
     activateTab('tab-journal', false);
     if (elements.journalSearch) {
       elements.journalSearch.value = path;
@@ -297,6 +304,7 @@ if (elements.btnViewStubInJournal) {
 }
 if (elements.btnJournalClearStubFilter) {
   elements.btnJournalClearStubFilter.addEventListener('click', () => {
+    state.journalCurrentPage = 1;
     if (elements.journalSearch) {
       elements.journalSearch.value = '';
     }
@@ -501,6 +509,7 @@ if (elements.bundleDropzone) {
 if (elements.filterUnmatchedOnly) {
   elements.filterUnmatchedOnly.addEventListener('change', () => {
     renderJournal();
+    loadJournal();
     setRoute('journal', { unmatched: elements.filterUnmatchedOnly.checked ? 'true' : null }, true);
   });
 }
@@ -508,6 +517,21 @@ if (elements.journalSearch) {
   elements.journalSearch.addEventListener('input', () => {
     renderJournal();
     setRoute('journal', { q: elements.journalSearch.value.trim() }, true);
+  });
+}
+if (elements.journalLimitInput) {
+  const handleLimitChange = () => {
+    const val = parseInt(elements.journalLimitInput.value, 10);
+    state.journalLimit = (val && val > 0) ? val : 100;
+    elements.journalLimitInput.value = state.journalLimit;
+    loadJournal();
+  };
+  elements.journalLimitInput.addEventListener('change', handleLimitChange);
+  elements.journalLimitInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleLimitChange();
+    }
   });
 }
 if (elements.journalAutoRefresh) {
@@ -525,7 +549,10 @@ if (elements.btnResetJournal) {
   elements.btnResetJournal.addEventListener('click', () => {
     if (confirm('Are you sure you want to clear the request journal?')) {
       doFetch('/__admin/requests', { method: 'DELETE' })
-        .then(() => loadJournal())
+        .then(() => {
+          state.journalCurrentPage = 1;
+          loadJournal();
+        })
         .catch(err => console.warn('Could not reset journal', err));
     }
   });

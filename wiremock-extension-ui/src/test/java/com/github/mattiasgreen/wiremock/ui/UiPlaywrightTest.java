@@ -11,6 +11,10 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.WaitForSelectorState;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -1622,6 +1626,88 @@ public class UiPlaywrightTest {
             proxy.stop();
             vanillaServer.stop();
         }
+    }
+
+    @Test
+    @DisplayName(
+            "Scenario 28: Request Journal lazy progressive rendering, custom limit input, and server-side unmatched filter")
+    void testRequestJournalPaginationAndUnmatchedFilter() throws Exception {
+        // Clear journal
+        wireMockServer.resetRequests();
+
+        // Generate 55 matched requests and 2 unmatched requests (total 57)
+        HttpClient client = HttpClient.newHttpClient();
+        for (int i = 0; i < 55; i++) {
+            client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/users"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.discarding());
+        }
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/missing-resource-alpha"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/missing-resource-beta"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#stub-list");
+
+        // Navigate to Journal
+        page.locator("#nav-tab-journal").click();
+        page.waitForSelector("#tab-journal.active");
+        page.waitForSelector("#journal-table");
+
+        // Verify progressive rendering: 57 total loaded, first 50 rows rendered initially
+        page.waitForSelector("#journal-filtered-count:has-text('Showing 50 of 57')");
+        assertThat(page.locator("#journal-filtered-count").textContent()).contains("Showing 50 of 57");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(50);
+
+        // Scroll the table container to bottom to trigger lazy append of next batch
+        page.evaluate(
+                "() => { const c = document.querySelector('#tab-journal .table-container'); if (c) { c.scrollTop ="
+                        + " c.scrollHeight; c.dispatchEvent(new Event('scroll')); } }");
+        page.waitForSelector("#journal-filtered-count:has-text('Showing 57 of 57')");
+        assertThat(page.locator("#journal-filtered-count").textContent()).contains("Showing 57 of 57");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(57);
+
+        // Change configurable limit to 15
+        page.locator("#journal-limit-input").fill("15");
+        page.locator("#journal-limit-input").press("Enter");
+        page.waitForSelector("#journal-filtered-count:has-text('Showing 15 of 15')");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(15);
+
+        // Filter to unmatched only (server-side query ?unmatched=true)
+        page.locator("#filter-unmatched-only").check();
+        page.waitForSelector("#journal-filtered-count:has-text('Showing 2 of 2')");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(2);
+        assertThat(page.locator("#journal-list").textContent()).contains("missing-resource-alpha");
+        assertThat(page.locator("#journal-list").textContent()).contains("missing-resource-beta");
+
+        // Search within unmatched requests
+        page.locator("#journal-search").fill("alpha");
+        page.waitForSelector("#journal-filtered-count:has-text('Showing 1 of 1')");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(1);
+        assertThat(page.locator("#journal-list").textContent()).contains("missing-resource-alpha");
+
+        // Reset search filter and unmatched toggle, reset limit to 100
+        page.locator("#journal-search").fill("");
+        page.locator("#filter-unmatched-only").uncheck();
+        page.locator("#journal-limit-input").fill("100");
+        page.locator("#journal-limit-input").press("Enter");
+        page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/users')");
+        page.waitForSelector("#journal-filtered-count:has-text('Showing 50 of 57')");
+        assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(50);
+
+        assertThat(pageErrors).isEmpty();
     }
 
     private void resetDefaultStubs() {
