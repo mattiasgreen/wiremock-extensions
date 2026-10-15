@@ -19,6 +19,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 | **Interactive Demo (GH Pages)**| README contains animated GIFs; no live web sandbox. | Static interactive browser demo on GitHub Pages with simulated Admin API responses. | **P2** | Pending |
 | **CI / CD Pipeline** | Minimal `ci.yml`; lacks Spotless check, Gradle build caching, and headless Playwright OS dependencies. | Full matrix/verification pipeline with `spotlessCheck`, headless test runner, and caching. | **P2** | *Deferred* |
 | **Extension Robustness** | Precompiled `Pattern` constants in `HeaderNormalizer.java`; instance-scoped tracing registry. | Instance-scoped metrics and tracing registries with test isolation. | **P2** | **Completed** |
+| **Automated Demo Videos** | Manual animated GIFs in `docs/images` with palette limitations and repository bloat risk. | Headless Playwright WebM video recordings with Hybrid docs title cards, zero-bloat GitHub Release Asset hosting, and release-please automation. | **P2** | Planned |
 
 ---
 
@@ -232,3 +233,44 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] Probe for `/__admin/ui/api/requests` via `capabilities.js`.
   - [ ] If available, execute server-side paginated queries with instant sub-millisecond search across tens of thousands of records.
   - [ ] If connecting to a vanilla/remote WireMock instance without custom extensions, automatically degrade to native `GET /__admin/requests?limit=...` and server-filtered `unmatched=true` with client-side windowing.
+### Phase 10: Automated Self-Contained E2E Video Tour & Asset Pipeline
+
+- [ ] **10.1. Headless Playwright Native Video Recorder (`UiVideoRecordingTest.java`)**
+  - [ ] Leverage Playwright's native Chromium video recording (`Browser.NewContextOptions.setRecordVideoDir(...)`, `.setRecordVideoSize(1280, 720)`).
+  - [ ] Output native high-efficiency WebM format with 24-bit color depth, scrubbing controls, and 10x-20x smaller footprint compared to animated GIFs.
+  - [ ] Tag with `@Tag("recording")` to keep standard `./gradlew test` fast and non-mutating.
+  - [ ] Provide dedicated Gradle task: `./gradlew :wiremock-extension-ui:recordDemoVideos`.
+
+- [ ] **10.2. Hybrid Story Presentation Pattern (Pattern C: Docs Title Card + In-Flight HUD)**
+  - [ ] Parse Given / When / Then acceptance criteria dynamically from `docs/spec/functional-specification.md`.
+  - [ ] Render 2.5-second introductory title card slide (`data:text/html` or HTML canvas) matching the console slate dark theme (`#0f172a`), showing story badge, scenario goal, and step breakdown.
+  - [ ] Transition smoothly to `/__admin/ui/` with active bottom-third toast or status badge displaying current step progress.
+  - [ ] Inject simulated human-like virtual mouse cursor (dot with click ripple) and humanized pacing (`slowMo(200)` + intentional inspection pauses).
+
+- [ ] **10.3. Self-Contained Bite-Sized E2E Story Clips (Create ➔ Exercise ➔ Inspect)**
+  - [ ] **Story A (OpenAPI Ingestion to Verified Request)**:
+    - Start from clean slate (empty stubs).
+    - Import OpenAPI specification via modal.
+    - Synthesized endpoints appear with metadata badges.
+    - Send request in HTTP Tester (`200 OK`).
+    - Inspect serve event in Request Journal.
+  - [ ] **Story B (FSM Scenario Simulation & Reset)**:
+    - Display initial state `"Started"` in Scenarios DAG.
+    - Dispatch transition request in HTTP Tester.
+    - DAG node visibly transitions to `"CLOSED"`.
+    - Click *Reset Scenarios* returning all state machines to `"Started"`.
+  - [ ] **Story C (Unmatched Traffic Diagnostics & Diff)**:
+    - Dispatch near-miss request with path typo (`/api/case` vs `/api/cases`).
+    - Filter Request Journal by unmatched.
+    - Open diagnostic diff modal inspecting path distance and matcher diagnostics.
+    - Copy reproducible cURL command to clipboard.
+
+- [ ] **10.4. Zero-Bloat Asset Hosting Strategy (GitHub Release Assets)**
+  - [ ] Never commit generated binary video files (`.webm`) to Git history to protect clone speeds and avoid repository bloat.
+  - [ ] Upload video artifacts directly to GitHub Release assets using GitHub CLI (`gh release upload vX.Y.Z build/videos/*.webm`).
+  - [ ] Reference static CDN release URLs in `README.md` and `docs/site/` (`https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/...`).
+
+- [ ] **10.5. Pipeline Decoupling (Deferred to Release-Please / Post-Release Workflow)**
+  - [ ] Isolate video recording completely from daily PR and push CI pipelines (`ci.yml`) to preserve rapid developer turnaround.
+  - [ ] Automate video generation in `release.yml` post-release step triggered upon merging a `release-please` release PR and tag publication.
+  - [ ] Add `workflow_dispatch` manual trigger for on-demand generation and release asset uploads without cutting new versions.

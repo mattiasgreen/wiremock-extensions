@@ -124,12 +124,12 @@
 
       <!-- Section: Deployment Options -->
       <section id="standalone-cli" style="padding: 1.5rem 0 2.5rem;">
-        <h2>2. Standalone &amp; Docker Execution</h2>
+        <h2>2. Standalone, Docker &amp; JUnit 5 Execution</h2>
 
         <h3>Standalone CLI Execution</h3>
         <p>WireMock discovers extensions via standard Java SPI (<code>java.util.ServiceLoader</code>). Place both JARs on the classpath:</p>
         <pre class="code-block"><code><span class="comment"># Download WireMock Standalone &amp; the Extension Bundle:</span>
-java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar"</span> \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 --verbose</code></pre>
 
@@ -139,13 +139,30 @@ java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standal
 <span class="kw">WORKDIR</span> /wiremock
 
 <span class="kw">ARG</span> WIREMOCK_VERSION=3.12.1
-<span class="kw">ARG</span> BUNDLE_VERSION=0.1.0
+<span class="kw">ARG</span> BUNDLE_VERSION=1.2.0
 
 <span class="kw">RUN</span> wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
  &amp;&amp; wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
 
 <span class="kw">EXPOSE</span> 8080 8081
 <span class="kw">ENTRYPOINT</span> ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]</code></pre>
+
+        <h3 id="jvm-junit" style="margin-top: 2rem;">JUnit 5 Test Embedding</h3>
+        <p>
+          Standard JUnit 5 WireMock tests automatically discover and activate all extensions via Java SPI.
+          Simply add the bundle to your test dependencies:
+        </p>
+        <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'</span>
+
+<span class="comment">// In your test class:</span>
+<span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)
+<span class="kw">class</span> OrderServiceIntegrationTest {
+    <span class="kw">@Test</span>
+    <span class="kw">void</span> shouldProcessOrdersWithObservability() {
+        <span class="comment">// All extensions (Web UI, NetEm L4, Prometheus, JSON logs) run in-process</span>
+    }
+}</code></pre>
       </section>
 
       <!-- Section: Extensions Deep Dive -->
@@ -277,6 +294,43 @@ StateModel model = StateModel.named(<span class="str">"CaseManagement"</span>)
               100% on-premises with zero cloud callbacks, zero external CDN links, and zero telemetry beacons. Meets the highest compliance criteria in banking, healthcare, and defense.
             </p>
           </div>
+        </div>
+      </section>
+
+      <!-- Section: Architecture & Zero-Sprawl -->
+      <section id="architecture" style="padding: 1.5rem 0 2.5rem;">
+        <h2>5. Architecture &amp; Zero-Sprawl SPI Design</h2>
+        <div class="card" style="margin-bottom: 1.5rem;">
+          <h3>Unified In-Process Control Plane</h3>
+          <p>
+            Standard enterprise mocking setups require spinning up a fleet of disparate containers: WireMock for L7 HTTP stubs,
+            Shopify Toxiproxy for network impairment, a separate UI dashboard service, and local Prometheus exporters.
+            This creates container sprawl, port conflicts, high CI memory footprints, and slow pipeline bootstrap times.
+          </p>
+          <p style="margin-top: 0.5rem;">
+            <code>wiremock-extensions</code> consolidates all simulation engines into an in-process, dual-ingress JVM architecture:
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><strong>Port 8080 (WireMock Core &amp; Admin Plane)</strong>: Serves Admin API endpoints (<code>/__admin/...</code>), the embedded Vanilla JS Console (<code>/__admin/ui/</code>), Prometheus scrape route (<code>/__admin/metrics/prometheus</code>), and OpenAPI ingestion (<code>/__admin/openapi/import</code>).</li>
+            <li><strong>Port 8081 (NetEm Virtual Thread Ingress)</strong>: Transparent Layer 4 TCP proxy executing in the same JVM process, streaming directly to Port 8080 while injecting bandwidth throttling, socket slicing, or TCP resets on demand.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Section: Zero-NPM Web Principles -->
+      <section id="zero-npm" style="padding: 1.5rem 0 2.5rem;">
+        <h2>6. Zero-NPM &amp; Web Standards Philosophy</h2>
+        <div class="card">
+          <h3>Pure Vanilla ES Modules Without Bundlers</h3>
+          <p>
+            The embedded web console (<code>wiremock-extension-ui</code>) is built entirely with modern browser-native
+            <strong>ES Modules</strong> (<code>import</code> / <code>export</code>), standard CSS variables, and HTML templates:
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><strong>Zero NPM Dependencies</strong>: No <code>package.json</code>, no <code>node_modules</code>, and zero supply-chain vulnerability risks.</li>
+            <li><strong>Zero Bundlers</strong>: No Webpack, Vite, Rollup, or Babel build steps required. Changes in <code>src/main/resources/ui/</code> reload instantly in the browser.</li>
+            <li><strong>Air-Gapped &amp; CDN-Free</strong>: 100% of fonts, icons, styles, and scripts are embedded directly inside the JAR, guaranteeing reliable offline and air-gapped operation.</li>
+          </ul>
         </div>
       </section>
 
