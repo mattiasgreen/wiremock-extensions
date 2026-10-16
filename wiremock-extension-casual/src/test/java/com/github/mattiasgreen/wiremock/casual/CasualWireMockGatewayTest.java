@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import javax.transaction.xa.Xid;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,9 +21,14 @@ import org.junit.jupiter.params.provider.EnumSource;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
+import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.api.xa.XID;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
 
 /**
  * PoC Integration test verifying that Casual wire protocol requests
@@ -545,6 +551,101 @@ class CasualWireMockGatewayTest {
 
                 // Upstream was not called again
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/timedOutTxService")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Should return XA_OK by default for 2PC prepare, commit, and rollback on stubbed transactional calls")
+    void shouldReturnXaOkByDefaultForStubbed2pcTransactions() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/txPaymentService"))
+                .willReturn(aResponse().withStatus(200).withBody("{\"status\": \"RESERVED\"}")));
+
+        Xid xid1 =
+                XID.of("gtrid-001".getBytes(StandardCharsets.UTF_8), "bqual-001".getBytes(StandardCharsets.UTF_8), 42);
+        CasualServiceCallReplyMessage callReply = client.tpcall("txPaymentService", "{\"amount\": 100}", xid1);
+        assertThat(callReply.getError()).isEqualTo(ErrorState.OK);
+        assertThat(callReply.getXid()).isEqualTo(xid1);
+
+        CasualTransactionResourcePrepareReplyMessage prepareReply = client.prepare(xid1, 1);
+        assertThat(prepareReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+
+        CasualTransactionResourceCommitReplyMessage commitReply = client.commit(xid1, 1, false);
+        assertThat(commitReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+
+        Xid xid2 =
+                XID.of("gtrid-002".getBytes(StandardCharsets.UTF_8), "bqual-002".getBytes(StandardCharsets.UTF_8), 42);
+        client.tpcall("txPaymentService", "{\"amount\": 200}", xid2);
+        CasualTransactionResourceRollbackReplyMessage rollbackReply = client.rollback(xid2, 1);
+        assertThat(rollbackReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+    }
+
+    @Test
+    @DisplayName("Should honor stubbed X-Casual-XA-*-Vote headers for 2PC chaos simulation")
+    void shouldHonorStubbedXaVoteHeadersFor2pcChaosSimulation() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/chaosPrepareService"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("X-Casual-XA-Prepare-Vote", "XAER_RMERR")
+                        .withBody("{\"status\": \"OK_DURING_CALL_FAILS_AT_PREPARE\"}")));
+
+        Xid xid = XID.of(
+                "gtrid-chaos".getBytes(StandardCharsets.UTF_8), "bqual-chaos".getBytes(StandardCharsets.UTF_8), 42);
+        CasualServiceCallReplyMessage callReply = client.tpcall("chaosPrepareService", "{}", xid);
+        assertThat(callReply.getError()).isEqualTo(ErrorState.OK);
+
+        CasualTransactionResourcePrepareReplyMessage prepareReply = client.prepare(xid, 1);
+        assertThat(prepareReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XAER_RMERR);
+    }
+
+    @Test
+    @DisplayName("Should transparently forward 2PC prepare and commit to upstream Casual server when call was proxied")
+    void shouldTransparentlyForward2pcMessagesToUpstreamCasualServer() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            // Configure upstream server to return XA_RDONLY on prepare so we can prove the reply came from upstream
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/upstreamTxService"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("X-Casual-XA-Prepare-Vote", "XA_RDONLY")
+                            .withBody("{\"upstream\": true}")));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(false)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                Xid xid = XID.of(
+                        "gtrid-proxy-2pc".getBytes(StandardCharsets.UTF_8),
+                        "bqual-proxy-2pc".getBytes(StandardCharsets.UTF_8),
+                        42);
+
+                CasualServiceCallReplyMessage callReply =
+                        proxyClient.tpcall("upstreamTxService", "{\"op\":\"read\"}", xid);
+                assertThat(callReply.getError()).isEqualTo(ErrorState.OK);
+
+                // Prepare must be forwarded to upstreamGateway, which returns XA_RDONLY
+                CasualTransactionResourcePrepareReplyMessage prepareReply = proxyClient.prepare(xid, 1);
+                assertThat(prepareReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_RDONLY);
+
+                // Commit must also complete cleanly
+                CasualTransactionResourceCommitReplyMessage commitReply = proxyClient.commit(xid, 1, false);
+                assertThat(commitReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
             } finally {
                 proxyGateway.close();
             }

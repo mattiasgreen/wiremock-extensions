@@ -20,12 +20,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import javax.transaction.xa.Xid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.AtmiFlags;
 import se.laz.casual.api.flags.Flag;
+import se.laz.casual.api.flags.XAFlags;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XID;
@@ -39,10 +41,16 @@ import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReply
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryRequestMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackRequestMessage;
 
 /**
  * Lightweight Netty client for communicating with Casual domains over raw TCP.
- * Supports domain connect handshake, discovery, and service calls (tpcall).
+ * Supports domain connect handshake, discovery, service calls (tpcall), and 2PC/XA transaction messages.
  * <p>
  * Intended for upstream contribution to {@code se.laz.casual:casual-client}.
  */
@@ -133,6 +141,10 @@ public class CasualTcpClient implements AutoCloseable {
     }
 
     public CasualServiceCallReplyMessage tpcall(String serviceName, String jsonPayload) throws Exception {
+        return tpcall(serviceName, jsonPayload, XID.NULL_XID);
+    }
+
+    public CasualServiceCallReplyMessage tpcall(String serviceName, String jsonPayload, Xid xid) throws Exception {
         ServiceBuffer buffer = ServiceBuffer.of(JsonBuffer.of(jsonPayload));
         CasualServiceCallRequestMessage callReq = CasualServiceCallRequestMessage.createBuilder()
                 .setProtocolVersion(ProtocolVersion.VERSION_1_0)
@@ -140,13 +152,54 @@ public class CasualTcpClient implements AutoCloseable {
                 .setServiceName(serviceName)
                 .setTimeout(10000L)
                 .setParentName(domainName)
-                .setXid(XID.NULL_XID)
+                .setXid(xid != null ? xid : XID.NULL_XID)
                 .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
                 .setServiceBuffer(buffer)
                 .build();
 
         CasualNWMessage<CasualServiceCallReplyMessage> reply =
                 sendAndReceive(CasualNWMessageType.SERVICE_CALL_REQUEST, callReq, 10, TimeUnit.SECONDS);
+        return reply.getMessage();
+    }
+
+    public CasualTransactionResourcePrepareReplyMessage prepare(Xid xid, int resourceId) throws Exception {
+        return prepare(xid, resourceId, Flag.of(XAFlags.TMNOFLAGS));
+    }
+
+    public CasualTransactionResourcePrepareReplyMessage prepare(Xid xid, int resourceId, Flag<XAFlags> flags)
+            throws Exception {
+        CasualTransactionResourcePrepareRequestMessage req =
+                CasualTransactionResourcePrepareRequestMessage.of(UUID.randomUUID(), xid, resourceId, flags);
+        CasualNWMessage<CasualTransactionResourcePrepareReplyMessage> reply =
+                sendAndReceive(CasualNWMessageType.PREPARE_REQUEST, req, 10, TimeUnit.SECONDS);
+        return reply.getMessage();
+    }
+
+    public CasualTransactionResourceCommitReplyMessage commit(Xid xid, int resourceId, boolean onePhase)
+            throws Exception {
+        Flag<XAFlags> flags = Flag.of(onePhase ? XAFlags.TMONEPHASE : XAFlags.TMNOFLAGS);
+        return commit(xid, resourceId, flags);
+    }
+
+    public CasualTransactionResourceCommitReplyMessage commit(Xid xid, int resourceId, Flag<XAFlags> flags)
+            throws Exception {
+        CasualTransactionResourceCommitRequestMessage req =
+                CasualTransactionResourceCommitRequestMessage.of(UUID.randomUUID(), xid, resourceId, flags);
+        CasualNWMessage<CasualTransactionResourceCommitReplyMessage> reply =
+                sendAndReceive(CasualNWMessageType.COMMIT_REQUEST, req, 10, TimeUnit.SECONDS);
+        return reply.getMessage();
+    }
+
+    public CasualTransactionResourceRollbackReplyMessage rollback(Xid xid, int resourceId) throws Exception {
+        return rollback(xid, resourceId, Flag.of(XAFlags.TMNOFLAGS));
+    }
+
+    public CasualTransactionResourceRollbackReplyMessage rollback(Xid xid, int resourceId, Flag<XAFlags> flags)
+            throws Exception {
+        CasualTransactionResourceRollbackRequestMessage req =
+                CasualTransactionResourceRollbackRequestMessage.of(UUID.randomUUID(), xid, resourceId, flags);
+        CasualNWMessage<CasualTransactionResourceRollbackReplyMessage> reply =
+                sendAndReceive(CasualNWMessageType.REQUEST_ROLLBACK, req, 10, TimeUnit.SECONDS);
         return reply.getMessage();
     }
 

@@ -13,8 +13,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import javax.transaction.xa.Xid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.CasualBufferUtils;
@@ -24,13 +27,22 @@ import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.api.xa.XID;
 import se.laz.casual.client.CasualTcpClient;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackRequestMessage;
 import se.laz.casual.server.CasualServer;
+import se.laz.casual.server.CasualTransactionHandler;
 
 /**
  * Super-lightweight in-process Casual Domain Gateway server for WireMock.
@@ -38,9 +50,10 @@ import se.laz.casual.server.CasualServer;
  * to WireMock HTTP stubbing endpoints without requiring Jakarta EE.
  * <p>
  * Supports transparent proxy forwarding to an upstream Casual domain when
- * stubs are unmatched, and optional automatic stub recording for both successes and faults.
+ * stubs are unmatched, optional automatic stub recording for both successes and faults,
+ * and 2PC/XA transaction pass-through and synthetic voting.
  */
-public class CasualWireMockGateway implements AutoCloseable {
+public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(CasualWireMockGateway.class);
 
@@ -55,6 +68,12 @@ public class CasualWireMockGateway implements AutoCloseable {
     private final String domainName;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+
+    private final Set<Xid> upstreamEnlistedXids = ConcurrentHashMap.newKeySet();
+    private final Set<Xid> localMatchedXids = ConcurrentHashMap.newKeySet();
+    private final Map<Xid, XAReturnCode> prepareVoteOverrides = new ConcurrentHashMap<>();
+    private final Map<Xid, XAReturnCode> commitVoteOverrides = new ConcurrentHashMap<>();
+    private final Map<Xid, XAReturnCode> rollbackVoteOverrides = new ConcurrentHashMap<>();
 
     private CasualServer server;
     private CasualTcpClient upstreamClient;
@@ -160,6 +179,7 @@ public class CasualWireMockGateway implements AutoCloseable {
                 .domainName(domainName)
                 .discoveryHandler(this::handleDiscovery)
                 .serviceHandler(this::handleServiceCall)
+                .transactionHandler(this)
                 .build();
         server.start();
         LOG.info("CasualWireMockGateway listening on TCP port {}", server.getPort());
@@ -212,11 +232,17 @@ public class CasualWireMockGateway implements AutoCloseable {
 
         // Bridge to WireMock HTTP endpoint
         String wireMockUrl = wireMockBaseUrl + "/__casual/services/" + serviceName;
-        HttpRequest httpRequest = HttpRequest.newBuilder()
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(wireMockUrl))
                 .header("Content-Type", "application/json")
                 .header("X-Casual-Service", serviceName)
-                .header("X-Casual-Buffer-Type", bufferType)
+                .header("X-Casual-Buffer-Type", bufferType);
+
+        if (isTransactional(req.getXid())) {
+            requestBuilder.header("X-Casual-Xid", req.getXid().toString());
+        }
+
+        HttpRequest httpRequest = requestBuilder
                 .POST(HttpRequest.BodyPublishers.ofString(requestPayload, StandardCharsets.UTF_8))
                 .build();
 
@@ -235,6 +261,9 @@ public class CasualWireMockGateway implements AutoCloseable {
         boolean wasMatched = response.headers().firstValue("Matched-Stub-Id").isPresent();
 
         if (wasMatched) {
+            if (isTransactional(req.getXid())) {
+                localMatchedXids.add(req.getXid());
+            }
             // Matched stub: serve response directly from WireMock
             return buildMatchedReply(req, response);
         } else if (hasUpstream()) {
@@ -297,6 +326,12 @@ public class CasualWireMockGateway implements AutoCloseable {
             }
         }
 
+        if (isTransactional(req.getXid())) {
+            recordVoteOverride(response, "X-Casual-XA-Prepare-Vote", req.getXid(), prepareVoteOverrides);
+            recordVoteOverride(response, "X-Casual-XA-Commit-Vote", req.getXid(), commitVoteOverrides);
+            recordVoteOverride(response, "X-Casual-XA-Rollback-Vote", req.getXid(), rollbackVoteOverrides);
+        }
+
         String respBody = response.body();
         if (respBody != null && !respBody.isBlank()) {
             replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
@@ -313,9 +348,24 @@ public class CasualWireMockGateway implements AutoCloseable {
                 .build();
     }
 
+    private void recordVoteOverride(
+            HttpResponse<String> response, String headerName, Xid xid, Map<Xid, XAReturnCode> targetMap) {
+        Optional<String> voteHeader = response.headers().firstValue(headerName);
+        if (voteHeader.isPresent()) {
+            try {
+                XAReturnCode vote = XAReturnCode.valueOf(voteHeader.get().trim().toUpperCase(Locale.ROOT));
+                targetMap.put(xid, vote);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+    }
+
     private CasualServiceCallReplyMessage forwardToUpstream(
             CasualServiceCallRequestMessage req, String serviceName, String requestPayload) {
         try {
+            if (isTransactional(req.getXid())) {
+                upstreamEnlistedXids.add(req.getXid());
+            }
             CasualTcpClient client = getUpstreamClient();
             CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg =
                     client.sendAndReceive(CasualNWMessageType.SERVICE_CALL_REQUEST, req, 10, TimeUnit.SECONDS);
@@ -416,5 +466,110 @@ public class CasualWireMockGateway implements AutoCloseable {
                 .setTransactionState(TransactionState.TX_ACTIVE)
                 .setServiceBuffer(ServiceBuffer.empty())
                 .build();
+    }
+
+    private boolean isTransactional(Xid xid) {
+        return xid != null && !XID.NULL_XID.equals(xid);
+    }
+
+    private boolean shouldForwardTransactionToUpstream(Xid xid) {
+        if (!hasUpstream()) {
+            return false;
+        }
+        return upstreamEnlistedXids.contains(xid) || !localMatchedXids.contains(xid);
+    }
+
+    private void cleanupTransactionState(Xid xid) {
+        if (xid != null) {
+            upstreamEnlistedXids.remove(xid);
+            localMatchedXids.remove(xid);
+            prepareVoteOverrides.remove(xid);
+            commitVoteOverrides.remove(xid);
+            rollbackVoteOverrides.remove(xid);
+        }
+    }
+
+    @Override
+    public CasualTransactionResourcePrepareReplyMessage prepare(CasualTransactionResourcePrepareRequestMessage req) {
+        Xid xid = req.getXid();
+        XAReturnCode override = (xid != null) ? prepareVoteOverrides.remove(xid) : null;
+        if (override != null) {
+            return CasualTransactionResourcePrepareReplyMessage.of(
+                    req.getExecution(), xid, req.getResourceId(), override);
+        }
+
+        if (shouldForwardTransactionToUpstream(xid)) {
+            try {
+                CasualTcpClient client = getUpstreamClient();
+                CasualNWMessage<CasualTransactionResourcePrepareReplyMessage> reply =
+                        client.sendAndReceive(CasualNWMessageType.PREPARE_REQUEST, req, 10, TimeUnit.SECONDS);
+                return reply.getMessage();
+            } catch (Exception e) {
+                LOG.error("Failed to forward Casual 2PC prepare request to upstream", e);
+                return CasualTransactionResourcePrepareReplyMessage.of(
+                        req.getExecution(), xid, req.getResourceId(), XAReturnCode.XAER_RMERR);
+            }
+        }
+
+        return CasualTransactionResourcePrepareReplyMessage.of(
+                req.getExecution(), xid, req.getResourceId(), XAReturnCode.XA_OK);
+    }
+
+    @Override
+    public CasualTransactionResourceCommitReplyMessage commit(CasualTransactionResourceCommitRequestMessage req) {
+        Xid xid = req.getXid();
+        boolean shouldForward = shouldForwardTransactionToUpstream(xid);
+        XAReturnCode override = (xid != null) ? commitVoteOverrides.remove(xid) : null;
+        cleanupTransactionState(xid);
+
+        if (override != null) {
+            return CasualTransactionResourceCommitReplyMessage.of(
+                    req.getExecution(), xid, req.getResourceId(), override);
+        }
+
+        if (shouldForward) {
+            try {
+                CasualTcpClient client = getUpstreamClient();
+                CasualNWMessage<CasualTransactionResourceCommitReplyMessage> reply =
+                        client.sendAndReceive(CasualNWMessageType.COMMIT_REQUEST, req, 10, TimeUnit.SECONDS);
+                return reply.getMessage();
+            } catch (Exception e) {
+                LOG.error("Failed to forward Casual 2PC commit request to upstream", e);
+                return CasualTransactionResourceCommitReplyMessage.of(
+                        req.getExecution(), xid, req.getResourceId(), XAReturnCode.XAER_RMERR);
+            }
+        }
+
+        return CasualTransactionResourceCommitReplyMessage.of(
+                req.getExecution(), xid, req.getResourceId(), XAReturnCode.XA_OK);
+    }
+
+    @Override
+    public CasualTransactionResourceRollbackReplyMessage rollback(CasualTransactionResourceRollbackRequestMessage req) {
+        Xid xid = req.getXid();
+        boolean shouldForward = shouldForwardTransactionToUpstream(xid);
+        XAReturnCode override = (xid != null) ? rollbackVoteOverrides.remove(xid) : null;
+        cleanupTransactionState(xid);
+
+        if (override != null) {
+            return CasualTransactionResourceRollbackReplyMessage.of(
+                    req.getExecution(), xid, req.getResourceId(), override);
+        }
+
+        if (shouldForward) {
+            try {
+                CasualTcpClient client = getUpstreamClient();
+                CasualNWMessage<CasualTransactionResourceRollbackReplyMessage> reply =
+                        client.sendAndReceive(CasualNWMessageType.REQUEST_ROLLBACK, req, 10, TimeUnit.SECONDS);
+                return reply.getMessage();
+            } catch (Exception e) {
+                LOG.error("Failed to forward Casual 2PC rollback request to upstream", e);
+                return CasualTransactionResourceRollbackReplyMessage.of(
+                        req.getExecution(), xid, req.getResourceId(), XAReturnCode.XAER_RMERR);
+            }
+        }
+
+        return CasualTransactionResourceRollbackReplyMessage.of(
+                req.getExecution(), xid, req.getResourceId(), XAReturnCode.XA_OK);
     }
 }

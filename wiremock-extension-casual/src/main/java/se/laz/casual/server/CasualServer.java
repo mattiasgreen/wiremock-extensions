@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.decoding.CasualFrameDecoder;
 import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
@@ -31,6 +32,12 @@ import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReque
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareRequestMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
+import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackRequestMessage;
 
 /**
  * Super-lightweight in-process Casual Domain Gateway server.
@@ -47,6 +54,7 @@ public class CasualServer implements AutoCloseable {
     private final String domainName;
     private final CasualServiceHandler serviceHandler;
     private final CasualDiscoveryHandler discoveryHandler;
+    private final CasualTransactionHandler transactionHandler;
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -59,11 +67,22 @@ public class CasualServer implements AutoCloseable {
             String domainName,
             CasualServiceHandler serviceHandler,
             CasualDiscoveryHandler discoveryHandler) {
+        this(port, domainId, domainName, serviceHandler, discoveryHandler, null);
+    }
+
+    public CasualServer(
+            int port,
+            UUID domainId,
+            String domainName,
+            CasualServiceHandler serviceHandler,
+            CasualDiscoveryHandler discoveryHandler,
+            CasualTransactionHandler transactionHandler) {
         this.port = port;
         this.domainId = Objects.requireNonNull(domainId, "domainId must not be null");
         this.domainName = Objects.requireNonNull(domainName, "domainName must not be null");
         this.serviceHandler = Objects.requireNonNull(serviceHandler, "serviceHandler must not be null");
         this.discoveryHandler = discoveryHandler;
+        this.transactionHandler = transactionHandler;
     }
 
     public static Builder builder() {
@@ -76,6 +95,7 @@ public class CasualServer implements AutoCloseable {
         private String domainName = "casual-server";
         private CasualServiceHandler serviceHandler;
         private CasualDiscoveryHandler discoveryHandler;
+        private CasualTransactionHandler transactionHandler;
 
         public Builder port(int port) {
             this.port = port;
@@ -102,8 +122,13 @@ public class CasualServer implements AutoCloseable {
             return this;
         }
 
+        public Builder transactionHandler(CasualTransactionHandler transactionHandler) {
+            this.transactionHandler = transactionHandler;
+            return this;
+        }
+
         public CasualServer build() {
-            return new CasualServer(port, domainId, domainName, serviceHandler, discoveryHandler);
+            return new CasualServer(port, domainId, domainName, serviceHandler, discoveryHandler, transactionHandler);
         }
     }
 
@@ -166,6 +191,12 @@ public class CasualServer implements AutoCloseable {
                 handleDomainDiscovery(ctx, (CasualNWMessage<CasualDomainDiscoveryRequestMessage>) msg);
             } else if (type == CasualNWMessageType.SERVICE_CALL_REQUEST) {
                 handleServiceCall(ctx, (CasualNWMessage<CasualServiceCallRequestMessage>) msg);
+            } else if (type == CasualNWMessageType.PREPARE_REQUEST) {
+                handlePrepare(ctx, (CasualNWMessage<CasualTransactionResourcePrepareRequestMessage>) msg);
+            } else if (type == CasualNWMessageType.COMMIT_REQUEST) {
+                handleCommit(ctx, (CasualNWMessage<CasualTransactionResourceCommitRequestMessage>) msg);
+            } else if (type == CasualNWMessageType.REQUEST_ROLLBACK) {
+                handleRollback(ctx, (CasualNWMessage<CasualTransactionResourceRollbackRequestMessage>) msg);
             } else {
                 String safeType = String.valueOf(type).replaceAll("[\r\n]", "");
                 LOG.warn("Unsupported Casual message type received: {}", safeType);
@@ -210,6 +241,36 @@ public class CasualServer implements AutoCloseable {
             CasualNWMessage<CasualServiceCallReplyMessage> replyMsg =
                     CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
             writeMessage(ctx, replyMsg);
+        }
+
+        private void handlePrepare(
+                ChannelHandlerContext ctx, CasualNWMessage<CasualTransactionResourcePrepareRequestMessage> msg) {
+            CasualTransactionResourcePrepareRequestMessage req = msg.getMessage();
+            CasualTransactionResourcePrepareReplyMessage reply = transactionHandler != null
+                    ? transactionHandler.prepare(req)
+                    : CasualTransactionResourcePrepareReplyMessage.of(
+                            req.getExecution(), req.getXid(), req.getResourceId(), XAReturnCode.XA_OK);
+            writeMessage(ctx, CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
+        }
+
+        private void handleCommit(
+                ChannelHandlerContext ctx, CasualNWMessage<CasualTransactionResourceCommitRequestMessage> msg) {
+            CasualTransactionResourceCommitRequestMessage req = msg.getMessage();
+            CasualTransactionResourceCommitReplyMessage reply = transactionHandler != null
+                    ? transactionHandler.commit(req)
+                    : CasualTransactionResourceCommitReplyMessage.of(
+                            req.getExecution(), req.getXid(), req.getResourceId(), XAReturnCode.XA_OK);
+            writeMessage(ctx, CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
+        }
+
+        private void handleRollback(
+                ChannelHandlerContext ctx, CasualNWMessage<CasualTransactionResourceRollbackRequestMessage> msg) {
+            CasualTransactionResourceRollbackRequestMessage req = msg.getMessage();
+            CasualTransactionResourceRollbackReplyMessage reply = transactionHandler != null
+                    ? transactionHandler.rollback(req)
+                    : CasualTransactionResourceRollbackReplyMessage.of(
+                            req.getExecution(), req.getXid(), req.getResourceId(), XAReturnCode.XA_OK);
+            writeMessage(ctx, CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
         }
 
         private <T extends se.laz.casual.api.network.protocol.messages.CasualNetworkTransmittable> void writeMessage(
