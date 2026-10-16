@@ -112,7 +112,7 @@ export function matchesStub(stub, query, stubUrl = '', stubProject = '') {
  * @param {string} [statefulEntity] Optional extracted stateful entity header
  * @returns {boolean}
  */
-export function matchesJournalEntry(req, query, statefulEntity = '') {
+export function matchesJournalEntry(req, query, statefulEntity = '', resolution = '') {
   if (!query || !query.trim()) return true;
 
   const method = (req.request && req.request.method ? req.request.method : '').toLowerCase();
@@ -120,6 +120,7 @@ export function matchesJournalEntry(req, query, statefulEntity = '') {
   const status = String((req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || '');
   const stubName = (req.stubMapping && req.stubMapping.name ? req.stubMapping.name : '').toLowerCase();
   const entity = (statefulEntity || '').toLowerCase();
+  const res = (resolution || '').toLowerCase();
 
   // Lazy cache deep text representation for multi-term queries
   let deepSearchable = null;
@@ -131,7 +132,8 @@ export function matchesJournalEntry(req, query, statefulEntity = '') {
       url.includes(token) ||
       status.includes(token) ||
       stubName.includes(token) ||
-      entity.includes(token)
+      entity.includes(token) ||
+      res.includes(token)
     ) {
       return true;
     }

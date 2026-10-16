@@ -96,6 +96,28 @@ export function setTargetUrlInLocation(newTarget, strategy = 'proxy') {
   }
 }
 
+export function getWireMockUri() {
+  if (state && state.targetConfig && state.targetConfig.fullUrl) {
+    return state.targetConfig.fullUrl;
+  }
+  if (state && state.apiBaseUrl) {
+    return state.apiBaseUrl.replace(/\/+$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : '';
+    const pathname = window.location.pathname || '';
+    const idx = pathname.indexOf('/__admin/ui');
+    const prefix = idx > 0 ? pathname.substring(0, idx) : '';
+    const combined = (origin + prefix).replace(/\/+$/, '');
+    if (combined) {
+      return combined;
+    }
+  }
+  return 'http://localhost:8080';
+}
+
 const initialTarget = getInitialTargetUrl();
 const initialStrategy = getInitialConnectionStrategy();
 

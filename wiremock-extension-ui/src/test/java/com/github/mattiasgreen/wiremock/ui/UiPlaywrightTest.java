@@ -119,7 +119,7 @@ public class UiPlaywrightTest {
     void testInitialPageLoadAndStubsListing() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
 
-        assertThat(page.title()).isEqualTo("WireMock Console");
+        assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
 
         // Wait for stubs to load asynchronously in sidebar
         page.waitForSelector(".stub-card");
@@ -950,6 +950,10 @@ public class UiPlaywrightTest {
             page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/products')");
             page.waitForSelector("#journal-list tr.journal-row:has-text('missing-sku')");
 
+            Locator ordersRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')")
+                    .first();
+            assertThat(ordersRow.textContent()).contains("STUBBED");
+
             // Expand unmatched row
             Locator unmatchedRow = page.locator("#journal-list tr.journal-row:has-text('missing-sku')")
                     .first();
@@ -988,7 +992,7 @@ public class UiPlaywrightTest {
                             .withBody("{\"status\":\"success\",\"upstreamData\":\"Live Catalog Item\"}")));
 
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
-            assertThat(page.title()).isEqualTo("WireMock Console");
+            assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
 
             // 1. Open Import Modal
             page.locator("#btn-open-openapi-modal").click();
@@ -1237,6 +1241,7 @@ public class UiPlaywrightTest {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
         page.waitForSelector("#target-host-label");
         assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
+        assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
 
         // 2. Open Target Host modal
         page.locator("#btn-target-host").click();
@@ -1251,6 +1256,7 @@ public class UiPlaywrightTest {
         page.waitForSelector(
                 "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         assertThat(page.locator("#target-host-label").textContent()).contains(targetUrl);
+        assertThat(page.title()).isEqualTo("WMC - " + targetUrl);
         assertThat(page.url())
                 .contains("wiremock=" + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8));
 
@@ -1267,6 +1273,7 @@ public class UiPlaywrightTest {
         page.waitForSelector(
                 "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
+        assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
         assertThat(page.url()).doesNotContain("wiremock=");
 
         // 6. Test direct deep-link with ?wiremock= query parameter
@@ -1274,10 +1281,144 @@ public class UiPlaywrightTest {
                 + java.net.URLEncoder.encode(targetUrl, java.nio.charset.StandardCharsets.UTF_8) + "#stubs");
         page.waitForSelector(".stub-card");
         assertThat(page.locator("#target-host-label").textContent()).contains(targetUrl);
+        assertThat(page.title()).isEqualTo("WMC - " + targetUrl);
 
         assertThat(pageErrors).isEmpty();
         assertThat(consoleErrors).isEmpty();
         assertThat(httpErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Story 10: Multi-Instance Tab Identification (Site Header & Tab Name)")
+    void testMultiTabSiteHeaderAndTabName() {
+        // 1. Initial page load at same-origin
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#stub-list");
+        assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
+
+        // 2. Direct deep link with query parameter ?wiremock=...
+        String remoteUrl = "https://mock-env1.corp.internal:8443/wiremock";
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?wiremock="
+                + java.net.URLEncoder.encode(remoteUrl, java.nio.charset.StandardCharsets.UTF_8));
+        page.waitForSelector("#target-host-label");
+        assertThat(page.title()).isEqualTo("WMC - " + remoteUrl);
+
+        // 3. Dynamic switch via Target Host modal
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+        String remoteUrl2 = "http://mock-env2.corp.internal:9090";
+        page.locator("#input-target-host").fill(remoteUrl2);
+        page.locator("#btn-save-target-host").click();
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.title()).isEqualTo("WMC - " + remoteUrl2);
+
+        // 4. Reset to same origin reverts tab name
+        page.locator("#btn-target-host").click();
+        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.locator("#btn-reset-target-host").click();
+        page.waitForSelector(
+                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
+
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Verify Request Journal displays Resolution column with STUBBED, PROXIED, and UNMATCHED pills")
+    void testJournalResolutionPills() throws Exception {
+        WireMockServer upstreamServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstreamServer.start();
+        try {
+            wireMockServer.resetRequests();
+
+            // 1. Setup proxied stub on wireMockServer pointing to upstreamServer
+            upstreamServer.stubFor(get(urlEqualTo("/api/v1/remote-service"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"source\":\"upstream\"}")));
+            wireMockServer.stubFor(get(urlEqualTo("/api/v1/remote-service"))
+                    .willReturn(aResponse().proxiedFrom(upstreamServer.baseUrl())));
+
+            // 2. Dispatch 3 requests via HttpClient: STUBBED, PROXIED, and UNMATCHED
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            // a) STUBBED (hits default stub /api/v1/users)
+            client.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/users"))
+                            .GET()
+                            .build(),
+                    java.net.http.HttpResponse.BodyHandlers.discarding());
+            // b) PROXIED (hits /api/v1/remote-service -> forwards to upstreamServer)
+            client.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/remote-service"))
+                            .GET()
+                            .build(),
+                    java.net.http.HttpResponse.BodyHandlers.discarding());
+            // c) UNMATCHED (hits /api/v1/nonexistent-404-endpoint)
+            client.send(
+                    java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/nonexistent-404-endpoint"))
+                            .GET()
+                            .build(),
+                    java.net.http.HttpResponse.BodyHandlers.discarding());
+
+            // 3. Open UI Request Journal
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+            page.waitForSelector("#tab-journal.active");
+
+            // Verify column header is Resolution
+            assertThat(page.locator("#journal-table thead").textContent()).contains("Resolution");
+            assertThat(page.locator("#journal-table thead").textContent()).doesNotContain("Matched");
+
+            // Wait for rows to render
+            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/users')");
+            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/remote-service')");
+            page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/nonexistent-404-endpoint')");
+
+            // Verify pills
+            Locator stubbedRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/users')")
+                    .first();
+            assertThat(stubbedRow.locator(".pill-stubbed").textContent()).contains("STUBBED");
+
+            Locator proxiedRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/remote-service')")
+                    .first();
+            assertThat(proxiedRow.locator(".pill-proxied").textContent()).contains("PROXIED");
+
+            Locator unmatchedRow = page.locator(
+                            "#journal-list tr.journal-row:has-text('/api/v1/nonexistent-404-endpoint')")
+                    .first();
+            assertThat(unmatchedRow.locator(".pill-unmatched").textContent()).contains("UNMATCHED");
+
+            // Expand proxied row and verify upstream URL in detail card
+            proxiedRow.click();
+            page.waitForSelector("tr.journal-detail-row");
+            assertThat(page.locator("tr.journal-detail-row").textContent()).contains(upstreamServer.baseUrl());
+
+            // Verify search by resolution keyword
+            page.locator("#journal-search").fill("proxied");
+            assertThat(page.locator("#journal-list tr.journal-row:not(.journal-detail-row)")
+                            .count())
+                    .isEqualTo(1);
+            assertThat(page.locator("#journal-list").textContent()).contains("/api/v1/remote-service");
+
+            page.locator("#journal-search").fill("stubbed");
+            assertThat(page.locator("#journal-list tr.journal-row:not(.journal-detail-row)")
+                            .count())
+                    .isEqualTo(1);
+            assertThat(page.locator("#journal-list").textContent()).contains("/api/v1/users");
+
+            assertThat(pageErrors).isEmpty();
+        } finally {
+            if (upstreamServer.isRunning()) {
+                upstreamServer.stop();
+            }
+            resetDefaultStubs();
+        }
     }
 
     private com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition createCasesModel() {
