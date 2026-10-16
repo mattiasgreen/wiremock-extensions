@@ -1,6 +1,46 @@
+sourceSets {
+    quarkusTest {
+        java.srcDir file('src/quarkusTest/java')
+        resources.srcDir file('src/quarkusTest/resources')
+        compileClasspath += sourceSets.main.output + sourceSets.test.output + configurations.testCompileClasspath
+        runtimeClasspath += output + compileClasspath + configurations.testRuntimeClasspath
+    }
+}
+
+configurations {
+    quarkusTestImplementation.extendsFrom testImplementation
+    quarkusTestRuntimeOnly.extendsFrom testRuntimeOnly
+    casualQuarkusBinaries {
+        description = 'Pre-built casual-quarkus runner binaries resolved from Nexus or local paths'
+        canBeResolved = true
+        canBeConsumed = false
+    }
+}
+
 dependencies {
     implementation libs.casual.api
     implementation libs.casual.network.protocol
     implementation libs.netty.all
     implementation libs.jackson.databind
 }
+
+tasks.register('quarkusIntegrationTest', Test) {
+    description = 'Runs multi-node Casual 2PC/XA integration tests (Client Initiator -> WireMock MitM -> Upstream Server).'
+    group = 'verification'
+    testClassesDirs = sourceSets.quarkusTest.output.classesDirs
+    classpath = sourceSets.quarkusTest.runtimeClasspath
+    useJUnitPlatform()
+
+    if (project.hasProperty('casualClientJar')) {
+        systemProperty 'casual.quarkus.client.jar', project.property('casualClientJar')
+    }
+    if (project.hasProperty('casualServerJar')) {
+        systemProperty 'casual.quarkus.server.jar', project.property('casualServerJar')
+    }
+    doFirst {
+        if (!configurations.casualQuarkusBinaries.isEmpty()) {
+            systemProperty 'casual.quarkus.binaries', configurations.casualQuarkusBinaries.files.collect { it.absolutePath }.join(File.pathSeparator)
+        }
+    }
+}
+
