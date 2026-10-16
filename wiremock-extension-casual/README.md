@@ -200,12 +200,121 @@ The test suite in [`CasualWireMockGatewayTest`](src/test/java/com/github/mattias
 14–17. **All TransactionState Modes**: Parameterized test verifying all 4 `TransactionState` enum values (`TX_ACTIVE`, `ROLLBACK_ONLY`, `TIMEOUT_ROLLBACK_ONLY`, `ERROR`) (`shouldStubAllTransactionStatesCorrectly`).
 18. **TransactionState Fallbacks**: Verifies fallback to `TX_ACTIVE` when header is missing or malformed (`shouldDefaultToTxActiveWhenTransactionStateHeaderIsMissingOrInvalid`).
 19. **Upstream TransactionState Recording**: Verifies upstream transaction states (e.g. `TIMEOUT_ROLLBACK_ONLY`) are recorded into stubs and faithfully replayed (`shouldRecordAndReplayUpstreamTransactionState`).
+20. **Synthetic 2PC/XA Voting (`XA_OK`)**: Verifies default `XA_OK` responses for `PREPARE_REQUEST`, `COMMIT_REQUEST`, and `REQUEST_ROLLBACK` on stubbed transactional calls (`shouldReturnXaOkByDefaultForStubbed2pcTransactions`).
+21. **2PC Chaos Vote Overrides**: Verifies `X-Casual-XA-Prepare-Vote` (e.g. `XAER_RMERR`) overrides synthetic 2PC voting (`shouldHonorStubbedXaVoteHeadersFor2pcChaosSimulation`).
+22. **Transparent 2PC Upstream Forwarding**: Verifies 2PC `PREPARE` and `COMMIT` messages are transparently forwarded to the upstream Casual server when a transactional call was proxied (`shouldTransparentlyForward2pcMessagesToUpstreamCasualServer`).
 
 ---
 
-## 7. Future Roadmap & Native Matching Engine
+## 7. Multi-Node Integration Test Architecture & Scenario Flyovers
+
+To validate end-to-end distributed transactions (JTA/Narayana 2PC) and transparent Man-in-the-Middle (MitM) behavior without slowing down the inner unit-test loop, `wiremock-extension-casual` provides an isolated integration test suite (`quarkusIntegrationTest`) modeling a 3-node Casual topology:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                         3-Node Casual / WireMock MitM Test Topology                             │
+├─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                 │
+│  ┌─────────────────────────┐       ┌─────────────────────────────────┐       ┌───────────────┐  │
+│  │  Node 1: Client Server  │       │   Node 2: WireMock Casual MitM  │       │ Node 3: Real  │  │
+│  │   (casual-quarkus A)    │       │     (CasualWireMockGateway)     │       │ Casual Server │  │
+│  │                         │       │                                 │       │  (Server B)   │  │
+│  │  • REST Endpoint        │       │  • Netty Casual Inbound (:7772) │       │               │  │
+│  │  • Narayana JTA TM      │       │  • CasualTransactionHandler     │       │ • Inbound     │  │
+│  │  • Outbound Pool ───────┼──────►│  • WireMock HTTP Engine (:8089) │       │   (:7771)     │  │
+│  │    (target -> :7772)    │  TCP  │  • Upstream Netty Client ───────┼──────►│ • @CasualSvc  │  │
+│  │                         │ Framing│    (upstream -> :7771)         │  TCP  │ • Local XA RM │  │
+│  └─────────────────────────┘       └─────────────────────────────────┘       └───────────────┘  │
+│                                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Scenario Flyover 1: Transparent Proxying & Stub Recording (With 2PC Pass-Through)
+When `CasualWireMockGateway` sits between **Node 1 (Client Initiator)** and **Node 3 (Upstream Server B)** with `recordStubs(true)` and an empty WireMock stub store:
+
+```mermaid
+sequenceDiagram
+    participant C as Node 1: Client (TM / Initiator)
+    participant G as Node 2: CasualWireMockGateway (MitM)
+    participant W as WireMock Engine (In-Process)
+    participant S as Node 3: Upstream Server B
+
+    Note over C,S: 1. Handshake & Service Discovery
+    C->>G: DOMAIN_CONNECT_REQUEST + DOMAIN_DISCOVERY_REQUEST("casual/example")
+    G->>W: POST /__casual/services/casual/example (Probe)
+    W-->>G: 404 Not Matched (No Stub Yet)
+    G->>S: Forward DOMAIN_DISCOVERY_REQUEST("casual/example")
+    S-->>G: DOMAIN_DISCOVERY_REPLY (Found, TransactionType=AUTOMATIC)
+    G-->>C: DOMAIN_DISCOVERY_REPLY
+
+    Note over C,S: 2. Transactional Service Call & Live Stub Recording
+    C->>C: UserTransaction.begin() -> allocates Xid1
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid1, JSON Payload)
+    G->>W: POST /__casual/services/casual/example (X-Casual-Xid: Xid1)
+    W-->>G: 404 Not Matched (No Matched-Stub-Id header)
+    G->>G: Enlist Xid1 in upstreamEnlistedXids
+    G->>S: Forward SERVICE_CALL_REQUEST("casual/example", Xid1, JSON Payload)
+    S-->>G: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply JSON)
+    G->>W: POST /__admin/mappings (Record request JSON + response JSON + headers)
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply JSON)
+
+    Note over C,S: 3. Two-Phase Commit (2PC) Pass-Through
+    C->>C: UserTransaction.commit() initiates 2PC
+    C->>G: PREPARE_REQUEST(Xid1, RM_ID)
+    G->>S: Forward PREPARE_REQUEST(Xid1, RM_ID) (Xid1 is in upstreamEnlistedXids)
+    S-->>G: PREPARE_REPLY(Xid1, XA_OK)
+    G-->>C: PREPARE_REPLY(Xid1, XA_OK)
+    C->>G: COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
+    G->>S: Forward COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
+    S-->>G: COMMIT_REPLY(Xid1, XA_OK)
+    G-->>C: COMMIT_REPLY(Xid1, XA_OK)
+```
+
+* **Key Takeaway**: Because `Xid1` was routed to **Node 3**, the gateway records `Xid1` in `upstreamEnlistedXids` and transparently forwards both `PREPARE_REQUEST` and `COMMIT_REQUEST` to Node 3 so that Node 3's real database/queue resources commit atomically with Node 1's transaction manager. Meanwhile, the service call payload is captured as a reusable WireMock stub.
+
+---
+
+### Scenario Flyover 2: Offline Stubbing, Application Faults & 2PC Chaos Simulation
+Once stubs are defined (or recorded from Scenario 1), **Node 3 (Upstream Server B)** can be shut down completely. **Node 2 (`CasualWireMockGateway`)** now acts as both the service endpoint and a **Synthetic XA Resource Manager**:
+
+```mermaid
+sequenceDiagram
+    participant C as Node 1: Client (TM / Initiator)
+    participant G as Node 2: CasualWireMockGateway (MitM)
+    participant W as WireMock Engine (Stub Store)
+    participant S as Node 3: Upstream Server B (OFFLINE)
+
+    Note over C,W: Case A: Stubbed Application Fault (TPESVCFAIL + ROLLBACK_ONLY)
+    C->>C: UserTransaction.begin() -> allocates Xid_Fault
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid_Fault, {"mode":"fail"})
+    G->>W: POST /__casual/services/casual/example
+    W-->>G: 500 Matched (X-Casual-Error-State: TPESVCFAIL, X-Casual-Transaction-State: ROLLBACK_ONLY)
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=TPESVCFAIL, TransactionState=ROLLBACK_ONLY)
+    C->>C: Marks transaction ROLLBACK_ONLY & aborts
+    C->>G: REQUEST_ROLLBACK(Xid_Fault, RM_ID)
+    G-->>C: ROLLBACK_REPLY(Xid_Fault, XA_OK) (Synthetic Vote — Server B never contacted)
+
+    Note over C,W: Case B: 2PC Phase-1 Prepare Failure Chaos (XAER_RMERR)
+    C->>C: UserTransaction.begin() -> allocates Xid_Chaos
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid_Chaos, {"mode":"2pc-chaos"})
+    G->>W: POST /__casual/services/casual/example
+    W-->>G: 200 Matched (X-Casual-XA-Prepare-Vote: XAER_RMERR)
+    G->>G: Store prepareVoteOverrides[Xid_Chaos] = XAER_RMERR
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE)
+    C->>C: Service call succeeded! UserTransaction.commit() starts 2PC Phase 1
+    C->>G: PREPARE_REQUEST(Xid_Chaos, RM_ID)
+    G-->>C: PREPARE_REPLY(Xid_Chaos, XAER_RMERR) (Synthetic Chaos Vote!)
+    C->>C: Coordinator aborts global transaction -> throws RollbackException
+```
+
+* **Key Takeaway**: Without running a real upstream Casual server or JEE Transaction Manager inside WireMock, tests can deterministically verify both **application-level rollbacks** (`TPESVCFAIL` + `ROLLBACK_ONLY` during the service call) and **infrastructure-level 2PC commit/prepare hazards** (`XAER_RMERR`, `XA_RBROLLBACK`, `XA_HEURRB` during `UserTransaction.commit()`).
+
+---
+
+## 8. Future Roadmap & Native Matching Engine
 
 See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
 * **In-Process WireMock `Request` Adapter**: Bypassing HTTP loopback sockets to evaluate directly against WireMock’s in-memory `StubMappings` for sub-millisecond ($\sim 50\mu\text{s}$) latency.
 * **Native Custom Matchers**: Adding a `RequestMatcherExtension` (`CasualFieldedMatcher`) to unpack and match on `.FIELDED` / FML binary buffers without requiring string conversions.
 * **Upstream Contributions**: Upstreaming standalone Java SE Netty client and server components to `casualcore/casual-java`.
+
