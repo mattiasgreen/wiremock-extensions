@@ -10,11 +10,6 @@ sourceSets {
 configurations {
     quarkusTestImplementation.extendsFrom testImplementation
     quarkusTestRuntimeOnly.extendsFrom testRuntimeOnly
-    casualQuarkusBinaries {
-        description = 'Pre-built casual-quarkus runner binaries resolved from Nexus or local paths'
-        canBeResolved = true
-        canBeConsumed = false
-    }
 }
 
 dependencies {
@@ -30,17 +25,6 @@ tasks.register('quarkusIntegrationTest', Test) {
     testClassesDirs = sourceSets.quarkusTest.output.classesDirs
     classpath = sourceSets.quarkusTest.runtimeClasspath
     useJUnitPlatform()
-
-    if (project.hasProperty('casualClientJar')) {
-        systemProperty 'casual.quarkus.client.jar', project.property('casualClientJar')
-    }
-    if (project.hasProperty('casualServerJar')) {
-        systemProperty 'casual.quarkus.server.jar', project.property('casualServerJar')
-    }
-    doFirst {
-        if (!configurations.casualQuarkusBinaries.isEmpty()) {
-            systemProperty 'casual.quarkus.binaries', configurations.casualQuarkusBinaries.files.collect { it.absolutePath }.join(File.pathSeparator)
-        }
-    }
 }
+
 

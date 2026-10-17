@@ -4,23 +4,14 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.tomakehurst.wiremock.WireMockServer;
-import java.io.File;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.transaction.xa.Xid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
@@ -44,41 +35,30 @@ import se.laz.casual.server.CasualServer;
 import se.laz.casual.server.CasualTransactionHandler;
 
 /**
- * Orchestrates the 3-node Casual / WireMock Man-in-the-Middle integration test topology:
+ * Orchestrates the self-contained 3-node Casual / WireMock Man-in-the-Middle integration test topology:
  * <ul>
- *   <li><b>Node 1 (Client Initiator &amp; 2PC Coordinator)</b>: Initiates global XA transactions, performs
+ *   <li><b>Node 1 ({@link ClientInitiatorNode})</b>: Simulates the {@code casual-quarkus} client domain and
+ *       Narayana 2PC Transaction Coordinator. Initiates global XA transactions ({@link Xid}), performs
  *       domain discovery and transactional {@code tpcall}, and drives Two-Phase Commit ({@code prepare},
- *       {@code commit}, {@code rollback}). Supports external {@code casual-quarkus} client JARs via
- *       {@code -PcasualClientJar} or embedded coordinator execution.</li>
- *   <li><b>Node 2 (WireMock Casual MitM Gateway)</b>: Intercepts Casual wire traffic, matches/records
- *       stubs against {@link WireMockServer}, forwards unmatched calls + 2PC messages to Node 3, or acts
- *       as a synthetic XA Resource Manager when Node 3 is offline/stubbed.</li>
- *   <li><b>Node 3 (Upstream Casual Server B)</b>: Hosts real domain services and an XA Resource Manager
- *       ledger tracking prepared, committed, and rolled-back XIDs. Supports external {@code casual-quarkus}
- *       server JARs via {@code -PcasualServerJar} or embedded Netty domain execution.</li>
+ *       {@code commit}, {@code rollback}).</li>
+ *   <li><b>Node 2 ({@link CasualWireMockGateway} + {@link WireMockServer})</b>: Intercepts Casual wire
+ *       traffic, matches/records stubs against WireMock, forwards unmatched calls + 2PC messages to Node 3,
+ *       or acts as a synthetic XA Resource Manager when Node 3 is offline/stubbed.</li>
+ *   <li><b>Node 3 ({@link UpstreamDomainNode})</b>: Simulates the upstream {@code casual-quarkus} server
+ *       domain hosting {@code casual/example} and a stateful XA Resource Manager ledger tracking prepared,
+ *       committed, and rolled-back XIDs.</li>
  * </ul>
  */
 public final class CasualIntegrationTestHarness implements AutoCloseable {
-
-    private static final Logger LOG = LoggerFactory.getLogger(CasualIntegrationTestHarness.class);
 
     private final UpstreamDomainNode upstreamNode;
     private final WireMockServer wireMockServer;
     private final CasualWireMockGateway mitmGateway;
     private final ClientInitiatorNode clientInitiator;
-    private Process externalServerProcess;
-    private Process externalClientProcess;
 
     public CasualIntegrationTestHarness() throws Exception {
         this.upstreamNode = new UpstreamDomainNode();
-        String serverJar = System.getProperty("casual.quarkus.server.jar");
-        if (serverJar != null && !serverJar.isBlank() && new File(serverJar).isFile()) {
-            this.externalServerProcess = launchExternalQuarkusJar(
-                    serverJar,
-                    Map.of("quarkus.http.port", "0", "casual.inbound.port", String.valueOf(upstreamNode.getPort())));
-        } else {
-            this.upstreamNode.start();
-        }
+        this.upstreamNode.start();
 
         this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
         this.wireMockServer.start();
@@ -92,19 +72,6 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
                 .recordNotFound(false)
                 .build();
         this.mitmGateway.start();
-
-        String clientJar = System.getProperty("casual.quarkus.client.jar");
-        if (clientJar != null && !clientJar.isBlank() && new File(clientJar).isFile()) {
-            this.externalClientProcess = launchExternalQuarkusJar(
-                    clientJar,
-                    Map.of(
-                            "quarkus.http.port",
-                            "0",
-                            "casual.outbound.host",
-                            "127.0.0.1",
-                            "casual.outbound.port",
-                            String.valueOf(mitmGateway.getPort())));
-        }
 
         this.clientInitiator = new ClientInitiatorNode("127.0.0.1", mitmGateway.getPort());
         this.clientInitiator.connect();
@@ -131,45 +98,13 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
      * online to prove full decoupling and offline replay.
      */
     public void stopUpstreamServer() {
-        if (externalServerProcess != null && externalServerProcess.isAlive()) {
-            externalServerProcess.destroyForcibly();
-        }
         upstreamNode.close();
-    }
-
-    private Process launchExternalQuarkusJar(String jarPath, Map<String, String> systemProps) throws IOException {
-        List<String> cmd = new ArrayList<>();
-        cmd.add(ProcessHandle.current().info().command().orElse("java"));
-        systemProps.forEach((k, v) -> cmd.add("-D" + k + "=" + v));
-        cmd.add("-jar");
-        cmd.add(jarPath);
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(true);
-        LOG.info("Launching external casual-quarkus binary");
-        return pb.start();
-    }
-
-    public static void waitForPort(String host, int port, Duration timeout) throws Exception {
-        long deadline = System.nanoTime() + timeout.toNanos();
-        while (System.nanoTime() < deadline) {
-            try (Socket socket = new Socket()) {
-                socket.connect(new InetSocketAddress(host, port), 200);
-                return;
-            } catch (IOException ignored) {
-                Thread.sleep(50);
-            }
-        }
-        throw new IllegalStateException("Timed out waiting for port " + port);
     }
 
     @Override
     public void close() {
         if (clientInitiator != null) {
             clientInitiator.close();
-        }
-        if (externalClientProcess != null && externalClientProcess.isAlive()) {
-            externalClientProcess.destroyForcibly();
         }
         if (mitmGateway != null) {
             mitmGateway.close();
