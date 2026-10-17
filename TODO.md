@@ -250,11 +250,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ---
 
-<<<<<<< HEAD
-### Phase 10: Automated Self-Contained E2E Video Tour & Agent-Gated Local Pipeline
-=======
 ### Phase 10: Automated Self-Contained E2E Video Tour & Asset Pipeline
->>>>>>> 5c2ef46 (docs(spec): overhaul UI architecture guidelines and roadmap for progressive simulation and SDK synthesis)
 
 - [ ] **10.1. Headless Playwright Native Video Recorder (`UiVideoRecordingTest.java`)**
   - [ ] Leverage Playwright's native Chromium video recording (`Browser.NewContextOptions.setRecordVideoDir(...)`, `.setRecordVideoSize(1280, 720)`).

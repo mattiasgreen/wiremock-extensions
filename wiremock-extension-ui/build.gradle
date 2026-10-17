@@ -17,6 +17,16 @@ tasks.register('recordDemoGifs', Test) {
     }
 }
 
+tasks.register('recordDemoVideos', Test) {
+    group = 'verification'
+    description = 'Generates Playwright WebM demo videos for UI documentation via Playwright'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'recording'
+    }
+}
+
 tasks.register('recordPitchDeckScreenshots', Test) {
     group = 'verification'
     description = 'Generates high-resolution screenshots for the pitch deck presentation via Playwright'
