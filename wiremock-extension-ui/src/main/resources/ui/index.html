@@ -63,6 +63,7 @@
           <span id="target-host-label">Target: (same-origin)</span>
         </button>
         <a href="https://mattiasgreen.github.io/wiremock-extensions/docs/" target="_blank" class="btn btn-link" id="link-docs" title="Open WireMock Extensions Documentation">📚 Docs</a>
+        <!-- WireMock Standalone bundles Swagger UI at /__admin/swagger-ui/ out of the box. When targeting a remote WireMock host, updateTargetHostDisplay() in app.js rewrites this href to <wiremock-base-uri>/__admin/swagger-ui/. -->
         <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
         <a href="../metrics/prometheus" target="_blank" class="btn btn-link" id="link-metrics" title="Open Prometheus Metrics">📊 Metrics</a>
       </div>

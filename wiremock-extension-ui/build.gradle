@@ -58,4 +58,3 @@ rootProject.tasks.matching { it.name.startsWith('spotless') }.configureEach {
     mustRunAfter tasks.named('syncDemoSite')
 }
 
-
