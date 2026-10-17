@@ -20,6 +20,14 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -27,7 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Check Code Style & Formatting
-        run: ./gradlew spotlessCheck
+        run: ./gradlew spotlessCheck --console=plain
 
       - name: Build, Test & Static Analysis
-        run: ./gradlew check
+        run: ./gradlew check :wiremock-extension-casual:quarkusIntegrationTest --console=plain

@@ -205,19 +205,21 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ### Phase 8: Developer Experience & Inner Loop Performance
 
-- [ ] **8.1. Gradle Parallelism & Build Caching**
-  - [ ] Add `org.gradle.parallel=true` to enable concurrent execution across subprojects.
-  - [ ] Add `org.gradle.caching=true` (Build Cache) to eliminate redundant Java compilation.
-  - [ ] Tune JVM memory (`org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8`) to prevent daemon crashes and memory thrashing.
-  - [ ] Implement automated daemon pruning (`./gradlew --stop`) to eliminate dead zombie daemons.
+- [x] **8.1. Gradle Parallelism & Build Caching**
+  - [x] Add `org.gradle.parallel=true` to enable concurrent execution across subprojects.
+  - [x] Add `org.gradle.caching=true` (Build Cache) to eliminate redundant Java compilation.
+  - [x] Tune JVM memory (`org.gradle.jvmargs=-Xmx2048m -XX:+UseParallelGC -Dfile.encoding=UTF-8`) to prevent daemon crashes and memory thrashing.
+  - [x] Configure default `WARN` test logging (`config/logback-test.xml`) and C1 JIT (`-XX:TieredStopAtLevel=1`) to eliminate 95 MB of Jetty/Netty DEBUG test report bloat.
 
-- [ ] **8.2. Fast Inner-Loop Test Strategy**
-  - [ ] Enforce strict method-level test filtering (`--tests "MyTest.method"`) during active authoring instead of running multi-suite E2E tests.
-  - [ ] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
-  - [ ] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
+- [x] **8.2. Fast Inner-Loop Test Strategy**
+  - [x] Enforce strict method-level test filtering (`--tests "MyTest.method"`) during active authoring instead of running multi-suite E2E tests.
+  - [x] Split monolithic 94 KB `UiPlaywrightTest.java` into 4 domain suites sharing a single Chromium browser (`AbstractUiPlaywrightTest`).
+  - [x] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
+  - [x] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
 
-- [ ] **8.3. Concurrent Subagent Task Delegation**
-  - [ ] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
+- [x] **8.3. Hierarchical Agent Instructions, Skills & Subagent Delegation**
+  - [x] Refactor root `AGENTS.md` and add module-scoped `AGENTS.md` files (`ui`, `casual`, `tcp-netem`, `stateful`, `openapi`) plus on-demand `.agents/skills/` runbooks.
+  - [x] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
 
 ---
 

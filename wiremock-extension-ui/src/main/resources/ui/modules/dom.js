@@ -42,7 +42,7 @@ export const elements = {
   detailLifecycleState: document.getElementById('detail-lifecycle-state'),
   detailStatefulSection: document.getElementById('detail-stateful-section'),
   stubJsonViewer: document.getElementById('stub-json-viewer'),
-  btnRefresh: document.getElementById('btn-refresh'),
+  btnRefresh: document.getElementById('btn-refresh-stubs'),
   btnRefreshStubs: document.getElementById('btn-refresh-stubs'),
   btnCreateStub: document.getElementById('btn-create-stub'),
   btnCreateDynamicStub: document.getElementById('btn-create-dynamic-stub'),

@@ -1,7 +1,7 @@
 # Platform Bindings & Concrete Component Mappings
 
-> **Status**: Technical Implementation Binding  
-> **Complements**: `docs/spec/functional-specification.md` and `docs/spec/ui-guidelines.md`  
+> **Status**: Technical Implementation Binding
+> **Complements**: `docs/spec/functional-specification.md` and `docs/spec/ui-guidelines.md`
 > **Audience**: Frontend Developers, Test Automation Engineers, Coding Agents
 
 ---
@@ -86,5 +86,3 @@
 | **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
 | **Probe Stateful API** | `GET` | `/__admin/stateful/models` | None |
 | **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
-
-
