@@ -24,14 +24,19 @@
 | **Stub Delete Action** | `#btn-delete-stub` | `"btn-delete-stub"` | Deletes selected stub mapping. |
 | **Stub Test in Tester** | `#btn-test-stub` | `"btn-test-stub"` | Pre-populates tester with stub method & URL. |
 | **Stub Copy cURL** | `#btn-copy-curl` | `"btn-copy-curl"` | Copies valid `curl` command to system clipboard. |
+| **Stub Copy Java** | `#btn-copy-java` | `"btn-copy-java"` | Copies WireMock Java `stubFor(...)` DSL snippet to system clipboard. |
 | **Stub Copy JSON** | `#btn-copy-json` | `"btn-copy-json"` | Copies raw mapping JSON to system clipboard. |
-| **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, method, url, status. |
-| **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (2-second interval). |
+| **Stub Editor Proxy URL** | `#editor-proxy-url` | `"editor-proxy-url"` | Optional `proxyBaseUrl` upstream target input in Stub Editor modal. |
+| **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, method, url, status, resolution/verdict. |
+| **Journal Verdict Pills** | `#btn-journal-verdict-all`, `-proxied`, `-stub`, `-stateful`, `-unmatched` | `"journal-verdict-filter"` | Filter pills for the 4 core verdicts (`🌐 PROXIED`, `📌 STUB`, `🧠 STATEFUL`, `⚠️ UNMATCHED`). |
+| **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (3-second interval). |
 | **Journal Limit Input** | `#journal-limit-input` | `"journal-limit-input"` | Configurable volume limit number input (positive integer, default 100). |
 | **Journal Clear Action** | `#btn-clear-journal` | `"btn-clear-journal"` | Clears recorded requests via `DELETE /__admin/requests`. |
-| **Journal Resolution Badge** | `.pill-matched`, `.pill-stubbed`, `.pill-proxied`, `.pill-stateful`, `.pill-unmatched` | `"journal-resolution"` | Resolution status badge (`📋 STUBBED`, `🌐 PROXIED`, `⚡ DYNAMIC`, `UNMATCHED`). |
-| **Journal Replay Action** | `#btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
-| **Journal Copy cURL** | `#btn-journal-copy-curl` | `"btn-journal-copy-curl"` | Copies captured request as `curl` to system clipboard. |
+| **Journal Resolution Badge** | `.pill-matched`, `.pill-stub`, `.pill-stubbed`, `.pill-proxied`, `.pill-stateful`, `.pill-unmatched` | `"journal-resolution"` | Verdict badge (`🌐 PROXIED`, `📌 STUB` / `TPL`, `🧠 STATEFUL`, `⚠️ UNMATCHED`). |
+| **Journal Replay Action** | `.btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
+| **Journal Copy cURL** | `.btn-journal-copy-curl` | `"btn-journal-copy-curl"` | Copies captured request as `curl` to system clipboard. |
+| **Journal Copy Java** | `.btn-journal-copy-java` | `"btn-journal-copy-java"` | Copies captured request/response pair as WireMock Java `stubFor(...)` snippet. |
+| **Journal Create Stub** | `.btn-create-stub-from-req` | `"btn-create-stub-from-req"` | Opens Stub Editor pre-populated from an `⚠️ UNMATCHED` request. |
 | **Tester Method Selector** | `#tester-method` | `"tester-method"` | HTTP method dropdown (GET, POST, PUT, DELETE, PATCH). |
 | **Tester URL Path** | `#tester-url` | `"tester-url"` | URL path to dispatch against WireMock. |
 | **Tester Headers Editor** | `#tester-headers` | `"tester-headers"` | Multiline header editor (`Key: Value`). |

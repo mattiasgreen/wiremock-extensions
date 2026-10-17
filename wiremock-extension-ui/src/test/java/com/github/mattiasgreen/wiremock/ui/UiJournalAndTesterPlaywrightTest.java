@@ -7,10 +7,12 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.Page;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -262,7 +264,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
             Locator stubbedRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/users')")
                     .first();
-            assertThat(stubbedRow.locator(".pill-stubbed").textContent()).contains("STUBBED");
+            assertThat(stubbedRow.locator(".pill-stubbed").textContent()).contains("STUB");
 
             Locator proxiedRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/remote-service')")
                     .first();
@@ -369,5 +371,105 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(50);
 
         assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "Scenario 30: Journal 4-verdict taxonomy (PROXIED, STUB, UNMATCHED), Copy Java stubFor(), and Create Stub from Unmatched Request")
+    void testJournalVerdictTaxonomyAndTriageWorkflow() {
+        // Spin up a simulated upstream ERP server so proxyBaseUrl requests succeed
+        WireMockServer upstreamErp =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstreamErp.start();
+        try {
+            upstreamErp.stubFor(get(urlEqualTo("/api/v1/erp/invoices"))
+                    .willReturn(okJson("{\"invoices\":[{\"id\":\"INV-100\",\"amount\":2500}]}")));
+
+            wireMockServer.stubFor(any(urlMatching("/api/v1/erp/.*"))
+                    .withName("Live Service Proxy (ERP System)")
+                    .atPriority(10)
+                    .withMetadata(Map.of("project", "ERP System", "mode", "proxy"))
+                    .willReturn(aResponse().proxiedFrom(upstreamErp.baseUrl())));
+
+            // 1. Verify Copy Java on Stub Detail
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+            page.waitForSelector(".stub-card");
+            page.locator(".stub-card", new Page.LocatorOptions().setHasText("/api/v1/users"))
+                    .click();
+            page.locator("#btn-copy-java").click();
+            String javaSnippet = (String) page.evaluate("() => navigator.clipboard.readText()");
+            assertThat(javaSnippet).contains("stubFor(get(urlEqualTo(\"/api/v1/users\"))");
+            assertThat(javaSnippet).contains(".willReturn(aResponse()");
+
+            // 2. Dispatch 3 requests: STUB (/api/v1/users), PROXIED (/api/v1/erp/invoices), UNMATCHED
+            // (/api/v1/missing-endpoint)
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+            page.locator("#tester-method").selectOption("GET");
+            page.locator("#tester-url").fill("/api/v1/users");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+
+            page.locator("#tester-url").fill("/api/v1/erp/invoices");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            assertThat(page.locator("#tester-response-body").textContent()).contains("INV-100");
+
+            page.locator("#tester-url").fill("/api/v1/missing-endpoint");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('404')");
+
+            // 3. Inspect Journal Verdicts
+            page.locator("#nav-tab-journal").click();
+            page.waitForSelector("#journal-table");
+
+            assertThat(page.locator("#journal-list tr[data-verdict='unmatched']")
+                            .first()
+                            .textContent())
+                    .contains("UNMATCHED");
+            assertThat(page.locator("#journal-list tr[data-verdict='proxied']")
+                            .first()
+                            .textContent())
+                    .contains("PROXIED");
+            assertThat(page.locator("#journal-list tr[data-verdict='stub']")
+                            .first()
+                            .textContent())
+                    .contains("STUB");
+
+            // 4. Filter by 🌐 Proxied verdict pill
+            page.locator("#btn-journal-verdict-proxied").click();
+            assertThat(page.locator("#journal-list tr[data-testid='journal-row']")
+                            .count())
+                    .isEqualTo(1);
+            assertThat(page.locator("#journal-list tr[data-testid='journal-row']")
+                            .first()
+                            .textContent())
+                    .contains("/api/v1/erp/invoices");
+
+            // 5. Filter by ⚠️ Unmatched verdict pill and expand row
+            page.locator("#btn-journal-verdict-unmatched").click();
+            page.waitForSelector("#journal-list tr[data-verdict='unmatched']");
+            Locator unmatchedRow =
+                    page.locator("#journal-list tr[data-verdict='unmatched']").first();
+            assertThat(unmatchedRow.textContent()).contains("/api/v1/missing-endpoint");
+            unmatchedRow.click();
+            page.waitForSelector("tr[data-testid='journal-detail-row']");
+
+            // Ensure Freeze Stub is NOT offered on an unmatched 404 request, and Create Stub IS offered
+            assertThat(page.locator("tr[data-testid='journal-detail-row'] .btn-freeze-req")
+                            .count())
+                    .isEqualTo(0);
+            Locator createStubBtn =
+                    page.locator("tr[data-testid='journal-detail-row'] [data-testid='btn-create-stub-from-req']");
+            assertThat(createStubBtn.isVisible()).isTrue();
+
+            // Click Create Stub from Request -> verify Stub Editor modal opens pre-filled
+            createStubBtn.click();
+            page.waitForSelector("#stub-editor-modal:not(.hidden)");
+            assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/missing-endpoint");
+            assertThat(page.locator("#editor-status").inputValue()).isEqualTo("200");
+            page.locator("#btn-cancel-editor").click();
+        } finally {
+            upstreamErp.stop();
+        }
     }
 }

@@ -113,18 +113,18 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 - [ ] **2.6. UI/UX Audit Overhaul & Progressive Simulation Workflows**
   - [x] Remove 2.5 MB of pitch deck GIF/PNG bloat from `wiremock-extension-ui/src/main/resources/ui/pitch/` and deduplicate `docs/site/demo/` from Git.
-  - [ ] **Verdict Taxonomy Unification (`PROXIED` / `STUB` / `STATEFUL` / `UNMATCHED`)**:
-    - [ ] Distinguish `🌐 PROXIED` (forwarded via `proxyBaseUrl`), `📌 STUB` (local static or `STUB · TPL` Handlebars mapping), `🧠 STATEFUL` (AST stateful engine, replacing ambiguous `"DYNAMIC"` label), and `⚠️ UNMATCHED` (HTTP 404) across Request Journal badges, filter pills, and Stubs Catalog filters.
-  - [ ] **End-to-End Request Journal Triage & Harvesting**:
-    - [ ] Add `🚀 Replay in Tester` (`#btn-journal-to-tester`) and `📋 Copy cURL` (`#btn-journal-copy-curl`) on every Journal entry.
-    - [ ] On `⚠️ UNMATCHED` entries: replace `📸 Freeze Stub` (which would freeze a 404) with `➕ Create Stub from Request` (opens Stub Editor pre-populated with incoming method, URL, headers, and body pattern, defaulting response to `200 OK`) and display Near-Miss Diagnostic Diff feedback.
-    - [ ] On `🌐 PROXIED` entries: display target upstream origin and `📸 Freeze as Stub` with non-blocking feedback instead of native `alert()`.
-    - [ ] On `📌 STUB` / `🧠 STATEFUL` entries: add `🔗 Inspect Stub` link to jump directly to the matched mapping, and render `X-Correlation-Id` as a 1-click session filter chip.
+  - [x] **Verdict Taxonomy Unification (`PROXIED` / `STUB` / `STATEFUL` / `UNMATCHED`)**:
+    - [x] Distinguish `🌐 PROXIED` (forwarded via `proxyBaseUrl`), `📌 STUB` (local static or `STUB · TPL` Handlebars mapping), `🧠 STATEFUL` (AST stateful engine, replacing ambiguous `"DYNAMIC"` label), and `⚠️ UNMATCHED` (HTTP 404) across Request Journal badges, filter pills, and Stubs Catalog filters.
+  - [x] **End-to-End Request Journal Triage, Harvesting & Level-1 Java Codegen**:
+    - [x] Add `🚀 Replay in Tester` (`.btn-journal-to-tester`), `📋 Copy cURL` (`.btn-journal-copy-curl`), and `☕ Copy Java` (`#btn-copy-java` / `.btn-journal-copy-java` generating `stubFor(...)` DSL) on Stubs and Journal entries.
+    - [x] On `⚠️ UNMATCHED` entries: replace `📸 Freeze Stub` (which would freeze a 404) with `➕ Create Stub from Request` (`.btn-create-stub-from-req`, opens Stub Editor pre-populated with incoming method, URL, and body pattern, defaulting response to `200 OK`) and display an Unmatched Diagnostic banner.
+    - [x] On `🌐 PROXIED` entries: display target upstream origin and `📸 Freeze Stub`.
+    - [x] On `📌 STUB` / `🧠 STATEFUL` entries: add `🔗 Inspect Stub` link to jump directly to the matched mapping, and render `X-Correlation-Id` as a 1-click session filter chip (`.btn-journal-filter-corr`).
   - [ ] **Zero-Bloat Request Matcher Builder & Handlebars Token Inserter**:
     - [ ] Two-way synced Form $\leftrightarrow$ Raw JSON editor with a generic repeatable matcher row builder (`Header`, `Query`, `Cookie`, `Body` $\times$ `equalTo`, `contains`, `matches`, `equalToJson`, `matchesJsonPath`).
     - [ ] 1-click Handlebars token bar (`{{request.pathSegments.[1]}}`, `{{request.query.id}}`, `{{jsonPath request.body '$.id'}}`, `{{randomValue type='UUID'}}`) that automatically enables `"transformers": ["response-template"]`.
   - [ ] **Service-Scoped Proxy Bootstrapper & Generic Stateful CRUD Generator**:
-    - [ ] Allow creating a service-scoped `proxyBaseUrl` route directly from `➕ New` without requiring an OpenAPI specification (for legacy ERP/ESB systems).
+    - [x] Allow creating a service-scoped `proxyBaseUrl` route directly from `➕ New` (`🌐 Live Service Proxy (ERP System)` preset + `#editor-proxy-url` field) without requiring an OpenAPI specification.
     - [ ] Replace hardcoded domain templates in `dynamic-stubs.js` with a parameterized CRUD Entity Generator and add a Live Entity State Inspector & Reset view per `X-Correlation-Id`.
 
 ---

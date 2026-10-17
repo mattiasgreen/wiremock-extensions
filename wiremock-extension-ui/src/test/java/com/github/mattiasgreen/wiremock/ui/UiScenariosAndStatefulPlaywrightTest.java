@@ -57,7 +57,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
 
         Locator dynamicCards = page.locator(".stub-card.stub-dynamic");
         assertThat(dynamicCards.count()).isEqualTo(4);
-        assertThat(dynamicCards.first().locator(".badge-dynamic").textContent()).contains("DYNAMIC");
+        assertThat(dynamicCards.first().locator(".badge-dynamic").textContent()).contains("STATEFUL");
 
         page.locator("#btn-filter-dynamic").click();
         page.waitForTimeout(200);
@@ -115,7 +115,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         page.waitForSelector("#journal-table");
 
         Locator journalRows = page.locator("#journal-list tr[data-testid='journal-row']");
-        assertThat(journalRows.first().locator(".pill-stateful").textContent()).contains("DYNAMIC");
+        assertThat(journalRows.first().locator(".pill-stateful").textContent()).contains("STATEFUL");
 
         journalRows.first().click();
         page.waitForSelector("tr[data-testid='journal-detail-row']:not(.hidden)");

@@ -43,6 +43,77 @@ export function generateCurl(method, path, headers = {}, body = '') {
   return parts.join(' \\\n  ');
 }
 
+export function generateJavaStubFor(stub) {
+  if (!stub) return '';
+  const req = stub.request || {};
+  const res = stub.response || {};
+  const method = (req.method || 'ANY').toLowerCase();
+  const wmMethod = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'].includes(method) ? method : 'any';
+
+  let urlMatcher = `urlEqualTo("${(req.url || '/').replace(/"/g, '\\"')}")`;
+  if (req.urlPathTemplate) {
+    urlMatcher = `urlPathTemplate("${req.urlPathTemplate.replace(/"/g, '\\"')}")`;
+  } else if (req.urlPattern || req.urlPathPattern || req.urlPathMatching) {
+    const pat = req.urlPattern || req.urlPathPattern || req.urlPathMatching;
+    urlMatcher = `urlMatching("${pat.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
+  } else if (req.urlPath) {
+    urlMatcher = `urlPathEqualTo("${req.urlPath.replace(/"/g, '\\"')}")`;
+  }
+
+  const lines = [`stubFor(${wmMethod}(${urlMatcher})`];
+  if (stub.name) {
+    lines.push(`    .withName("${String(stub.name).replace(/"/g, '\\"')}")`);
+  }
+  if (stub.priority && stub.priority !== 5) {
+    lines.push(`    .atPriority(${stub.priority})`);
+  }
+  if (req.headers) {
+    for (const [k, v] of Object.entries(req.headers)) {
+      const val = v.equalTo || v.contains || v.matches || '';
+      const op = v.contains ? 'containing' : (v.matches ? 'matching' : 'equalTo');
+      if (val) {
+        lines.push(`    .withHeader("${k.replace(/"/g, '\\"')}", ${op}("${String(val).replace(/"/g, '\\"')}"))`);
+      }
+    }
+  }
+  if (req.bodyPatterns && req.bodyPatterns.length > 0) {
+    const bp = req.bodyPatterns[0];
+    if (bp.equalToJson) {
+      const jsonStr = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson);
+      lines.push(`    .withRequestBody(equalToJson("${jsonStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}", true, true))`);
+    } else if (bp.contains) {
+      lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
+    } else if (bp.matchesJsonPath) {
+      lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
+    } else if (bp.equalTo) {
+      lines.push(`    .withRequestBody(equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}"))`);
+    }
+  }
+
+  if (res.proxyBaseUrl) {
+    lines.push(`    .willReturn(aResponse().proxiedFrom("${String(res.proxyBaseUrl).replace(/"/g, '\\"')}")));`);
+    return lines.join('\n');
+  }
+
+  const status = res.status || 200;
+  lines.push(`    .willReturn(aResponse()`);
+  lines.push(`        .withStatus(${status})`);
+  if (res.headers) {
+    for (const [k, v] of Object.entries(res.headers)) {
+      lines.push(`        .withHeader("${k.replace(/"/g, '\\"')}", "${String(v).replace(/"/g, '\\"')}")`);
+    }
+  }
+  const rawBody = res.jsonBody ? JSON.stringify(res.jsonBody) : (res.body || '');
+  if (rawBody) {
+    lines.push(`        .withBody("${String(rawBody).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n')}")`);
+  }
+  if (Array.isArray(res.transformers) && res.transformers.includes('response-template')) {
+    lines.push(`        .withTransformers("response-template")`);
+  }
+  lines.push(`    ));`);
+  return lines.join('\n');
+}
+
 export function renderStubList() {
   const filter = (elements.searchBox && elements.searchBox.value || '').trim();
   const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
@@ -129,6 +200,7 @@ export function renderStubList() {
     const name = stub.name || (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed');
     const project = isDynamic ? (stub.metadata && stub.metadata.project) : getStubProject(stub);
     const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
+    const isTemplated = Boolean(stub.response && Array.isArray(stub.response.transformers) && stub.response.transformers.includes('response-template'));
     const statusCode = isProxy ? 'PROXY' : ((stub.response && stub.response.status) || 200);
     const statusCls = isProxy ? 'status-proxy' : (statusCode >= 500 ? 'status-500' : (statusCode >= 400 ? 'status-400' : 'status-200'));
 
@@ -141,7 +213,8 @@ export function renderStubList() {
           <span class="http-badge badge-${method}">${method}</span>
           <span class="stub-card-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
           <span class="stub-status-pill ${statusCls}">${statusCode}</span>
-          ${isDynamic ? '<span class="status-badge badge-dynamic">⚡ DYNAMIC</span>' : ''}
+          ${isTemplated ? '<span class="status-badge badge-tpl" title="Uses WireMock response-template Handlebars transformer">TPL</span>' : ''}
+          ${isDynamic ? '<span class="status-badge badge-dynamic" title="In-memory Stateful AST simulation rule">🧠 STATEFUL</span>' : ''}
           ${isDisabled ? '<span class="status-badge badge-disabled">DISABLED</span>' : ''}
         </div>
         <div class="stub-card-bottom">
@@ -236,7 +309,7 @@ export function selectStub(stub, updateRoute = true) {
   const detailState = document.getElementById('detail-lifecycle-state');
   if (detailState) {
     if (isDynamic) {
-      detailState.textContent = 'DYNAMIC SIMULATION';
+      detailState.textContent = 'STATEFUL SIMULATION';
       detailState.className = 'card-value text-dynamic';
     } else if (!state.capabilities.lifecycle) {
       detailState.textContent = 'ACTIVE';

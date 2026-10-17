@@ -21,11 +21,13 @@ import {
 import {
   getStubUrl,
   generateCurl,
+  generateJavaStubFor,
   renderStubList,
   selectStub,
   sendStubToTester
 } from './modules/stubs.js';
 import {
+  getRequestVerdict,
   renderJournal,
   setupJournalAutoRefresh,
   registerJournalLoader
@@ -107,6 +109,8 @@ export {
   executeTesterRequest,
   highlightJson,
   generateCurl,
+  generateJavaStubFor,
+  getRequestVerdict,
   parseHash,
   setRoute,
   activateTab,
@@ -375,6 +379,19 @@ if (elements.btnCopyCurl) {
     setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
   });
 }
+if (elements.btnCopyJava) {
+  elements.btnCopyJava.addEventListener('click', () => {
+    if (!state.selectedStubId) return;
+    const stub = getAllStubs().find(s => s.id === state.selectedStubId);
+    if (!stub) return;
+    const snippet = generateJavaStubFor(stub);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(snippet).catch(() => {});
+    }
+    elements.btnCopyJava.textContent = '✅ Copied!';
+    setTimeout(() => elements.btnCopyJava.textContent = '☕ Copy Java', 1500);
+  });
+}
 
 // Bulk Actions Toolbar
 if (elements.btnBulkEnable) {
@@ -507,11 +524,36 @@ if (elements.bundleDropzone) {
 }
 
 // Event Listeners: Journal Tab
+['all', 'proxied', 'stub', 'stateful', 'unmatched'].forEach(verdict => {
+  const btn = document.getElementById(`btn-journal-verdict-${verdict}`);
+  if (btn) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      state.journalVerdictFilter = verdict;
+      const wasUnmatched = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
+      const isNowUnmatched = (verdict === 'unmatched');
+      if (elements.filterUnmatchedOnly) {
+        elements.filterUnmatchedOnly.checked = isNowUnmatched;
+      }
+      if (wasUnmatched !== isNowUnmatched) {
+        loadJournal();
+      } else {
+        renderJournal();
+      }
+      setRoute('journal', { unmatched: isNowUnmatched ? 'true' : null }, true);
+    });
+  }
+});
 if (elements.filterUnmatchedOnly) {
   elements.filterUnmatchedOnly.addEventListener('change', () => {
-    renderJournal();
+    const isChecked = elements.filterUnmatchedOnly.checked;
+    state.journalVerdictFilter = isChecked ? 'unmatched' : 'all';
+    document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
+    const activeBtn = document.getElementById(isChecked ? 'btn-journal-verdict-unmatched' : 'btn-journal-verdict-all');
+    if (activeBtn) activeBtn.classList.add('active');
     loadJournal();
-    setRoute('journal', { unmatched: elements.filterUnmatchedOnly.checked ? 'true' : null }, true);
+    setRoute('journal', { unmatched: isChecked ? 'true' : null }, true);
   });
 }
 if (elements.journalSearch) {
