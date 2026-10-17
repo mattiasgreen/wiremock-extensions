@@ -56,7 +56,7 @@
 1. **Stub Exploration & Discovery**: Search by text across URL, method, and name. Filter by lifecycle status (`All`, `Active`, `Disabled`). Sortable by any metadata attribute.
 2. **Lifecycle Manipulation**: Toggle active/disabled state without destroying mappings. Add new stubs from templates. Duplicate existing stubs. Delete stubs with user assurance.
 3. **Ad-Hoc Request Replay (HTTP Tester)**: Execute arbitrary HTTP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`). Record and navigate execution history.
-4. **Traffic Observability & Diffs (Request Journal)**: Live stream of served traffic. Clear visual distinction between matched (`200`-`3xx`) and unmatched requests. Server-side isolation of unmatched traffic. Configurable custom journal fetch limit (positive integer) and in-memory progressive/lazy DOM rendering. 1-click promotion of captured requests into the HTTP Tester or export as cURL. Deep comparison between actual incoming traffic and stub definitions.
+4. **Traffic Observability & Diffs (Request Journal)**: Live stream of served traffic. Clear visual distinction between request resolutions (`📋 STUBBED`, `🌐 PROXIED`, `⚡ DYNAMIC`) and unmatched traffic (`UNMATCHED` 404). Server-side isolation of unmatched traffic. Configurable custom journal fetch limit (positive integer) and in-memory progressive/lazy DOM rendering. 1-click promotion of captured requests into the HTTP Tester or export as cURL. Deep comparison between actual incoming traffic and stub definitions.
 5. **Stateful Scenario Inspection & Reset**: Live visual inspection of FSM scenario states. Instant reset of all scenarios to `"Started"`.
 6. **Contract Ingestion**: Ingest OpenAPI 3.0 / 3.1 definitions to synthesize realistic stubs and state models automatically.
 
@@ -161,5 +161,12 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** the user scrolls down the table container.
 - **Then** additional rows from in-memory JSON are lazily appended to the DOM, preserving fast frame rates without pagination UI complexity.
 
-
+### Story 11: Multi-Instance Tab Identification (Site Header & Tab Name)
+- **Given** multiple WireMock Console instances or target environments are open in separate browser tabs.
+- **When** the console loads at origin `http://localhost:8080/__admin/ui/`.
+- **Then** the browser tab title (site header title) is dynamically set to `WMC - http://localhost:8080`.
+- **When** the user configures a remote target server `https://gateway.corp:8443/test-envs/env1/wiremock`.
+- **Then** the browser tab title immediately updates to `WMC - https://gateway.corp:8443/test-envs/env1/wiremock`.
+- **When** the user resets the target back to same-origin.
+- **Then** the browser tab title reverts to `WMC - http://localhost:8080`.
 

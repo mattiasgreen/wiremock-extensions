@@ -29,7 +29,7 @@
 | **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (2-second interval). |
 | **Journal Limit Input** | `#journal-limit-input` | `"journal-limit-input"` | Configurable volume limit number input (positive integer, default 100). |
 | **Journal Clear Action** | `#btn-clear-journal` | `"btn-clear-journal"` | Clears recorded requests via `DELETE /__admin/requests`. |
-| **Journal Match Summary** | `#journal-summary` | `"journal-summary"` | Match status badge (`[MATCHED]` / `[UNMATCHED ⚠️]`). |
+| **Journal Resolution Badge** | `.pill-matched`, `.pill-stubbed`, `.pill-proxied`, `.pill-stateful`, `.pill-unmatched` | `"journal-resolution"` | Resolution status badge (`📋 STUBBED`, `🌐 PROXIED`, `⚡ DYNAMIC`, `UNMATCHED`). |
 | **Journal Replay Action** | `#btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
 | **Journal Copy cURL** | `#btn-journal-copy-curl` | `"btn-journal-copy-curl"` | Copies captured request as `curl` to system clipboard. |
 | **Tester Method Selector** | `#tester-method` | `"tester-method"` | HTTP method dropdown (GET, POST, PUT, DELETE, PATCH). |
@@ -58,6 +58,7 @@
 | **Capabilities Section** | `#target-capabilities-section` | `"target-capabilities-section"` | Container displaying detected extension matrix. |
 | **Capabilities Status**  | `#target-capabilities-status`  | `"target-capabilities-status"`  | Active count badge (e.g. `All 5 active` or `1/5 (Degraded)`). |
 | **Capabilities List**    | `#target-capabilities-list`    | `"target-capabilities-list"`    | Capability rows with `data-testid="cap-badge-{key}"`. |
+| **Site Header / Tab Title** | `document.title` / `<title>` | Window / Frame Title | Browser tab display identifying the active WireMock URI: `WMC - <wiremock-uri>`. |
 
 ---
 

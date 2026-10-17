@@ -8,6 +8,26 @@
     if (window.location.pathname.endsWith('/ui')) {
       window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
     }
+    (function() {
+      try {
+        var params = new URLSearchParams(window.location.search || '');
+        var target = params.get('wiremock') || params.get('target');
+        if (!target && window.location.hash && window.location.hash.includes('?')) {
+          var hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+          target = hashParams.get('wiremock') || hashParams.get('target');
+        }
+        var uri = target ? target.trim().replace(/\/+$/, '') : '';
+        if (!uri && window.location && window.location.origin && window.location.origin !== 'null') {
+          var prefix = window.location.pathname.includes('/__admin/ui')
+            ? window.location.pathname.substring(0, window.location.pathname.indexOf('/__admin/ui'))
+            : '';
+          uri = (window.location.origin + prefix).replace(/\/+$/, '');
+        }
+        if (uri) {
+          document.title = 'WMC - ' + uri;
+        }
+      } catch (e) {}
+    })();
   </script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -253,7 +273,7 @@
                 <th>Method</th>
                 <th>URL</th>
                 <th>Status</th>
-                <th>Matched</th>
+                <th>Resolution</th>
                 <th>Duration</th>
               </tr>
             </thead>

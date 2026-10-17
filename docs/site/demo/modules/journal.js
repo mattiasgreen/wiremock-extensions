@@ -35,6 +35,60 @@ function getHeader(headers, name) {
   return null;
 }
 
+export function getRequestResolution(req) {
+  if (!req.wasMatched) {
+    return {
+      type: 'unmatched',
+      label: 'UNMATCHED',
+      cssClass: 'pill-unmatched',
+      stubDetail: 'None (404)'
+    };
+  }
+
+  const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+  const isDynamic = getHeader(resHeaders, 'x-wiremock-stateful') === 'true';
+  if (isDynamic) {
+    const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
+    return {
+      type: 'dynamic',
+      label: '⚡ DYNAMIC',
+      cssClass: 'pill-matched pill-stateful',
+      stubDetail: `Dynamic: ${dynamicEntity || 'Stateful'}`
+    };
+  }
+
+  const proxyBaseUrl = (req.responseDefinition && req.responseDefinition.proxyBaseUrl) ||
+    (req.stubMapping && req.stubMapping.response && req.stubMapping.response.proxyBaseUrl) ||
+    (req.stubMapping && req.stubMapping.metadata && (req.stubMapping.metadata.proxyBaseUrl || (req.stubMapping.metadata.mode === 'proxy' && req.stubMapping.metadata.targetBaseUrl)));
+  const isProxy = Boolean(
+    proxyBaseUrl ||
+    (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.mode === 'proxy')
+  );
+
+  if (isProxy) {
+    const rawName = (req.stubMapping && req.stubMapping.name) || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name']);
+    const detail = proxyBaseUrl
+      ? (rawName ? `${rawName} (Proxied to ${proxyBaseUrl})` : `Proxied to ${proxyBaseUrl}`)
+      : (rawName ? `${rawName} (Proxied)` : 'Proxied');
+    return {
+      type: 'proxied',
+      label: '🌐 PROXIED',
+      cssClass: 'pill-matched pill-proxied',
+      stubDetail: detail
+    };
+  }
+
+  const rawName = (req.stubMapping && req.stubMapping.name)
+    || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name']);
+
+  return {
+    type: 'stubbed',
+    label: '📋 STUBBED',
+    cssClass: 'pill-matched pill-stubbed',
+    stubDetail: rawName ? `Stub: ${rawName}` : 'Stubbed'
+  };
+}
+
 export function renderJournal() {
   const filter = (elements.journalSearch ? elements.journalSearch.value : '').toLowerCase().trim();
   const unmatchedOnly = elements.filterUnmatchedOnly.checked;
@@ -48,7 +102,8 @@ export function renderJournal() {
     const stubName = (r.stubMapping && r.stubMapping.name ? r.stubMapping.name : '').toLowerCase();
     const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
     const statefulEntity = (getHeader(rHeaders, 'x-wiremock-stateful-entity') || '').toLowerCase();
-    return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter) || statefulEntity.includes(filter);
+    const res = getRequestResolution(r);
+    return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter) || statefulEntity.includes(filter) || res.type.includes(filter) || res.label.toLowerCase().includes(filter);
   });
 
   if (elements.journalFilteredCount) {
@@ -67,11 +122,11 @@ export function renderJournal() {
     const method = (req.request && req.request.method) || '-';
     const url = (req.request && req.request.url) || '-';
     const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 404;
-    const matched = req.wasMatched;
     const duration = (req.timing && req.timing.totalTime !== undefined) ? `${req.timing.totalTime}ms` : '-';
+    const resolution = getRequestResolution(req);
 
     const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
-    const isDynamic = getHeader(resHeaders, 'x-wiremock-stateful') === 'true';
+    const isDynamic = resolution.type === 'dynamic';
     const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
     const dynamicRoute = getHeader(resHeaders, 'x-wiremock-stateful-route');
     const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
@@ -83,7 +138,7 @@ export function renderJournal() {
         <td><span class="http-badge badge-${method}">${method}</span></td>
         <td title="${escapeHtml(url)}">${escapeHtml(url)}</td>
         <td>${status}</td>
-        <td class="${isDynamic ? 'pill-matched pill-stateful' : (matched ? 'pill-matched' : 'pill-unmatched')}">${isDynamic ? '⚡ DYNAMIC' : (matched ? 'MATCHED' : 'UNMATCHED')}</td>
+        <td class="${resolution.cssClass}">${resolution.label}</td>
         <td>${duration}</td>
       </tr>
     `;
@@ -96,9 +151,7 @@ export function renderJournal() {
       const resHeadersHtml = highlightJson(resHeaders);
       const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
       const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
-      const stubName = (req.stubMapping && req.stubMapping.name)
-        || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name'])
-        || (isDynamic ? `Dynamic: ${dynamicEntity}` : (matched ? 'Matched' : 'None (404)'));
+      const stubName = resolution.stubDetail;
 
       html += `
         <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">

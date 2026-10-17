@@ -6,7 +6,7 @@
  * loadMappings, executeTesterRequest, highlightJson, generateCurl, parseHash.
  */
 
-import { state, setTargetUrlInLocation } from './modules/state.js';
+import { state, setTargetUrlInLocation, getWireMockUri } from './modules/state.js';
 import { elements } from './modules/dom.js';
 import { highlightJson } from './modules/highlighter.js';
 import {
@@ -112,7 +112,8 @@ export {
   activateTab,
   exportStubs,
   renderTargetCapabilities,
-  applyCapabilityVisibility
+  applyCapabilityVisibility,
+  getWireMockUri
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)
@@ -710,6 +711,14 @@ if (elements.btnResetScenarios) {
 
 // Target Host Display & Switcher
 export function updateTargetHostDisplay() {
+  const wiremockUri = getWireMockUri();
+  document.title = `WMC - ${wiremockUri}`;
+
+  const brandEl = document.querySelector('.brand');
+  if (brandEl) {
+    brandEl.title = `WMC - ${wiremockUri}`;
+  }
+
   if (elements.targetHostLabel) {
     if (state.targetConfig) {
       const modeStr = state.connectionStrategy === 'direct' ? 'direct' : 'proxied';
