@@ -110,10 +110,22 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [x] Resolved 404 error when editing stubs by providing unified `PUT /stubs/{id}` in `StubLifecycleAdminEndpoint` supporting active stubs, disabled stubs, and upsert fallback.
   - [x] Added ad-hoc stub creation button (`➕ New` / `#btn-create-stub`) in UI header with clean modal defaults.
   - [x] Added Playwright integration test Scenario 12 verifying active editing, disabled editing without 404, and ad-hoc creation.
-  - [ ] **Roadmap Enhancements for Ad-Hoc Stubbing**:
-    - [ ] Advanced request matcher builder (header rules, query params, cookies, JSONPath matching).
-    - [ ] Dynamic response templating helper suggestions (Handlebars expressions like `{{request.path.[1]}}`, `{{randomValue type='UUID'}}`).
-    - [ ] Inline JSON schema validator and test-run response preview.
+
+- [ ] **2.6. UI/UX Audit Overhaul & Progressive Simulation Workflows**
+  - [x] Remove 2.5 MB of pitch deck GIF/PNG bloat from `wiremock-extension-ui/src/main/resources/ui/pitch/` and deduplicate `docs/site/demo/` from Git.
+  - [ ] **Verdict Taxonomy Unification (`PROXIED` / `STUB` / `STATEFUL` / `UNMATCHED`)**:
+    - [ ] Distinguish `🌐 PROXIED` (forwarded via `proxyBaseUrl`), `📌 STUB` (local static or `STUB · TPL` Handlebars mapping), `🧠 STATEFUL` (AST stateful engine, replacing ambiguous `"DYNAMIC"` label), and `⚠️ UNMATCHED` (HTTP 404) across Request Journal badges, filter pills, and Stubs Catalog filters.
+  - [ ] **End-to-End Request Journal Triage & Harvesting**:
+    - [ ] Add `🚀 Replay in Tester` (`#btn-journal-to-tester`) and `📋 Copy cURL` (`#btn-journal-copy-curl`) on every Journal entry.
+    - [ ] On `⚠️ UNMATCHED` entries: replace `📸 Freeze Stub` (which would freeze a 404) with `➕ Create Stub from Request` (opens Stub Editor pre-populated with incoming method, URL, headers, and body pattern, defaulting response to `200 OK`) and display Near-Miss Diagnostic Diff feedback.
+    - [ ] On `🌐 PROXIED` entries: display target upstream origin and `📸 Freeze as Stub` with non-blocking feedback instead of native `alert()`.
+    - [ ] On `📌 STUB` / `🧠 STATEFUL` entries: add `🔗 Inspect Stub` link to jump directly to the matched mapping, and render `X-Correlation-Id` as a 1-click session filter chip.
+  - [ ] **Zero-Bloat Request Matcher Builder & Handlebars Token Inserter**:
+    - [ ] Two-way synced Form $\leftrightarrow$ Raw JSON editor with a generic repeatable matcher row builder (`Header`, `Query`, `Cookie`, `Body` $\times$ `equalTo`, `contains`, `matches`, `equalToJson`, `matchesJsonPath`).
+    - [ ] 1-click Handlebars token bar (`{{request.pathSegments.[1]}}`, `{{request.query.id}}`, `{{jsonPath request.body '$.id'}}`, `{{randomValue type='UUID'}}`) that automatically enables `"transformers": ["response-template"]`.
+  - [ ] **Service-Scoped Proxy Bootstrapper & Generic Stateful CRUD Generator**:
+    - [ ] Allow creating a service-scoped `proxyBaseUrl` route directly from `➕ New` without requiring an OpenAPI specification (for legacy ERP/ESB systems).
+    - [ ] Replace hardcoded domain templates in `dynamic-stubs.js` with a parameterized CRUD Entity Generator and add a Live Entity State Inspector & Reset view per `X-Correlation-Id`.
 
 ---
 
@@ -165,9 +177,9 @@ Comprehensive review of project structure, code style, architecture, and enginee
 - [ ] **5.2. Decouple Domain Lifecycle from UI Presentation**
   - [ ] Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module or merge with stateful domain logic, keeping `wiremock-extension-ui` purely presentation-focused.
 
-- [ ] **5.3. File-Backed Persistence for Disabled Stubs & Dynamic Sessions**
+- [ ] **5.3. File-Backed Persistence for Disabled Stubs & Stateful Sessions**
   - [ ] Persist disabled stubs to WireMock mapping JSON files using `"metadata": { "disabled": true }` or a dedicated `.disabled/` store across server restarts.
-  - [ ] Allow dynamic stateful simulation sessions to be serialized/deserialized to JSON for bug reporting and replay.
+  - [ ] Allow stateful simulation sessions to be serialized/deserialized to JSON for bug reporting and replay.
 
 ---
 
@@ -182,9 +194,9 @@ Comprehensive review of project structure, code style, architecture, and enginee
 - [ ] **6.3. Zero-Dependency Realistic Mock Data Templating Helpers**
   - [ ] Introduce Handlebars helpers (`{{random.uuid}}`, `{{random.email}}`, `{{random.dateTime}}`, `{{random.name}}`).
 
-- [ ] **6.4. Per-Correlation Dynamic Scenario Visualizer & Form Builder**
+- [ ] **6.4. Per-Correlation Stateful Session Visualizer & Form Builder**
   - [ ] Visual form editor in Web UI for crafting stubs and matchers without writing raw JSON.
-  - [ ] Inspect dynamic state machines registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.
+  - [ ] Inspect stateful entity graphs registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.
 
 ---
 
@@ -238,7 +250,11 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ---
 
+<<<<<<< HEAD
 ### Phase 10: Automated Self-Contained E2E Video Tour & Agent-Gated Local Pipeline
+=======
+### Phase 10: Automated Self-Contained E2E Video Tour & Asset Pipeline
+>>>>>>> 5c2ef46 (docs(spec): overhaul UI architecture guidelines and roadmap for progressive simulation and SDK synthesis)
 
 - [ ] **10.1. Headless Playwright Native Video Recorder (`UiVideoRecordingTest.java`)**
   - [ ] Leverage Playwright's native Chromium video recording (`Browser.NewContextOptions.setRecordVideoDir(...)`, `.setRecordVideoSize(1280, 720)`).
@@ -274,3 +290,24 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] **Semantic Detection via `git log`**: During PR or release preparation, the coding agent inspects `git log` / `git diff` on `wiremock-extension-ui/src/main/resources/ui/**` to judge whether user-visible demo flows meaningfully changed (ignoring minor CSS tweaks or non-visual refactors).
   - [ ] **Manual Gateway (Ask First)**: If a demo scenario is outdated, the agent notifies the user and asks for confirmation before running `./gradlew :wiremock-extension-ui:recordDemoVideos` locally on the workstation.
   - [ ] **Zero-Bloat Publishing**: After local visual inspection and user approval, publish generated `.webm` files to GitHub Pages / Release assets without committing binary media revisions into `main` Git history.
+
+---
+
+### Phase 11: Bottom-Up Simulation SDK & `TestDataBuilder` Synthesis
+
+Enable teams testing against 10+ downstream dependencies (ERP System, CRM System, Billing Platform, Risk Engine, Legacy ESB) to progress from live proxied integration tests to contract-verified, domain-driven Java Simulation SDKs—so the exact same BDD/Cucumber/JUnit test executes unmodified as **fully integrated**, **hybrid**, or **fully simulated**.
+
+- [ ] **11.1. Runtime-Parameterized Hybrid Simulation Mode for BDD / JUnit Suites**
+  - [ ] Provide a lightweight Java test harness / extension configuration allowing per-service simulation modes to be set via runtime parameters or environment variables (e.g., `-Dsim.mode.erp-system=proxy -Dsim.mode.notification-gateway=stub -Dsim.mode.crm-service=stateful`).
+  - [ ] Synchronize runtime service modes with `/__admin/projects/{service}/mode` so automated BDD suites and the Web UI Service Catalog reflect the exact same hybrid topology.
+
+- [ ] **11.2. Level 1 — Deterministic Codegen (`stubFor()`, Model DTOs & Property Builders)**
+  - [x] **UI `☕ Copy Java stubFor()` Action**: Generate idiomatic WireMock Java DSL snippets directly from any Stub or recorded Journal entry.
+  - [ ] **Schema + Recorded Payload $\rightarrow$ DTO & `TestDataBuilder` Generator**: Combine OpenAPI 3.0/3.1 schemas (or inferred JSON shapes from recorded `PROXIED` journal entries) with captured baseline payloads to generate:
+    - [ ] Jackson-annotated Java 21 `record` / POJO model classes.
+    - [ ] Fluent `TestDataBuilder` classes pre-populated with realistic baseline defaults harvested from live service recordings.
+    - [ ] Low-level typed `*ServiceMock` endpoint wrappers with built-in `X-Correlation-Id` session scoping.
+
+- [ ] **11.3. Level 2 — Semantic Domain Builders & Scenario Orchestration (GenAI / Agent-Assisted Synthesis)**
+  - [ ] Elevate property-level builders (`withStatus("BLOCKED").withReasonCode("R-409")`) into high-level domain-intent methods (`org.crm.sdk.test.customer.CustomerBuilder.aCustomer().isVip()`, `.isBlockedDueToRisk()`, `.hasUpsellRecommendation()`).
+  - [ ] **Multi-Trace Scenario Synthesis**: Analyze and diff multiple recorded `X-Correlation-Id` journal traces (e.g., happy-path checkout vs. ERP business-rule rejection) alongside OpenAPI descriptions using an Agentic / GenAI synthesis workflow to generate cohesive scenario setup helpers that orchestrate multi-endpoint WireMock stubs, stateful AST rules, and L4/L7 fault expectations behind a single domain verb.
