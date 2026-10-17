@@ -2,6 +2,7 @@ package com.github.mattiasgreen.wiremock.casual.integration;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
+import com.github.mattiasgreen.wiremock.casual.CasualProxyTransformer;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
@@ -60,7 +61,8 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
         this.upstreamNode = new UpstreamDomainNode();
         this.upstreamNode.start();
 
-        this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
+        CasualProxyTransformer proxyTransformer = new CasualProxyTransformer();
+        this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort().extensions(proxyTransformer));
         this.wireMockServer.start();
 
         this.mitmGateway = CasualWireMockGateway.builder()
@@ -70,6 +72,7 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
                 .recordStubs(true)
                 .recordFaults(true)
                 .recordNotFound(false)
+                .proxyTransformer(proxyTransformer)
                 .build();
         this.mitmGateway.start();
 

@@ -32,8 +32,12 @@
 #### B. Request Journal Entry (`ServeEvent`)
 - **Identity**: Globally unique UUID string (`id`).
 - **Timestamp**: High-resolution ISO-8601 or millisecond epoch of request arrival.
-- **Incoming Request**: HTTP method, complete URL path with query string, complete headers, client IP, and captured body payload.
-- **Match Verdict**: Boolean `wasMatched`. When `false`, captures the nearest stub candidate and distance score.
+- **Incoming Request**: HTTP method, complete URL path with query string, complete headers (including `X-Correlation-Id`), client IP, and captured body payload.
+- **Traffic Verdict**: Categorized into one of four mutually exclusive execution outcomes:
+  - **`PROXIED`**: `wasMatched == true` and served via a `proxyBaseUrl` route (forwarded to a live upstream service such as an ERP System, CRM System, or Billing Platform).
+  - **`STUB`**: `wasMatched == true` and served locally from a static or Handlebars-templated (`response-template`) WireMock mapping with zero upstream network calls.
+  - **`STATEFUL`**: Served in-process by the `wiremock-extension-stateful` AST engine with entity mutations and invariant guard evaluation.
+  - **`UNMATCHED`**: `wasMatched == false` (HTTP 404); captures the nearest stub candidate and distance score for diagnostic diffing.
 - **Response Definition**: Served status code, headers, and body.
 - **Timing**: Serve duration / latency in milliseconds.
 
@@ -43,9 +47,9 @@
 - **Possible States**: Enumerated set of valid state string identifiers.
 - **Transitions**: Governed by stub executions configured with `whenScenarioStateIs` and `willSetStateTo`.
 
-#### D. Dynamic State Simulator (`SimulatorModel`)
-- **Entity Collection**: Plural entity identifier (e.g., `cases`, `orders`).
-- **Identity Scheme**: Path parameter token and generated ID prefix.
+#### D. Stateful Entity Simulator (`SimulatorModel`)
+- **Entity Collection**: Plural entity identifier (e.g., `cases`, `orders`, `customers`).
+- **Identity Scheme**: Path parameter token and generated ID prefix, isolated per parallel test via `X-Correlation-Id`.
 - **Live Entity State Graph**: In-memory JSON dictionary representing current state of created instances.
 - **Mutations & Guards**: State transitions governed by expressions (e.g., `tasks.allMatch(status != PENDING)`).
 
@@ -53,12 +57,12 @@
 
 ## 2. Core Functional Capabilities
 
-1. **Stub Exploration & Discovery**: Search by text across URL, method, and name. Filter by lifecycle status (`All`, `Active`, `Disabled`). Sortable by any metadata attribute.
-2. **Lifecycle Manipulation**: Toggle active/disabled state without destroying mappings. Add new stubs from templates. Duplicate existing stubs. Delete stubs with user assurance.
-3. **Ad-Hoc Request Replay (HTTP Tester)**: Execute arbitrary HTTP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`). Record and navigate execution history.
-4. **Traffic Observability & Diffs (Request Journal)**: Live stream of served traffic. Clear visual distinction between request resolutions (`📋 STUBBED`, `🌐 PROXIED`, `⚡ DYNAMIC`) and unmatched traffic (`UNMATCHED` 404). Server-side isolation of unmatched traffic. Configurable custom journal fetch limit (positive integer) and in-memory progressive/lazy DOM rendering. 1-click promotion of captured requests into the HTTP Tester or export as cURL. Deep comparison between actual incoming traffic and stub definitions.
-5. **Stateful Scenario Inspection & Reset**: Live visual inspection of FSM scenario states. Instant reset of all scenarios to `"Started"`.
-6. **Contract Ingestion**: Ingest OpenAPI 3.0 / 3.1 definitions to synthesize realistic stubs and state models automatically.
+1. **Service-Scoped Exploration & Gradual Hybrid Simulation**: Search by text and boolean expressions (`AND`, `OR`) across URL, method, name, headers, body patterns, and metadata. Group stubs and proxy routes by remote service (`metadata.project`, e.g., `erp-system`, `crm-service`, `billing-platform`). Switch individual services between `LIVE PROXY` and `STUBS MODE` so manual testers and runtime-parameterized BDD/JUnit suites can run fully integrated, hybrid, or fully simulated without modifying test code.
+2. **Lifecycle Manipulation**: Toggle active/disabled state without destroying mappings. Add new stubs or catch-all proxy routes from templates. Duplicate existing stubs. Delete stubs with user assurance.
+3. **Ad-Hoc Request Replay (HTTP Tester)**: Execute arbitrary HTTP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`, `X-Correlation-Id`). Record and navigate execution history.
+4. **Traffic Observability, Harvesting & Triage (Request Journal)**: Live stream of served traffic clearly badged as `PROXIED`, `STUB`, `STATEFUL`, or `UNMATCHED`. Server-side isolation of unmatched traffic (`?unmatched=true`), configurable journal fetch limit, and progressive/lazy DOM rendering. Freeze `PROXIED` responses into offline service stubs; promote `UNMATCHED` 404 requests directly into the Stub Editor (`Create Stub from Request`); replay any entry in the HTTP Tester; export as cURL or Java `stubFor()` DSL.
+5. **Stateful Scenario & Entity Inspection**: Live visual inspection of FSM scenario states and `STATEFUL` AST entity graphs per `X-Correlation-Id`, with 1-click state reset.
+6. **Contract Ingestion & SDK Bootstrapping**: Ingest OpenAPI 3.0 / 3.1 definitions (as synthetic stubs or live proxies) and combine contracts with harvested Journal traffic to bootstrap typed Java `TestDataBuilder`s and domain-level simulation SDKs.
 
 ---
 
@@ -169,3 +173,14 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the browser tab title immediately updates to `WMC - https://gateway.corp:8443/test-envs/env1/wiremock`.
 - **When** the user resets the target back to same-origin.
 - **Then** the browser tab title reverts to `WMC - http://localhost:8080`.
+
+### Story 12: Multi-Protocol Progressive Simulation (HTTP REST + Casual XATMI/2PC)
+- **Given** a 3-node enterprise topology: Customer Portal & Product System SUT (Node 1), WireMock MITM Gateway (Node 2), and Upstream Backend Server B (Node 3) hosting HTTP Case Management, HTTP CRM, and Casual 2PC Billing.
+- **When** the scenario runs in `LIVE PROXY` mode against live Server B.
+- **Then** the customer applies for a product, receives an offer, approves purchase, and is billed via Casual 2PC transaction (`tpcall("billing/charge")` within global `Xid` with `prepare` and `commit`).
+- **And** the Unified Request Journal captures all 7 downstream calls as `🌐 PROXIED`, displaying protocol badge `CASUAL` and status `OK` for Casual XATMI calls without conflating with HTTP `POST` or `200`.
+- **When** the operator snapshots live recordings via the Console UI (`#btn-project-snapshot`) and toggles mode to `STUBS MODE` (`#btn-project-mode-toggle`).
+- **Then** recorded stubs are generated in priority over proxy routes, with Casual stubs tagged as `[RECORDED CASUAL OK]` and protocol `casual`.
+- **When** Upstream Server B is shut down completely and the customer scenario is replayed.
+- **Then** the entire customer application, offer, approval, Casual 2PC billing, and sales order flow completes successfully offline from recorded stubs.
+- **And** the Unified Request Journal verifies all 7 calls were served locally with resolution `📌 STUB`, while Upstream Server B received zero traffic.

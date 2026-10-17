@@ -131,7 +131,21 @@ export const STUB_TEMPLATES = {
     body: JSON.stringify({
       error: 'Not Found',
       message: 'The requested resource does not exist'
-    }, null, 2)
+    }, null, 2),
+    proxyBaseUrl: ''
+  },
+  'proxy-route': {
+    name: 'Live Service Proxy (ERP System)',
+    priority: 10,
+    method: 'ANY',
+    url: '/api/v1/erp/.*',
+    bodyMatchType: 'none',
+    bodyMatchPattern: '',
+    status: 200,
+    headers: '',
+    body: '',
+    proxyBaseUrl: 'http://erp-system:8089',
+    project: 'ERP System'
   }
 };
 
@@ -173,6 +187,8 @@ export function applyStubTemplate(templateKey) {
   const urlInput = document.getElementById('editor-url');
   const statusInput = document.getElementById('editor-status');
   const priorityInput = document.getElementById('editor-priority');
+  const projectInput = document.getElementById('editor-project');
+  const proxyUrlInput = document.getElementById('editor-proxy-url');
   const headersText = document.getElementById('editor-headers');
   const bodyText = document.getElementById('editor-body');
   const bodyMatchTypeSelect = document.getElementById('editor-body-match-type');
@@ -184,6 +200,8 @@ export function applyStubTemplate(templateKey) {
   if (urlInput) urlInput.value = tpl.url;
   if (statusInput) statusInput.value = tpl.status;
   if (priorityInput) priorityInput.value = tpl.priority;
+  if (projectInput && tpl.project) projectInput.value = tpl.project;
+  if (proxyUrlInput) proxyUrlInput.value = tpl.proxyBaseUrl || '';
   if (headersText) headersText.value = tpl.headers;
   if (bodyText) bodyText.value = tpl.body;
 
@@ -201,6 +219,42 @@ export function applyStubTemplate(templateKey) {
     }
   }
   updateBodyMatchLabel(tpl.bodyMatchType);
+}
+
+export function openStubEditorFromRequest(reqObj) {
+  if (!reqObj) return;
+  const method = (reqObj.method || 'GET').toUpperCase();
+  const url = reqObj.url || '/';
+  const rawBody = reqObj.body || '';
+  const bodyPatterns = [];
+  if (rawBody.trim()) {
+    try {
+      JSON.parse(rawBody);
+      bodyPatterns.push({ equalToJson: rawBody.trim() });
+    } catch {
+      bodyPatterns.push({ equalTo: rawBody });
+    }
+  }
+  const syntheticStub = {
+    name: `${method} ${url}`,
+    priority: 5,
+    request: {
+      method,
+      url,
+      bodyPatterns: bodyPatterns.length > 0 ? bodyPatterns : undefined
+    },
+    response: {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      jsonBody: { status: 'ok' }
+    },
+    metadata: {}
+  };
+  openStubEditor(syntheticStub, false);
+  const titleEl = document.getElementById('editor-modal-title');
+  if (titleEl) {
+    titleEl.textContent = 'Create Stub from Unmatched Request';
+  }
 }
 
 export function openStubEditor(stub, clone = false) {
@@ -229,6 +283,7 @@ export function openStubEditor(stub, clone = false) {
   const priorityInput = document.getElementById('editor-priority');
   const projectInput = document.getElementById('editor-project');
   const tagsInput = document.getElementById('editor-tags');
+  const proxyUrlInput = document.getElementById('editor-proxy-url');
   const headersText = document.getElementById('editor-headers');
   const bodyText = document.getElementById('editor-body');
 
@@ -261,6 +316,7 @@ export function openStubEditor(stub, clone = false) {
     if (priorityInput) priorityInput.value = (stub && stub.priority) ? stub.priority : 5;
     if (projectInput) projectInput.value = meta.project || activeProj;
     if (tagsInput) tagsInput.value = Array.isArray(meta.tags) ? meta.tags.join(', ') : (meta.tags || '');
+    if (proxyUrlInput) proxyUrlInput.value = res.proxyBaseUrl || meta.proxyBaseUrl || '';
 
     // Extract request body patterns
     let matchType = 'none';
@@ -330,6 +386,7 @@ export function saveStubEditor() {
   const priorityInput = document.getElementById('editor-priority');
   const projectInput = document.getElementById('editor-project');
   const tagsInput = document.getElementById('editor-tags');
+  const proxyUrlInput = document.getElementById('editor-proxy-url');
   const headersText = document.getElementById('editor-headers');
   const bodyText = document.getElementById('editor-body');
   const bodyMatchTypeSelect = document.getElementById('editor-body-match-type');
@@ -342,6 +399,7 @@ export function saveStubEditor() {
   const name = nameInput ? nameInput.value.trim() : '';
   const project = projectInput ? projectInput.value.trim() : '';
   const tags = tagsInput ? tagsInput.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const proxyUrl = proxyUrlInput ? proxyUrlInput.value.trim() : '';
 
   // Parse headers
   const responseHeaders = {};
@@ -399,11 +457,14 @@ export function saveStubEditor() {
 
   // Build Response Definition
   const responseDef = { status };
+  if (proxyUrl) {
+    responseDef.proxyBaseUrl = proxyUrl;
+  }
   if (Object.keys(responseHeaders).length > 0) {
     responseDef.headers = responseHeaders;
   }
   const rawBody = bodyText ? bodyText.value : '';
-  if (rawBody) {
+  if (rawBody && !proxyUrl) {
     try {
       responseDef.jsonBody = JSON.parse(rawBody);
     } catch {
@@ -415,6 +476,10 @@ export function saveStubEditor() {
   const originalMeta = activeEditingStub && activeEditingStub.metadata ? { ...activeEditingStub.metadata } : {};
   if (project) originalMeta.project = project;
   if (tags.length > 0) originalMeta.tags = tags;
+  if (proxyUrl) {
+    originalMeta.mode = 'proxy';
+    originalMeta.proxyBaseUrl = proxyUrl;
+  }
 
   const stubPayload = {
     name: name || undefined,
@@ -449,3 +514,4 @@ export function saveStubEditor() {
       alert('Failed to save stub mapping: ' + err.message);
     });
 }
+

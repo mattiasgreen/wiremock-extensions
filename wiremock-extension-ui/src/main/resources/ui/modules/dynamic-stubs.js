@@ -203,7 +203,7 @@ export function normalizeStatefulModelsToStubs(models) {
       result.push({
         id: id,
         isDynamic: true,
-        name: `[⚡ DYNAMIC] ${entity.toUpperCase()}: ${method} ${path}`,
+        name: `[🧠 STATEFUL] ${entity.toUpperCase()}: ${method} ${path}`,
         priority: 1,
         request: {
           method: method,
@@ -219,7 +219,7 @@ export function normalizeStatefulModelsToStubs(models) {
         invariants: invariants,
         mutations: mutations,
         metadata: {
-          project: `⚡ ${entity}`,
+          project: `🧠 ${entity}`,
           tags: ['dynamic', 'stateful', entity]
         }
       });

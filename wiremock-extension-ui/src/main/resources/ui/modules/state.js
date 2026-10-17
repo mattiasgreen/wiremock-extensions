@@ -133,6 +133,7 @@ export const state = {
   selectedStubIds: new Set(),
   statefulModels: [],
   currentRequests: [],
+  journalVerdictFilter: 'all', // 'all' | 'proxied' | 'stub' | 'stateful' | 'unmatched'
   expandedRequestId: null,
   journalLimit: 100,
   allScenarios: [],

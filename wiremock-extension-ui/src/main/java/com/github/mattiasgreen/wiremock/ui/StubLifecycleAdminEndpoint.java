@@ -322,7 +322,9 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                         if (!name.equalsIgnoreCase("Transfer-Encoding")
                                 && !name.equalsIgnoreCase("Content-Length")
                                 && !name.equalsIgnoreCase("Content-Encoding")
-                                && !name.equalsIgnoreCase("Connection")) {
+                                && !name.equalsIgnoreCase("Connection")
+                                && !name.equalsIgnoreCase("Matched-Stub-Id")
+                                && !name.equalsIgnoreCase("Matched-Stub-Name")) {
                             respDef.withHeader(name, header.firstValue());
                         }
                     }
@@ -332,24 +334,45 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                         ? getStubProject(matchedStub)
                         : (allProjects ? "Recorded Traffic" : targetProject);
 
-                String stubName = String.format(
-                        "[RECORDED %s %d] %s",
-                        event.getRequest().getMethod().getName(),
-                        event.getResponse().getStatus(),
-                        event.getRequest().getUrl());
+                boolean isCasualReq = event.getRequest().getUrl() != null
+                        && event.getRequest().getUrl().startsWith("/__casual/services/");
+                String casualErr = event.getResponse().getHeaders() != null
+                                && event.getResponse()
+                                        .getHeaders()
+                                        .getHeader("X-Casual-Error-State")
+                                        .isPresent()
+                        ? event.getResponse()
+                                .getHeaders()
+                                .getHeader("X-Casual-Error-State")
+                                .firstValue()
+                        : (event.getResponse().getStatus() >= 200
+                                        && event.getResponse().getStatus() < 300
+                                ? "OK"
+                                : "TPESVCFAIL");
+                String stubName = isCasualReq
+                        ? String.format(
+                                "[RECORDED CASUAL %s] %s",
+                                casualErr, event.getRequest().getUrl())
+                        : String.format(
+                                "[RECORDED %s %d] %s",
+                                event.getRequest().getMethod().getName(),
+                                event.getResponse().getStatus(),
+                                event.getRequest().getUrl());
 
                 StubMapping recordedStub = new StubMapping(reqPattern.build(), respDef.build());
                 recordedStub.setId(UUID.randomUUID());
                 recordedStub.setName(stubName);
                 recordedStub.setPriority(5); // Higher priority than proxy (10)
 
-                Metadata metadata = Metadata.metadata()
+                Metadata.Builder metadataBuilder = Metadata.metadata()
                         .attr("source", "recorded-proxy")
                         .attr("project", assignedProject)
                         .attr("mode", "static")
-                        .attr("recordedAt", Instant.now().toString())
-                        .build();
-                recordedStub.setMetadata(metadata);
+                        .attr("recordedAt", Instant.now().toString());
+                if (isCasualReq) {
+                    metadataBuilder.attr("protocol", "casual");
+                }
+                recordedStub.setMetadata(metadataBuilder.build());
 
                 // Add as DISABLED per default! Park in disabledStubStore without adding to admin
                 disabledStubStore.put(recordedStub);
@@ -368,13 +391,14 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             return ok(respBody);
         });
 
-        // Project Mode Toggle: Switches a project between "proxy" and "stubs" mode
+        // Project Mode Toggle: Switches a project (or _all) between "proxy" and "stubs" mode
         router.add(RequestMethod.POST, "/projects/{project}/mode", (admin, serveEvent, pathParams) -> {
             String projectParam = pathParams.get("project");
             String targetProject = projectParam != null ? URLDecoder.decode(projectParam, StandardCharsets.UTF_8) : "";
             if (targetProject.isBlank()) {
                 return badRequest("Project name is required");
             }
+            boolean allProjects = "*".equals(targetProject) || "_all".equalsIgnoreCase(targetProject);
 
             String body = serveEvent.getRequest().getBodyAsString();
             String requestedMode = "stubs";
@@ -394,14 +418,14 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             if ("stubs".equals(requestedMode)) {
                 // In "stubs" mode: disable proxy stubs, enable static/recorded stubs
                 for (StubMapping stub : List.copyOf(admin.listAllStubMappings().getMappings())) {
-                    if (targetProject.equalsIgnoreCase(getStubProject(stub)) && isProxyStub(stub)) {
+                    if ((allProjects || targetProject.equalsIgnoreCase(getStubProject(stub))) && isProxyStub(stub)) {
                         disabledStubStore.put(stub);
                         admin.removeStubMapping(stub.getId());
                         disabledCount++;
                     }
                 }
                 for (StubMapping stub : List.copyOf(disabledStubStore.getAll())) {
-                    if (targetProject.equalsIgnoreCase(getStubProject(stub)) && !isProxyStub(stub)) {
+                    if ((allProjects || targetProject.equalsIgnoreCase(getStubProject(stub))) && !isProxyStub(stub)) {
                         disabledStubStore.remove(stub.getId());
                         admin.addStubMapping(stub);
                         enabledCount++;
@@ -410,14 +434,14 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             } else if ("proxy".equals(requestedMode)) {
                 // In "proxy" mode: disable static/recorded stubs, enable proxy stubs
                 for (StubMapping stub : List.copyOf(admin.listAllStubMappings().getMappings())) {
-                    if (targetProject.equalsIgnoreCase(getStubProject(stub)) && !isProxyStub(stub)) {
+                    if ((allProjects || targetProject.equalsIgnoreCase(getStubProject(stub))) && !isProxyStub(stub)) {
                         disabledStubStore.put(stub);
                         admin.removeStubMapping(stub.getId());
                         disabledCount++;
                     }
                 }
                 for (StubMapping stub : List.copyOf(disabledStubStore.getAll())) {
-                    if (targetProject.equalsIgnoreCase(getStubProject(stub)) && isProxyStub(stub)) {
+                    if ((allProjects || targetProject.equalsIgnoreCase(getStubProject(stub))) && isProxyStub(stub)) {
                         disabledStubStore.remove(stub.getId());
                         admin.addStubMapping(stub);
                         enabledCount++;

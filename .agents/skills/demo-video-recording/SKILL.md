@@ -13,6 +13,7 @@ Recording tests are tagged with `@Tag("recording")` or `@Tag("pitch-deck")` and 
 
 | Task | JUnit Tag / Test Class | Output Location |
 | :--- | :--- | :--- |
+| `./gradlew :wiremock-examples:recordDemoVideos` | `@Tag("recording")` (`BankingDemoVideoRecordingTest`) | `wiremock-examples/build/videos/banking/*.webm` |
 | `./gradlew :wiremock-extension-ui:captureUiSnapshots` | `@Tag("ui-snapshot")` (`UiSnapshotCaptureTest`) | `wiremock-extension-ui/build/reports/screenshots/web/` |
 | `./gradlew :wiremock-extension-ui:recordDemoVideos` | `@Tag("recording")` (`UiVideoRecordingTest`) | `wiremock-extension-ui/build/videos/*.webm` |
 | `./gradlew :wiremock-extension-ui:recordDemoGifs` | `@Tag("recording")` (`UiDemoGifRecordingTest`) | `docs/images/demo-*.gif` |

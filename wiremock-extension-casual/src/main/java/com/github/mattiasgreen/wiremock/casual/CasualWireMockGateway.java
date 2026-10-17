@@ -1,6 +1,9 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
+import com.github.tomakehurst.wiremock.http.ResponseDefinition;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -23,7 +26,9 @@ import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
+import se.laz.casual.api.flags.AtmiFlags;
 import se.laz.casual.api.flags.ErrorState;
+import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
@@ -69,6 +74,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
+    private final Map<String, CasualServiceCallRequestMessage> inFlightRequests = new ConcurrentHashMap<>();
     private final Set<Xid> upstreamEnlistedXids = ConcurrentHashMap.newKeySet();
     private final Set<Xid> localMatchedXids = ConcurrentHashMap.newKeySet();
     private final Map<Xid, XAReturnCode> prepareVoteOverrides = new ConcurrentHashMap<>();
@@ -131,6 +137,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         private boolean recordStubs = false;
         private boolean recordFaults = true;
         private boolean recordNotFound = false;
+        private CasualProxyTransformer proxyTransformer;
 
         public Builder port(int port) {
             this.port = port;
@@ -163,12 +170,21 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             return this;
         }
 
+        public Builder proxyTransformer(CasualProxyTransformer proxyTransformer) {
+            this.proxyTransformer = proxyTransformer;
+            return this;
+        }
+
         public CasualWireMockGateway build() {
             if (wireMockBaseUrl == null || wireMockBaseUrl.isBlank()) {
                 throw new IllegalStateException("wireMockBaseUrl must be specified");
             }
-            return new CasualWireMockGateway(
+            CasualWireMockGateway gateway = new CasualWireMockGateway(
                     port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, recordFaults, recordNotFound);
+            if (proxyTransformer != null) {
+                proxyTransformer.setGateway(gateway);
+            }
+            return gateway;
         }
     }
 
@@ -229,6 +245,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
         String requestPayload = CasualBufferUtils.extractPayload(requestBuffer);
         String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
+        String executionId = (req.getExecution() != null ? req.getExecution() : UUID.randomUUID()).toString();
 
         // Bridge to WireMock HTTP endpoint
         String wireMockUrl = wireMockBaseUrl + "/__casual/services/" + serviceName;
@@ -236,7 +253,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 .uri(URI.create(wireMockUrl))
                 .header("Content-Type", "application/json")
                 .header("X-Casual-Service", serviceName)
-                .header("X-Casual-Buffer-Type", bufferType);
+                .header("X-Casual-Buffer-Type", bufferType)
+                .header("X-Casual-Execution", executionId);
 
         if (isTransactional(req.getXid())) {
             requestBuilder.header("X-Casual-Xid", req.getXid().toString());
@@ -246,6 +264,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 .POST(HttpRequest.BodyPublishers.ofString(requestPayload, StandardCharsets.UTF_8))
                 .build();
 
+        inFlightRequests.put(executionId, req);
         HttpResponse<String> response;
         try {
             response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -255,13 +274,15 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 Thread.currentThread().interrupt();
             }
             return buildErrorReply(req, ErrorState.TPESVCERR);
+        } finally {
+            inFlightRequests.remove(executionId);
         }
 
         // A request was matched if WireMock provided a Matched-Stub-Id header
         boolean wasMatched = response.headers().firstValue("Matched-Stub-Id").isPresent();
 
         if (wasMatched) {
-            if (isTransactional(req.getXid())) {
+            if (isTransactional(req.getXid()) && !upstreamEnlistedXids.contains(req.getXid())) {
                 localMatchedXids.add(req.getXid());
             }
             // Matched stub: serve response directly from WireMock
@@ -273,6 +294,72 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             // Unmatched request and no upstream configured: return TPENOENT
             return buildErrorReply(req, ErrorState.TPENOENT);
         }
+    }
+
+    /**
+     * Invoked in-process by {@link CasualProxyTransformer} when WireMock matches an active
+     * Casual proxy stub ({@code metadata.mode = "proxy"}). Forwards the request to the upstream
+     * Casual TCP server and returns the upstream reply as a WireMock {@link ResponseDefinition}
+     * so it is logged as {@code PROXIED} in the WireMock Request Journal.
+     */
+    ResponseDefinition proxyServeEventToUpstream(ServeEvent serveEvent) {
+        String executionId = serveEvent.getRequest().getHeader("X-Casual-Execution");
+        CasualServiceCallRequestMessage req = executionId != null ? inFlightRequests.get(executionId) : null;
+
+        String url = serveEvent.getRequest().getUrl();
+        String serviceName = serveEvent.getRequest().getHeader("X-Casual-Service");
+        if (serviceName == null || serviceName.isBlank()) {
+            String prefix = "/__casual/services/";
+            serviceName = url != null && url.startsWith(prefix) ? url.substring(prefix.length()) : "casual/default";
+        }
+        String requestPayload = serveEvent.getRequest().getBodyAsString();
+        if (requestPayload == null) {
+            requestPayload = "";
+        }
+
+        if (req == null) {
+            req = CasualServiceCallRequestMessage.createBuilder()
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+                    .setExecution(UUID.randomUUID())
+                    .setServiceName(serviceName)
+                    .setTimeout(10000L)
+                    .setParentName(domainName)
+                    .setXid(XID.NULL_XID)
+                    .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                    .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of(requestPayload)))
+                    .build();
+        }
+
+        CasualServiceCallReplyMessage upstreamReply = forwardToUpstream(req, serviceName, requestPayload);
+        ErrorState errorState = upstreamReply.getError();
+        int statusCode = 200;
+        if (errorState == ErrorState.TPENOENT) {
+            statusCode = 404;
+        } else if (errorState == ErrorState.TPEINVAL) {
+            statusCode = 400;
+        } else if (errorState == ErrorState.TPETIME) {
+            statusCode = 504;
+        } else if (errorState == ErrorState.TPESVCERR) {
+            statusCode = 502;
+        } else if (errorState != ErrorState.OK) {
+            statusCode = 500;
+        }
+
+        String replyPayload = CasualBufferUtils.extractPayload(upstreamReply.getServiceBuffer());
+        ResponseDefinitionBuilder builder = ResponseDefinitionBuilder.responseDefinition()
+                .withStatus(statusCode)
+                .withHeader("Content-Type", "application/json")
+                .withHeader("X-Casual-Error-State", errorState.name())
+                .withHeader(
+                        "X-Casual-Transaction-State",
+                        upstreamReply.getTransactionState().name())
+                .withBody(replyPayload);
+
+        if (upstreamReply.getUserDefinedCode() != 0) {
+            builder.withHeader("X-Casual-User-Supplied-Error", String.valueOf(upstreamReply.getUserDefinedCode()));
+        }
+
+        return builder.build();
     }
 
     private CasualServiceCallReplyMessage buildMatchedReply(
