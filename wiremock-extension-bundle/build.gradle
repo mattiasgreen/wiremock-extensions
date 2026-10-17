@@ -2,9 +2,11 @@ apply plugin: 'application'
 
 configurations {
     standaloneRuntime {
-        canBeResolved = true
+        canBeResolved = false
         canBeConsumed = false
-        extendsFrom configurations.runtimeClasspath
+    }
+    runtimeClasspath {
+        extendsFrom standaloneRuntime
     }
 }
 
@@ -24,21 +26,17 @@ application {
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
 }
 
-tasks.named('run') {
-    classpath = sourceSets.main.output + configurations.standaloneRuntime
-}
-
 tasks.register('runStandalone', JavaExec) {
     group = 'application'
     description = 'Runs WireMock standalone with all QoL extensions and sample mocks'
-    classpath = sourceSets.main.output + configurations.standaloneRuntime
+    classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
 }
 
 tasks.register('runUpstream', JavaExec) {
     group = 'application'
     description = 'Runs simulated upstream mock service on port 8089 for live proxy testing'
-    classpath = sourceSets.main.output + configurations.standaloneRuntime
+    classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.UpstreamMockServer'
 }
 

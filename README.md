@@ -46,6 +46,76 @@ Prerequisites: Java 21+ and Gradle (wrapper included).
 ./gradlew test
 ```
 
+### Java 21 Toolchain Configuration
+
+The build enforces a JDK 21 toolchain. If Gradle fails to locate a matching Java 21 installation on your machine:
+
+- **Option 1 — Inspect Detected Toolchains**: Check which JDKs Gradle currently sees on your system:
+  ```bash
+  ./gradlew -q javaToolchains
+  ```
+- **Option 2 — Specify Existing JDK 21 Path**: If Java 21 is installed in a custom location, tell Gradle where to find it without changing global environment variables by adding `org.gradle.java.installations.paths` to your user-level `~/.gradle/gradle.properties`:
+  ```properties
+  org.gradle.java.installations.paths=C:/path/to/your/jdk-21,D:/another/jdk-21
+  ```
+  *(Use forward slashes `/`)*.
+
+---
+
+### Building Behind Corporate Firewalls / Private Mirrors
+
+If your corporate environment restricts outbound traffic to `services.gradle.org` or public Maven Central:
+
+#### 1. Initial Setup: Cache the Gradle Wrapper
+> [!NOTE]
+> Gradle Wrapper does not yet support dynamic runtime environment variables for `distributionUrl` ([gradle/gradle#27295](https://github.com/gradle/gradle/issues/27295)). This is scheduled for **Gradle 10.0**. Until then, use this one-time cache workflow:
+
+1. **Temporarily point to your internal mirror**: In `gradle/wrapper/gradle-wrapper.properties`, set `distributionUrl` to your internal mirror:
+   ```properties
+   distributionUrl=https\://nexus.corp.internal/repository/gradle-distributions/gradle-9.4.1-bin.zip
+   ```
+2. **Download & cache the wrapper**:
+   ```bash
+   ./gradlew --version
+   ```
+3. **Revert back to clean Git state**:
+   ```bash
+   git restore gradle/wrapper/gradle-wrapper.properties
+   ```
+   Gradle is now cached locally in `~/.gradle/wrapper/dists/`. Subsequent `./gradlew` runs will use the cache without reaching out to external networks.
+
+#### 2. Configure Internal Dependency Mirrors
+To route dependency and plugin downloads to your internal mirror without modifying Git-tracked files, place an initialization script in your user home at `~/.gradle/init.d/corporate-mirror.gradle`:
+
+```groovy
+// ~/.gradle/init.d/corporate-mirror.gradle
+def mavenURL  = "https://nexus.corp.internal/repository/maven-public/"
+def pluginURL = "https://nexus.corp.internal/repository/gradle-plugins/"
+
+def mirror = { repos, targetUrl ->
+    repos.mavenLocal()
+    repos.maven { url targetUrl }
+    repos.all { repo ->
+        if (repo instanceof MavenArtifactRepository) {
+            if (repo.url.toString().contains("plugins.gradle.org")) repo.url = uri(pluginURL)
+            if (repo.url.toString().contains("repo.maven.apache.org")) repo.url = uri(mavenURL)
+        }
+    }
+}
+
+beforeSettings { mirror(it.pluginManagement.repositories, pluginURL) }
+allprojects {
+    mirror(buildscript.repositories, pluginURL)
+    mirror(repositories, mavenURL)
+}
+```
+
+Now build normally:
+```bash
+./gradlew build
+```
+
+
 ## Usage Options
 
 ### 1. All-in-One Bundle
