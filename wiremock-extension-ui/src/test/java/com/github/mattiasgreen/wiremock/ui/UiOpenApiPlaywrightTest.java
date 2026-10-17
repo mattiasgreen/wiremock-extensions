@@ -378,6 +378,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
 
             page.waitForSelector("#btn-filter-disabled");
             page.locator("#btn-filter-disabled").click();
+            page.waitForSelector(".stub-card:has-text('RECORDED')");
             Locator disabledCard = page.locator(".stub-card")
                     .filter(new Locator.FilterOptions().setHasText("RECORDED"))
                     .first();

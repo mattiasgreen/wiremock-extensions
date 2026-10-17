@@ -337,6 +337,7 @@ body {
 .badge-DELETE { background-color: var(--badge-delete); }
 .badge-PATCH { background-color: var(--badge-patch); }
 .badge-ANY { background-color: var(--badge-default); }
+.badge-CASUAL { background-color: #0d9488; letter-spacing: 0.02em; }
 
 .stub-card-url {
   font-family: monospace;

@@ -17,6 +17,7 @@ dependencies {
     api project(':wiremock-extension-stateful')
     api project(':wiremock-extension-ui')
     api project(':wiremock-extension-tcp-netem')
+    api project(':wiremock-extension-casual')
 
     standaloneRuntime libs.wiremock
     standaloneRuntime libs.logback.classic

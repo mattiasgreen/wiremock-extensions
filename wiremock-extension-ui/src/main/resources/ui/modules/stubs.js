@@ -197,12 +197,20 @@ export function renderStubList() {
 
     const method = (stub.request && stub.request.method) || 'ANY';
     const url = getStubUrl(stub.request);
-    const name = stub.name || (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed');
+    const isCasual = url.startsWith('/__casual/services/') || Boolean(stub.metadata && stub.metadata.protocol === 'casual');
+    const displayMethod = isCasual ? 'CASUAL' : method;
+    const rawStatus = (stub.response && stub.response.status) || 200;
+    const resHeaders = (stub.response && stub.response.headers) || {};
+    const casualErrorHeader = resHeaders['X-Casual-Error-State'] || resHeaders['x-casual-error-state'];
+    const casualState = isCasual
+      ? (casualErrorHeader || (rawStatus >= 200 && rawStatus < 300 ? 'OK' : (rawStatus === 404 ? 'TPENOENT' : 'TPESVCFAIL')))
+      : null;
+    const name = stub.name || (isCasual ? `Casual ${casualState}` : (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed'));
     const project = isDynamic ? (stub.metadata && stub.metadata.project) : getStubProject(stub);
     const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
     const isTemplated = Boolean(stub.response && Array.isArray(stub.response.transformers) && stub.response.transformers.includes('response-template'));
-    const statusCode = isProxy ? 'PROXY' : ((stub.response && stub.response.status) || 200);
-    const statusCls = isProxy ? 'status-proxy' : (statusCode >= 500 ? 'status-500' : (statusCode >= 400 ? 'status-400' : 'status-200'));
+    const statusCode = isProxy ? 'PROXY' : (isCasual ? casualState : rawStatus);
+    const statusCls = isProxy ? 'status-proxy' : (rawStatus >= 500 ? 'status-500' : (rawStatus >= 400 ? 'status-400' : 'status-200'));
 
     card.innerHTML = `
       <div class="stub-card-select">
@@ -210,9 +218,9 @@ export function renderStubList() {
       </div>
       <div class="stub-card-content">
         <div class="stub-card-top">
-          <span class="http-badge badge-${method}">${method}</span>
+          <span class="http-badge badge-${displayMethod}">${displayMethod}</span>
           <span class="stub-card-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
-          <span class="stub-status-pill ${statusCls}">${statusCode}</span>
+          <span class="stub-status-pill ${statusCls}">${escapeHtml(String(statusCode))}</span>
           ${isTemplated ? '<span class="status-badge badge-tpl" title="Uses WireMock response-template Handlebars transformer">TPL</span>' : ''}
           ${isDynamic ? '<span class="status-badge badge-dynamic" title="In-memory Stateful AST simulation rule">🧠 STATEFUL</span>' : ''}
           ${isDisabled ? '<span class="status-badge badge-disabled">DISABLED</span>' : ''}
@@ -281,15 +289,24 @@ export function selectStub(stub, updateRoute = true) {
   elements.stubDetailView.classList.remove('hidden');
 
   const method = (stub.request && stub.request.method) || 'ANY';
-  elements.detailMethod.textContent = method;
-  elements.detailMethod.className = `http-badge badge-${method}`;
-  elements.detailUrl.textContent = getStubUrl(stub.request);
+  const stubUrl = getStubUrl(stub.request);
+  const isCasual = stubUrl.startsWith('/__casual/services/') || Boolean(stub.metadata && stub.metadata.protocol === 'casual');
+  const displayMethod = isCasual ? 'CASUAL' : method;
+  elements.detailMethod.textContent = displayMethod;
+  elements.detailMethod.className = `http-badge badge-${displayMethod}`;
+  elements.detailUrl.textContent = stubUrl;
   elements.detailName.textContent = stub.name ? `— ${stub.name}` : '';
 
   const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
-  const status = isProxy ? 'PROXY' : ((stub.response && stub.response.status) || 200);
+  const rawStatus = (stub.response && stub.response.status) || 200;
+  const resHeaders = (stub.response && stub.response.headers) || {};
+  const casualErrorHeader = resHeaders['X-Casual-Error-State'] || resHeaders['x-casual-error-state'];
+  const casualState = isCasual
+    ? (casualErrorHeader || (rawStatus >= 200 && rawStatus < 300 ? 'OK' : (rawStatus === 404 ? 'TPENOENT' : 'TPESVCFAIL')))
+    : null;
+  const status = isProxy ? 'PROXY' : (isCasual ? casualState : rawStatus);
   elements.detailStatus.textContent = status;
-  elements.detailStatus.className = `card-value ${isProxy ? 'status-proxy' : (status >= 500 ? 'status-500' : (status >= 400 ? 'status-400' : 'status-200'))}`;
+  elements.detailStatus.className = `card-value ${isProxy ? 'status-proxy' : (rawStatus >= 500 ? 'status-500' : (rawStatus >= 400 ? 'status-400' : 'status-200'))}`;
 
   elements.detailPriority.textContent = stub.priority || (isDynamic ? 1 : 5);
   elements.detailScenario.textContent = isDynamic

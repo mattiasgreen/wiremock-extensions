@@ -145,4 +145,41 @@ class CasualEndToEndIntegrationTest {
         assertThat(outcome.commitReturnCode()).isNull();
         assertThat(outcome.committed()).isFalse();
     }
+
+    @Test
+    @DisplayName(
+            "Scenario 5: In-Process CasualProxyTransformer logs 200 OK PROXIED in WireMock Journal and forwards 2PC")
+    void shouldLogProxiedServeEventInWireMockJournalWhenCasualProxyStubIsActive() throws Exception {
+        harness.getWireMockServer().resetAll();
+
+        harness.getWireMockServer()
+                .stubFor(post(com.github.tomakehurst.wiremock.client.WireMock.urlMatching("/__casual/services/.*"))
+                        .withName("Live Casual Proxy (Billing)")
+                        .atPriority(10)
+                        .withMetadata(java.util.Map.of("project", "billing-service", "mode", "proxy"))
+                        .willReturn(aResponse().withStatus(200).withTransformers("casual-proxy-transformer")));
+
+        TransactionOutcome outcome = harness.getClientInitiator()
+                .executeInTransaction("billing/charge", "{\"customerId\":\"CUST-42\",\"amount\":299}");
+
+        assertThat(outcome.committed()).isTrue();
+        assertThat(outcome.replyPayload()).contains("\"processedBy\":\"upstream-server-B\"");
+        assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
+        assertThat(harness.getUpstreamNode().getPreparedXids()).contains(outcome.xid());
+        assertThat(harness.getUpstreamNode().getCommittedXids()).contains(outcome.xid());
+
+        // Verify WireMock Request Journal recorded the call as a matched proxy event with the upstream response body
+        var serveEvents = harness.getWireMockServer().getAllServeEvents();
+        assertThat(serveEvents).hasSize(1);
+        var event = serveEvents.get(0);
+        assertThat(event.getWasMatched()).isTrue();
+        assertThat(event.getStubMapping().getMetadata().getString("mode")).isEqualTo("proxy");
+        assertThat(event.getResponse().getStatus()).isEqualTo(200);
+        assertThat(event.getResponse()
+                        .getHeaders()
+                        .getHeader("X-Casual-Error-State")
+                        .firstValue())
+                .isEqualTo("OK");
+        assertThat(event.getResponse().getBodyAsString()).contains("\"processedBy\":\"upstream-server-B\"");
+    }
 }

@@ -125,6 +125,15 @@ function buildRowHtml(req) {
   const reqHeaders = (req.request && req.request.headers) || {};
   const correlationId = getHeader(reqHeaders, 'x-correlation-id');
   const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+  const casualService = getHeader(reqHeaders, 'x-casual-service')
+    || (url.startsWith('/__casual/services/') ? url.substring('/__casual/services/'.length) : null);
+  const isCasual = Boolean(casualService);
+  const displayMethod = isCasual ? 'CASUAL' : method;
+  const casualErrorState = isCasual
+    ? (getHeader(resHeaders, 'x-casual-error-state')
+        || (status >= 200 && status < 300 ? 'OK' : (status === 404 ? 'TPENOENT' : 'TPESVCFAIL')))
+    : null;
+  const displayStatus = isCasual ? casualErrorState : status;
   const verdict = getRequestVerdict(req);
   const isStateful = verdict.key === 'stateful';
   const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
@@ -132,15 +141,15 @@ function buildRowHtml(req) {
   const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
 
   let html = `
-    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-testid="journal-row">
+    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${isCasual ? 'casual' : 'http'}" data-testid="journal-row">
       <td><span class="journal-chevron">▶</span></td>
       <td>${time}</td>
-      <td><span class="http-badge badge-${method}">${method}</span></td>
+      <td><span class="http-badge badge-${displayMethod}" title="${isCasual ? 'Casual XATMI Service Call (tpcall)' : escapeHtml(method)}">${displayMethod}</span></td>
       <td title="${escapeHtml(url)}">
         ${escapeHtml(url)}
         ${correlationId ? `<span class="journal-corr-chip" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 ${escapeHtml(correlationId)}</span>` : ''}
       </td>
-      <td>${status}</td>
+      <td>${escapeHtml(String(displayStatus))}</td>
       <td class="${verdict.cssClass}" title="${escapeHtml(verdict.tooltip)}">${verdict.label}</td>
       <td>${duration}</td>
     </tr>
@@ -163,7 +172,7 @@ function buildRowHtml(req) {
           <div class="journal-detail-content">
             ${verdict.key === 'unmatched' ? `
             <div class="journal-unmatched-diagnostic" data-testid="journal-unmatched-diagnostic">
-              <span>⚠️ <strong>Unmatched Request:</strong> WireMock had no matching stub or service proxy route for <code>${escapeHtml(method)} ${escapeHtml(url)}</code>. Create a stub directly from this captured request or replay it in the HTTP Tester.</span>
+              <span>⚠️ <strong>Unmatched Request:</strong> WireMock had no matching stub or service proxy route for <code>${escapeHtml(displayMethod)} ${escapeHtml(url)}</code>. Create a stub directly from this captured request or replay it in the HTTP Tester.</span>
               <button class="btn btn-small btn-primary btn-create-stub-from-req" data-id="${req.id}" data-testid="btn-create-stub-from-req">➕ Create Stub from Request</button>
             </div>
             ` : ''}
@@ -186,7 +195,7 @@ function buildRowHtml(req) {
               ` : ''}
               <div class="journal-detail-card">
                 <div class="journal-card-header">
-                  <span>Request: ${escapeHtml(method)} ${escapeHtml(url)}</span>
+                  <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     ${correlationId ? `<button class="btn btn-small btn-journal-filter-corr" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 Corr: ${escapeHtml(correlationId)}</button>` : ''}
                     <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill HTTP Tester with this exact request">🚀 Replay in Tester</button>
@@ -201,7 +210,7 @@ function buildRowHtml(req) {
               </div>
               <div class="journal-detail-card">
                 <div class="journal-card-header">
-                  <span>Response: Status ${status} (${escapeHtml(stubName)})</span>
+                  <span>${isCasual ? `Casual Response: ${escapeHtml(String(displayStatus))} (${escapeHtml(stubName)})` : `Response: Status ${status} (${escapeHtml(stubName)})`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     ${verdict.key !== 'unmatched' && !isStateful ? `
                       <button class="btn btn-small btn-freeze-req" data-id="${req.id}" title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}">📸 Freeze Stub</button>
