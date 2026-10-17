@@ -6,6 +6,7 @@ import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
 import { setRoute } from './router.js';
+import { matchesJournalEntry } from './filter.js';
 
 let journalAutoRefreshTimer = null;
 let loadJournalFn = null;
@@ -89,136 +90,178 @@ export function getRequestResolution(req) {
   };
 }
 
-export function renderJournal() {
-  const filter = (elements.journalSearch ? elements.journalSearch.value : '').toLowerCase().trim();
-  const unmatchedOnly = elements.filterUnmatchedOnly.checked;
+let visibleCount = 50;
+let lastFilteredRequests = [];
+let scrollListenerAttached = false;
+let eventsDelegated = false;
 
-  const filtered = state.currentRequests.filter(r => {
-    if (unmatchedOnly && r.wasMatched) return false;
-    if (!filter) return true;
-    const method = (r.request && r.request.method ? r.request.method : '').toLowerCase();
-    const url = (r.request && r.request.url ? r.request.url : '').toLowerCase();
-    const status = String((r.response && r.response.status) || (r.responseDefinition && r.responseDefinition.status) || '');
-    const stubName = (r.stubMapping && r.stubMapping.name ? r.stubMapping.name : '').toLowerCase();
-    const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
-    const statefulEntity = (getHeader(rHeaders, 'x-wiremock-stateful-entity') || '').toLowerCase();
-    const res = getRequestResolution(r);
-    return method.includes(filter) || url.includes(filter) || status.includes(filter) || stubName.includes(filter) || statefulEntity.includes(filter) || res.type.includes(filter) || res.label.toLowerCase().includes(filter);
-  });
+function buildRowHtml(req) {
+  const isExpanded = req.id === state.expandedRequestId;
+  const time = req.request && req.request.loggedDate ? new Date(req.request.loggedDate).toLocaleTimeString() : '-';
+  const method = (req.request && req.request.method) || '-';
+  const url = (req.request && req.request.url) || '-';
+  const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 404;
+  const duration = (req.timing && req.timing.totalTime !== undefined) ? `${req.timing.totalTime}ms` : '-';
+  const resolution = getRequestResolution(req);
 
-  if (elements.journalFilteredCount) {
-    elements.journalFilteredCount.textContent = `Showing ${filtered.length} of ${state.currentRequests.length}`;
-  }
+  const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+  const isDynamic = resolution.type === 'dynamic';
+  const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
+  const dynamicRoute = getHeader(resHeaders, 'x-wiremock-stateful-route');
+  const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
 
-  if (filtered.length === 0) {
-    elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No matching requests found.</td></tr>';
-    return;
-  }
+  let html = `
+    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-testid="journal-row">
+      <td><span class="journal-chevron">▶</span></td>
+      <td>${time}</td>
+      <td><span class="http-badge badge-${method}">${method}</span></td>
+      <td title="${escapeHtml(url)}">${escapeHtml(url)}</td>
+      <td>${status}</td>
+      <td class="${resolution.cssClass}">${resolution.label}</td>
+      <td>${duration}</td>
+    </tr>
+  `;
 
-  let html = '';
-  filtered.forEach(req => {
-    const isExpanded = req.id === state.expandedRequestId;
-    const time = req.request && req.request.loggedDate ? new Date(req.request.loggedDate).toLocaleTimeString() : '-';
-    const method = (req.request && req.request.method) || '-';
-    const url = (req.request && req.request.url) || '-';
-    const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 404;
-    const duration = (req.timing && req.timing.totalTime !== undefined) ? `${req.timing.totalTime}ms` : '-';
-    const resolution = getRequestResolution(req);
+  if (isExpanded) {
+    const reqHeadersHtml = highlightJson((req.request && req.request.headers) || {});
+    const reqBodyRaw = (req.request && req.request.body) || '';
+    const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
 
-    const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
-    const isDynamic = resolution.type === 'dynamic';
-    const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
-    const dynamicRoute = getHeader(resHeaders, 'x-wiremock-stateful-route');
-    const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
+    const resHeadersHtml = highlightJson(resHeaders);
+    const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+    const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
+    const stubName = resolution.stubDetail;
 
     html += `
-      <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-testid="journal-row">
-        <td><span class="journal-chevron">▶</span></td>
-        <td>${time}</td>
-        <td><span class="http-badge badge-${method}">${method}</span></td>
-        <td title="${escapeHtml(url)}">${escapeHtml(url)}</td>
-        <td>${status}</td>
-        <td class="${resolution.cssClass}">${resolution.label}</td>
-        <td>${duration}</td>
-      </tr>
-    `;
-
-    if (isExpanded) {
-      const reqHeadersHtml = highlightJson((req.request && req.request.headers) || {});
-      const reqBodyRaw = (req.request && req.request.body) || '';
-      const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
-
-      const resHeadersHtml = highlightJson(resHeaders);
-      const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
-      const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
-      const stubName = resolution.stubDetail;
-
-      html += `
-        <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">
-          <td colspan="7">
-            <div class="journal-detail-content">
-              <div class="journal-detail-grid">
-                ${isDynamic ? `
-                <div class="journal-detail-card journal-stateful-card" data-testid="journal-stateful-card">
-                  <div class="journal-card-header">
-                    <span>⚡ Stateful Simulation Trace</span>
-                    <span class="status-badge badge-dynamic">DYNAMIC</span>
-                  </div>
-                  <div class="journal-section-title">Entity &amp; Route</div>
-                  <div style="font-family: monospace; font-size: 0.85rem; margin-bottom: 8px;">
-                    <strong>${escapeHtml(dynamicEntity || 'Entity')}</strong>: ${escapeHtml(dynamicRoute || '')}
-                  </div>
-                  <div class="journal-section-title">Invariant Evaluation</div>
-                  <div style="font-size: 0.85rem;" class="${(dynamicInvariants || '').toUpperCase().startsWith('VIOLATED') ? 'text-danger' : 'text-success'}">
-                    🛡️ ${escapeHtml(dynamicInvariants || 'PASSED')}
-                  </div>
+      <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">
+        <td colspan="7">
+          <div class="journal-detail-content">
+            <div class="journal-detail-grid">
+              ${isDynamic ? `
+              <div class="journal-detail-card journal-stateful-card" data-testid="journal-stateful-card">
+                <div class="journal-card-header">
+                  <span>⚡ Stateful Simulation Trace</span>
+                  <span class="status-badge badge-dynamic">DYNAMIC</span>
                 </div>
-                ` : ''}
-                <div class="journal-detail-card">
-                  <div class="journal-card-header">
-                    <span>Request: ${escapeHtml(method)} ${escapeHtml(url)}</span>
-                    <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
-                  </div>
-                  <div class="journal-section-title">Headers</div>
-                  <pre class="code-block-mini">${reqHeadersHtml}</pre>
-                  <div class="journal-section-title">Body</div>
-                  <pre class="code-block-mini">${reqBodyHtml}</pre>
+                <div class="journal-section-title">Entity &amp; Route</div>
+                <div style="font-family: monospace; font-size: 0.85rem; margin-bottom: 8px;">
+                  <strong>${escapeHtml(dynamicEntity || 'Entity')}</strong>: ${escapeHtml(dynamicRoute || '')}
                 </div>
-                <div class="journal-detail-card">
-                  <div class="journal-card-header">
-                    <span>Response: Status ${status} (${escapeHtml(stubName)})</span>
-                    <div style="display: flex; gap: 6px;">
-                      <button class="btn btn-small btn-freeze-req" data-id="${req.id}" title="Freeze this live response as a disabled static stub for review">📸 Freeze Stub</button>
-                      <button class="btn btn-small btn-copy-resp" data-id="${req.id}">📋 Copy Response</button>
-                    </div>
-                  </div>
-                  <div class="journal-section-title">Headers</div>
-                  <pre class="code-block-mini">${resHeadersHtml}</pre>
-                  <div class="journal-section-title">Body</div>
-                  <pre class="code-block-mini">${resBodyHtml}</pre>
+                <div class="journal-section-title">Invariant Evaluation</div>
+                <div style="font-size: 0.85rem;" class="${(dynamicInvariants || '').toUpperCase().startsWith('VIOLATED') ? 'text-danger' : 'text-success'}">
+                  🛡️ ${escapeHtml(dynamicInvariants || 'PASSED')}
                 </div>
               </div>
+              ` : ''}
+              <div class="journal-detail-card">
+                <div class="journal-card-header">
+                  <span>Request: ${escapeHtml(method)} ${escapeHtml(url)}</span>
+                  <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
+                </div>
+                <div class="journal-section-title">Headers</div>
+                <pre class="code-block-mini">${reqHeadersHtml}</pre>
+                <div class="journal-section-title">Body</div>
+                <pre class="code-block-mini">${reqBodyHtml}</pre>
+              </div>
+              <div class="journal-detail-card">
+                <div class="journal-card-header">
+                  <span>Response: Status ${status} (${escapeHtml(stubName)})</span>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="btn btn-small btn-freeze-req" data-id="${req.id}" title="Freeze this live response as a disabled static stub for review">📸 Freeze Stub</button>
+                    <button class="btn btn-small btn-copy-resp" data-id="${req.id}">📋 Copy Response</button>
+                  </div>
+                </div>
+                <div class="journal-section-title">Headers</div>
+                <pre class="code-block-mini">${resHeadersHtml}</pre>
+                <div class="journal-section-title">Body</div>
+                <pre class="code-block-mini">${resBodyHtml}</pre>
+              </div>
             </div>
-          </td>
-        </tr>
-      `;
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+  return html;
+}
+
+function updateCountDisplay() {
+  if (!elements.journalFilteredCount) return;
+  const total = lastFilteredRequests.length;
+  const shown = Math.min(visibleCount, total);
+  if (total === state.currentRequests.length) {
+    elements.journalFilteredCount.textContent = total > shown
+      ? `Showing ${shown} of ${total}`
+      : `Showing ${total} of ${total}`;
+  } else {
+    elements.journalFilteredCount.textContent = total > shown
+      ? `Showing ${shown} of ${total} matching (${state.currentRequests.length} loaded)`
+      : `Showing ${total} of ${total} matching (${state.currentRequests.length} loaded)`;
+  }
+}
+
+function appendMoreRows() {
+  if (visibleCount >= lastFilteredRequests.length) return;
+  const nextBatch = lastFilteredRequests.slice(visibleCount, visibleCount + 50);
+  visibleCount += nextBatch.length;
+
+  const tempTbody = document.createElement('tbody');
+  tempTbody.innerHTML = nextBatch.map(req => buildRowHtml(req)).join('');
+  while (tempTbody.firstChild) {
+    elements.journalList.appendChild(tempTbody.firstChild);
+  }
+  updateCountDisplay();
+}
+
+function setupLazyScroll() {
+  if (scrollListenerAttached) return;
+  const container = (elements.journalTable && elements.journalTable.closest('.table-container'))
+    || (elements.journalList && elements.journalList.closest('.table-container'))
+    || document.querySelector('#tab-journal .table-container');
+  if (!container) return;
+  scrollListenerAttached = true;
+  container.addEventListener('scroll', () => {
+    if (container.scrollTop + container.clientHeight >= container.scrollHeight - 80) {
+      appendMoreRows();
     }
   });
+}
 
-  elements.journalList.innerHTML = html;
+function setupEventDelegation() {
+  if (eventsDelegated || !elements.journalList) return;
+  eventsDelegated = true;
 
-  elements.journalList.querySelectorAll('.journal-row').forEach(row => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      const reqId = row.getAttribute('data-request-id') || (row.dataset && row.dataset.requestId);
-      toggleJournalDetail(reqId, true);
-    });
-  });
-
-  elements.journalList.querySelectorAll('.btn-freeze-req').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+  elements.journalList.addEventListener('click', async (e) => {
+    const copyReqBtn = e.target.closest('.btn-copy-req');
+    if (copyReqBtn) {
       e.stopPropagation();
-      const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
+      const targetId = copyReqBtn.getAttribute('data-id') || (copyReqBtn.dataset && copyReqBtn.dataset.id);
+      const req = state.currentRequests.find(r => r.id === targetId);
+      if (req && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(JSON.stringify(req.request, null, 2)).catch(() => {});
+        copyReqBtn.textContent = '✅ Copied!';
+        setTimeout(() => copyReqBtn.textContent = '📋 Copy Request', 1500);
+      }
+      return;
+    }
+
+    const copyRespBtn = e.target.closest('.btn-copy-resp');
+    if (copyRespBtn) {
+      e.stopPropagation();
+      const targetId = copyRespBtn.getAttribute('data-id') || (copyRespBtn.dataset && copyRespBtn.dataset.id);
+      const req = state.currentRequests.find(r => r.id === targetId);
+      if (req && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2)).catch(() => {});
+        copyRespBtn.textContent = '✅ Copied!';
+        setTimeout(() => copyRespBtn.textContent = '📋 Copy Response', 1500);
+      }
+      return;
+    }
+
+    const freezeBtn = e.target.closest('.btn-freeze-req');
+    if (freezeBtn) {
+      e.stopPropagation();
+      const targetId = freezeBtn.getAttribute('data-id') || (freezeBtn.dataset && freezeBtn.dataset.id);
       const req = state.currentRequests.find(r => r.id === targetId);
       if (!req) return;
 
@@ -248,54 +291,70 @@ export function renderJournal() {
       };
 
       try {
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
+        freezeBtn.disabled = true;
+        freezeBtn.textContent = 'Saving...';
         const { createStubMapping, toggleStubState, loadData } = await import('./api.js');
         const created = await createStubMapping(stubData);
         if (created && created.id) {
-          await toggleStubState(created.id); // Park into disabled store per default
+          await toggleStubState(created.id);
         }
         await loadData();
-        btn.textContent = '✅ Frozen!';
-        setTimeout(() => btn.textContent = '📸 Freeze Stub', 1500);
+        freezeBtn.textContent = '✅ Frozen!';
+        setTimeout(() => freezeBtn.textContent = '📸 Freeze Stub', 1500);
       } catch (err) {
         alert('Failed to freeze stub: ' + err.message);
-        btn.textContent = '📸 Freeze Stub';
+        freezeBtn.textContent = '📸 Freeze Stub';
       } finally {
-        btn.disabled = false;
+        freezeBtn.disabled = false;
       }
-    });
+      return;
+    }
+
+    const row = e.target.closest('.journal-row');
+    if (row && !e.target.closest('button')) {
+      const reqId = row.getAttribute('data-request-id') || (row.dataset && row.dataset.requestId);
+      toggleJournalDetail(reqId, true);
+    }
+  });
+}
+
+export function renderJournal(resetLimit = true) {
+  setupEventDelegation();
+  setupLazyScroll();
+
+  const filter = (elements.journalSearch ? elements.journalSearch.value : '').trim();
+  const unmatchedOnly = elements.filterUnmatchedOnly ? elements.filterUnmatchedOnly.checked : false;
+
+  lastFilteredRequests = state.currentRequests.filter(r => {
+    if (unmatchedOnly && r.wasMatched) return false;
+    if (!filter) return true;
+    const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
+    const statefulEntity = getHeader(rHeaders, 'x-wiremock-stateful-entity') || '';
+    const res = getRequestResolution(r);
+    return matchesJournalEntry(r, filter, statefulEntity, `${res.type} ${res.label}`);
   });
 
-  elements.journalList.querySelectorAll('.btn-copy-req').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
-      if (req) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(JSON.stringify(req.request, null, 2)).catch(() => {});
-        }
-        btn.textContent = '✅ Copied!';
-        setTimeout(() => btn.textContent = '📋 Copy Request', 1500);
-      }
-    });
-  });
+  if (resetLimit) {
+    visibleCount = 50;
+  }
 
-  elements.journalList.querySelectorAll('.btn-copy-resp').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const targetId = btn.getAttribute('data-id') || (btn.dataset && btn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
-      if (req) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2)).catch(() => {});
-        }
-        btn.textContent = '✅ Copied!';
-        setTimeout(() => btn.textContent = '📋 Copy Response', 1500);
-      }
-    });
-  });
+  const total = lastFilteredRequests.length;
+  const itemsToRender = lastFilteredRequests.slice(0, visibleCount);
+
+  updateCountDisplay();
+
+  if (total === 0) {
+    if (unmatchedOnly) {
+      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No unmatched requests recorded.</td></tr>';
+    } else if (filter) {
+      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No matching requests found.</td></tr>';
+    } else {
+      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>';
+    }
+    return;
+  }
+
+  elements.journalList.innerHTML = itemsToRender.map(req => buildRowHtml(req)).join('');
 }
 
 export function setupJournalAutoRefresh() {

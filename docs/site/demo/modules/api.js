@@ -186,7 +186,13 @@ export function importMappings(payload) {
 }
 
 export function loadJournal() {
-  return apiGet('/__admin/requests?limit=100')
+  const limit = state.journalLimit || 100;
+  const unmatchedOnly = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
+  const endpoint = unmatchedOnly
+    ? `/__admin/requests?limit=${limit}&unmatched=true`
+    : `/__admin/requests?limit=${limit}`;
+
+  return apiGet(endpoint)
     .then(data => {
       state.currentRequests = data.requests || [];
       if (elements.statRequests) elements.statRequests.textContent = state.currentRequests.length;

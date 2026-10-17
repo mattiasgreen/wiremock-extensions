@@ -1,7 +1,7 @@
 # Functional Specification & Core Acceptance Stories
 
-> **Status**: Platform-Agnostic Canonical Specification  
-> **Audience**: Product Designers, Software Architects, Autonomous Coding Agents  
+> **Status**: Platform-Agnostic Canonical Specification
+> **Audience**: Product Designers, Software Architects, Autonomous Coding Agents
 > **Portability Target**: Independent of implementation language (Java, Rust, Go, Python) and presentation layer (Web SPA, Swing Desktop, SwiftUI, Terminal TUI).
 
 ---
@@ -169,4 +169,3 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the browser tab title immediately updates to `WMC - https://gateway.corp:8443/test-envs/env1/wiremock`.
 - **When** the user resets the target back to same-origin.
 - **Then** the browser tab title reverts to `WMC - http://localhost:8080`.
-

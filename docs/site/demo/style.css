@@ -571,6 +571,44 @@ body {
   user-select: none;
 }
 
+.select-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.input-tiny {
+  padding: 3px 6px;
+  font-size: 0.82rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.input-tiny:focus {
+  border-color: var(--accent-color);
+}
+
+.select-small {
+  padding: 3px 8px;
+  font-size: 0.82rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+}
+
+.select-small:focus {
+  border-color: var(--accent-color);
+}
+
 .table-container {
   flex: 1;
   overflow: auto;

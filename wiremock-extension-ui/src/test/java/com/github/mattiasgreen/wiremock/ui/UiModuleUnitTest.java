@@ -5,9 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
-import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Playwright;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -21,8 +19,6 @@ import org.junit.jupiter.api.TestInstance;
 public class UiModuleUnitTest {
 
     private WireMockServer wireMockServer;
-    private Playwright playwright;
-    private Browser browser;
     private Page page;
 
     @BeforeAll
@@ -31,8 +27,7 @@ public class UiModuleUnitTest {
                 new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
         wireMockServer.start();
 
-        playwright = Playwright.create();
-        browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+        Browser browser = AbstractUiPlaywrightTest.getSharedBrowser();
         page = browser.newPage();
 
         // Navigate to the UI to ensure same-origin context for ES module imports
@@ -41,11 +36,8 @@ public class UiModuleUnitTest {
 
     @AfterAll
     void stopAll() {
-        if (browser != null) {
-            browser.close();
-        }
-        if (playwright != null) {
-            playwright.close();
+        if (page != null) {
+            page.close();
         }
         if (wireMockServer != null && wireMockServer.isRunning()) {
             wireMockServer.stop();

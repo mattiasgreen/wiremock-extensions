@@ -1,7 +1,7 @@
 # UI Design System & Cognitive Ergonomics Guidelines
 
-> **Status**: Platform-Agnostic UI & Ergonomics Standard  
-> **Audience**: UI/UX Designers, Frontend Developers, Autonomous Coding Agents  
+> **Status**: Platform-Agnostic UI & Ergonomics Standard
+> **Audience**: UI/UX Designers, Frontend Developers, Autonomous Coding Agents
 > **Applicability**: Web SPA, Native Desktop (Swing), Terminal TUI, Mobile Apps
 
 ---

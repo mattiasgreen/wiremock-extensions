@@ -11,30 +11,48 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import org.junit.jupiter.api.AfterEach;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class UiAssetAndContractTest {
+
+    private static final Pattern ES_IMPORT_PATTERN =
+            Pattern.compile("(?:import|export)\\s+[^'\"]*?from\\s+['\"](\\.[^'\"]+)['\"]");
+    private static final Pattern DOM_ID_LOOKUP_PATTERN = Pattern.compile("getElementById\\(['\"]([^'\"]+)['\"]\\)");
 
     private WireMockServer server;
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @BeforeEach
-    void setUp() {
+    @BeforeAll
+    void startServer() {
         server =
                 new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
         server.start();
-
         httpClient = HttpClient.newHttpClient();
     }
 
-    @AfterEach
-    void tearDown() {
+    @AfterAll
+    void stopServer() {
         if (server != null && server.isRunning()) {
             server.stop();
         }
+    }
+
+    @BeforeEach
+    void resetServer() {
+        server.resetAll();
     }
 
     @Test
@@ -188,5 +206,50 @@ public class UiAssetAndContractTest {
                 .build();
         HttpResponse<String> putResp = httpClient.send(putStateReq, HttpResponse.BodyHandlers.ofString());
         assertThat(putResp.statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void testStaticEsModuleImportsAndDomSelectorContracts() throws Exception {
+        Path uiRoot = Path.of("src/main/resources/ui");
+        assertThat(Files.isDirectory(uiRoot)).isTrue();
+
+        String indexHtml = Files.readString(uiRoot.resolve("index.html"), StandardCharsets.UTF_8);
+        // Air-gapped check: no external CDN scripts or stylesheets
+        assertThat(indexHtml).doesNotContain("<script src=\"http");
+        assertThat(indexHtml).doesNotContain("<link rel=\"stylesheet\" href=\"http");
+
+        // Verify all relative ES6 module imports resolve on disk
+        try (Stream<Path> paths = Files.walk(uiRoot)) {
+            List<Path> jsFiles = paths.filter(p -> p.toString().endsWith(".js")).toList();
+            assertThat(jsFiles).isNotEmpty();
+
+            for (Path jsFile : jsFiles) {
+                String content = Files.readString(jsFile, StandardCharsets.UTF_8);
+                Matcher importMatcher = ES_IMPORT_PATTERN.matcher(content);
+                while (importMatcher.find()) {
+                    String importTarget = importMatcher.group(1);
+                    Path resolved = jsFile.getParent().resolve(importTarget).normalize();
+                    assertThat(Files.isRegularFile(resolved))
+                            .as("ES6 import '%s' in %s must resolve to an existing file", importTarget, jsFile)
+                            .isTrue();
+                }
+            }
+        }
+
+        // Verify all static getElementById(...) lookups in modules/dom.js exist in index.html
+        Path domJs = uiRoot.resolve("modules/dom.js");
+        if (Files.isRegularFile(domJs)) {
+            String domJsContent = Files.readString(domJs, StandardCharsets.UTF_8);
+            Matcher idMatcher = DOM_ID_LOOKUP_PATTERN.matcher(domJsContent);
+            int checkedIds = 0;
+            while (idMatcher.find()) {
+                String domId = idMatcher.group(1);
+                assertThat(indexHtml)
+                        .as("DOM element id='%s' referenced in modules/dom.js must exist in index.html", domId)
+                        .contains("id=\"" + domId + "\"");
+                checkedIds++;
+            }
+            assertThat(checkedIds).isGreaterThan(10);
+        }
     }
 }
