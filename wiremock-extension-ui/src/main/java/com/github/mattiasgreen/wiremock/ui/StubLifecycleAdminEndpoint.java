@@ -322,7 +322,9 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                         if (!name.equalsIgnoreCase("Transfer-Encoding")
                                 && !name.equalsIgnoreCase("Content-Length")
                                 && !name.equalsIgnoreCase("Content-Encoding")
-                                && !name.equalsIgnoreCase("Connection")) {
+                                && !name.equalsIgnoreCase("Connection")
+                                && !name.equalsIgnoreCase("Matched-Stub-Id")
+                                && !name.equalsIgnoreCase("Matched-Stub-Name")) {
                             respDef.withHeader(name, header.firstValue());
                         }
                     }
@@ -362,13 +364,15 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 recordedStub.setName(stubName);
                 recordedStub.setPriority(5); // Higher priority than proxy (10)
 
-                Metadata metadata = Metadata.metadata()
+                Metadata.Builder metadataBuilder = Metadata.metadata()
                         .attr("source", "recorded-proxy")
                         .attr("project", assignedProject)
                         .attr("mode", "static")
-                        .attr("recordedAt", Instant.now().toString())
-                        .build();
-                recordedStub.setMetadata(metadata);
+                        .attr("recordedAt", Instant.now().toString());
+                if (isCasualReq) {
+                    metadataBuilder.attr("protocol", "casual");
+                }
+                recordedStub.setMetadata(metadataBuilder.build());
 
                 // Add as DISABLED per default! Park in disabledStubStore without adding to admin
                 disabledStubStore.put(recordedStub);

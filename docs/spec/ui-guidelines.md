@@ -1,8 +1,8 @@
 # UI Architecture, Workflows & Interaction Contracts
 
-> **Status**: Canonical UI Architecture & Workflow Playbook  
-> **Complements**: [`docs/spec/functional-specification.md`](functional-specification.md) and [`docs/spec/platform-bindings.md`](platform-bindings.md)  
-> **Audience**: Product Engineers, Frontend Developers, Autonomous Coding Agents  
+> **Status**: Canonical UI Architecture & Workflow Playbook
+> **Complements**: [`docs/spec/functional-specification.md`](functional-specification.md) and [`docs/spec/platform-bindings.md`](platform-bindings.md)
+> **Audience**: Product Engineers, Frontend Developers, Autonomous Coding Agents
 > **Applicability**: Web SPA, Native Desktop (Swing), Terminal TUI, Mobile Apps
 
 ---

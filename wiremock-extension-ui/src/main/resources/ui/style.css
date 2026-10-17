@@ -438,8 +438,8 @@ body {
 
 .detail-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
 }
@@ -448,17 +448,32 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  width: 100%;
 }
 
 .detail-url {
   font-family: monospace;
   font-size: 1.1rem;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detail-name {
   color: var(--text-muted);
   font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .detail-summary-cards {
@@ -2243,6 +2258,8 @@ kbd {
   border-radius: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .project-mode-badge.mode-proxy {

@@ -281,7 +281,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
 
             Locator ordersRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')")
                     .first();
-            assertThat(ordersRow.textContent()).contains("STUBBED");
+            assertThat(ordersRow.textContent()).contains("STUB");
 
             Locator unmatchedRow = page.locator("#journal-list tr.journal-row:has-text('missing-sku')")
                     .first();
@@ -294,6 +294,8 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(detailRow.textContent()).contains("missing-sku");
 
             page.locator("#filter-unmatched-only").check();
+            page.waitForFunction(
+                    "() => document.querySelectorAll('#journal-list tr.journal-row:not(.journal-detail-row)').length === 1");
             assertThat(page.locator("#journal-list tr.journal-row:not(.journal-detail-row)")
                             .count())
                     .isEqualTo(1);

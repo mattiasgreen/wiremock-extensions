@@ -353,7 +353,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 .withHeader(
                         "X-Casual-Transaction-State",
                         upstreamReply.getTransactionState().name())
-                .withBody(replyPayload != null ? replyPayload : "");
+                .withBody(replyPayload);
 
         if (upstreamReply.getUserDefinedCode() != 0) {
             builder.withHeader("X-Casual-User-Supplied-Error", String.valueOf(upstreamReply.getUserDefinedCode()));

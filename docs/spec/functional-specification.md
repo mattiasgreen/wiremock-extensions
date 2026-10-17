@@ -173,3 +173,14 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the browser tab title immediately updates to `WMC - https://gateway.corp:8443/test-envs/env1/wiremock`.
 - **When** the user resets the target back to same-origin.
 - **Then** the browser tab title reverts to `WMC - http://localhost:8080`.
+
+### Story 12: Multi-Protocol Progressive Simulation (HTTP REST + Casual XATMI/2PC)
+- **Given** a 3-node enterprise topology: Customer Portal & Product System SUT (Node 1), WireMock MITM Gateway (Node 2), and Upstream Backend Server B (Node 3) hosting HTTP Case Management, HTTP CRM, and Casual 2PC Billing.
+- **When** the scenario runs in `LIVE PROXY` mode against live Server B.
+- **Then** the customer applies for a product, receives an offer, approves purchase, and is billed via Casual 2PC transaction (`tpcall("billing/charge")` within global `Xid` with `prepare` and `commit`).
+- **And** the Unified Request Journal captures all 7 downstream calls as `🌐 PROXIED`, displaying protocol badge `CASUAL` and status `OK` for Casual XATMI calls without conflating with HTTP `POST` or `200`.
+- **When** the operator snapshots live recordings via the Console UI (`#btn-project-snapshot`) and toggles mode to `STUBS MODE` (`#btn-project-mode-toggle`).
+- **Then** recorded stubs are generated in priority over proxy routes, with Casual stubs tagged as `[RECORDED CASUAL OK]` and protocol `casual`.
+- **When** Upstream Server B is shut down completely and the customer scenario is replayed.
+- **Then** the entire customer application, offer, approval, Casual 2PC billing, and sales order flow completes successfully offline from recorded stubs.
+- **And** the Unified Request Journal verifies all 7 calls were served locally with resolution `📌 STUB`, while Upstream Server B received zero traffic.

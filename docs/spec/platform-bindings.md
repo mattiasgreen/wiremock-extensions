@@ -64,6 +64,12 @@
 | **Capabilities Status**  | `#target-capabilities-status`  | `"target-capabilities-status"`  | Active count badge (e.g. `All 5 active` or `1/5 (Degraded)`). |
 | **Capabilities List**    | `#target-capabilities-list`    | `"target-capabilities-list"`    | Capability rows with `data-testid="cap-badge-{key}"`. |
 | **Site Header / Tab Title** | `document.title` / `<title>` | Window / Frame Title | Browser tab display identifying the active WireMock URI: `WMC - <wiremock-uri>`. |
+| **Project Lifecycle Bar** | `#project-lifecycle-bar` | `"project-lifecycle-bar"` | Active project lifecycle toolbar displayed when proxy stubs exist. |
+| **Project Mode Badge** | `#project-mode-badge` | `"project-mode-badge"` | Indicates active simulation mode (`LIVE PROXY` or `STUBS MODE`). |
+| **Project Mode Toggle** | `#btn-project-mode-toggle` | `"btn-project-mode-toggle"` | Toggles service/all between live proxy and recorded offline stubs. |
+| **Project Snapshot** | `#btn-project-snapshot` | `"btn-project-snapshot"` | Captures live proxied traffic into disabled stubs for the project. |
+| **Casual Protocol Badge** | `.http-badge.badge-CASUAL` | `"badge-casual"` | Method column pill distinguishing Casual XATMI calls (`CASUAL`). |
+| **Casual Status Badge** | `.status-badge.status-casual-ok`, `.status-casual-err` | `"status-casual"` | Native Casual outcome status (`OK`, `TPESVCFAIL`, `TPENOENT`). |
 
 ---
 
@@ -77,6 +83,8 @@
 | **Update Stub** | `PUT` | `/__admin/mappings/{id}` | Stub JSON definition |
 | **Toggle Stub State** | `POST` | `/__admin/stubs/{id}/toggle` | None |
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
+| **Snapshot Project Traffic** | `POST` | `/__admin/projects/{project}/recordings/snapshot` | None |
+| **Toggle Project Mode** | `POST` | `/__admin/projects/{project}/mode` | `{"mode": "stubs" \| "proxy"}` |
 | **Fetch Journal** | `GET` | `/__admin/requests?limit={limit}` (or `?unmatched=true`) | None |
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
