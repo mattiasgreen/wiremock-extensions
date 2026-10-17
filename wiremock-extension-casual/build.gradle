@@ -1,0 +1,30 @@
+sourceSets {
+    quarkusTest {
+        java.srcDir file('src/quarkusTest/java')
+        resources.srcDir file('src/quarkusTest/resources')
+        compileClasspath += sourceSets.main.output + sourceSets.test.output + configurations.testCompileClasspath
+        runtimeClasspath += output + compileClasspath + configurations.testRuntimeClasspath
+    }
+}
+
+configurations {
+    quarkusTestImplementation.extendsFrom testImplementation
+    quarkusTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+dependencies {
+    implementation libs.casual.api
+    implementation libs.casual.network.protocol
+    implementation libs.netty.all
+    implementation libs.jackson.databind
+}
+
+tasks.register('quarkusIntegrationTest', Test) {
+    description = 'Runs multi-node Casual 2PC/XA integration tests (Client Initiator -> WireMock MitM -> Upstream Server).'
+    group = 'verification'
+    testClassesDirs = sourceSets.quarkusTest.output.classesDirs
+    classpath = sourceSets.quarkusTest.runtimeClasspath
+    useJUnitPlatform()
+}
+
+
