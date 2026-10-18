@@ -229,6 +229,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [x] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
   - [x] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
 
+<<<<<<< HEAD
 - [x] **8.3. Hierarchical Agent Instructions, Skills & Subagent Delegation**
   - [x] Refactor root `AGENTS.md` and add module-scoped `AGENTS.md` files (`ui`, `casual`, `tcp-netem`, `stateful`, `openapi`) plus on-demand `.agents/skills/` runbooks.
   - [x] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
@@ -307,3 +308,17 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
 - [ ] **11.3. Level 2 — Semantic Domain Builders & Scenario Orchestration (GenAI / Agent-Assisted Synthesis)**
   - [ ] Elevate property-level builders (`withStatus("BLOCKED").withReasonCode("R-409")`) into high-level domain-intent methods (`org.crm.sdk.test.customer.CustomerBuilder.aCustomer().isVip()`, `.isBlockedDueToRisk()`, `.hasUpsellRecommendation()`).
   - [ ] **Multi-Trace Scenario Synthesis**: Analyze and diff multiple recorded `X-Correlation-Id` journal traces (e.g., happy-path checkout vs. ERP business-rule rejection) alongside OpenAPI descriptions using an Agentic / GenAI synthesis workflow to generate cohesive scenario setup helpers that orchestrate multi-endpoint WireMock stubs, stateful AST rules, and L4/L7 fault expectations behind a single domain verb.
+
+---
+
+### Phase 12: Advanced Observability & Telemetry Governance
+
+- [ ] **12.1. AST Evaluation & Stateful Engine Metrics**
+  - [ ] Deferred until DSL operators and stateful simulation usage patterns stabilize.
+  - [ ] Counters for `wiremock_ast_evaluations_total{status="success|syntax_error|runtime_error"}`.
+  - [ ] Histograms for AST expression execution duration and multi-tenant entity count gauges.
+
+- [ ] **12.2. High-Cardinality Defense for OpenAPI & Dynamic Paths**
+  - [ ] Normalize parametrized route templates (`/api/orders/{id}`) from OpenAPI specs in metric attributes to prevent Prometheus cardinality explosions.
+  - [ ] Bounded metric label cache and dynamic stub name truncation/hashing.
+  - [ ] Configurable maximum distinct series threshold.

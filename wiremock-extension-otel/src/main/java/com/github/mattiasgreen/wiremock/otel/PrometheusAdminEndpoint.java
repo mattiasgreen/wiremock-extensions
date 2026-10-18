@@ -4,6 +4,7 @@ import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
+import com.github.tomakehurst.wiremock.core.Admin;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
 import java.util.Collection;
@@ -31,7 +32,7 @@ public class PrometheusAdminEndpoint implements AdminApiExtension {
     @Override
     public void contributeAdminApiRoutes(Router router) {
         router.add(RequestMethod.GET, "/metrics/prometheus", (admin, serveEvent, pathParams) -> {
-            String metricsText = scrapeAllMetrics();
+            String metricsText = scrapeAllMetrics(admin);
             return ResponseDefinitionBuilder.responseDefinition()
                     .withStatus(200)
                     .withHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -40,7 +41,7 @@ public class PrometheusAdminEndpoint implements AdminApiExtension {
         });
 
         router.add(RequestMethod.GET, "/metrics", (admin, serveEvent, pathParams) -> {
-            String metricsText = scrapeAllMetrics();
+            String metricsText = scrapeAllMetrics(admin);
             return ResponseDefinitionBuilder.responseDefinition()
                     .withStatus(200)
                     .withHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -49,10 +50,43 @@ public class PrometheusAdminEndpoint implements AdminApiExtension {
         });
     }
 
-    private String scrapeAllMetrics() {
+    private String scrapeAllMetrics(Admin admin) {
         String baseMetrics = metricsRegistry.scrapePrometheusText();
         String netemMetrics = formatNetEmMetrics();
-        return baseMetrics + netemMetrics;
+        String runtimeMetrics = formatRuntimeMetrics(admin);
+        return baseMetrics + netemMetrics + runtimeMetrics;
+    }
+
+    private static String formatRuntimeMetrics(Admin admin) {
+        if (admin == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        try {
+            int journalSize = admin.getServeEvents().getServeEvents().size();
+            sb.append("\n# HELP wiremock_journal_size_requests Current count of requests in WireMock journal\n");
+            sb.append("# TYPE wiremock_journal_size_requests gauge\n");
+            sb.append("wiremock_journal_size_requests ").append(journalSize).append("\n");
+
+            int journalCapacity = -1;
+            if (admin.getOptions() != null && admin.getOptions().maxRequestJournalEntries() != null) {
+                journalCapacity = admin.getOptions().maxRequestJournalEntries().orElse(-1);
+            }
+            sb.append(
+                    "\n# HELP wiremock_journal_capacity Maximum configured capacity for WireMock request journal (-1 if unbounded)\n");
+            sb.append("# TYPE wiremock_journal_capacity gauge\n");
+            sb.append("wiremock_journal_capacity ").append(journalCapacity).append("\n");
+
+            int activeStubs = admin.listAllStubMappings().getMappings().size();
+            sb.append("\n# HELP wiremock_stubs_total Total number of stub mappings in WireMock\n");
+            sb.append("# TYPE wiremock_stubs_total gauge\n");
+            sb.append("wiremock_stubs_total{status=\"active\"} ")
+                    .append(activeStubs)
+                    .append("\n");
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+        return sb.toString();
     }
 
     private static String formatNetEmMetrics() {
