@@ -302,17 +302,30 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
 
 ### Casual Protocol Chaos & 2PC Heuristic Fault Injection (Priority)
 
-- [ ] **13.1. Casual XATMI L7 Error State Injection**
-  - [ ] Allow stubs matching `/__casual/services/{serviceName}` to return explicit Casual error codes:
-    - `TPETIME`: Transaction/call timeout simulation.
-    - `TPESVCERR` / `TPESVCFAIL`: Service application failures.
-    - `TPENOENT`: Service not found / unadvertised service.
-- [ ] **13.2. Casual 2PC Distributed Transaction Faults (XA Heuristics)**
-  - [ ] Support injecting XA heuristic outcome codes on `xa_prepare` / `xa_commit`:
-    - `XA_RBROLLBACK`: Forced prepare rollback.
-    - `XA_HEURHAZ` / `XA_HEURCOM`: Heuristic hazard / commit failure.
-- [ ] **13.3. NetEm Virtual-Thread Latency on Casual Gateways**
-  - [ ] Attach `wiremock-extension-tcp-netem` latency, jitter, and connection-drop impairments directly to Casual proxy listener ports.
+- [x] **13.1. Casual XATMI L7 Error State Injection**
+  - [x] Allow stubs matching `/__casual/services/{serviceName}` to return explicit Casual error codes:
+    - `TPETIME`: Transaction/call timeout simulation (HTTP 504).
+    - `TPESVCERR` / `TPESVCFAIL`: Service application failures (HTTP 500/502).
+    - `TPENOENT`: Service not found / unadvertised service (HTTP 404).
+- [x] **13.2. Casual 2PC Distributed Transaction Faults (XA Heuristics)**
+  - [x] Support injecting XA heuristic outcome codes on `xa_prepare` / `xa_commit`:
+    - `XA_RBROLLBACK`: Forced prepare rollback (`X-Casual-XA-Prepare-Vote`).
+    - `XA_HEURHAZ`: Heuristic hazard / commit failure (`X-Casual-XA-Commit-Vote`).
+- [x] **13.3. NetEm Virtual-Thread Latency on Casual Gateways**
+  - [x] Attach `wiremock-extension-tcp-netem` latency, jitter, and connection-drop impairments directly to Casual proxy listener ports via Toxiproxy REST API (`/__admin/tcp-netem/proxies`).
+
+---
+
+### Dynamic Stateful Simulation & Invariant Enforcement (Priority)
+
+- [ ] **16.1. Banking Domain Stateful FSM Simulation (`wiremock-extension-stateful`)**
+  - [ ] Maintain in-memory entity state machine for Banking Case (`DRAFT` $\rightarrow$ `OFFER_GENERATED` $\rightarrow$ `SETTLED`).
+  - [ ] Guard invariant rejection: Reject duplicate purchases with HTTP 409 Conflict ("Case already completed/settled"), reject settlement before offer with HTTP 400.
+  - [ ] Dynamic state variables: Track customer credit line and fee deductions dynamically across HTTP and Casual 2PC calls.
+  - [ ] Multi-tenant isolation: Support parallel test execution across distinct customer/case IDs (`CUST-42`, `CUST-99`) with isolated in-memory AST states.
+- [ ] **16.2. Distributed Correlation & Idempotency Key Tracing**
+  - [ ] Propagate `X-Correlation-Id` / idempotency key across Customer Portal $\rightarrow$ HTTP Case API $\rightarrow$ HTTP CRM API $\rightarrow$ Casual 2PC Billing.
+  - [ ] Support retry reconciliation for in-doubt 2PC transactions (`XA_HEURHAZ`) using the correlation ID as an idempotency key.
 
 ---
 
