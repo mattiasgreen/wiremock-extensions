@@ -188,16 +188,47 @@ export function importMappings(payload) {
 export function loadJournal() {
   const limit = state.journalLimit || 100;
   const unmatchedOnly = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
-  const endpoint = unmatchedOnly
-    ? `/__admin/requests?limit=${limit}&unmatched=true`
-    : `/__admin/requests?limit=${limit}`;
+  const q = (elements.journalSearch ? elements.journalSearch.value : '').trim();
+  const verdict = state.journalVerdictFilter || 'all';
 
-  return apiGet(endpoint)
+  const params = new URLSearchParams();
+  params.set('limit', limit);
+  if (q) params.set('q', q);
+  if (verdict && verdict !== 'all') params.set('verdict', verdict);
+  if (unmatchedOnly) params.set('unmatched', 'true');
+
+  const serverEndpoint = `/__admin/ui/api/requests?${params.toString()}`;
+
+  return apiGet(serverEndpoint)
     .then(data => {
       state.currentRequests = data.requests || [];
-      if (elements.statRequests) elements.statRequests.textContent = state.currentRequests.length;
-      if (elements.journalCount) elements.journalCount.textContent = state.currentRequests.length;
+      state.journalMeta = data.meta || null;
+      state.journalServerFiltered = true;
+      if (elements.statRequests) {
+        elements.statRequests.textContent = (data.meta && data.meta.total !== undefined)
+          ? data.meta.total
+          : state.currentRequests.length;
+      }
+      if (elements.journalCount) {
+        elements.journalCount.textContent = (data.meta && data.meta.filtered !== undefined)
+          ? data.meta.filtered
+          : state.currentRequests.length;
+      }
       renderJournal();
+    })
+    .catch(() => {
+      // Fallback for vanilla WireMock instances without /ui/api/requests
+      const fallbackEndpoint = unmatchedOnly
+        ? `/__admin/requests?limit=${limit}&unmatched=true`
+        : `/__admin/requests?limit=${limit}`;
+      return apiGet(fallbackEndpoint).then(data => {
+        state.currentRequests = data.requests || [];
+        state.journalMeta = null;
+        state.journalServerFiltered = false;
+        if (elements.statRequests) elements.statRequests.textContent = state.currentRequests.length;
+        if (elements.journalCount) elements.journalCount.textContent = state.currentRequests.length;
+        renderJournal();
+      });
     })
     .catch(err => {
       console.warn('Could not load journal', err);

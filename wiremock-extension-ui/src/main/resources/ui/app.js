@@ -536,6 +536,7 @@ if (elements.bundleDropzone) {
       if (elements.filterUnmatchedOnly) {
         elements.filterUnmatchedOnly.checked = isNowUnmatched;
       }
+      renderJournal();
       loadJournal();
       setRoute('journal', { unmatched: isNowUnmatched ? 'true' : null }, true);
     });
@@ -548,6 +549,7 @@ if (elements.filterUnmatchedOnly) {
     document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
     const activeBtn = document.getElementById(isChecked ? 'btn-journal-verdict-unmatched' : 'btn-journal-verdict-all');
     if (activeBtn) activeBtn.classList.add('active');
+    renderJournal();
     loadJournal();
     setRoute('journal', { unmatched: isChecked ? 'true' : null }, true);
   });

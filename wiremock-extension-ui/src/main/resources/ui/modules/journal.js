@@ -242,28 +242,14 @@ function updateCountDisplay() {
   if (!elements.journalFilteredCount) return;
   const total = lastFilteredRequests.length;
   const shown = Math.min(visibleCount, total);
-  if (state.journalMeta && state.journalMeta.total !== undefined) {
-    const metaTotal = state.journalMeta.total;
-    const metaFiltered = state.journalMeta.filtered !== undefined ? state.journalMeta.filtered : total;
-    if (metaFiltered === metaTotal) {
-      elements.journalFilteredCount.textContent = total > shown
-        ? `Showing ${shown} of ${metaTotal}`
-        : `Showing ${metaTotal} of ${metaTotal}`;
-    } else {
-      elements.journalFilteredCount.textContent = total > shown
-        ? `Showing ${shown} of ${metaFiltered} matching (${metaTotal} total recorded)`
-        : `Showing ${metaFiltered} of ${metaFiltered} matching (${metaTotal} total recorded)`;
-    }
-    return;
-  }
   if (total === state.currentRequests.length) {
     elements.journalFilteredCount.textContent = total > shown
       ? `Showing ${shown} of ${total}`
       : `Showing ${total} of ${total}`;
   } else {
     elements.journalFilteredCount.textContent = total > shown
-      ? `Showing ${shown} of ${total} matching (${state.currentRequests.length} loaded)`
-      : `Showing ${total} of ${total} matching (${state.currentRequests.length} loaded)`;
+      ? `Showing ${shown} of ${total} matching (${state.currentRequests.length} total)`
+      : `Showing ${total} of ${total} matching (${state.currentRequests.length} total)`;
   }
 }
 

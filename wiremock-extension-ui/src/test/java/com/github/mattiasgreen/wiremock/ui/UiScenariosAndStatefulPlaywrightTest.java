@@ -358,17 +358,17 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
             assertThat(page.locator(".stub-card").count()).isEqualTo(1);
             assertThat(page.locator(".stub-card").first().textContent()).contains("/api/v1/health");
 
-            assertThat(page.locator("#nav-tab-netem").getAttribute("class")).contains("hidden");
-            assertThat(page.locator("#link-metrics").getAttribute("class")).contains("hidden");
+            assertThat(page.locator("#nav-tab-netem").getAttribute("class")).contains("cap-disabled");
+            assertThat(page.locator("#link-metrics").getAttribute("class")).contains("cap-disabled");
             assertThat(page.locator("#btn-create-dynamic-stub").getAttribute("class"))
-                    .contains("hidden");
+                    .contains("cap-disabled");
             assertThat(page.locator("#btn-filter-dynamic").getAttribute("class"))
-                    .contains("hidden");
+                    .contains("cap-disabled");
             assertThat(page.locator("#btn-filter-disabled").getAttribute("class"))
-                    .contains("hidden");
+                    .contains("cap-disabled");
 
             page.locator(".stub-card").first().click();
-            assertThat(page.locator("#btn-toggle-stub").getAttribute("class")).contains("hidden");
+            assertThat(page.locator("#btn-toggle-stub").getAttribute("class")).contains("cap-disabled");
             assertThat(page.locator("#detail-lifecycle-state").textContent()).isEqualTo("ACTIVE");
 
             page.locator("#btn-target-host").click();
