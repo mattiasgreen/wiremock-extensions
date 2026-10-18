@@ -144,7 +144,7 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
 
         private static final int RESOURCE_ID = 101;
         private final CasualTcpClient tcpClient;
-        private final AtomicInteger txSequence = new AtomicInteger(1);
+        private static final AtomicInteger txSequence = new AtomicInteger(1);
 
         public ClientInitiatorNode(String host, int port) {
             this.tcpClient = new CasualTcpClient(host, port, UUID.randomUUID(), "casual-quarkus-client-domain");
