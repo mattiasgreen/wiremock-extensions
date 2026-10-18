@@ -14,7 +14,10 @@ The core question: **Are we creating bloat, aiming too high, and over-engineerin
 
 The verdict:
 * **The Core Value Proposition is Rock Solid**: Enabling integration tests to progress from **live proxying** $\to$ **1-click snapshot recording** $\to$ **100% offline stub playback** across heterogeneous enterprise protocols (HTTP REST + Casual XATMI/2PC) with zero test code changes provides massive real-world leverage.
-* **The Stateful AST Engine is Bloat / Over-Engineering**: Building an in-memory JSON AST evaluator and attempting to automatically infer or deduce state machines from captured network traffic is high-effort, low-adoption, and drifts into reinventing a transactional database inside a mock engine.
+* **Two Distinct Operational Archetypes**:
+  1. *Consumer-Driven "Bottom-Up" (Reverse Engineering)*: Teams lacking upstream cooperation use WireMock in proxy mode with lean session harvesting to reverse-engineer and bootstrap initial Simulation SDKs.
+  2. *Producer-Provided "Top-Down" (The Gold Standard)*: Service providers publish official, open-source Simulation SDKs (stubs, state machines, fluent builders, Cucumber step definitions) tested in their own CI pipelines.
+* **The Stateful AST Engine is Bloat; Invariant Code Must Be Shared**: Building an in-memory JSON AST evaluator or deducing state from network logs is fragile, high-effort, and dangerous. Invariants must **never be duplicated**—they must be shared directly from pure Java domain model records/libraries (`*-domain-model`) compiled into both the real service and the Simulation SDK.
 * **Cross-Extension Collaboration is Valid and Desirable**: Extensions depending on each other (e.g. OTel reporting Casual and NetEm dimensions) creates a coherent enterprise platform rather than disjointed plugins, provided coupling remains loose at runtime.
 
 ---
@@ -50,7 +53,7 @@ This workflow requires **no complex AST**, **no custom expression engine**, and 
 | **`wiremock-extension-otel` & JSON Logging** | Implemented | **Feels Right** | W3C `traceparent` context extraction, MDC header correlation (`x-correlation-id`), and Prometheus scraping (`/__admin/metrics/prometheus`) meet standard enterprise observability requirements. |
 | **`wiremock-extension-stateful` (AST Engine)** | Implemented | ⚠️ **Feels Wrong / Bloat** | Re-invents an in-memory database with custom JSON AST expressions, guards, and mutations. High complexity for marginal benefit over native WireMock scenarios and standard Java response transformers. |
 | **Automated State Machine Extraction** | Roadmap / Spec | ❌ **Feels Wrong / Sci-Fi** | Network traffic only captures input/output pairs. Deducing internal business rules, invariants, and hidden system state from HTTP/RPC logs is mathematically indeterminate and produces brittle, hallucinated mocks. |
-| **"Dynamic Snowball Harvesting" (Item 12)** | Roadmap / Spec | ⚠️ **Over-Engineered** | Dynamically parsing response payloads with regexes to discover IDs and mutating active session match criteria in real time creates non-deterministic tracing behavior. Explicit correlation IDs (`X-Correlation-Id`) are standard and reliable. |
+| **Session Recording & Harvesting (Item 12)** | Roadmap / Spec | **Calibrated / Lean** | Essential for consumer-driven "bottom-up" reverse engineering when upstream lacks SDKs. Must avoid heavy graph engines; implement via 3 lightweight primitives (under ~250 LOC). |
 | **In-Memory Pub/Sub & Mock OIDC (Items 6.2, 7)** | Roadmap / Spec | ❌ **Scope Creep** | Implementing an in-process Kafka broker, WebSocket event bus, and RSA-signing OAuth2 token issuer dilutes WireMock into an unmaintainable all-in-one cloud simulator. |
 
 ---
@@ -108,9 +111,74 @@ An automated engine cannot know whether the 409 occurred because:
 
 Attempting to infer state machines from recordings results in brittle, overfitted heuristics that break as soon as test data or business logic slightly alters.
 
+### 4.5. The Invariant Duplication Trap: Sharing Domain Code Instead of Re-inventing It
+Re-implementing business invariants inside an in-memory JSON AST engine (or duplicating logic inside mock definitions) creates a fatal maintenance flaw: **silent contract drift**.
+* As the real service evolves, duplicate invariant logic written in JSON AST inevitably falls out of sync, giving consumers a false sense of security in their CI test suites.
+* **The Correct Pattern**: Extract domain models and validation rules into a shared, framework-free library (`*-domain-model` containing pure Java 21 records, enums, and pure validation functions).
+* Both the real production service (Spring Boot / Quarkus) and the WireMock simulation kit depend on and compile against the **exact same domain invariant code**.
+* A WireMock `ResponseTransformerV2` or typed state guard calls `Invariants.canTransition(entity, action)` directly:
+  - Zero duplicated logic.
+  - Compile-time type safety.
+  - 100% invariant parity guaranteed by construction.
+
 ---
 
-## 5. Architectural Assessment: Cross-Extension Dependencies
+## 5. Dual Ecosystem Archetypes: Bottom-Up Reverse Engineering vs. Producer-Owned SDKs
+
+A key realization in API virtualization is that simulations serve two completely different operational use cases with distinct constraints:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      Two Operational Archetypes                        │
+├───────────────────────────────────┬────────────────────────────────────┤
+│ Archetype 1: Consumer "Bottom-Up" │ Archetype 2: Producer "Top-Down"   │
+│ (Reverse-Engineered Tooling)      │ (The Gold Standard / Verified SDK) │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ • Upstream provides no SDKs/stubs │ • Service provider publishes an    │
+│ • Opaque 3rd-party / legacy APIs  │   official Simulation SDK          │
+│ • Captured via WireMock proxy     │ • Includes state machines, stubs,  │
+│ • Reverse-engineered from logs    │   fluent builders, Cucumber steps  │
+│ • Serves as a bootstrap catalyst  │ • Invariants share real domain code│
+│                                   │ • Tested in Producer CI for parity │
+└───────────────────────────────────┴────────────────────────────────────┘
+```
+
+### 5.1. Archetype 1: Consumer "Bottom-Up" (The Reverse-Engineered Bootstrap)
+Teams are routinely tasked with testing against upstream services (legacy mainframes, 3rd-party gateways, or uncooperative internal teams) that provide zero SDKs, zero stubs, and zero sandbox environments.
+* In this context, teams use WireMock Extensions to **bootstrap an SDK on their own**.
+* They run WireMock as a live proxy sniffer, capture transactions, cluster multi-protocol traces, and synthesize initial DTOs and baseline `stubFor()` mappings.
+* This is recognized for what it is: **a bottom-up, reverse-engineered starting point** to unblock test automation.
+
+### 5.2. Archetype 2: Producer-Provided "Top-Down" (Verified Simulation SDKs — The Gold Standard)
+The architecturally correct approach is for the **service provider to author, publish, and maintain an official Simulation SDK** alongside their service:
+1. **Ready-Made Simulation Kit**: Downstream consumers add `testImplementation("org.company:billing-simulation-sdk:2.4.0")`.
+2. **First-Class Domain Ergonomics**: The kit provides fluent Java domain builders (`CustomerBuilder.aCustomer().isVip()`), ready-to-run WireMock stubs, and reusable Cucumber step definitions (`Given a verified customer with balance 500`).
+3. **Open Source & Collaborative**: The SDK is open source within the organization (or public on GitHub), encouraging consumers to contribute new edge cases, scenarios, and fault models.
+
+### 5.3. The Collaborative Open-Source Flywheel
+These two archetypes do not compete; they form a virtuous lifecycle flywheel:
+1. **Bootstrap**: When an upstream team offers nothing, the consumer team uses WireMock Extensions to record traffic and scaffold an initial bottom-up simulation bundle.
+2. **Handoff (The Catalyst)**: The consumer opens a Pull Request to the producer's repository: *"We built an automated WireMock simulation harness representing our integration with your service. Can you adopt this as your official client simulation kit?"*
+3. **Adoption & Invariant Unification**: The producer adopts the kit, wires it to their shared `*-domain-model` invariant classes, and publishes it as the official SDK.
+
+### 5.4. Producer CI Testing & Continuous Contract Parity
+How does the producer guarantee that their Simulation SDK never drifts from their actual production service?
+* **Dual-Target BDD / Cucumber Verification**: The producer maintains a canonical set of Cucumber feature files or JUnit 5 test suites modeling their service contracts.
+* The producer's CI pipeline runs the **exact same test suite twice**:
+  1. **Target 1 (Real Service)**: Executes against the running Spring Boot / Quarkus microservice with real database/messaging.
+  2. **Target 2 (Simulation SDK)**: Executes in-process against the `billing-simulation-sdk` backed by WireMock.
+* If a code change alters production response shapes, error codes, or state transitions without updating the simulation kit, **the producer's CI build fails immediately**.
+* **Synchronized Versioning**: The SDK is published in lockstep with the service (`billing-service:2.4.0` $\leftrightarrow$ `billing-simulation-sdk:2.4.0`).
+
+### 5.5. Lean Implementation of Item 12 (Session Recording & Harvesting)
+To empower the Consumer "Bottom-Up" bootstrapping phase without introducing massive complexity or feature bloat, **Item 12 is strictly bounded to 3 lightweight primitives** (under ~250 lines of Java 21):
+1. **`ActiveSession`**: In-memory, thread-safe token set (`ConcurrentHashMap.newKeySet()`) tracking active correlation identifiers (`X-Correlation-Id`, `caseId`, `customerId`).
+2. **`SnowballHarvesterListener`**: A standard WireMock `ServeEventListener` that inspects outgoing response JSON payloads for common entity key conventions (`*Id`, `*Number`, `Xid`) and appends newly minted identifiers to the active session token set in real time.
+3. **Native Bundle Export**: Serializes the clustered session events into WireMock's existing JSON format with zero custom binary formats or external graph databases.
+
+---
+
+## 6. Architectural Assessment: Cross-Extension Dependencies
 
 ### Is It Acceptable for Extensions to Depend on Each Other?
 **Yes, provided coupling remains loose at packaging and runtime.**
@@ -122,7 +190,7 @@ Attempting to infer state machines from recordings results in brittle, overfitte
 
 ---
 
-## 6. Strategic Course Correction: The Four Grounded Pillars
+## 7. Strategic Course Correction: The Four Grounded Pillars
 
 To eliminate bloat, minimize maintenance risk, and focus engineering effort on high-leverage capabilities, the project will anchor on **Four Core Pillars**:
 
@@ -165,22 +233,24 @@ To eliminate bloat, minimize maintenance risk, and focus engineering effort on h
 
 ---
 
-## 7. Roadmap Adjustments
+## 8. Roadmap Adjustments
 
 ### What to Freeze / Deprecate
 1. **`wiremock-extension-stateful` AST Engine**:
-   - Freeze the AST expression evaluator.
-   - Deprecate plans for complex query languages, JSON mutations, and dynamic invariant models.
-   - Retain lightweight session-scoped state only where strictly necessary, pointing users toward standard WireMock Scenarios and Java response transformers for complex stateful needs.
+   - Freeze the custom JSON AST expression evaluator.
+   - Deprecate complex query languages, JSON mutations, and dynamic invariant models encoded in JSON.
+   - Retain native WireMock Scenarios for sequential states, and support compiled, shared Java domain models via `ResponseTransformerV2` / typed state guards for complex business rules.
 
 ### What to Remove from Roadmap / Backlog
 1. **Automated State Machine Inference**: Remove speculative backlog items related to deducing FSM transitions from recorded journal logs.
-2. **"Snowball Harvesting" Entity Mining**: Replace with deterministic session capture based on explicit headers (`X-Correlation-Id`, `X-Session-Id`) and URL prefix patterns.
-3. **In-Memory Pub/Sub & Broker Mocks (AsyncAPI / WebSocket Broker)**: Drop standalone message broker simulation. Focus WireMock on request-reply and gateway boundaries.
-4. **Mock OAuth2 / OIDC Provider**: WireMock stubs with static JWKS endpoints (`/.well-known/jwks.json`) and Handlebars-templated JWTs are sufficient; an embedded authentication server is out of scope.
+2. **In-Memory Pub/Sub & Broker Mocks (AsyncAPI / WebSocket Broker)**: Drop standalone message broker simulation. Focus WireMock on request-reply and gateway boundaries.
+3. **Mock OAuth2 / OIDC Provider**: WireMock stubs with static JWKS endpoints (`/.well-known/jwks.json`) and Handlebars-templated JWTs are sufficient; an embedded authentication server is out of scope.
+
+### What to Retain & Calibrate
+1. **Session Recording & Compound Correlation (Item 12)**: Retain strictly as a lean, 3-primitive component (sub-250 LOC) to serve the Consumer "Bottom-Up" bootstrapping phase.
 
 ### What to Accelerate
 1. **Robust Packaging & Publishing**: Maven Central publication, Docker standalone container (`ghcr.io`), and standalone runnable bundle JAR.
 2. **Air-Gapped Self-Containment**: Formal verification that Web UI assets and console operations function 100% offline in isolated environments.
-3. **Java DSL / Codegen Ergonomics**: Refine the UI's `Copy Java stubFor()` export to make converting journal traffic into checked-in test code effortless.
+3. **Java DSL / Codegen Ergonomics**: Refine the UI's `Copy Java stubFor()` export and DTO generation to make converting journal traffic into checked-in test code effortless.
 4. **Documentation & GitHub Pages Demo**: Maintain high-quality documentation and the static interactive sandbox demonstrating the core four pillars.
