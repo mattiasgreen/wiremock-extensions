@@ -2580,6 +2580,34 @@ kbd {
   border: 1px solid rgba(100, 116, 139, 0.3);
 }
 
+/* --- Graceful Capability Degradation Styles --- */
+.cap-disabled,
+button[disabled].cap-disabled,
+a[disabled].cap-disabled,
+.filter-pill[disabled].cap-disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: auto !important; /* ensures hover tooltip remains active */
+  filter: grayscale(70%);
+}
+
+.cap-missing-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px dashed rgba(100, 116, 139, 0.6);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.cap-missing-banner strong {
+  color: var(--text-main);
+}
+
 /* --- TCP NetEm Styles --- */
 .netem-ingress-badge {
   font-family: monospace;

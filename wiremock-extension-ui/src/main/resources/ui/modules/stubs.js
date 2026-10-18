@@ -340,12 +340,21 @@ export function selectStub(stub, updateRoute = true) {
   // Toggle button label
   const btnToggle = document.getElementById('btn-toggle-stub');
   if (btnToggle) {
-    if (isDynamic || !state.capabilities.lifecycle) {
+    if (isDynamic) {
       btnToggle.classList.add('hidden');
+    } else if (!state.capabilities.lifecycle) {
+      btnToggle.classList.remove('hidden');
+      btnToggle.setAttribute('disabled', 'true');
+      btnToggle.classList.add('cap-disabled');
+      btnToggle.textContent = '⏸️ Disable Stub';
+      btnToggle.setAttribute('title', 'Pausing/disabling stubs requires wiremock-extension-ui lifecycle endpoint');
     } else {
       btnToggle.classList.remove('hidden');
+      btnToggle.removeAttribute('disabled');
+      btnToggle.classList.remove('cap-disabled');
       btnToggle.textContent = isDisabled ? '🟢 Enable Stub' : '⏸️ Disable Stub';
       btnToggle.className = `btn btn-small ${isDisabled ? 'btn-success' : 'btn-warning'}`;
+      btnToggle.removeAttribute('title');
     }
   }
 
