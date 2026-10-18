@@ -536,11 +536,7 @@ if (elements.bundleDropzone) {
       if (elements.filterUnmatchedOnly) {
         elements.filterUnmatchedOnly.checked = isNowUnmatched;
       }
-      if (wasUnmatched !== isNowUnmatched) {
-        loadJournal();
-      } else {
-        renderJournal();
-      }
+      loadJournal();
       setRoute('journal', { unmatched: isNowUnmatched ? 'true' : null }, true);
     });
   }
@@ -560,6 +556,12 @@ if (elements.journalSearch) {
   elements.journalSearch.addEventListener('input', () => {
     renderJournal();
     setRoute('journal', { q: elements.journalSearch.value.trim() }, true);
+  });
+  elements.journalSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadJournal();
+    }
   });
 }
 if (elements.journalLimitInput) {

@@ -233,16 +233,15 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ### High-Scale Journal Architecture (Server-Side Paginated API & Hybrid Fallback)
 
-- [ ] **9.1. Server-Side Lightweight Journal Endpoint (`UiAdminApiEndpoint`)**
-  - [ ] Implement `GET /__admin/ui/api/requests` (or `/ui/api/requests`) supporting query params: `limit`, `offset`/`page`, `q` (server-side substring search), and `unmatched` (boolean).
+- [x] **9.1. Server-Side Lightweight Journal Endpoint (`UiAdminApiEndpoint`)**
+  - [x] Implement `GET /__admin/ui/api/requests` supporting query params: `limit`, `q` (server-side boolean AND / OR search), `verdict` (`all`, `proxied`, `stateful`, `stub`, `unmatched`), `status`, and `unmatched` (boolean).
+  - [x] Return metadata envelope: `{ total, filtered, limit, requests: [...] }`.
   - [ ] **Lightweight Metadata Serialization**: Strip heavy request/response bodies from list results to shrink multi-thousand event payloads from 50MB+ down to <100KB JSON.
-  - [ ] Return pagination envelope: `{ total, page, limit, requests: [...] }`.
 - [ ] **9.2. On-Demand Lazy Detail Fetching**
   - [ ] Fetch complete request/response bodies, headers, and diffs on demand via `GET /__admin/requests/{id}` only when a user expands a specific row in the table.
-- [ ] **9.3. Dynamic Capability Detection & Graceful Fallback**
-  - [ ] Probe for `/__admin/ui/api/requests` via `capabilities.js`.
-  - [ ] If available, execute server-side paginated queries with instant sub-millisecond search across tens of thousands of records.
-  - [ ] If connecting to a vanilla/remote WireMock instance without custom extensions, automatically degrade to native `GET /__admin/requests?limit=...` and server-filtered `unmatched=true` with client-side windowing.
+- [x] **9.3. Dynamic Capability Detection & Graceful Fallback**
+  - [x] Automatically query `/__admin/ui/api/requests` with server-side filtering on Enter key / search / verdict toggle.
+  - [x] If connecting to a vanilla/remote WireMock instance without custom extensions, automatically degrade to native `GET /__admin/requests?limit=...` and client-side windowing.
 
 ---
 
