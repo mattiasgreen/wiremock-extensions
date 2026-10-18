@@ -23,7 +23,7 @@
 | **Stub Toggle Action** | `#btn-toggle-stub` | `"btn-toggle-stub"` | Toggles active/disabled state without deletion. |
 | **Stub Delete Action** | `#btn-delete-stub` | `"btn-delete-stub"` | Deletes selected stub mapping. |
 | **Stub Test in Tester** | `#btn-test-stub` | `"btn-test-stub"` | Pre-populates tester with stub method & URL. |
-| **Stub Copy cURL** | `#btn-copy-curl` | `"btn-copy-curl"` | Copies valid `curl` command to system clipboard. |
+| **Stub Copy cURL** | `#btn-copy-curl` | `"btn-copy-curl"` | Copies valid `curl` command to system clipboard to create this stub mapping via `POST /__admin/mappings` using multi-line JSON with `<< 'EOF'`. |
 | **Stub Copy Java** | `#btn-copy-java` | `"btn-copy-java"` | Copies WireMock Java `stubFor(...)` DSL snippet to system clipboard. |
 | **Stub Copy JSON** | `#btn-copy-json` | `"btn-copy-json"` | Copies raw mapping JSON to system clipboard. |
 | **Stub Editor Proxy URL** | `#editor-proxy-url` | `"editor-proxy-url"` | Optional `proxyBaseUrl` upstream target input in Stub Editor modal. |

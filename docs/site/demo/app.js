@@ -21,6 +21,7 @@ import {
 import {
   getStubUrl,
   generateCurl,
+  generateCreateStubCurl,
   generateJavaStubFor,
   renderStubList,
   selectStub,
@@ -358,20 +359,7 @@ if (elements.btnCopyCurl) {
     if (!state.selectedStubId) return;
     const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (!stub) return;
-    const method = (stub.request && stub.request.method) || 'GET';
-    const path = getStubUrl(stub.request);
-    const headers = {};
-    if (stub.request && stub.request.headers) {
-      for (const [k, v] of Object.entries(stub.request.headers)) {
-        headers[k] = v.equalTo || v.matches || v.contains || Object.values(v)[0] || '';
-      }
-    }
-    let body = '';
-    if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
-      const bp = stub.request.bodyPatterns[0];
-      body = bp.equalToJson ? JSON.stringify(bp.equalToJson) : (bp.equalTo || '');
-    }
-    const cmd = generateCurl(method === 'ANY' ? 'GET' : method, path, headers, body);
+    const cmd = generateCreateStubCurl(stub);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(cmd).catch(() => {});
     }

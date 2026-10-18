@@ -324,4 +324,62 @@ public class UiModuleUnitTest {
         assertThat(result.get("matchOrCustomer")).isTrue();
         assertThat(result.get("matchOrCustomer2")).isTrue();
     }
+
+    @Test
+    @DisplayName("generateCreateStubCurl: Multi-line JSON stub creation cURL command with EOF heredoc")
+    void testGenerateCreateStubCurl() {
+        String script =
+                """
+            async () => {
+                const { generateCreateStubCurl } = await import('./modules/stubs.js');
+
+                const standardStub = {
+                    id: "stub-1234",
+                    name: "Get User",
+                    request: {
+                        method: "GET",
+                        url: "/api/users/1234"
+                    },
+                    response: {
+                        status: 200,
+                        body: '{"id": 1234, "name": "Alice"}'
+                    }
+                };
+
+                const dynamicStub = {
+                    id: "dynamic-cases-0",
+                    isDynamic: true,
+                    rule: {
+                        route: { method: "POST", pathPattern: "/api/cases" },
+                        mutations: [{ type: "init_entity", idParam: "caseId" }],
+                        response: { status: 201 }
+                    }
+                };
+
+                return {
+                    standardCurl: generateCreateStubCurl(standardStub),
+                    dynamicCurl: generateCreateStubCurl(dynamicStub)
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> result = (java.util.Map<String, String>) evalJs(script);
+
+        String standardCurl = result.get("standardCurl");
+        assertThat(standardCurl).contains("curl -X POST ");
+        assertThat(standardCurl).contains("/__admin/mappings");
+        assertThat(standardCurl).contains("-H \"Content-Type: application/json\"");
+        assertThat(standardCurl).contains("--data-binary @- << 'EOF'");
+        assertThat(standardCurl).contains("\"name\": \"Get User\"");
+        assertThat(standardCurl).contains("\"url\": \"/api/users/1234\"");
+        assertThat(standardCurl).endsWith("\nEOF");
+
+        String dynamicCurl = result.get("dynamicCurl");
+        assertThat(dynamicCurl).contains("curl -X POST ");
+        assertThat(dynamicCurl).contains("/__admin/stateful/rules");
+        assertThat(dynamicCurl).contains("--data-binary @- << 'EOF'");
+        assertThat(dynamicCurl).contains("\"pathPattern\": \"/api/cases\"");
+        assertThat(dynamicCurl).endsWith("\nEOF");
+    }
 }
