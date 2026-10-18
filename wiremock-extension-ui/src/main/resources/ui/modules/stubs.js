@@ -43,6 +43,27 @@ export function generateCurl(method, path, headers = {}, body = '') {
   return parts.join(' \\\n  ');
 }
 
+export function generateCreateStubCurl(stub) {
+  if (!stub) return '';
+  const origin = (state.targetConfig && state.targetConfig.fullUrl) ||
+    state.apiBaseUrl ||
+    (typeof window !== 'undefined' ? window.location.origin : '') ||
+    'http://localhost:8080';
+
+  const isDynamic = Boolean(stub.isDynamic);
+  const endpoint = isDynamic ? `${origin}/__admin/stateful/rules` : `${origin}/__admin/mappings`;
+  const payload = isDynamic ? (stub.rule || stub) : stub;
+  const jsonStr = JSON.stringify(payload, null, 2);
+
+  return [
+    `curl -X POST "${endpoint}" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  --data-binary @- << 'EOF'`,
+    jsonStr,
+    `EOF`
+  ].join('\n');
+}
+
 export function generateJavaStubFor(stub) {
   if (!stub) return '';
   const req = stub.request || {};
