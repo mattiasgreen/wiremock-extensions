@@ -62,7 +62,10 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
         this.upstreamNode.start();
 
         CasualProxyTransformer proxyTransformer = new CasualProxyTransformer();
-        this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort().extensions(proxyTransformer));
+        com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint netEmEndpoint =
+                new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint();
+        this.wireMockServer =
+                new WireMockServer(wireMockConfig().dynamicPort().extensions(proxyTransformer, netEmEndpoint));
         this.wireMockServer.start();
 
         this.mitmGateway = CasualWireMockGateway.builder()
@@ -106,6 +109,8 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
 
     @Override
     public void close() {
+        com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
+                .closeAll();
         if (clientInitiator != null) {
             clientInitiator.close();
         }

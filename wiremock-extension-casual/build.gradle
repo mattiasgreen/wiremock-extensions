@@ -17,6 +17,7 @@ dependencies {
     api libs.casual.network.protocol
     implementation libs.netty.all
     implementation libs.jackson.databind
+    testImplementation project(':wiremock-extension-tcp-netem')
 }
 
 tasks.register('quarkusIntegrationTest', Test) {

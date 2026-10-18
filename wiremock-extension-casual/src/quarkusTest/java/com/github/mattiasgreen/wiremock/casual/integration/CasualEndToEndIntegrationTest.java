@@ -6,7 +6,16 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.ClientInitiatorNode;
 import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.TransactionOutcome;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -181,5 +190,211 @@ class CasualEndToEndIntegrationTest {
                         .firstValue())
                 .isEqualTo("OK");
         assertThat(event.getResponse().getBodyAsString()).contains("\"processedBy\":\"upstream-server-B\"");
+    }
+
+    @Test
+    @DisplayName("Scenario 6: 2PC Phase 1 Forced Rollback Simulation (Stub returns XA_RBROLLBACK on Prepare)")
+    void shouldAbortGlobalTransactionWhenStubInjectsXaRbrollbackDuringPrepare() throws Exception {
+        harness.stopUpstreamServer();
+
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/casual/example"))
+                        .withRequestBody(equalToJson("{\"action\":\"forced-rollback\"}"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withHeader("X-Casual-XA-Prepare-Vote", "XA_RBROLLBACK")
+                                .withBody("{\"error\":\"prepare forced rollback by policy\"}")));
+
+        TransactionOutcome outcome =
+                harness.getClientInitiator().executeInTransaction("casual/example", "{\"action\":\"forced-rollback\"}");
+
+        // Service call succeeded with TX_ACTIVE, but prepare returned XA_RBROLLBACK
+        assertThat(outcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+        assertThat(outcome.serviceTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+        assertThat(outcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_RBROLLBACK);
+        assertThat(outcome.commitReturnCode()).isNull();
+        assertThat(outcome.rollbackReturnCode()).isNull();
+        assertThat(outcome.committed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Scenario 7: 2PC Phase 2 Commit Heuristic Hazard Simulation (Stub returns XA_HEURHAZ on Commit)")
+    void shouldReportHeuristicHazardWhenStubInjectsXaHeurhazDuringCommit() throws Exception {
+        harness.stopUpstreamServer();
+
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/casual/example"))
+                        .withRequestBody(equalToJson("{\"action\":\"commit-hazard\"}"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withHeader("X-Casual-XA-Commit-Vote", "XA_HEURHAZ")
+                                .withBody("{\"status\":\"IN_DOUBT_COMMIT_HAZARD\"}")));
+
+        TransactionOutcome outcome =
+                harness.getClientInitiator().executeInTransaction("casual/example", "{\"action\":\"commit-hazard\"}");
+
+        assertThat(outcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+        assertThat(outcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(outcome.commitReturnCode()).isEqualTo(XAReturnCode.XA_HEURHAZ);
+        assertThat(outcome.committed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Scenario 8: Casual L7 Call Timeout Simulation (HTTP 504 Gateway Timeout -> TPETIME)")
+    void shouldSimulateCasualCallTimeoutWhenStubReturnsHttp504() throws Exception {
+        harness.stopUpstreamServer();
+
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/casual/example"))
+                        .withRequestBody(equalToJson("{\"action\":\"slow-service\"}"))
+                        .willReturn(aResponse()
+                                .withStatus(504)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("{\"error\":\"gateway timeout\"}")));
+
+        TransactionOutcome outcome =
+                harness.getClientInitiator().executeInTransaction("casual/example", "{\"action\":\"slow-service\"}");
+
+        assertThat(outcome.serviceErrorState()).isEqualTo(ErrorState.TPETIME);
+        assertThat(outcome.serviceTransactionState()).isEqualTo(TransactionState.ROLLBACK_ONLY);
+        assertThat(outcome.prepareReturnCode()).isNull();
+        assertThat(outcome.commitReturnCode()).isNull();
+        assertThat(outcome.rollbackReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(outcome.committed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Scenario 9: Multi-Protocol Network Chaos — NetEm L4 TCP Latency via Toxiproxy Admin API")
+    void shouldApplyNetEmTcpLatencyImpairmentToCasualGatewayViaToxiproxyApi() throws Exception {
+        HttpClient httpClient = HttpClient.newHttpClient();
+        ObjectMapper objectMapper = new ObjectMapper();
+        String adminBaseUrl = harness.getWireMockServer().baseUrl() + "/__admin";
+
+        // 1. Create a NetEm TCP Proxy via Toxiproxy Admin API targeting CasualWireMockGateway
+        String proxyJson =
+                """
+                {
+                    "name": "casual-netem-proxy",
+                    "listenPort": 0,
+                    "targetHost": "127.0.0.1",
+                    "targetPort": %d,
+                    "enabled": true
+                }
+                """
+                        .formatted(harness.getMitmGateway().getPort());
+
+        HttpResponse<String> createResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(adminBaseUrl + "/tcp-netem/proxies"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(proxyJson))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(createResp.statusCode()).isEqualTo(201);
+        JsonNode createNode = objectMapper.readTree(createResp.body());
+        int netEmPort = createNode.get("listenPort").asInt();
+        assertThat(netEmPort).isGreaterThan(0);
+
+        // 2. Add 250ms Latency Toxic via Admin API
+        String toxicJson =
+                """
+                {
+                    "type": "latency",
+                    "name": "casual-downstream-latency",
+                    "stream": "downstream",
+                    "toxicity": 1.0,
+                    "attributes": {
+                        "latency": 250,
+                        "jitter": 0
+                    }
+                }
+                """;
+
+        HttpResponse<String> toxicResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(adminBaseUrl + "/tcp-netem/proxies/casual-netem-proxy/toxics"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(toxicJson))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(toxicResp.statusCode()).isEqualTo(200);
+
+        // 3. Connect a transactional client through the NetEm impaired TCP proxy port
+        try (ClientInitiatorNode netEmClient = new ClientInitiatorNode("127.0.0.1", netEmPort)) {
+            netEmClient.connect();
+
+            long startTime = System.nanoTime();
+            TransactionOutcome outcome =
+                    netEmClient.executeInTransaction("casual/example", "{\"test\":\"netem-latency\"}");
+            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
+
+            assertThat(outcome.committed()).isTrue();
+            assertThat(outcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+            assertThat(outcome.replyPayload()).contains("\"processedBy\":\"upstream-server-B\"");
+            // Verifies the NetEm virtual-thread latency was applied over the wire
+            assertThat(durationMs).isGreaterThanOrEqualTo(200);
+        }
+    }
+
+    @Test
+    @DisplayName("Scenario 10: Concurrent Execution & Multi-Threaded State Isolation")
+    void shouldExecuteConcurrentHappyAndFaultTransactionsWithoutStatePollution() throws Exception {
+        harness.stopUpstreamServer();
+
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/casual/example"))
+                        .withRequestBody(equalToJson("{\"client\":\"happy\"}"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("{\"status\":\"happy-success\"}")));
+
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/casual/example"))
+                        .withRequestBody(equalToJson("{\"client\":\"faulty\"}"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withHeader("X-Casual-XA-Prepare-Vote", "XA_RBROLLBACK")
+                                .withBody("{\"error\":\"isolated-failure\"}")));
+
+        // Execute both transactions concurrently across two virtual/platform threads
+        CompletableFuture<TransactionOutcome> happyFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return harness.getClientInitiator().executeInTransaction("casual/example", "{\"client\":\"happy\"}");
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        CompletableFuture<TransactionOutcome> faultFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return harness.getClientInitiator().executeInTransaction("casual/example", "{\"client\":\"faulty\"}");
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        TransactionOutcome happyOutcome = happyFuture.get(10, TimeUnit.SECONDS);
+        TransactionOutcome faultOutcome = faultFuture.get(10, TimeUnit.SECONDS);
+
+        // Happy transaction must commit successfully
+        assertThat(happyOutcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+        assertThat(happyOutcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(happyOutcome.commitReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(happyOutcome.committed()).isTrue();
+
+        // Faulty transaction must abort at prepare stage without contaminating the happy transaction
+        assertThat(faultOutcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+        assertThat(faultOutcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_RBROLLBACK);
+        assertThat(faultOutcome.committed()).isFalse();
+
+        // Verify gateway override maps are completely empty
+        assertThat(harness.getMitmGateway().getPrepareVoteOverridesSize()).isEqualTo(0);
+        assertThat(harness.getMitmGateway().getCommitVoteOverridesSize()).isEqualTo(0);
     }
 }
