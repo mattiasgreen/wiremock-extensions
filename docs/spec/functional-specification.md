@@ -155,12 +155,12 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Given** the Web Console is pointing to a remote WireMock instance (e.g. standard vanilla WireMock lacking custom extensions).
 - **When** the console loads or connects to the remote target.
 - **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/stubs/disabled`), Stateful Simulation (`/__admin/stateful/models`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
-- **And** features backed by missing extensions gracefully degrade:
-  - TCP NetEm tab (`#nav-tab-netem`) is hidden.
-  - Metrics link (`#link-metrics`) is hidden.
-  - Dynamic stub controls (`#btn-create-dynamic-stub`, `#btn-filter-dynamic`) are hidden.
-  - Stub pause/lifecycle controls (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk disable) are hidden.
-  - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational.
+- **And** features backed by missing extensions gracefully degrade with visual hints (`.cap-disabled`) and descriptive tooltips rather than vanishing from the UI:
+  - TCP NetEm tab (`#nav-tab-netem`) is styled as `.cap-disabled` with a tooltip indicating missing `wiremock-extension-tcp-netem`.
+  - Metrics link (`#link-metrics`) is styled as `.cap-disabled`.
+  - Dynamic stub controls (`#btn-create-dynamic-stub`, `#btn-filter-dynamic`) are styled as `.cap-disabled`.
+  - Stub pause/lifecycle controls (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk disable) are styled as `.cap-disabled` with explanatory tooltips.
+  - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational with zero console exceptions.
 - **When** the user opens the Target Server modal (`#btn-target-host`).
 - **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing the active ratio (e.g. `1/5 active (Degraded)` or `All 5 extensions active`) and clear `Active` / `Not Installed` status badges for each capability.
 
@@ -194,3 +194,16 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** Upstream Server B is shut down completely and the customer scenario is replayed.
 - **Then** the entire customer application, offer, approval, Casual 2PC billing, and sales order flow completes successfully offline from recorded stubs.
 - **And** the Unified Request Journal verifies all 7 calls were served locally with resolution `📌 STUB`, while Upstream Server B received zero traffic.
+
+### Story 13: Distributed Session Recording & Compound Correlation Patterns ("Snowball Harvesting")
+- **Given** a multi-tier distributed transaction initiated by a customer request with `X-Correlation-Id: abc-123`.
+- **When** the test harness starts a recording session via `POST /__admin/simulations/sessions/start` with a compound predicate matching `X-Correlation-Id`, case URL patterns, or customer ID.
+- **Then** WireMock dynamically tracks all matching inbound requests.
+- **When** the upstream service issues a response containing new entity identifiers (e.g. `caseId: CASE-9876`, `invoiceId: INV-5544`).
+- **Then** the dynamic causal expansion engine ("snowball harvesting") automatically registers the new IDs into the active session filter in real time.
+- **When** subsequent asynchronous background workers, webhooks, or Casual 2PC transactions invoke downstream services referencing `CASE-9876` or `INV-5544` without the original root correlation ID.
+- **Then** WireMock automatically captures and attaches them to the transitive session trace.
+- **When** the user clicks "Cluster Causal Trace" in the Request Journal UI.
+- **Then** the UI isolates and renders the transitive call tree across all participating HTTP and Casual endpoints.
+- **When** the user exports the session as a Simulation Bundle.
+- **Then** a portable bundle (`.json`/`.zip`) is generated containing all stubs, fixtures, and state transitions, ready to be committed to Git and replayed 100% offline in CI.

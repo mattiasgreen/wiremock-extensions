@@ -289,13 +289,25 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
 ### Session Recording & Distributed Correlation Patterns (Priority)
 
 - [ ] **12.1. Compound Correlation Predicate & Seed Matcher**
-  - [ ] Support multi-field session matching: `or(header("X-Correlation-Id"), urlPathMatching(".*CASE-1001.*"), jsonPath("$.customerId"))`.
-  - [ ] Dedicated Admin API endpoint: `POST /__admin/simulations/sessions/start` with seed predicate.
+  - [ ] Multi-field session seed matching: evaluate compound boolean predicates combining HTTP headers (`X-Correlation-Id`), URL regex (`.*/cases/CASE-1001.*`), and JSON bodies (`$.customerId == "CUST-42"`).
+  - [ ] Admin API session lifecycle endpoints:
+    - `POST /__admin/simulations/sessions/start`: Registers an active named recording session with seed predicate criteria and entity extraction patterns.
+    - `POST /__admin/simulations/sessions/{id}/stop`: Concludes session recording and freezes captured events.
+    - `GET /__admin/simulations/sessions/{id}`: Returns the session tree, metadata, and harvested identifiers.
+  - [ ] Concurrent multi-session isolation: Thread-safe `ActiveSessionRegistry` isolating concurrent parallel test executions by customer/case ID seeds without cross-session pollution.
+
 - [ ] **12.2. Dynamic Causal Expansion ("Snowball Harvesting")**
-  - [ ] Automatically extract newly generated identifiers from matched response payloads (e.g. `caseId`, `invoiceId`, `Xid`) and register them dynamically into the active session filter.
-- [ ] **12.3. Post-Run Visual Trace Clustering & Bundle Export**
-  - [ ] In the Request Journal UI, select any root request and click **"Cluster Causal Trace"** to highlight the transitive multi-protocol call tree.
-  - [ ] One-click export to a portable `.zip` or `.json` **Simulation Bundle** that can be committed to Git under `src/test/resources/simulations/` and replayed offline.
+  - [ ] Automated response entity extraction: When any request matches the active session, inspect response payloads and headers for newly minted identifiers (`*Id`, `*Number`, `caseId`, `invoiceId`, `Xid`, `orderId`).
+  - [ ] Real-time in-memory filter expansion: Dynamically mutate the active session match criteria to append newly harvested identifiers as they are returned by upstream services.
+  - [ ] Transitive call-tree capture: Automatically capture subsequent asynchronous background workers, webhooks, or multi-protocol downstream calls (e.g. Casual 2PC billing) referencing the newly generated identifiers, even when the original root `X-Correlation-Id` is omitted or re-minted by sub-systems.
+
+- [ ] **12.3. Post-Run Visual Trace Clustering & Portable Bundle Export**
+  - [ ] Request Journal Causal Trace Visualizer: In the UI, click **"Cluster Causal Trace"** on any seed or downstream entry to visualize the transitive multi-protocol dependency graph (HTTP Gateway $\rightarrow$ CRM $\rightarrow$ Casual 2PC Billing $\rightarrow$ Async Polling).
+  - [ ] One-Click Simulation Bundle Export: Export the clustered session into a portable, self-contained `.json` or `.zip` **Simulation Bundle** containing:
+    - Captured stubs and proxy mappings.
+    - Full request/response payload fixtures.
+    - Stateful AST transitions and Casual 2PC outcomes.
+  - [ ] Offline Test Replay Loader: Provide `WireMockSimulation.loadBundle("simulations/loan-origination.json")` allowing developers to commit bundles under `src/test/resources/simulations/` and execute entire multi-tier enterprise integration suites 100% offline in CI without downstream live services.
 
 ---
 
