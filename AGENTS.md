@@ -30,8 +30,10 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
    - Keep comments concise and focused on contracts, input/output types, DOM IDs, and Admin API routes.
    - **NEVER view or hand-edit `CHANGELOG.md`** (managed automatically by `release-please`).
    - Always pass `-q --console=plain` to `./gradlew` commands during inner-loop work to minimize console log token bloat.
-3. **Formatting & Static Security Gate (Spotless + SpotBugs + FindSecBugs)**:
-   - Enforced across all subprojects via `./gradlew spotlessApply` and `./gradlew spotbugsMain` (`ignoreFailures = false`).
+3. **Static Security & Defect Gate Before Formatting (SpotBugs + FindSecBugs, then Spotless)**:
+   - Always prioritize semantic correctness and security before aesthetics.
+   - Run `./gradlew :<module>:spotbugsMain` (`ignoreFailures = false`) and tests *before* running `./gradlew spotlessApply`.
+   - Never format code that still has failing tests, unhandled exceptions, or SpotBugs defect violations.
    - Always use explicit `Locale.ROOT` on case conversions (`toLowerCase(Locale.ROOT)`).
    - Always sanitize potential CRLF (`\r`, `\n`) characters before logging dynamic inputs.
    - Always load classpath resources via static class literals (`MyClass.class.getResourceAsStream(...)`), never `getClass()`.
@@ -49,10 +51,15 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - UI Static Contract & ES6 Unit Tests: `./gradlew :wiremock-extension-ui:test --tests "UiAssetAndContractTest" --tests "UiModuleUnitTest" -q --console=plain`
   - UI Targeted Playwright Scenario: `./gradlew :wiremock-extension-ui:test --tests "Ui*PlaywrightTest.testMethodName" -q --console=plain`
   - Console Proxy: `./gradlew :wiremock-extension-ui:test --tests "WireMockConsoleProxyTest.methodName" -q --console=plain`
-- **Outer Loop Gate (Pre-Commit & Pre-PR — Mandatory)**:
-  ```bash
-  ./gradlew spotlessApply check -q --console=plain
-  ```
+- **Pre-Commit Verification & Gate (Ordered: Semantics -> Polish)**:
+  1. **Defects & Tests First**: Verify bytecode correctness and static defects before touching source formatting:
+     ```bash
+     ./gradlew :<module>:spotbugsMain :<module>:test -q --console=plain
+     ```
+  2. **Format & Final Gate**: Once code is semantically verified, format and run the outer gate:
+     ```bash
+     ./gradlew spotlessApply check -q --console=plain
+     ```
 
 ---
 
