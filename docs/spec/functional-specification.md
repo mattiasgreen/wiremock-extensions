@@ -4,6 +4,16 @@
 > **Audience**: Product Designers, Software Architects, Autonomous Coding Agents
 > **Portability Target**: Independent of implementation language (Java, Rust, Go, Python) and presentation layer (Web SPA, Swing Desktop, SwiftUI, Terminal TUI).
 
+> ### 🎯 Core Mission & Progressive Simulation Value Proposition
+>
+> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and stateful databases) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
+>
+> ```mermaid
+> flowchart LR
+>     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Stubs + Stateful AST)"]
+>     B -->|"Deterministic Codegen + AI Synthesis"| C["Stage 3: Domain Simulation SDK<br/>(Type-Safe Java 21 Records, Builders & Replayable Scenarios)"]
+> ```
+
 ---
 
 ## 1. Domain Model & Invariants

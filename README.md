@@ -1,5 +1,15 @@
 # WireMock Extensions Suite
 
+> ### 🎯 Core Mission & Progressive Simulation Value Proposition
+>
+> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and stateful databases) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
+>
+> ```mermaid
+> flowchart LR
+>     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Stubs + Stateful AST)"]
+>     B -->|"Deterministic Codegen + AI Synthesis"| C["Stage 3: Domain Simulation SDK<br/>(Type-Safe Java 21 Records, Builders & Replayable Scenarios)"]
+> ```
+
 A collection of lightweight, production-grade extensions for [WireMock](https://wiremock.org/) and WireMock Standalone.
 
 > 🌐 **Documentation & Interactive Demo**: Visit [https://mattiasgreen.github.io/wiremock-extensions/](https://mattiasgreen.github.io/wiremock-extensions/) for our product landing page, interactive live console sandbox, and technical docs.
