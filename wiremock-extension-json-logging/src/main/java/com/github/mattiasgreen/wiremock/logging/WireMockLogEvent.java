@@ -40,12 +40,45 @@ public class WireMockLogEvent {
     @JsonProperty("response")
     private ResponseDetails response;
 
+    @JsonProperty("traffic_type")
+    private String trafficType;
+
+    @JsonProperty("protocol")
+    private String protocol;
+
+    @JsonProperty("target_upstream")
+    private String targetUpstream;
+
     @JsonProperty("unmatched_reason")
     private String unmatchedReason;
 
     private Map<String, String> mdcTags = new HashMap<>();
 
     public WireMockLogEvent() {}
+
+    public String getTrafficType() {
+        return trafficType;
+    }
+
+    public void setTrafficType(String trafficType) {
+        this.trafficType = trafficType;
+    }
+
+    public String getProtocol() {
+        return protocol;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
+    }
+
+    public String getTargetUpstream() {
+        return targetUpstream;
+    }
+
+    public void setTargetUpstream(String targetUpstream) {
+        this.targetUpstream = targetUpstream;
+    }
 
     public String getTraceId() {
         return traceId;
