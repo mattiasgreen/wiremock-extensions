@@ -54,6 +54,7 @@ export const elements = {
   btnDeleteStub: document.getElementById('btn-delete-stub'),
   btnViewStubInJournal: document.getElementById('btn-view-stub-in-journal'),
   btnCopyCurl: document.getElementById('btn-copy-curl'),
+  btnCopyJava: document.getElementById('btn-copy-java'),
   btnCopyJson: document.getElementById('btn-copy-json'),
 
   // Bulk Actions
@@ -79,6 +80,7 @@ export const elements = {
   editorBodyMatchContainer: document.getElementById('editor-body-match-container'),
   editorBodyMatchLabel: document.getElementById('editor-body-match-label'),
   editorBodyMatchPattern: document.getElementById('editor-body-match-pattern'),
+  editorProxyUrl: document.getElementById('editor-proxy-url'),
 
   // Welcome Guide
   stubDetailEmptyDefault: document.getElementById('stub-detail-empty-default'),

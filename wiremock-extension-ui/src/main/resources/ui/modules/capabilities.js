@@ -87,91 +87,134 @@ export function detectCapabilities(fetchFn) {
 }
 
 /**
- * Toggles UI visibility and state depending on detected capabilities.
+ * Applies visual degradation state to a button or control when an extension capability is missing.
+ * Sets disabled attribute, visual style, and informative tooltip.
+ */
+export function applyControlState(element, isAvailable, missingTooltip) {
+  if (!element) return;
+  if (isAvailable) {
+    element.removeAttribute('disabled');
+    element.classList.remove('cap-disabled');
+    if (element.hasAttribute('data-orig-title')) {
+      element.setAttribute('title', element.getAttribute('data-orig-title'));
+    } else {
+      element.removeAttribute('title');
+    }
+  } else {
+    if (!element.hasAttribute('data-orig-title') && element.getAttribute('title')) {
+      element.setAttribute('data-orig-title', element.getAttribute('title'));
+    }
+    element.setAttribute('disabled', 'true');
+    element.classList.add('cap-disabled');
+    element.setAttribute('title', missingTooltip);
+  }
+}
+
+/**
+ * Toggles UI visual degradation state and informative tooltips depending on detected capabilities.
  */
 export function applyCapabilityVisibility() {
   const caps = state.capabilities;
 
-  // 1. TCP NetEm Tab
+  // 1. TCP NetEm Tab & Container Banner
   if (elements.navTabNetem) {
+    applyControlState(
+      elements.navTabNetem,
+      caps.netem,
+      'TCP Network Emulation requires wiremock-extension-tcp-netem (/__admin/tcp-netem/proxies)'
+    );
+  }
+  const tabNetem = document.getElementById('tab-netem');
+  if (tabNetem) {
+    let missingBanner = document.getElementById('netem-cap-missing-banner');
     if (!caps.netem) {
-      elements.navTabNetem.classList.add('hidden');
-      if (state.activeTab === 'tab-netem') {
-        activateTab('tab-stub-detail');
-        setRoute('stubs');
+      if (!missingBanner) {
+        missingBanner = document.createElement('div');
+        missingBanner.id = 'netem-cap-missing-banner';
+        missingBanner.className = 'cap-missing-banner';
+        missingBanner.innerHTML = '<span>🌐 <strong>Extension Not Installed:</strong> <code>wiremock-extension-tcp-netem</code> is not active on this WireMock instance. Install the extension to enable L4 TCP latency, jitter, bandwidth throttling, and packet loss emulation.</span>';
+        tabNetem.prepend(missingBanner);
       }
-    } else {
-      elements.navTabNetem.classList.remove('hidden');
+      missingBanner.classList.remove('hidden');
+    } else if (missingBanner) {
+      missingBanner.classList.add('hidden');
     }
   }
 
   // 2. Prometheus / Otel Metrics Link
   if (elements.linkMetrics) {
-    if (!caps.metrics) {
-      elements.linkMetrics.classList.add('hidden');
-    } else {
-      elements.linkMetrics.classList.remove('hidden');
-    }
+    applyControlState(
+      elements.linkMetrics,
+      caps.metrics,
+      'Prometheus scrape route requires wiremock-extension-otel (/__admin/metrics/prometheus)'
+    );
   }
 
   // 3. Stateful / Dynamic Stubs Controls
   if (elements.btnCreateDynamicStub) {
-    if (!caps.stateful) {
-      elements.btnCreateDynamicStub.classList.add('hidden');
-    } else {
-      elements.btnCreateDynamicStub.classList.remove('hidden');
-    }
+    applyControlState(
+      elements.btnCreateDynamicStub,
+      caps.stateful,
+      'Stateful entity generator requires wiremock-extension-stateful'
+    );
   }
   if (elements.btnFilterDynamic) {
-    if (!caps.stateful) {
-      elements.btnFilterDynamic.classList.add('hidden');
-      if (state.activeFilter === 'dynamic') {
-        state.activeFilter = 'all';
-        if (elements.btnFilterAll) {
-          document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-          elements.btnFilterAll.classList.add('active');
-        }
+    applyControlState(
+      elements.btnFilterDynamic,
+      caps.stateful,
+      'Dynamic stateful simulation requires wiremock-extension-stateful'
+    );
+    if (!caps.stateful && state.activeFilter === 'dynamic') {
+      state.activeFilter = 'all';
+      if (elements.btnFilterAll) {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        elements.btnFilterAll.classList.add('active');
       }
-    } else {
-      elements.btnFilterDynamic.classList.remove('hidden');
     }
   }
 
-  // 4. Lifecycle / Pause / Disable Controls
+  // 4. Lifecycle / Pause / Disable / Snapshot Controls
   if (elements.btnFilterDisabled) {
-    if (!caps.lifecycle) {
-      elements.btnFilterDisabled.classList.add('hidden');
-      if (state.activeFilter === 'disabled') {
-        state.activeFilter = 'all';
-        if (elements.btnFilterAll) {
-          document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-          elements.btnFilterAll.classList.add('active');
-        }
+    applyControlState(
+      elements.btnFilterDisabled,
+      caps.lifecycle,
+      'Disabled stub store requires wiremock-extension-ui lifecycle endpoint (/__admin/stubs/disabled)'
+    );
+    if (!caps.lifecycle && state.activeFilter === 'disabled') {
+      state.activeFilter = 'all';
+      if (elements.btnFilterAll) {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        elements.btnFilterAll.classList.add('active');
       }
-    } else {
-      elements.btnFilterDisabled.classList.remove('hidden');
     }
   }
   if (elements.btnBulkDisable) {
-    if (!caps.lifecycle) {
-      elements.btnBulkDisable.classList.add('hidden');
-    } else {
-      elements.btnBulkDisable.classList.remove('hidden');
-    }
+    applyControlState(
+      elements.btnBulkDisable,
+      caps.lifecycle,
+      'Bulk pause requires wiremock-extension-ui lifecycle endpoint'
+    );
   }
   if (elements.btnBulkEnable) {
-    if (!caps.lifecycle) {
-      elements.btnBulkEnable.classList.add('hidden');
-    } else {
-      elements.btnBulkEnable.classList.remove('hidden');
-    }
+    applyControlState(
+      elements.btnBulkEnable,
+      caps.lifecycle,
+      'Bulk resume requires wiremock-extension-ui lifecycle endpoint'
+    );
   }
   if (elements.btnToggleStub) {
-    if (!caps.lifecycle) {
-      elements.btnToggleStub.classList.add('hidden');
-    } else {
-      elements.btnToggleStub.classList.remove('hidden');
-    }
+    applyControlState(
+      elements.btnToggleStub,
+      caps.lifecycle,
+      'Pausing/resuming stubs requires wiremock-extension-ui lifecycle endpoint'
+    );
+  }
+  if (elements.btnProjectSnapshot) {
+    applyControlState(
+      elements.btnProjectSnapshot,
+      caps.lifecycle,
+      'Traffic snapshotting requires wiremock-extension-ui lifecycle endpoint'
+    );
   }
 }
 

@@ -67,6 +67,7 @@ class BankingDemoVideoRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setRecordVideoDir(tempVideoDir)
                 .setRecordVideoSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT));
+        DemoCursorHelper.attachToContext(context);
     }
 
     @AfterEach
@@ -86,6 +87,7 @@ class BankingDemoVideoRecordingTest {
     @DisplayName("Record Headless WebM Video Tour: Banking Progressive Simulation (Live Proxy -> Offline Stubs)")
     void recordBankingProgressiveSimulationVideoTour() throws IOException {
         Page page = context.newPage();
+        DemoCursorHelper cursor = new DemoCursorHelper(page);
 
         // SCENE 1: Frame 0 inside WireMock Console UI (Live Proxy Mode)
         page.navigate(harness.getWireMockServer().baseUrl() + "/__admin/ui/#stubs");
@@ -93,42 +95,59 @@ class BankingDemoVideoRecordingTest {
         page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
         assertThat(page.locator("#project-mode-badge").textContent()).contains("LIVE PROXY");
 
-        // Highlight the Casual proxy route stub card
+        // Spotlight the Live Proxy badge to establish initial context
+        cursor.spotlight(page.locator("#project-mode-badge"), 350);
+
+        // Highlight and click the Casual proxy route stub card
         Locator casualProxyCard = page.locator(".stub-card")
                 .filter(new Locator.FilterOptions().setHasText("/__casual/services/.*"))
                 .first();
         assertThat(casualProxyCard.isVisible()).isTrue();
-        casualProxyCard.click();
+        cursor.glideAndClick(casualProxyCard);
         page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 
-        // SCENE 2: Switch to Customer Portal -> Submit Loan Application
+        // SCENE 2: Switch to Customer Portal -> Select Product & Submit Application
         page.navigate(harness.getProductPortal().getPortalUrl());
         page.waitForSelector("#btn-submit-application");
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS);
+        page.waitForTimeout(600);
 
-        page.locator("#btn-submit-application").click();
+        // Spotlight distributed trace correlation pill
+        cursor.spotlight(page.locator("#portal-trace-pill"), 300);
+
+        // Select Green Auto Loan from product catalog dropdown
+        cursor.glideAndSelect(page.locator("#select-product"), "GREEN-AUTO-LOAN");
+        page.waitForTimeout(400);
+
+        // Submit Application
+        cursor.glideAndClick(page.locator("#btn-submit-application"));
         page.waitForSelector("#offer-panel:not(.hidden)");
         assertThat(page.locator("#offer-case-id").textContent()).isEqualTo("CASE-1001");
         assertThat(page.locator("#offer-kyc-status").textContent()).isEqualTo("VERIFIED");
         assertThat(page.locator("#offer-eligibility").textContent()).isEqualTo("ELIGIBLE");
         assertThat(page.locator("#offer-case-status").textContent()).isEqualTo("OFFER_READY");
+
+        // Hover over the generated offer details
+        cursor.glideTo(page.locator("#offer-panel .card-title"));
         page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 
         // SCENE 3: Approve Purchase Order & Trigger Casual 2PC Billing
-        page.locator("#btn-approve-purchase").click();
+        cursor.glideAndClick(page.locator("#btn-approve-purchase"));
         page.waitForSelector("#purchase-confirmation:not(.hidden)");
         assertThat(page.locator("#conf-invoice-id").textContent()).isEqualTo("INV-9001");
         assertThat(page.locator("#conf-xa-status").textContent()).isEqualTo("XA_OK");
         assertThat(page.locator("#conf-case-status").textContent()).isEqualTo("PURCHASED");
         assertThat(page.locator("#conf-sales-id").textContent()).isEqualTo("SALE-5001");
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS + 400);
+
+        // Hover over Casual 2PC confirmation status
+        cursor.glideTo(page.locator("#conf-xa-status"));
+        page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 
         // SCENE 4: Switch to WireMock Console UI -> Inspect Unified Request Journal (7 Proxied Calls)
         page.navigate(harness.getWireMockServer().baseUrl() + "/__admin/ui/#journal");
         page.waitForSelector("#tab-journal.active");
-        page.locator("#btn-refresh-journal").click();
+        cursor.glideAndClick(page.locator("#btn-refresh-journal"));
         page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 7");
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS);
+        page.waitForTimeout(800);
 
         // Expand Casual journal row with protocol-native CASUAL badge and OK status
         Locator casualJournalRow = page.locator("#journal-list tr.journal-row")
@@ -139,21 +158,21 @@ class BankingDemoVideoRecordingTest {
         assertThat(casualJournalRow.locator(".http-badge.badge-CASUAL").textContent())
                 .isEqualTo("CASUAL");
         assertThat(casualJournalRow.locator("td").nth(4).textContent()).isEqualTo("OK");
-        casualJournalRow.click();
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS + 600);
-
-        // SCENE 5: Switch to Stubs View -> Snapshot Recordings & Flip to STUBS MODE
-        page.locator("#nav-tab-stubs").click();
-        page.waitForSelector("#tab-stub-detail.active");
-        page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
-        page.waitForTimeout(800);
-
-        page.onceDialog(Dialog::accept);
-        page.locator("#btn-project-snapshot").click();
-        page.waitForFunction("() => document.getElementById('btn-filter-disabled')?.textContent.includes('7')");
+        cursor.glideAndClick(casualJournalRow);
         page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 
-        page.locator("#btn-project-mode-toggle").click();
+        // SCENE 5: Switch to Stubs View -> Snapshot Recordings & Flip to STUBS MODE
+        cursor.glideAndClick(page.locator("#nav-tab-stubs"));
+        page.waitForSelector("#tab-stub-detail.active");
+        page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
+        page.waitForTimeout(600);
+
+        page.onceDialog(Dialog::accept);
+        cursor.glideAndClick(page.locator("#btn-project-snapshot"));
+        page.waitForFunction("() => document.getElementById('btn-filter-disabled')?.textContent.includes('7')");
+        page.waitForTimeout(800);
+
+        cursor.glideAndClick(page.locator("#btn-project-mode-toggle"));
         page.waitForSelector("#project-mode-badge:has-text('STUBS MODE')");
         page.waitForSelector(".stub-card:has-text('RECORDED')");
 
@@ -162,16 +181,16 @@ class BankingDemoVideoRecordingTest {
                 .filter(new Locator.FilterOptions().setHasText("[RECORDED CASUAL OK]"))
                 .first();
         assertThat(recordedCasualStub.isVisible()).isTrue();
-        recordedCasualStub.click();
+        cursor.glideAndClick(recordedCasualStub);
         page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 
         // Reset journal before offline run
-        page.locator("#nav-tab-journal").click();
+        cursor.glideAndClick(page.locator("#nav-tab-journal"));
         page.waitForSelector("#tab-journal.active");
         page.onceDialog(Dialog::accept);
-        page.locator("#btn-reset-journal").click();
+        cursor.glideAndClick(page.locator("#btn-reset-journal"));
         page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 0");
-        page.waitForTimeout(800);
+        page.waitForTimeout(600);
 
         // SCENE 6: Simulate Upstream Outage -> Stop Backend Server B
         harness.stopUpstreamBackend();
@@ -179,14 +198,15 @@ class BankingDemoVideoRecordingTest {
         // SCENE 7: Customer Portal -> Replay 10-step Customer Journey 100% Offline
         page.navigate(harness.getProductPortal().getPortalUrl());
         page.waitForSelector("#btn-submit-application");
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS);
+        page.waitForTimeout(600);
 
-        page.locator("#btn-submit-application").click();
+        cursor.glideAndSelect(page.locator("#select-product"), "GREEN-AUTO-LOAN");
+        cursor.glideAndClick(page.locator("#btn-submit-application"));
         page.waitForSelector("#offer-panel:not(.hidden)");
         assertThat(page.locator("#offer-case-id").textContent()).isEqualTo("CASE-1001");
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS);
+        page.waitForTimeout(600);
 
-        page.locator("#btn-approve-purchase").click();
+        cursor.glideAndClick(page.locator("#btn-approve-purchase"));
         page.waitForSelector("#purchase-confirmation:not(.hidden)");
         assertThat(page.locator("#conf-invoice-id").textContent()).isEqualTo("INV-9001");
         assertThat(page.locator("#conf-xa-status").textContent()).isEqualTo("XA_OK");
@@ -196,7 +216,7 @@ class BankingDemoVideoRecordingTest {
         // SCENE 8: WireMock Console -> Verify All 7 Calls Served Locally from Stubs
         page.navigate(harness.getWireMockServer().baseUrl() + "/__admin/ui/#journal");
         page.waitForSelector("#tab-journal.active");
-        page.locator("#btn-refresh-journal").click();
+        cursor.glideAndClick(page.locator("#btn-refresh-journal"));
         page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 7");
 
         Locator stubbedJournalRows = page.locator("#journal-list tr.journal-row");
@@ -211,8 +231,8 @@ class BankingDemoVideoRecordingTest {
                 .filter(new Locator.FilterOptions().setHasText("/__casual/services/billing/charge"))
                 .first();
         assertThat(stubbedCasualRow.isVisible()).isTrue();
-        stubbedCasualRow.click();
-        page.waitForTimeout(DEMO_STEP_PAUSE_MS + 1000);
+        cursor.glideAndClick(stubbedCasualRow);
+        page.waitForTimeout(DEMO_STEP_PAUSE_MS + 800);
 
         // Finalize Video Recording
         Video video = page.video();

@@ -106,12 +106,10 @@ export function updateProjectLifecycleBar() {
   const bar = elements.projectLifecycleBar;
   if (!bar) return;
 
-  if (!state.selectedProject) {
-    bar.classList.add('hidden');
-    return;
-  }
-
-  const projStubs = [...state.currentStubs, ...state.disabledStubs].filter(s => getStubProject(s) === state.selectedProject);
+  const allStubs = [...state.currentStubs, ...state.disabledStubs];
+  const projStubs = state.selectedProject
+    ? allStubs.filter(s => getStubProject(s) === state.selectedProject)
+    : allStubs;
   const proxyStubs = projStubs.filter(s => (s.response && !!s.response.proxyBaseUrl) || (s.metadata && s.metadata.mode === 'proxy'));
 
   if (proxyStubs.length === 0) {
@@ -122,7 +120,7 @@ export function updateProjectLifecycleBar() {
   bar.classList.remove('hidden');
 
   if (elements.projectActiveName) {
-    elements.projectActiveName.textContent = state.selectedProject;
+    elements.projectActiveName.textContent = state.selectedProject || 'All Projects';
   }
 
   const activeProxy = proxyStubs.some(s => state.currentStubs.some(c => c.id === s.id));
@@ -148,15 +146,18 @@ export function updateProjectLifecycleBar() {
 export function setupProjectLifecycleBar(loadDataFn) {
   if (elements.btnProjectModeToggle) {
     elements.btnProjectModeToggle.addEventListener('click', async () => {
-      if (!state.selectedProject) return;
-      const projStubs = [...state.currentStubs, ...state.disabledStubs].filter(s => getStubProject(s) === state.selectedProject);
+      const targetProject = state.selectedProject || '_all';
+      const allStubs = [...state.currentStubs, ...state.disabledStubs];
+      const projStubs = state.selectedProject
+        ? allStubs.filter(s => getStubProject(s) === state.selectedProject)
+        : allStubs;
       const proxyStubs = projStubs.filter(s => (s.response && !!s.response.proxyBaseUrl) || (s.metadata && s.metadata.mode === 'proxy'));
       const activeProxy = proxyStubs.some(s => state.currentStubs.some(c => c.id === s.id));
       const targetMode = activeProxy ? 'stubs' : 'proxy';
 
       try {
         elements.btnProjectModeToggle.disabled = true;
-        await setProjectMode(state.selectedProject, targetMode);
+        await setProjectMode(targetProject, targetMode);
         if (loadDataFn) await loadDataFn();
       } catch (err) {
         alert('Failed to switch project mode: ' + err.message);
@@ -168,11 +169,11 @@ export function setupProjectLifecycleBar(loadDataFn) {
 
   if (elements.btnProjectSnapshot) {
     elements.btnProjectSnapshot.addEventListener('click', async () => {
-      if (!state.selectedProject) return;
+      const targetProject = state.selectedProject || '_all';
       try {
         elements.btnProjectSnapshot.disabled = true;
         elements.btnProjectSnapshot.textContent = 'Capturing...';
-        const res = await snapshotProjectRecordings(state.selectedProject);
+        const res = await snapshotProjectRecordings(targetProject);
         if (loadDataFn) await loadDataFn();
         alert(`Snapshot complete! Captured ${res.totalRecorded || 0} stubs in disabled state for review.`);
       } catch (err) {

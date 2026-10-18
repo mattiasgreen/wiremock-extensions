@@ -213,7 +213,7 @@ function buildRowHtml(req) {
                   <span>${isCasual ? `Casual Response: ${escapeHtml(String(displayStatus))} (${escapeHtml(stubName)})` : `Response: Status ${status} (${escapeHtml(stubName)})`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     ${verdict.key !== 'unmatched' && !isStateful ? `
-                      <button class="btn btn-small btn-freeze-req" data-id="${req.id}" title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}">📸 Freeze Stub</button>
+                      <button class="btn btn-small btn-freeze-req ${!state.capabilities.lifecycle ? 'cap-disabled' : ''}" data-id="${req.id}" ${!state.capabilities.lifecycle ? 'disabled title="Freezing into offline stubs requires wiremock-extension-ui lifecycle endpoint"' : `title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}"`}>📸 Freeze Stub</button>
                     ` : ''}
                     ${verdict.key !== 'unmatched' ? `
                       <button class="btn btn-small btn-journal-copy-java" data-id="${req.id}" data-testid="btn-journal-copy-java" title="Copy WireMock Java stubFor() snippet for this request/response pair">☕ Copy Java</button>
@@ -248,8 +248,8 @@ function updateCountDisplay() {
       : `Showing ${total} of ${total}`;
   } else {
     elements.journalFilteredCount.textContent = total > shown
-      ? `Showing ${shown} of ${total} matching (${state.currentRequests.length} loaded)`
-      : `Showing ${total} of ${total} matching (${state.currentRequests.length} loaded)`;
+      ? `Showing ${shown} of ${total} matching (${state.currentRequests.length} total)`
+      : `Showing ${total} of ${total} matching (${state.currentRequests.length} total)`;
   }
 }
 
@@ -300,6 +300,7 @@ function setupEventDelegation() {
       }
       renderJournal();
       setRoute('journal', { q: corr }, true);
+      if (loadJournalFn) loadJournalFn();
       return;
     }
 

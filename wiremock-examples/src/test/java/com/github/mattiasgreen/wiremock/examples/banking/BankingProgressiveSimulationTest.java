@@ -76,6 +76,14 @@ class BankingProgressiveSimulationTest {
                 assertThat(event.getResponse().getBodyAsString()).contains("upstream-server-B");
             });
 
+            // Verify HTTP calls carry distributed trace correlation ID and W3C traceparent
+            assertThat(run1Events.stream().filter(e -> !e.getRequest().getUrl().startsWith("/__casual/")))
+                    .allSatisfy(event -> {
+                        assertThat(event.getRequest().getHeader("X-Correlation-Id"))
+                                .startsWith("BANK-TX-");
+                        assertThat(event.getRequest().getHeader("traceparent")).isNotBlank();
+                    });
+
             // =========================================================================
             // PHASE 2: Snapshot Recordings & Flip to STUBS MODE, then Stop Server B
             // =========================================================================
@@ -130,6 +138,64 @@ class BankingProgressiveSimulationTest {
                         .isEqualTo("recorded-proxy");
                 assertThat(event.getResponse().getStatus()).isEqualTo(200);
             });
+        }
+    }
+
+    @Test
+    @DisplayName("Product Catalog: Orchestrate Green Energy Auto Loan with Dynamic Pricing & 2PC Billing")
+    void shouldOrchestrateGreenAutoLoanWithDynamicCatalogPricing() throws Exception {
+        try (BankingSimulationHarness harness = new BankingSimulationHarness()) {
+            ProductPortalServer portal = harness.getProductPortal();
+
+            ApplicationOfferResult offer =
+                    portal.submitApplication("CUST-99", ProductPortalServer.ProductCatalog.GREEN_AUTO_LOAN);
+            assertThat(offer.productCode()).isEqualTo(ProductPortalServer.ProductCatalog.GREEN_AUTO_LOAN);
+            assertThat(offer.annualFee()).isEqualTo(350.00);
+            assertThat(offer.creditLimit()).isEqualTo(35000);
+            assertThat(offer.kycStatus()).isEqualTo("VERIFIED");
+            assertThat(offer.eligible()).isTrue();
+
+            PurchaseConfirmationResult purchase = portal.approvePurchase(
+                    offer.caseId(), "CUST-99", ProductPortalServer.ProductCatalog.GREEN_AUTO_LOAN, offer.annualFee());
+            assertThat(purchase.productCode()).isEqualTo(ProductPortalServer.ProductCatalog.GREEN_AUTO_LOAN);
+            assertThat(purchase.billedAmount()).isEqualTo(350.00);
+            assertThat(purchase.xaCommitted()).isTrue();
+            assertThat(purchase.caseStatus()).isEqualTo("PURCHASED");
+        }
+    }
+
+    @Test
+    @DisplayName("Resilience & Chaos Simulation: Verify KYC Decline and 2PC Commit Hazard in Banking Portal")
+    void shouldSimulateEdgeFaultsAndResilienceInPortal() throws Exception {
+        try (BankingSimulationHarness harness = new BankingSimulationHarness()) {
+            ProductPortalServer portal = harness.getProductPortal();
+
+            // 1. CRM KYC verification decline simulation
+            ApplicationOfferResult kycDeclined = portal.submitApplication(
+                    "CUST-RISKY",
+                    ProductPortalServer.ProductCatalog.PLATINUM_CREDIT,
+                    "BANK-TX-KYC-FAIL",
+                    "KYC_REJECTED");
+            assertThat(kycDeclined.kycStatus()).isEqualTo("UNVERIFIED");
+            assertThat(kycDeclined.eligible()).isFalse();
+            assertThat(kycDeclined.caseStatus()).isEqualTo("KYC_DECLINED");
+
+            // 2. Normal application followed by simulated 2PC commit heuristic hazard
+            ApplicationOfferResult validOffer =
+                    portal.submitApplication("CUST-42", ProductPortalServer.ProductCatalog.SOLAR_MORTGAGE);
+            assertThat(validOffer.eligible()).isTrue();
+            assertThat(validOffer.annualFee()).isEqualTo(450.00);
+
+            PurchaseConfirmationResult hazardPurchase = portal.approvePurchase(
+                    validOffer.caseId(),
+                    "CUST-42",
+                    ProductPortalServer.ProductCatalog.SOLAR_MORTGAGE,
+                    validOffer.annualFee(),
+                    "BANK-TX-HAZARD",
+                    "COMMIT_HAZARD");
+            assertThat(hazardPurchase.xaCommitted()).isFalse();
+            assertThat(hazardPurchase.caseStatus()).isEqualTo("PENDING_RECONCILIATION");
+            assertThat(hazardPurchase.invoiceId()).contains("HAZARD");
         }
     }
 }

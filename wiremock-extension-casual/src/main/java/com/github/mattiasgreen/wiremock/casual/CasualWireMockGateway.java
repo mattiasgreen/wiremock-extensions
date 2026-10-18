@@ -239,7 +239,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 .toList();
     }
 
-    private CasualServiceCallReplyMessage handleServiceCall(CasualServiceCallRequestMessage req) {
+    CasualServiceCallReplyMessage handleServiceCall(CasualServiceCallRequestMessage req) {
         String serviceName = req.getServiceName();
         ServiceBuffer requestBuffer = req.getServiceBuffer();
 
@@ -411,6 +411,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                         TransactionState.valueOf(txStateHeader.get().trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException ignored) {
             }
+        } else if (errorState != ErrorState.OK) {
+            transactionState = TransactionState.ROLLBACK_ONLY;
         }
 
         if (isTransactional(req.getXid())) {
@@ -581,6 +583,9 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         Xid xid = req.getXid();
         XAReturnCode override = (xid != null) ? prepareVoteOverrides.remove(xid) : null;
         if (override != null) {
+            if (override != XAReturnCode.XA_OK && override != XAReturnCode.XA_RDONLY) {
+                cleanupTransactionState(xid);
+            }
             return CasualTransactionResourcePrepareReplyMessage.of(
                     req.getExecution(), xid, req.getResourceId(), override);
         }
@@ -658,5 +663,17 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
         return CasualTransactionResourceRollbackReplyMessage.of(
                 req.getExecution(), xid, req.getResourceId(), XAReturnCode.XA_OK);
+    }
+
+    public int getPrepareVoteOverridesSize() {
+        return prepareVoteOverrides.size();
+    }
+
+    public int getCommitVoteOverridesSize() {
+        return commitVoteOverrides.size();
+    }
+
+    public int getRollbackVoteOverridesSize() {
+        return rollbackVoteOverrides.size();
     }
 }

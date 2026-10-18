@@ -8,11 +8,16 @@ description: >-
 
 # Pull Request (PR) & Release Preparation Runbook
 
-## 1. Pre-Commit Outer Loop Quality Gate
-Once your targeted inner-loop tests pass, run the mandatory outer gate:
-```bash
-./gradlew spotlessApply check -q --console=plain
-```
+## 1. Pre-Commit Quality Gate
+Always prioritize defects and security before formatting polish:
+1. **Verify Static Defects & Unit Tests First**:
+   ```bash
+   ./gradlew spotbugsMain test -q --console=plain
+   ```
+2. **Apply Formatting & Run Final Gate**:
+   ```bash
+   ./gradlew spotlessApply check -q --console=plain
+   ```
 - **If `wiremock-extension-casual` was modified**: Also run the 3-node 2PC/MitM integration suite:
   ```bash
   ./gradlew :wiremock-extension-casual:quarkusIntegrationTest -q --console=plain

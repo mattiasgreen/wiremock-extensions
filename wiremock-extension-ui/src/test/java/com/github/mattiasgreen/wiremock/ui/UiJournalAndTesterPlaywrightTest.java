@@ -146,21 +146,33 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(detailRow.isVisible()).isTrue();
 
         page.locator("#journal-search").fill("users");
+        page.locator("#journal-search").press("Enter");
+        page.waitForTimeout(100);
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         page.locator("#journal-search").fill("nonexistent-endpoint-xyz");
+        page.locator("#journal-search").press("Enter");
+        page.waitForTimeout(100);
         assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(0);
 
         page.locator("#journal-search").fill("users AND 200");
+        page.locator("#journal-search").press("Enter");
+        page.waitForTimeout(100);
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         page.locator("#journal-search").fill("users AND 500");
+        page.locator("#journal-search").press("Enter");
+        page.waitForTimeout(100);
         assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(0);
 
         page.locator("#journal-search").fill("users OR nonexistent");
+        page.locator("#journal-search").press("Enter");
+        page.waitForTimeout(100);
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         page.locator("#journal-search").fill("");
+        page.locator("#journal-search").press("Enter");
+        page.waitForTimeout(100);
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         assertThat(pageErrors).isEmpty();

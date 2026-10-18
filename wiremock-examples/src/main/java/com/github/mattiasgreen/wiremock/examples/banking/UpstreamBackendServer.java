@@ -1,5 +1,8 @@
 package com.github.mattiasgreen.wiremock.examples.banking;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -14,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.transaction.xa.Xid;
+import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
@@ -43,6 +47,7 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
 
     private final HttpServer httpServer;
     private final CasualServer casualServer;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicInteger caseApiCallCount = new AtomicInteger();
     private final AtomicInteger crmApiCallCount = new AtomicInteger();
@@ -187,18 +192,44 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
             String method = exchange.getRequestMethod();
 
             if ("POST".equalsIgnoreCase(method) && "/api/cases".equals(path)) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                String productCode = "PLATINUM-CREDIT";
+                String customerId = "CUST-42";
+                try {
+                    JsonNode n = objectMapper.readTree(body);
+                    if (n.has("productCode")) {
+                        productCode = n.path("productCode").asText("PLATINUM-CREDIT");
+                    }
+                    if (n.has("customerId")) {
+                        customerId = n.path("customerId").asText("CUST-42");
+                    }
+                } catch (JsonProcessingException ignored) {
+                }
                 sendJson(
                         exchange,
                         200,
-                        "{\"caseId\":\"CASE-1001\",\"customerId\":\"CUST-42\","
-                                + "\"productCode\":\"PLATINUM-CREDIT\",\"status\":\"APPLICATION_RECEIVED\","
+                        "{\"caseId\":\"CASE-1001\",\"customerId\":\"" + customerId + "\","
+                                + "\"productCode\":\"" + productCode + "\",\"status\":\"APPLICATION_RECEIVED\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/offer")) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                double annualFee = 299.00;
+                int creditLimit = 25000;
+                try {
+                    JsonNode n = objectMapper.readTree(body);
+                    if (n.has("annualFee")) {
+                        annualFee = n.path("annualFee").asDouble(299.00);
+                    }
+                    if (n.has("creditLimit")) {
+                        creditLimit = n.path("creditLimit").asInt(25000);
+                    }
+                } catch (JsonProcessingException ignored) {
+                }
                 sendJson(
                         exchange,
                         200,
                         "{\"caseId\":\"CASE-1001\",\"status\":\"OFFER_READY\","
-                                + "\"annualFee\":299.00,\"creditLimit\":25000,"
+                                + "\"annualFee\":" + annualFee + ",\"creditLimit\":" + creditLimit + ","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/complete")) {
                 sendJson(
@@ -232,11 +263,24 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
                                 + "\"eligibleForPurchase\":true,\"segment\":\"PREMIER\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/sales")) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                String productCode = "PLATINUM-CREDIT";
+                String customerId = "CUST-42";
+                try {
+                    JsonNode n = objectMapper.readTree(body);
+                    if (n.has("productCode")) {
+                        productCode = n.path("productCode").asText("PLATINUM-CREDIT");
+                    }
+                    if (n.has("customerId")) {
+                        customerId = n.path("customerId").asText("CUST-42");
+                    }
+                } catch (JsonProcessingException ignored) {
+                }
                 sendJson(
                         exchange,
                         200,
-                        "{\"customerId\":\"CUST-42\",\"salesRecordId\":\"SALE-5001\","
-                                + "\"productCode\":\"PLATINUM-CREDIT\",\"status\":\"RECORDED\","
+                        "{\"customerId\":\"" + customerId + "\",\"salesRecordId\":\"SALE-5001\","
+                                + "\"productCode\":\"" + productCode + "\",\"status\":\"RECORDED\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else {
                 sendJson(exchange, 404, "{\"error\":\"Unknown CRM route\"}");
@@ -244,9 +288,13 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
         });
     }
 
-    private static void sendJson(HttpExchange exchange, int status, String json) throws IOException {
+    private void sendJson(HttpExchange exchange, int status, String json) throws IOException {
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
+        String correlationId = exchange.getRequestHeaders().getFirst("X-Correlation-Id");
+        if (correlationId != null && !correlationId.isBlank()) {
+            exchange.getResponseHeaders().set("X-Correlation-Id", correlationId);
+        }
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);
@@ -265,8 +313,29 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
             activeBranchXids.add(req.getXid());
         }
 
-        String replyJson = "{\"invoiceId\":\"INV-9001\",\"customerId\":\"CUST-42\","
-                + "\"amount\":299.00,\"currency\":\"EUR\",\"status\":\"CHARGED\","
+        String reqPayload = CasualBufferUtils.extractPayload(req.getServiceBuffer());
+        double amount = 299.00;
+        String productCode = "PLATINUM-CREDIT";
+        String customerId = "CUST-42";
+        try {
+            if (reqPayload != null && !reqPayload.isBlank()) {
+                JsonNode n = objectMapper.readTree(reqPayload);
+                if (n.has("amount")) {
+                    amount = n.path("amount").asDouble(299.00);
+                }
+                if (n.has("productCode")) {
+                    productCode = n.path("productCode").asText("PLATINUM-CREDIT");
+                }
+                if (n.has("customerId")) {
+                    customerId = n.path("customerId").asText("CUST-42");
+                }
+            }
+        } catch (JsonProcessingException ignored) {
+        }
+
+        String replyJson = "{\"invoiceId\":\"INV-9001\",\"customerId\":\"" + customerId + "\","
+                + "\"amount\":" + amount + ",\"currency\":\"EUR\",\"status\":\"CHARGED\","
+                + "\"productCode\":\"" + productCode + "\","
                 + "\"service\":\""
                 + req.getServiceName()
                 + "\",\"processedBy\":\"upstream-server-B\"}";
