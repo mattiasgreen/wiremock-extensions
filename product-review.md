@@ -121,9 +121,38 @@ Re-implementing business invariants inside an in-memory JSON AST engine (or dupl
   - Compile-time type safety.
   - 100% invariant parity guaranteed by construction.
 
+### 4.6. The "Crossing Line": WireMock Simulation vs. Producer-Provided Testcontainers
+Even when a simulator reuses compiled domain invariants from the producer's code, there is an architectural boundary where simulating the service inside WireMock ceases to be practical:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          THE CROSSING LINE                             │
+├───────────────────────────────────┬────────────────────────────────────┤
+│ Zone A: Pure WireMock Simulation  │ Zone B: Producer Testcontainer     │
+│ (In-Process, Sub-Millisecond)     │ (Real Service Code in Container)   │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ • Fast, in-process (< 20ms boot)  │ • Service requires real ACID DB    │
+│ • Request-reply HTTP & Casual RPC │ • Message queues (Kafka/RabbitMQ)  │
+│ • Native Scenario state machines  │ • Background timers & schedulers   │
+│ • Handlebars response templating  │ • Deep relational / graph state    │
+│ • Shared domain model validation  │ • Heavy multi-step saga engines    │
+└───────────────────────────────────┴────────────────────────────────────┘
+```
+
+* **Where to Draw the Line**:
+  - If a service is relatively simple (request-reply, CRUD, parameterized templates, finite sequential states), it is ideally hosted directly in WireMock with our extensions.
+  - Once a service requires complex internal transactions, real message broker topologies, or asynchronous scheduler loops, attempting to simulate that inside WireMock (even with extensions) re-invents the real system inside a mock.
+* **The Producer's True Responsibility in Zone B**:
+  - The producer should provide a **super-lightweight Testcontainer** (or portable native binary) that provisions an instance of their *actual* service, pre-configured with in-memory replacements (e.g. H2/SQLite for relational DB, embedded brokers for MQ) and pre-wired stubs for its own downstream dependencies.
+* **WireMock's Essential Role in Zone B**:
+  - WireMock is **not** replaced in Zone B! WireMock acts as the **Intelligent Interceptor & Chaos Proxy**:
+    1. Proxies traffic between the SUT and the Producer's Testcontainer.
+    2. Stubs the Testcontainer's *own* external dependencies.
+    3. Injects Layer 4 network chaos (NetEm virtual-thread latency/jitter/drops) and Layer 7 fault states (Casual XA heuristic votes, HTTP 500s) that the real service container cannot easily inject on its own.
+
 ---
 
-## 5. Dual Ecosystem Archetypes: Bottom-Up Reverse Engineering vs. Producer-Owned SDKs
+## 5. Dual Ecosystem Archetypes & Strategic Themes
 
 A key realization in API virtualization is that simulations serve two completely different operational use cases with distinct constraints:
 
@@ -137,23 +166,24 @@ A key realization in API virtualization is that simulations serve two completely
 │ • Upstream provides no SDKs/stubs │ • Service provider publishes an    │
 │ • Opaque 3rd-party / legacy APIs  │   official Simulation SDK          │
 │ • Captured via WireMock proxy     │ • Includes state machines, stubs,  │
-│ • Reverse-engineered from logs    │   fluent builders, Cucumber steps  │
-│ • Serves as a bootstrap catalyst  │ • Invariants share real domain code│
-│                                   │ • Tested in Producer CI for parity │
+│ • User queries: "cust OR case"    │   fluent builders, Cucumber steps  │
+│ • Filter by datetime range        │ • Invariants share real domain code│
+│ • 1-click stub creation from logs │ • Brokerless PACT parity in CI     │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
 
-### 5.1. Archetype 1: Consumer "Bottom-Up" (The Reverse-Engineered Bootstrap)
-Teams are routinely tasked with testing against upstream services (legacy mainframes, 3rd-party gateways, or uncooperative internal teams) that provide zero SDKs, zero stubs, and zero sandbox environments.
-* In this context, teams use WireMock Extensions to **bootstrap an SDK on their own**.
+### 5.1. Strategic Theme: Bootstrapping & Modernizing Legacy / 3rd-Party Simulation SDKs
+Teams are routinely tasked with introducing mocks and simulators to test against legacy systems, 3rd-party SaaS platforms, or uncooperative internal teams that provide zero SDKs, zero stubs, and zero sandbox environments.
+* In this context, teams use WireMock Extensions to **bootstrap modern, expressive simulation toolkits on their own**.
 * They run WireMock as a live proxy sniffer, capture transactions, cluster multi-protocol traces, and synthesize initial DTOs and baseline `stubFor()` mappings.
-* This is recognized for what it is: **a bottom-up, reverse-engineered starting point** to unblock test automation.
+* This is recognized for what it is: **a bottom-up, reverse-engineered starting point** that unblocks test automation where none existed before.
 
 ### 5.2. Archetype 2: Producer-Provided "Top-Down" (Verified Simulation SDKs — The Gold Standard)
 The architecturally correct approach is for the **service provider to author, publish, and maintain an official Simulation SDK** alongside their service:
 1. **Ready-Made Simulation Kit**: Downstream consumers add `testImplementation("org.company:billing-simulation-sdk:2.4.0")`.
 2. **First-Class Domain Ergonomics**: The kit provides fluent Java domain builders (`CustomerBuilder.aCustomer().isVip()`), ready-to-run WireMock stubs, and reusable Cucumber step definitions (`Given a verified customer with balance 500`).
 3. **Open Source & Collaborative**: The SDK is open source within the organization (or public on GitHub), encouraging consumers to contribute new edge cases, scenarios, and fault models.
+4. **Boundary Honesty**: As long as the service fits in Zone A, it is simulated in WireMock; if it crosses into Zone B, the producer provides a lightweight Testcontainer.
 
 ### 5.3. The Collaborative Open-Source Flywheel
 These two archetypes do not compete; they form a virtuous lifecycle flywheel:
@@ -161,20 +191,26 @@ These two archetypes do not compete; they form a virtuous lifecycle flywheel:
 2. **Handoff (The Catalyst)**: The consumer opens a Pull Request to the producer's repository: *"We built an automated WireMock simulation harness representing our integration with your service. Can you adopt this as your official client simulation kit?"*
 3. **Adoption & Invariant Unification**: The producer adopts the kit, wires it to their shared `*-domain-model` invariant classes, and publishes it as the official SDK.
 
-### 5.4. Producer CI Testing & Continuous Contract Parity
-How does the producer guarantee that their Simulation SDK never drifts from their actual production service?
-* **Dual-Target BDD / Cucumber Verification**: The producer maintains a canonical set of Cucumber feature files or JUnit 5 test suites modeling their service contracts.
+### 5.4. Brokerless Contract Parity: The Zero-Infrastructure PACT Alternative
+Traditional Consumer-Driven Contract (CDC) testing with PACT provides contract safety, but in practice PACT imposes an immense operational tax:
+* Running and maintaining a dedicated PACT Broker server.
+* Managing complex consumer/producer matrix states in CI.
+* Writing tests in specialized, non-standard PACT DSLs.
+
+**Our Brokerless Alternative**:
+* The producer maintains a canonical set of Cucumber feature files or JUnit 5 test suites modeling their service contracts.
 * The producer's CI pipeline runs the **exact same test suite twice**:
   1. **Target 1 (Real Service)**: Executes against the running Spring Boot / Quarkus microservice with real database/messaging.
   2. **Target 2 (Simulation SDK)**: Executes in-process against the `billing-simulation-sdk` backed by WireMock.
-* If a code change alters production response shapes, error codes, or state transitions without updating the simulation kit, **the producer's CI build fails immediately**.
-* **Synchronized Versioning**: The SDK is published in lockstep with the service (`billing-service:2.4.0` $\leftrightarrow$ `billing-simulation-sdk:2.4.0`).
+* **The Result**: 100% contract parity verified in CI with **zero PACT broker, zero extra server infrastructure**, and standard Git/Maven dependency versioning (`billing-service:2.4.0` $\leftrightarrow$ `billing-simulation-sdk:2.4.0`).
 
-### 5.5. Lean Implementation of Item 12 (Session Recording & Harvesting)
-To empower the Consumer "Bottom-Up" bootstrapping phase without introducing massive complexity or feature bloat, **Item 12 is strictly bounded to 3 lightweight primitives** (under ~250 lines of Java 21):
-1. **`ActiveSession`**: In-memory, thread-safe token set (`ConcurrentHashMap.newKeySet()`) tracking active correlation identifiers (`X-Correlation-Id`, `caseId`, `customerId`).
-2. **`SnowballHarvesterListener`**: A standard WireMock `ServeEventListener` that inspects outgoing response JSON payloads for common entity key conventions (`*Id`, `*Number`, `Xid`) and appends newly minted identifiers to the active session token set in real time.
-3. **Native Bundle Export**: Serializes the clustered session events into WireMock's existing JSON format with zero custom binary formats or external graph databases.
+### 5.5. Ultra-Lean Session Capture: Compound Queries, Datetime Range, and Filtered Stub Creation
+Rather than introducing complex dynamic background entity mining ("snowball harvesting"), we achieve the exact same operational outcome through **three simple, deterministic primitives**:
+1. **Compound Identity Search**: The user explicitly provides the identities they want to isolate in the journal search bar (e.g. `CASE-1001 OR CUST-42 OR INV-5544`). Our backend `JournalFilterService` already evaluates boolean `AND` / `OR` expressions with zero overhead.
+2. **Datetime Range Filtering**: Users can filter the Request Journal by datetime range (`since` / `until` timestamps or UI presets: "Last 5m", "Last 15m", "Custom Range") to isolate exactly the test run they just executed, cutting through ambient background traffic.
+3. **"Create Stubs from Filtered Requests"**: A single action in the UI that snapshots all **proxied requests matching the currently active filter/timerange** into permanent, disabled/active WireMock stubs.
+
+This completely eliminates runtime regex harvesting engines while delivering a fast, deterministic, 100% transparent workflow for bootstrapping stubs from recorded sessions.
 
 ---
 
@@ -247,10 +283,12 @@ To eliminate bloat, minimize maintenance risk, and focus engineering effort on h
 3. **Mock OAuth2 / OIDC Provider**: WireMock stubs with static JWKS endpoints (`/.well-known/jwks.json`) and Handlebars-templated JWTs are sufficient; an embedded authentication server is out of scope.
 
 ### What to Retain & Calibrate
-1. **Session Recording & Compound Correlation (Item 12)**: Retain strictly as a lean, 3-primitive component (sub-250 LOC) to serve the Consumer "Bottom-Up" bootstrapping phase.
+1. **Deterministic Session Scoping (Item 12)**: Keep session capture lean and user-driven (compound search queries like `customerid OR caseid` + datetime range), eliminating speculative background harvesting engines.
 
-### What to Accelerate
-1. **Robust Packaging & Publishing**: Maven Central publication, Docker standalone container (`ghcr.io`), and standalone runnable bundle JAR.
-2. **Air-Gapped Self-Containment**: Formal verification that Web UI assets and console operations function 100% offline in isolated environments.
-3. **Java DSL / Codegen Ergonomics**: Refine the UI's `Copy Java stubFor()` export and DTO generation to make converting journal traffic into checked-in test code effortless.
-4. **Documentation & GitHub Pages Demo**: Maintain high-quality documentation and the static interactive sandbox demonstrating the core four pillars.
+### What to Accelerate & Implement Next
+1. **Request Journal Datetime Range Filtering**: Add `since` / `until` timestamp parameters to `JournalFilterService` and quick-select presets ("Last 5m", "Last 15m", "Custom Range") in the Web UI to isolate exact test execution windows.
+2. **"Create Stubs from Filtered Requests"**: A single-click UI action that snapshots all **proxied requests matching the currently active filter & datetime range** into WireMock stubs, enabling effortless bottom-up bootstrapping of test fixtures.
+3. **Robust Packaging & Publishing**: Maven Central publication, Docker standalone container (`ghcr.io`), and standalone runnable bundle JAR.
+4. **Air-Gapped Self-Containment**: Formal verification that Web UI assets and console operations function 100% offline in isolated environments.
+5. **Java DSL / Codegen Ergonomics**: Refine the UI's `Copy Java stubFor()` export and DTO generation to make converting journal traffic into checked-in test code effortless.
+6. **Documentation & GitHub Pages Demo**: Maintain high-quality documentation and the static interactive sandbox demonstrating the core four pillars.
