@@ -12,6 +12,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -255,6 +257,111 @@ class StubLifecycleAdminEndpointTest {
 
             assertThat(offlineRes.statusCode()).isEqualTo(200);
             assertThat(offlineRes.body()).contains("live-upstream");
+
+        } finally {
+            if (upstreamServer.isRunning()) {
+                upstreamServer.stop();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should snapshot only filtered request IDs to disabled stub store or active stubs")
+    void shouldSnapshotFilteredRecordings() throws Exception {
+        WireMockServer upstreamServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstreamServer.start();
+
+        try {
+            upstreamServer.stubFor(WireMock.get(urlEqualTo("/api/customers/42"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"id\":42,\"name\":\"Alice\"}")));
+            upstreamServer.stubFor(WireMock.get(urlEqualTo("/api/invoices/99"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"id\":99,\"amount\":150.0}")));
+
+            // Configure proxy stub on server
+            server.stubFor(
+                    WireMock.any(urlMatching("/api/.*")).willReturn(aResponse().proxiedFrom(upstreamServer.baseUrl())));
+
+            // Execute both requests through server
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/api/customers/42"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/api/invoices/99"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            // Fetch request IDs from server serve events
+            HttpResponse<String> journalRes = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/__admin/requests"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            JsonNode journalJson = objectMapper.readTree(journalRes.body());
+            String customerRequestId = null;
+            String invoiceRequestId = null;
+            for (JsonNode reqNode : journalJson.get("requests")) {
+                String url = reqNode.get("request").get("url").asText();
+                if ("/api/customers/42".equals(url)) {
+                    customerRequestId = reqNode.get("id").asText();
+                } else if ("/api/invoices/99".equals(url)) {
+                    invoiceRequestId = reqNode.get("id").asText();
+                }
+            }
+            assertThat(customerRequestId).isNotNull();
+            assertThat(invoiceRequestId).isNotNull();
+
+            // 1. Snapshot ONLY customer request into disabled store with project "CustomerDomain"
+            String payload1 = objectMapper.writeValueAsString(
+                    Map.of("requestIds", List.of(customerRequestId), "project", "CustomerDomain", "activate", false));
+            HttpResponse<String> snapRes1 = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/__admin/stubs/snapshot-filtered"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(payload1))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            assertThat(snapRes1.statusCode()).isEqualTo(200);
+            JsonNode snapJson1 = objectMapper.readTree(snapRes1.body());
+            assertThat(snapJson1.get("totalRecorded").asInt()).isEqualTo(1);
+            assertThat(snapJson1.get("status").asText()).isEqualTo("disabled");
+            assertThat(snapJson1.get("project").asText()).isEqualTo("CustomerDomain");
+
+            assertThat(disabledStubStore.size()).isEqualTo(1);
+            com.github.tomakehurst.wiremock.stubbing.StubMapping disabledStub =
+                    disabledStubStore.getAll().iterator().next();
+            assertThat(disabledStub.getRequest().getUrl()).isEqualTo("/api/customers/42");
+            assertThat(disabledStub.getResponse().getBody()).contains("Alice");
+            assertThat(disabledStub.getMetadata().getString("project")).isEqualTo("CustomerDomain");
+
+            // 2. Snapshot invoice request directly to ACTIVE mappings
+            String payload2 = objectMapper.writeValueAsString(
+                    Map.of("requestIds", List.of(invoiceRequestId), "project", "BillingDomain", "activate", true));
+            HttpResponse<String> snapRes2 = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/__admin/stubs/snapshot-filtered"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(payload2))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            assertThat(snapRes2.statusCode()).isEqualTo(200);
+            JsonNode snapJson2 = objectMapper.readTree(snapRes2.body());
+            assertThat(snapJson2.get("totalRecorded").asInt()).isEqualTo(1);
+            assertThat(snapJson2.get("status").asText()).isEqualTo("active");
+            assertThat(snapJson2.get("project").asText()).isEqualTo("BillingDomain");
+
+            // Active stubs should now include invoice stub
+            boolean foundInvoiceStub = server.listAllStubMappings().getMappings().stream()
+                    .anyMatch(s -> "/api/invoices/99".equals(s.getRequest().getUrl()));
+            assertThat(foundInvoiceStub).isTrue();
 
         } finally {
             if (upstreamServer.isRunning()) {

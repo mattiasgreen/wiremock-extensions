@@ -14,6 +14,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 
@@ -90,9 +92,15 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
             }
         }
 
+        QueryParameter sinceParam = serveEvent.getRequest().queryParameter("since");
+        Instant since = parseInstant(sinceParam);
+
+        QueryParameter untilParam = serveEvent.getRequest().queryParameter("until");
+        Instant until = parseInstant(untilParam);
+
         List<ServeEvent> allEvents = admin.getServeEvents().getServeEvents();
         JournalFilterService.JournalFilterResult result =
-                journalFilterService.filter(allEvents, q, verdict, unmatchedOnly, status, limit);
+                journalFilterService.filter(allEvents, q, verdict, unmatchedOnly, status, since, until, limit);
 
         Map<String, Object> respMap = Map.of(
                 "requests", result.requests(),
@@ -109,6 +117,22 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
                 .withHeader("Cache-Control", "no-cache, no-store, must-revalidate")
                 .withBody(Json.write(respMap))
                 .build();
+    }
+
+    private Instant parseInstant(QueryParameter param) {
+        if (param == null || !param.isPresent() || param.firstValue().isBlank()) {
+            return null;
+        }
+        String val = param.firstValue().trim();
+        try {
+            return Instant.parse(val);
+        } catch (DateTimeParseException e) {
+            try {
+                return Instant.ofEpochMilli(Long.parseLong(val));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
     }
 
     private ResponseDefinition serveVersionInfo() {

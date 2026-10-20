@@ -31,7 +31,8 @@ import {
   getRequestVerdict,
   renderJournal,
   setupJournalAutoRefresh,
-  registerJournalLoader
+  registerJournalLoader,
+  getFilteredProxiedRequests
 } from './modules/journal.js';
 import {
   renderScenarios,
@@ -83,7 +84,8 @@ import {
   loadJournal,
   loadScenarios,
   loadData,
-  executeTesterRequest
+  executeTesterRequest,
+  snapshotFilteredRecordings
 } from './modules/api.js';
 import {
   setupDynamicStubModal,
@@ -551,6 +553,114 @@ if (elements.journalSearch) {
     if (e.key === 'Enter') {
       e.preventDefault();
       loadJournal();
+    }
+  });
+}
+if (elements.journalTimeRange) {
+  elements.journalTimeRange.addEventListener('change', () => {
+    const range = elements.journalTimeRange.value;
+    state.journalTimeRange = range;
+    const now = Date.now();
+    if (range === 'custom') {
+      if (elements.journalCustomTime) elements.journalCustomTime.classList.remove('hidden');
+      return;
+    }
+    if (elements.journalCustomTime) elements.journalCustomTime.classList.add('hidden');
+    if (range === '5m') {
+      state.journalSince = new Date(now - 5 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else if (range === '15m') {
+      state.journalSince = new Date(now - 15 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else if (range === '1h') {
+      state.journalSince = new Date(now - 60 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else if (range === '24h') {
+      state.journalSince = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else {
+      state.journalSince = null;
+      state.journalUntil = null;
+    }
+    renderJournal();
+    loadJournal();
+  });
+}
+if (elements.journalTimeSince) {
+  elements.journalTimeSince.addEventListener('change', () => {
+    state.journalSince = elements.journalTimeSince.value ? new Date(elements.journalTimeSince.value).toISOString() : null;
+    renderJournal();
+    loadJournal();
+  });
+  elements.journalTimeSince.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      state.journalSince = elements.journalTimeSince.value ? new Date(elements.journalTimeSince.value).toISOString() : null;
+      renderJournal();
+      loadJournal();
+    }
+  });
+}
+if (elements.journalTimeUntil) {
+  elements.journalTimeUntil.addEventListener('change', () => {
+    state.journalUntil = elements.journalTimeUntil.value ? new Date(elements.journalTimeUntil.value).toISOString() : null;
+    renderJournal();
+    loadJournal();
+  });
+  elements.journalTimeUntil.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      state.journalUntil = elements.journalTimeUntil.value ? new Date(elements.journalTimeUntil.value).toISOString() : null;
+      renderJournal();
+      loadJournal();
+    }
+  });
+}
+if (elements.btnJournalSnapshotFiltered) {
+  elements.btnJournalSnapshotFiltered.addEventListener('click', async () => {
+    const proxiedReqs = getFilteredProxiedRequests();
+    if (!proxiedReqs || proxiedReqs.length === 0) return;
+    const count = proxiedReqs.length;
+    const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
+      ? state.selectedProject
+      : 'Recorded Traffic';
+
+    elements.btnJournalSnapshotFiltered.disabled = true;
+    const origText = elements.btnJournalSnapshotFiltered.innerHTML;
+    elements.btnJournalSnapshotFiltered.textContent = '⏳ Snapshotting...';
+
+    try {
+      const requestIds = proxiedReqs.map(r => r.id);
+      if (state.capabilities.lifecycle) {
+        await snapshotFilteredRecordings(requestIds, targetProject, false);
+      } else {
+        // Vanilla WireMock fallback: create active mappings
+        for (const req of proxiedReqs) {
+          const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+          const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+          await doFetch('/__admin/mappings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `[RECORDED ${req.request.method} ${status}] ${req.request.url}`,
+              priority: 5,
+              request: { method: req.request.method, url: req.request.url },
+              response: { status, body: resBody },
+              metadata: { source: 'recorded-proxy', project: targetProject, mode: 'static' }
+            })
+          });
+        }
+      }
+      await loadData();
+      elements.btnJournalSnapshotFiltered.textContent = `✅ Snapshotted ${count}!`;
+      setTimeout(() => {
+        elements.btnJournalSnapshotFiltered.innerHTML = origText;
+        renderJournal();
+      }, 2000);
+    } catch (err) {
+      alert('Failed to snapshot recordings: ' + err.message);
+      elements.btnJournalSnapshotFiltered.innerHTML = origText;
+      renderJournal();
     }
   });
 }

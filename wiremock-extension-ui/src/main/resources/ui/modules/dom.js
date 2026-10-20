@@ -133,6 +133,12 @@ export const elements = {
   journalLimitInput: document.getElementById('journal-limit-input'),
   journalFilteredCount: document.getElementById('journal-filtered-count'),
   filterUnmatchedOnly: document.getElementById('filter-unmatched-only'),
+  journalTimeRange: document.getElementById('journal-time-range'),
+  journalCustomTime: document.getElementById('journal-custom-time'),
+  journalTimeSince: document.getElementById('journal-time-since'),
+  journalTimeUntil: document.getElementById('journal-time-until'),
+  btnJournalSnapshotFiltered: document.getElementById('btn-journal-snapshot-filtered'),
+  journalProxiedCount: document.getElementById('journal-proxied-count'),
   btnRefreshJournal: document.getElementById('btn-refresh-journal'),
   btnResetJournal: document.getElementById('btn-reset-journal'),
 

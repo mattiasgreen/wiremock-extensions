@@ -498,16 +498,39 @@ export function renderJournal(resetLimit = true) {
   const filter = (elements.journalSearch ? elements.journalSearch.value : '').trim();
   const unmatchedOnly = elements.filterUnmatchedOnly ? elements.filterUnmatchedOnly.checked : false;
   const verdictFilter = state.journalVerdictFilter || 'all';
+  const sinceMs = state.journalSince ? new Date(state.journalSince).getTime() : null;
+  const untilMs = state.journalUntil ? new Date(state.journalUntil).getTime() : null;
 
   lastFilteredRequests = state.currentRequests.filter(r => {
     const verdict = getRequestVerdict(r);
     if (unmatchedOnly && verdict.key !== 'unmatched') return false;
     if (verdictFilter !== 'all' && verdict.key !== verdictFilter) return false;
+    if (sinceMs !== null || untilMs !== null) {
+      const loggedDate = r.request && r.request.loggedDate;
+      if (loggedDate) {
+        const t = typeof loggedDate === 'number' ? loggedDate : new Date(loggedDate).getTime();
+        if (!isNaN(t)) {
+          if (sinceMs !== null && t < sinceMs) return false;
+          if (untilMs !== null && t > untilMs) return false;
+        }
+      }
+    }
     if (!filter) return true;
     const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
     const statefulEntity = getHeader(rHeaders, 'x-wiremock-stateful-entity') || '';
     return matchesJournalEntry(r, filter, statefulEntity, `${verdict.key} ${verdict.type} ${verdict.label}`);
   });
+
+  const proxiedFiltered = lastFilteredRequests.filter(r => getRequestVerdict(r).key === 'proxied');
+  if (elements.journalProxiedCount) {
+    elements.journalProxiedCount.textContent = proxiedFiltered.length;
+  }
+  if (elements.btnJournalSnapshotFiltered) {
+    elements.btnJournalSnapshotFiltered.disabled = proxiedFiltered.length === 0;
+    elements.btnJournalSnapshotFiltered.title = proxiedFiltered.length > 0
+      ? `Snapshot ${proxiedFiltered.length} proxied request(s) into disabled stubs`
+      : 'No proxied requests match the active filter';
+  }
 
   if (resetLimit) {
     visibleCount = 50;
@@ -521,7 +544,7 @@ export function renderJournal(resetLimit = true) {
   if (total === 0) {
     if (unmatchedOnly || verdictFilter === 'unmatched') {
       elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No unmatched requests recorded.</td></tr>';
-    } else if (filter || verdictFilter !== 'all') {
+    } else if (filter || verdictFilter !== 'all' || sinceMs !== null || untilMs !== null) {
       elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No matching requests found.</td></tr>';
     } else {
       elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>';
@@ -530,6 +553,10 @@ export function renderJournal(resetLimit = true) {
   }
 
   elements.journalList.innerHTML = itemsToRender.map(req => buildRowHtml(req)).join('');
+}
+
+export function getFilteredProxiedRequests() {
+  return (lastFilteredRequests || []).filter(r => getRequestVerdict(r).key === 'proxied');
 }
 
 export function setupJournalAutoRefresh() {

@@ -625,6 +625,12 @@ body {
   border-color: var(--accent-color);
 }
 
+.journal-custom-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .table-container {
   flex: 1;
   overflow: auto;

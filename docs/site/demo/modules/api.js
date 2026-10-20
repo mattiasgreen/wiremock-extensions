@@ -196,6 +196,8 @@ export function loadJournal() {
   if (q) params.set('q', q);
   if (verdict && verdict !== 'all') params.set('verdict', verdict);
   if (unmatchedOnly) params.set('unmatched', 'true');
+  if (state.journalSince) params.set('since', state.journalSince);
+  if (state.journalUntil) params.set('until', state.journalUntil);
 
   const serverEndpoint = `/__admin/ui/api/requests?${params.toString()}`;
 
@@ -457,6 +459,14 @@ export function inspectOpenApi(spec) {
 export function snapshotProjectRecordings(project) {
   const enc = encodeURIComponent(project || '*');
   return apiPost(`/__admin/projects/${enc}/recordings/snapshot`);
+}
+
+export function snapshotFilteredRecordings(requestIds, project, activate = false) {
+  return apiPost('/__admin/stubs/snapshot-filtered', {
+    requestIds,
+    project,
+    activate
+  });
 }
 
 export function setProjectMode(project, mode) {
