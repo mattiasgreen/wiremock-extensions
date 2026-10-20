@@ -18,6 +18,7 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
 | **`wiremock-extension-casual`** | In-process Netty XATMI / Casual protocol TCP gateway, L7 proxy recording, and 2PC/XA transaction participant/forwarding. | `CasualWireMockGateway`, `se.laz.casual.*` standalone client/server | [`casual/AGENTS.md`](wiremock-extension-casual/AGENTS.md) |
 | **`wiremock-extension-ui`** | Embedded Vanilla ES6 Web SPA at `/__admin/ui/`, stub lifecycle store, and headless `WireMockConsoleProxy`. | `AdminApiExtension` (`UiAdminApiEndpoint`, `StubLifecycleAdminEndpoint`) | [`ui/AGENTS.md`](wiremock-extension-ui/AGENTS.md) |
 | **`wiremock-extension-bundle`** | Meta-jar aggregating extensions with SPI auto-discovery (`META-INF/services/...ExtensionFactory`) + `StandaloneDevServer`. | Meta-packaging & standalone JavaExec runner | Root rules |
+| **`wiremock-cli`** | Lightweight, zero-compile CLI & proxy client powered by JDK 21 JEP 330 for terminal observability, stub search, traffic tailing, and NetEm toxic inspection. | JEP 330 standalone runner (`wm`), `WireMockCli`, `WireMockConsoleProxy` | Root rules |
 | **`wiremock-examples`** | Case Management reference implementation modeling stateful FSM scenarios and parallel isolation tests. | Reference implementation & integration test suite | Root rules |
 
 ---
@@ -50,7 +51,9 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - Backend / Java / Casual: `./gradlew :<module>:test --tests "ClassName.methodName" -q --console=plain`
   - UI Static Contract & ES6 Unit Tests: `./gradlew :wiremock-extension-ui:test --tests "UiAssetAndContractTest" --tests "UiModuleUnitTest" -q --console=plain`
   - UI Targeted Playwright Scenario: `./gradlew :wiremock-extension-ui:test --tests "Ui*PlaywrightTest.testMethodName" -q --console=plain`
-  - Console Proxy: `./gradlew :wiremock-extension-ui:test --tests "WireMockConsoleProxyTest.methodName" -q --console=plain`
+  - Developer CLI & Proxy: `./gradlew :wiremock-cli:test --tests "WireMockCliTest.shouldEvaluateStubExpressions" -q --console=plain`
+  - Instant CLI Run (0s compile): `./wiremock-cli/bin/wm info` or `java wiremock-cli/WireMockCli.java stubs`
+  - Instant Console Proxy Run (0s compile): `./wiremock-cli/bin/wm proxy` or `java wiremock-cli/WireMockConsoleProxy.java`
 - **Pre-Commit Verification & Gate (Ordered: Semantics -> Polish)**:
   1. **Defects & Tests First**: Verify bytecode correctness and static defects before touching source formatting:
      ```bash
