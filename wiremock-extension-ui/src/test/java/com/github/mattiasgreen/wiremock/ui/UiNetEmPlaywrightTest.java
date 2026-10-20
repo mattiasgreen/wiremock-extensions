@@ -67,7 +67,19 @@ public class UiNetEmPlaywrightTest {
 
         netEmProxy = TcpNetEmRegistry.getInstance()
                 .register(new NetEmProxyConfig("wiremock-netem", 0, "127.0.0.1", wireMockServer.port(), true));
+    }
 
+    @AfterAll
+    void stopAll() throws Exception {
+        TcpNetEmRegistry.getInstance().remove("wiremock-netem");
+        if (wireMockServer != null && wireMockServer.isRunning()) {
+            wireMockServer.stop();
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        pageErrors.clear();
         Browser browser = AbstractUiPlaywrightTest.getSharedBrowser();
         context = browser.newContext();
         page = context.newPage();
@@ -78,24 +90,15 @@ public class UiNetEmPlaywrightTest {
         });
     }
 
-    @AfterAll
-    void stopAll() throws Exception {
-        if (context != null) {
-            context.close();
-        }
-        TcpNetEmRegistry.getInstance().remove("wiremock-netem");
-        if (wireMockServer != null && wireMockServer.isRunning()) {
-            wireMockServer.stop();
-        }
-    }
-
-    @BeforeEach
-    void setUp() {
-        pageErrors.clear();
-    }
-
     @AfterEach
     void tearDown() {
+        if (context != null) {
+            try {
+                context.close();
+            } catch (Exception ignored) {
+            }
+            context = null;
+        }
         netEmProxy.clearToxics();
         netEmProxy.getJournal().clear();
     }
@@ -179,6 +182,7 @@ public class UiNetEmPlaywrightTest {
                 "() => document.getElementById('netem-ingress-info') && document.getElementById('netem-ingress-info').textContent.includes('wiremock-netem')");
 
         // 1. Initial State: No toxics active
+        page.waitForSelector("#netem-toxics-list .empty-state");
         Locator toxicsList = page.locator("#netem-toxics-list");
         assertThat(toxicsList.textContent()).contains("No network impairments active");
 
