@@ -122,33 +122,32 @@ Re-implementing business invariants inside an in-memory JSON AST engine (or dupl
   - 100% invariant parity guaranteed by construction.
 
 ### 4.6. The "Crossing Line": WireMock Simulation vs. Producer-Provided Testcontainers
-Even when a simulator reuses compiled domain invariants from the producer's code, there is an architectural boundary where simulating the service inside WireMock ceases to be practical:
+Even when a simulator reuses compiled domain invariants from the producer's code, there is an architectural boundary where simulating the service inside WireMock ceases to be practical. However, as detailed in the companion guide [Testing Strategy & Simulation Best Practices](docs/testing-strategy-and-simulation-best-practices.md), this crossing line must not be drawn prematurely based solely on "sync vs. async":
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          THE CROSSING LINE                             │
-├───────────────────────────────────┬────────────────────────────────────┤
-│ Zone A: Pure WireMock Simulation  │ Zone B: Producer Testcontainer     │
-│ (In-Process, Sub-Millisecond)     │ (Real Service Code in Container)   │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ • Fast, in-process (< 20ms boot)  │ • Service requires real ACID DB    │
-│ • Request-reply HTTP & Casual RPC │ • Message queues (Kafka/RabbitMQ)  │
-│ • Native Scenario state machines  │ • Background timers & schedulers   │
-│ • Handlebars response templating  │ • Deep relational / graph state    │
-│ • Shared domain model validation  │ • Heavy multi-step saga engines    │
-└───────────────────────────────────┴────────────────────────────────────┘
+LEVEL 1                     LEVEL 2                     LEVEL 3                     LEVEL 4
+Pure Logic & Synthesis      In-JVM Component Mock       Wire Boundary (RPC / Net)   Full Environment Boundary
+────────────────────────    ────────────────────────    ────────────────────────    ────────────────────────
+Domain logic & transforms   In-memory client mocks      WireMock & Extensions       Testcontainers / Real Env
+• No network, no sockets    • Mockito / Spock           • Real HTTP / Casual wire   • Multi-process Docker
+• Producer SDK Data         • Bypasses serialization,   • Serialization, headers,   • Opaque proprietary code
+  Synthesis / Builders        headers & network           W3C tracing, NetEm chaos    or legacy binary internals
+• Sub-millisecond           • Sub-millisecond           • Sub-10ms, deterministic   • 10s–minutes, heavy
 ```
 
-* **Where to Draw the Line**:
-  - If a service is relatively simple (request-reply, CRUD, parameterized templates, finite sequential states), it is ideally hosted directly in WireMock with our extensions.
-  - Once a service requires complex internal transactions, real message broker topologies, or asynchronous scheduler loops, attempting to simulate that inside WireMock (even with extensions) re-invents the real system inside a mock.
-* **The Producer's True Responsibility in Zone B**:
+* **Where the Crossing Line Truly Sits**:
+  - **Not Sync vs. Async**: Asynchronous flows (e.g. Order placed $\to$ wait state $\to$ Billing confirmation) do **not** require a full Testcontainer if the *test case itself* drives the progression. In BDD / integration tests, the SUT enters an observable wait state; the BDD test driver stimulates the SUT by firing a webhook callback or test-queue message via the Producer's companion TestKit. The simulator remains completely lean (no autonomous background timers).
+  - **Rich Information Systems (Complex Graphs)**: Read-heavy services with complex relational data (CRM profiles, risk scoring scorecards, product catalogs) are synchronous and easily simulated at the wire level, but require sophisticated **Producer SDK Test Data Builders** rather than fragile hand-rolled JSON dumps.
+  - **What Crosses the Line (Level 4 Testcontainer)**: Reserved strictly for opaque proprietary algorithmic complexity (e.g. proprietary fraud scoring models), deep internal database trigger logic, or legacy binary runtimes where the *entire purpose of the test* is to verify internal black-box computation.
+* **The Producer's True Responsibility in Level 4**:
   - The producer should provide a **super-lightweight Testcontainer** (or portable native binary) that provisions an instance of their *actual* service, pre-configured with in-memory replacements (e.g. H2/SQLite for relational DB, embedded brokers for MQ) and pre-wired stubs for its own downstream dependencies.
-* **WireMock's Essential Role in Zone B**:
-  - WireMock is **not** replaced in Zone B! WireMock acts as the **Intelligent Interceptor & Chaos Proxy**:
+* **WireMock's Essential Role in Level 4**:
+  - WireMock is **not** replaced in Level 4! WireMock acts as the **Intelligent Interceptor & Chaos Proxy**:
     1. Proxies traffic between the SUT and the Producer's Testcontainer.
     2. Stubs the Testcontainer's *own* external dependencies.
     3. Injects Layer 4 network chaos (NetEm virtual-thread latency/jitter/drops) and Layer 7 fault states (Casual XA heuristic votes, HTTP 500s) that the real service container cannot easily inject on its own.
+
+> For an in-depth exploration of execution boundaries, orthogonal complexity dimensions, and simulation archetypes, see the dedicated architecture guide: [`docs/testing-strategy-and-simulation-best-practices.md`](docs/testing-strategy-and-simulation-best-practices.md).
 
 ---
 
