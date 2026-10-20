@@ -91,7 +91,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
 ```
 
 **Maven**:
@@ -99,7 +99,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-ui</artifactId>
-    <version>0.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -108,7 +108,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
 Add the JAR to the classpath:
 
 ```bash
-java -cp "wiremock-extension-ui-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-ui-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080
 ```
@@ -164,8 +164,40 @@ It combines an embedded JDK 21 `HttpServer` with a transparent, CORS-free revers
 
 ### Automated Verification
 * Web SPA: Playwright integration tests (`UiPlaywrightTest`)
+* In-Browser Headless Unit Tests: Direct ES module verification (`UiModuleUnitTest`)
 * Desktop Container & Reverse Proxy: In-memory WireMock tests (`WireMockStudioTest`)
 
 ```bash
 ./gradlew :wiremock-extension-ui:test
 ```
+
+## Testing Strategy & Roadmap
+
+### Test Pyramid Rebalancing (TODO)
+
+To maintain high development velocity and fast feedback loops while honoring the **Zero NPM / Zero JS Bundlers** constraint, we are shifting verification toward the foundation of the test pyramid:
+
+```
+          /  E2E Playwright Tests  \         <-- High fidelity (DOM layout, visual regressions, full browser navigation)
+         /   (UiPlaywrightTest.java) \
+        /-----------------------------\
+       /  In-Browser Headless Modules  \      <-- Blazing fast (<2s execution, pure logic & algorithms)
+      /    (UiModuleUnitTest.java)      \
+     /-----------------------------------\
+```
+
+#### Priority Feature Areas for Unit-Level Migration
+
+1. **Query Parsing & Deep Filtering (`modules/filter.js`)**:
+   - Complex nested boolean expressions (`AND`, `OR`, whitespace precedence).
+   - Deep inspection across headers, query parameters, body patterns, JSON payloads, and custom `metadata` (e.g. correlation IDs, customer/tenant attributes).
+2. **cURL Command Generator (`modules/stubs.js` -> `generateCurl`)**:
+   - Escaping single/double quotes, newlines, binary bodies, query string formatting, and corporate header synthesis.
+3. **Stateful Scenario & DAG State Transitions (`modules/scenarios.js`)**:
+   - Extracting scenario definitions, topological DAG ordering, cycle detection, and terminal state resolution.
+4. **Router & Deep-Link Hash Serialization (`modules/router.js`)**:
+   - Encoding/decoding query parameters (`#tester?m=POST&p=...`), active tab switching, and state restoration on hash change.
+5. **JSON Highlighter & Formatter (`modules/highlighter.js`)**:
+   - Tokenization edge cases, HTML entity escaping, null/boolean coloring, and large payload truncation.
+6. **Dynamic Stateful Model Normalizer (`modules/dynamic-stubs.js`)**:
+   - Converting in-memory AST schemas, routes, and mutation specifications into virtual stub mappings.

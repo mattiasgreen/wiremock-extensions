@@ -337,6 +337,7 @@ body {
 .badge-DELETE { background-color: var(--badge-delete); }
 .badge-PATCH { background-color: var(--badge-patch); }
 .badge-ANY { background-color: var(--badge-default); }
+.badge-CASUAL { background-color: #0d9488; letter-spacing: 0.02em; }
 
 .stub-card-url {
   font-family: monospace;
@@ -437,8 +438,8 @@ body {
 
 .detail-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
 }
@@ -447,17 +448,32 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  width: 100%;
 }
 
 .detail-url {
   font-family: monospace;
   font-size: 1.1rem;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detail-name {
   color: var(--text-muted);
   font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .detail-summary-cards {
@@ -569,6 +585,50 @@ body {
   gap: 6px;
   cursor: pointer;
   user-select: none;
+}
+
+.select-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.input-tiny {
+  padding: 3px 6px;
+  font-size: 0.82rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.input-tiny:focus {
+  border-color: var(--accent-color);
+}
+
+.select-small {
+  padding: 3px 8px;
+  font-size: 0.82rem;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+}
+
+.select-small:focus {
+  border-color: var(--accent-color);
+}
+
+.journal-custom-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .table-container {
@@ -693,8 +753,14 @@ body {
   text-align: center;
 }
 
-.pill-matched {
+.pill-matched,
+.pill-stubbed {
   color: var(--status-2xx);
+  font-weight: 600;
+}
+
+.pill-proxied {
+  color: #38bdf8;
   font-weight: 600;
 }
 
@@ -1800,6 +1866,68 @@ kbd {
   letter-spacing: 0.5px;
 }
 
+.pill-proxied {
+  color: #38bdf8 !important;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.pill-stub {
+  color: var(--status-2xx) !important;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.status-badge.badge-tpl {
+  background-color: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  font-size: 0.62rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.journal-verdict-pills {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+.journal-verdict-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 4px 10px;
+}
+
+.journal-corr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.journal-corr-chip:hover {
+  background: rgba(99, 102, 241, 0.28);
+}
+
+.journal-unmatched-diagnostic {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 5px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  color: #fcd34d;
+}
+
 .text-dynamic {
   color: #22d3ee !important;
 }
@@ -2136,6 +2264,8 @@ kbd {
   border-radius: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .project-mode-badge.mode-proxy {
@@ -2454,6 +2584,34 @@ kbd {
   background-color: rgba(100, 116, 139, 0.15);
   color: #94a3b8;
   border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+/* --- Graceful Capability Degradation Styles --- */
+.cap-disabled,
+button[disabled].cap-disabled,
+a[disabled].cap-disabled,
+.filter-pill[disabled].cap-disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: auto !important; /* ensures hover tooltip remains active */
+  filter: grayscale(70%);
+}
+
+.cap-missing-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px dashed rgba(100, 116, 139, 0.6);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.cap-missing-banner strong {
+  color: var(--text-main);
 }
 
 /* --- TCP NetEm Styles --- */

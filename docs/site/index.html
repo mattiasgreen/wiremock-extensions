@@ -158,6 +158,46 @@
     </div>
   </section>
 
+  <!-- Architecture Overview -->
+  <section id="architecture">
+    <div class="container">
+      <div class="section-header">
+        <span class="badge indigo">Zero Sprawl</span>
+        <h2 style="margin-top: 0.5rem;">Unified In-Process Simulator Stack</h2>
+        <p>Run all enterprise simulation capabilities inside a single JVM process or standalone JAR container.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Dual-Ingress Layer 4 &amp; Layer 7 Architecture</h3>
+          <p>
+            <code>wiremock-extensions</code> deploys an in-process dual-ingress pattern using Java 21 Virtual Threads:
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><strong>Port 8080 (L7 WireMock Core)</strong>: Admin API, Web UI, OpenAPI ingestion, Prometheus metrics, and mock execution.</li>
+            <li><strong>Port 8081 (L4 NetEm Ingress)</strong>: Transparent TCP proxy forwarding to 8080 with in-flight socket slicing, bandwidth throttling, and RST packet injection.</li>
+          </ul>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">
+            Both ingresses share the same memory space, requiring zero external Toxiproxy containers or root OS netem privileges.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Zero-Sprawl Java SPI Auto-Discovery</h3>
+          <p>
+            Drop <code>wiremock-extension-bundle-1.2.0.jar</code> onto the classpath alongside <code>wiremock-standalone</code>.
+            Standard Java <code>ServiceLoader</code> dynamically registers every extension without XML or manual configuration:
+          </p>
+          <pre class="code-block"><code><span class="comment">// ExtensionFactory auto-registers all endpoints:</span>
+http://localhost:8080/__admin/ui/
+http://localhost:8080/__admin/openapi/import
+http://localhost:8080/__admin/metrics/prometheus
+http://localhost:8080/__admin/netem/proxies</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Competitive Comparison Matrix -->
   <section id="comparison" style="background: var(--bg-secondary);">
     <div class="container">
@@ -255,7 +295,7 @@
         <div class="card">
           <h3>Option A: Standalone CLI Runner</h3>
           <p>Drop the bundle JAR alongside your standard WireMock Standalone JAR:</p>
-          <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+          <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar"</span> \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 --verbose</code></pre>
           <p style="margin-top: 1rem; color: var(--accent-emerald); font-weight: 600;">
@@ -267,7 +307,7 @@
           <h3>Option B: Gradle &amp; JUnit 5 Test Suite</h3>
           <p>Add the extension bundle as a test dependency:</p>
           <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
-testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'</span>
 
 <span class="comment">// In your tests, standard WireMock auto-discovers all extensions:</span>
 <span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)

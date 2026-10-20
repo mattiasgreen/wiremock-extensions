@@ -5,6 +5,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.2.1...v1.3.0) (2026-10-18)
+
+
+### Features
+
+* **build:** improve dev environment setup ([6af0c21](https://github.com/mattiasgreen/wiremock-extensions/commit/6af0c21f1d9df248ee21c5aff0de95a32a7c6cdb))
+* **build:** improve dev environment setup, corporate mirror guidance, and IDE-agnostic runtime classpath ([dd7b1a3](https://github.com/mattiasgreen/wiremock-extensions/commit/dd7b1a3a077c9afd07bf5cb42bb612c94665f585))
+* **bundle:** preload StandaloneDevServer with stateful AST, templated, and Casual presets ([78e7a03](https://github.com/mattiasgreen/wiremock-extensions/commit/78e7a035fee623d159de99438a97cd7ea45af8df))
+* **casual,netem:** add L7 fault injection, XA heuristic overrides, Toxiproxy L4 chaos, and multi-tier test suite ([9497346](https://github.com/mattiasgreen/wiremock-extensions/commit/949734674ae38b2df292966d93fa2fe25ec626b2))
+* **casual,ui:** add in-process CasualProxyTransformer and Casual-native UI journal/stub badges ([4f3e1f6](https://github.com/mattiasgreen/wiremock-extensions/commit/4f3e1f6d796c4ad39a0edd373e0be4042bce90c1))
+* **casual:** add transparent upstream proxy forwarding, match detection, and stub recording ([bb4d432](https://github.com/mattiasgreen/wiremock-extensions/commit/bb4d432d955ea314a9d7156a6969336a0ac002db))
+* **casual:** full XATMI failure modes, user error codes, tx state, and sensible record defaults ([04cf135](https://github.com/mattiasgreen/wiremock-extensions/commit/04cf135b09197f1b6cedce255fd3bce8abd932f5))
+* **casual:** implement in-process Netty gateway PoC and verification test suite ([e3c5d70](https://github.com/mattiasgreen/wiremock-extensions/commit/e3c5d70ebd9f8c198cca7d6256105f3a92feee6d))
+* **casual:** initialize wiremock-extension-casual subproject and PLAN.md ([1ce3c3b](https://github.com/mattiasgreen/wiremock-extensions/commit/1ce3c3b00867ab4a5ff3ab622e0fa0d62c0dfcd1))
+* **casual:** phase 1 - support 2PC/XA transaction forwarding and synthetic XA voting ([d5b1db2](https://github.com/mattiasgreen/wiremock-extensions/commit/d5b1db219bcac6dd954b0565a79cfcd37dbad35e))
+* **casual:** record and replay upstream faults with X-Casual-Error-State ([4e33310](https://github.com/mattiasgreen/wiremock-extensions/commit/4e33310af7543cfa1c7ce1436ec85bbe41067554))
+* **casual:** verify PoC with passing integration tests and clean spotbugs gate ([47bd6e7](https://github.com/mattiasgreen/wiremock-extensions/commit/47bd6e75197db1ef63b9e207af1771bc0bd233fc))
+* **examples,ui:** add dual-tab banking progressive simulation Playwright test, visual snapshots, and spec alignment ([4cd3260](https://github.com/mattiasgreen/wiremock-extensions/commit/4cd3260dbd682b20137176cef79ecf2fa8796696))
+* **examples,ui:** add headless Playwright WebM demo video tour and recordDemoVideos task ([64cfe59](https://github.com/mattiasgreen/wiremock-extensions/commit/64cfe59f0ab6f524f745f2cb7475791096b1dd11))
+* **examples:** add 3-node banking progressive simulation harness and headless JUnit E2E test ([5b5df4f](https://github.com/mattiasgreen/wiremock-extensions/commit/5b5df4f53199ab901d9848ca61a1d25a47d0242a))
+* **examples:** add dynamic product catalog, trace correlation, and chaos simulation to banking scenario ([1e955b6](https://github.com/mattiasgreen/wiremock-extensions/commit/1e955b63b0a8b1bb60eb01018e8bb1d62750d290))
+* **otel:** add stubbed vs proxied traffic taxonomy, protocol dimensions, and runtime health gauges ([fd01f9b](https://github.com/mattiasgreen/wiremock-extensions/commit/fd01f9bae3e33a0c06dad76eebb56749d7b0effc))
+* **otel:** add stubbed vs proxied traffic taxonomy, protocol dimensions, and runtime health gauges ([de4845b](https://github.com/mattiasgreen/wiremock-extensions/commit/de4845b5b48cc40701b5f7751514c02381170c91))
+* **ui,examples,casual:** Multi-Protocol Progressive Simulation (HTTP + Casual 2PC) ([3c48ade](https://github.com/mattiasgreen/wiremock-extensions/commit/3c48adecf647df963e3885696cce6bb053b5d53a))
+* **ui:** add deep free-text search with boolean AND/OR filtering for stubs and journal ([c3f01eb](https://github.com/mattiasgreen/wiremock-extensions/commit/c3f01ebff90eb69e7eedd0bf02ec1e6af07374d1))
+* **ui:** add graceful degradation and visual tooltip hints for vanilla WireMock ([834a338](https://github.com/mattiasgreen/wiremock-extensions/commit/834a338482bd7f2c05576a4b46aeee7593bd5988))
+* **ui:** add multi-tab uri identification and distinguish stubbed vs proxied journal resolutions ([0eb92ef](https://github.com/mattiasgreen/wiremock-extensions/commit/0eb92ef893756a2b4606a01b703227307080bdf9))
+* **ui:** add page title to indicate remote wiremock, show if stubs are mocked or proxied ([45bf7c9](https://github.com/mattiasgreen/wiremock-extensions/commit/45bf7c942b48e80a6b6c5f30bb3cb179f9e3d589))
+* **ui:** add server-side journal filtering with boolean AND/OR query evaluation ([13159d9](https://github.com/mattiasgreen/wiremock-extensions/commit/13159d9a5b0238be59ffe9f534a18f01e3eb99d9))
+* **ui:** implement 4-verdict journal taxonomy, unmatched triage, proxy route preset, and Java stubFor() copy ([99817a8](https://github.com/mattiasgreen/wiremock-extensions/commit/99817a8cab1bac2b4ba3ec42e6f501862eef2bef))
+* **ui:** include target url and proxy strategy in WireMockConsoleProxy startup URI ([04db186](https://github.com/mattiasgreen/wiremock-extensions/commit/04db186424a3878fe44a5c5fa7832c3f6d95fd47))
+* **ui:** update Copy as cURL to generate stub creation command with EOF heredoc ([18a821a](https://github.com/mattiasgreen/wiremock-extensions/commit/18a821a5cd6d54cad86dd583387ccd623c3a1a24))
+
+
+### Bug Fixes
+
+* **ui:** improved journal filtering and viewing ([404e028](https://github.com/mattiasgreen/wiremock-extensions/commit/404e028122da734e99dcb3d4a4a5a5137522262d))
+* **ui:** journal high-volume lazy progressive rendering and server-side unmatched filter ([a91dfd4](https://github.com/mattiasgreen/wiremock-extensions/commit/a91dfd4317a421cb2dd1eb82206281371a1f3f7c))
+* **ui:** update degradation test assertions and refine journal count display ([462eae3](https://github.com/mattiasgreen/wiremock-extensions/commit/462eae3ec46d3244870804d445e3d37d78037746))
+
+
+### Performance Improvements
+
+* **workflow:** optimize Gradle/Playwright inner-outer loops and modularize agent instructions ([d08b4e3](https://github.com/mattiasgreen/wiremock-extensions/commit/d08b4e3667761b8aa79adc322d154b799fc4bc63))
+
+## [1.2.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.2.0...v1.2.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **tcp-netem:** escape ampersand in NetEmCircularJournal javadoc and enforce javadoc in check ([0102a4a](https://github.com/mattiasgreen/wiremock-extensions/commit/0102a4a6085876a3f1842b40bdba4e48892d59a7))
+
 ## [1.2.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.1.0...v1.2.0) (2026-10-12)
 
 

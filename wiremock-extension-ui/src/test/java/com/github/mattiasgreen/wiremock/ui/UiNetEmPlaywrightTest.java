@@ -14,10 +14,8 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
-import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Playwright;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -41,8 +39,6 @@ public class UiNetEmPlaywrightTest {
 
     private WireMockServer wireMockServer;
     private TcpNetEmProxy netEmProxy;
-    private Playwright playwright;
-    private Browser browser;
     private BrowserContext context;
     private Page page;
     private Path webOutputDir;
@@ -72,17 +68,20 @@ public class UiNetEmPlaywrightTest {
         netEmProxy = TcpNetEmRegistry.getInstance()
                 .register(new NetEmProxyConfig("wiremock-netem", 0, "127.0.0.1", wireMockServer.port(), true));
 
-        playwright = Playwright.create();
-        browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+        Browser browser = AbstractUiPlaywrightTest.getSharedBrowser();
+        context = browser.newContext();
+        page = context.newPage();
+        page.onDialog(dialog -> dialog.accept());
+        page.onPageError(error -> {
+            System.err.println("BROWSER UNCAUGHT ERROR: " + error);
+            pageErrors.add(error);
+        });
     }
 
     @AfterAll
     void stopAll() throws Exception {
-        if (browser != null) {
-            browser.close();
-        }
-        if (playwright != null) {
-            playwright.close();
+        if (context != null) {
+            context.close();
         }
         TcpNetEmRegistry.getInstance().remove("wiremock-netem");
         if (wireMockServer != null && wireMockServer.isRunning()) {
@@ -93,20 +92,10 @@ public class UiNetEmPlaywrightTest {
     @BeforeEach
     void setUp() {
         pageErrors.clear();
-        context = browser.newContext();
-        page = context.newPage();
-        page.onDialog(dialog -> dialog.accept());
-        page.onPageError(error -> {
-            System.err.println("BROWSER UNCAUGHT ERROR: " + error);
-            pageErrors.add(error);
-        });
     }
 
     @AfterEach
     void tearDown() {
-        if (context != null) {
-            context.close();
-        }
         netEmProxy.clearToxics();
         netEmProxy.getJournal().clear();
     }

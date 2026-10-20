@@ -4,6 +4,7 @@ import com.github.tomakehurst.wiremock.extension.Parameters;
 import com.github.tomakehurst.wiremock.extension.ServeEventListener;
 import com.github.tomakehurst.wiremock.http.LoggedResponse;
 import com.github.tomakehurst.wiremock.http.Request;
+import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import io.opentelemetry.api.common.AttributeKey;
@@ -11,7 +12,9 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
+import java.util.Locale;
 import java.util.Objects;
+import org.slf4j.MDC;
 
 /**
  * ServeEventListener that manages the OpenTelemetry SERVER span lifecycle for every served request.
@@ -34,6 +37,13 @@ public class OtelTracingListener implements ServeEventListener {
     private static final AttributeKey<String> WIREMOCK_SCENARIO_NAME = AttributeKey.stringKey("wiremock.scenario_name");
     private static final AttributeKey<String> WIREMOCK_SCENARIO_STATE =
             AttributeKey.stringKey("wiremock.scenario_state");
+    private static final AttributeKey<String> WIREMOCK_TRAFFIC_TYPE = AttributeKey.stringKey("wiremock.traffic_type");
+    private static final AttributeKey<String> WIREMOCK_PROTOCOL = AttributeKey.stringKey("wiremock.protocol");
+    private static final AttributeKey<String> WIREMOCK_TARGET_UPSTREAM =
+            AttributeKey.stringKey("wiremock.target_upstream");
+    private static final AttributeKey<String> RPC_SYSTEM = AttributeKey.stringKey("rpc.system");
+    private static final AttributeKey<String> RPC_SERVICE = AttributeKey.stringKey("rpc.service");
+    private static final AttributeKey<String> CASUAL_ERROR_STATE = AttributeKey.stringKey("casual.error_state");
 
     private final OtelTracingRegistry tracingRegistry;
 
@@ -82,6 +92,15 @@ public class OtelTracingListener implements ServeEventListener {
                 .setSpanKind(SpanKind.SERVER)
                 .startSpan();
 
+        String traceId = span.getSpanContext().getTraceId();
+        String spanId = span.getSpanContext().getSpanId();
+        if (traceId != null && !traceId.isBlank()) {
+            MDC.put("trace_id", traceId);
+        }
+        if (spanId != null && !spanId.isBlank()) {
+            MDC.put("span_id", spanId);
+        }
+
         span.setAttribute(HTTP_REQUEST_METHOD, method);
         span.setAttribute(URL_FULL, request.getAbsoluteUrl());
         span.setAttribute(URL_PATH, sanitizeSpanPath(request.getUrl()));
@@ -129,6 +148,88 @@ public class OtelTracingListener implements ServeEventListener {
             }
             if (stub.getRequiredScenarioState() != null) {
                 span.setAttribute(WIREMOCK_SCENARIO_STATE, stub.getRequiredScenarioState());
+            }
+        }
+
+        ResponseDefinition respDef = serveEvent.getResponseDefinition();
+        boolean isFault =
+                (respDef != null && respDef.getFault() != null) || (response != null && response.getFault() != null);
+
+        boolean isProxied = (respDef != null && respDef.isProxyResponse())
+                || (stub != null
+                        && stub.getResponse() != null
+                        && stub.getResponse().isProxyResponse());
+
+        String targetUpstream = null;
+        if (respDef != null
+                && respDef.getProxyBaseUrl() != null
+                && !respDef.getProxyBaseUrl().isBlank()) {
+            targetUpstream = respDef.getProxyBaseUrl();
+        } else if (stub != null
+                && stub.getResponse() != null
+                && stub.getResponse().getProxyBaseUrl() != null
+                && !stub.getResponse().getProxyBaseUrl().isBlank()) {
+            targetUpstream = stub.getResponse().getProxyBaseUrl();
+        }
+
+        String trafficType;
+        if (isFault) {
+            trafficType = "fault";
+        } else if (isProxied) {
+            trafficType = "proxied";
+        } else if (matched) {
+            trafficType = "stubbed";
+        } else {
+            trafficType = "unmatched";
+        }
+        span.setAttribute(WIREMOCK_TRAFFIC_TYPE, trafficType);
+        if (targetUpstream != null) {
+            span.setAttribute(WIREMOCK_TARGET_UPSTREAM, targetUpstream);
+        }
+
+        Request request = serveEvent.getRequest();
+        String protocol = "http";
+        if (request != null) {
+            if (request.header("X-WireMock-Protocol").isPresent()) {
+                protocol = request.header("X-WireMock-Protocol").firstValue().toLowerCase(Locale.ROOT);
+            } else if (request.header("X-Casual-Service").isPresent()
+                    || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
+                protocol = "casual";
+            } else if ((request.header("Content-Type").isPresent()
+                            && request.header("Content-Type").firstValue().contains("application/grpc"))
+                    || request.header("X-Grpc-Service").isPresent()) {
+                protocol = "grpc";
+            }
+        }
+        span.setAttribute(WIREMOCK_PROTOCOL, protocol);
+
+        if ("casual".equals(protocol) && request != null) {
+            span.setAttribute(RPC_SYSTEM, "casual");
+            String rpcService = null;
+            if (request.header("X-Casual-Service").isPresent()) {
+                rpcService = request.header("X-Casual-Service").firstValue();
+            } else if (request.getUrl() != null && request.getUrl().startsWith("/__casual/services/")) {
+                rpcService = request.getUrl().substring("/__casual/services/".length());
+                int slashIdx = rpcService.indexOf('/');
+                int queryIdx = rpcService.indexOf('?');
+                int end = rpcService.length();
+                if (slashIdx >= 0) {
+                    end = Math.min(end, slashIdx);
+                }
+                if (queryIdx >= 0) {
+                    end = Math.min(end, queryIdx);
+                }
+                rpcService = rpcService.substring(0, end);
+            }
+            if (rpcService != null) {
+                span.setAttribute(RPC_SERVICE, rpcService);
+            }
+            if (response != null
+                    && response.getHeaders() != null
+                    && response.getHeaders().getHeader("X-Casual-Error-State").isPresent()) {
+                span.setAttribute(
+                        CASUAL_ERROR_STATE,
+                        response.getHeaders().getHeader("X-Casual-Error-State").firstValue());
             }
         }
     }

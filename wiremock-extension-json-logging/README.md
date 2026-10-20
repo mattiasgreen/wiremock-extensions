@@ -59,7 +59,7 @@ The extension listens to request completion events via WireMock's `RequestFilter
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
 ```
 
 **Maven**:
@@ -67,7 +67,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-json-logging</artifactId>
-    <version>0.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -76,7 +76,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0'
 Add the extension JAR to the classpath alongside WireMock Standalone. The extension will automatically be discovered via Java SPI:
 
 ```bash
-java -cp "wiremock-extension-json-logging-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-json-logging-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose

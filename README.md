@@ -1,5 +1,15 @@
 # WireMock Extensions Suite
 
+> ### 🎯 Core Mission & Progressive Simulation Value Proposition
+>
+> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and stateful databases) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
+>
+> ```mermaid
+> flowchart LR
+>     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Stubs + Stateful AST)"]
+>     B -->|"Deterministic Codegen + AI Synthesis"| C["Stage 3: Domain Simulation SDK<br/>(Type-Safe Java 21 Records, Builders & Replayable Scenarios)"]
+> ```
+
 A collection of lightweight, production-grade extensions for [WireMock](https://wiremock.org/) and WireMock Standalone.
 
 > 🌐 **Documentation & Interactive Demo**: Visit [https://mattiasgreen.github.io/wiremock-extensions/](https://mattiasgreen.github.io/wiremock-extensions/) for our product landing page, interactive live console sandbox, and technical docs.
@@ -17,6 +27,7 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
 | **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with type-safe Java DSL, 100% RCE-safe AST evaluation, and multi-tenant `X-Correlation-Id` isolation to prevent parallel test collision. | [Module README](wiremock-extension-stateful/README.md) |
 | **`wiremock-extension-tcp-netem`** | In-process Layer 4 TCP network emulator & fault injector (Toxiproxy re-implementation in Java 21 Virtual Threads) with dual-ingress architecture and zero blast-radius correlation-id scoping. | [Module README](wiremock-extension-tcp-netem/README.md) |
+| **`wiremock-extension-casual`** | In-process Casual (XATMI / Tuxedo) Domain Gateway for simulating distributed transaction and legacy RPC architectures with transparent proxying and failure injection. | [Module README](wiremock-extension-casual/README.md) |
 | **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
 | **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating stateful scenario modeling, parallel case collision pitfalls, best-practice isolated scenarios, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
@@ -46,6 +57,76 @@ Prerequisites: Java 21+ and Gradle (wrapper included).
 ./gradlew test
 ```
 
+### Java 21 Toolchain Configuration
+
+The build enforces a JDK 21 toolchain. If Gradle fails to locate a matching Java 21 installation on your machine:
+
+- **Option 1 — Inspect Detected Toolchains**: Check which JDKs Gradle currently sees on your system:
+  ```bash
+  ./gradlew -q javaToolchains
+  ```
+- **Option 2 — Specify Existing JDK 21 Path**: If Java 21 is installed in a custom location, tell Gradle where to find it without changing global environment variables by adding `org.gradle.java.installations.paths` to your user-level `~/.gradle/gradle.properties`:
+  ```properties
+  org.gradle.java.installations.paths=C:/path/to/your/jdk-21,D:/another/jdk-21
+  ```
+  *(Use forward slashes `/`)*.
+
+---
+
+### Building Behind Corporate Firewalls / Private Mirrors
+
+If your corporate environment restricts outbound traffic to `services.gradle.org` or public Maven Central:
+
+#### 1. Initial Setup: Cache the Gradle Wrapper
+> [!NOTE]
+> Gradle Wrapper does not yet support dynamic runtime environment variables for `distributionUrl` ([gradle/gradle#27295](https://github.com/gradle/gradle/issues/27295)). This is scheduled for **Gradle 10.0**. Until then, use this one-time cache workflow:
+
+1. **Temporarily point to your internal mirror**: In `gradle/wrapper/gradle-wrapper.properties`, set `distributionUrl` to your internal mirror:
+   ```properties
+   distributionUrl=https\://nexus.corp.internal/repository/gradle-distributions/gradle-9.4.1-bin.zip
+   ```
+2. **Download & cache the wrapper**:
+   ```bash
+   ./gradlew --version
+   ```
+3. **Revert back to clean Git state**:
+   ```bash
+   git restore gradle/wrapper/gradle-wrapper.properties
+   ```
+   Gradle is now cached locally in `~/.gradle/wrapper/dists/`. Subsequent `./gradlew` runs will use the cache without reaching out to external networks.
+
+#### 2. Configure Internal Dependency Mirrors
+To route dependency and plugin downloads to your internal mirror without modifying Git-tracked files, place an initialization script in your user home at `~/.gradle/init.d/corporate-mirror.gradle`:
+
+```groovy
+// ~/.gradle/init.d/corporate-mirror.gradle
+def mavenURL  = "https://nexus.corp.internal/repository/maven-public/"
+def pluginURL = "https://nexus.corp.internal/repository/gradle-plugins/"
+
+def mirror = { repos, targetUrl ->
+    repos.mavenLocal()
+    repos.maven { url targetUrl }
+    repos.all { repo ->
+        if (repo instanceof MavenArtifactRepository) {
+            if (repo.url.toString().contains("plugins.gradle.org")) repo.url = uri(pluginURL)
+            if (repo.url.toString().contains("repo.maven.apache.org")) repo.url = uri(mavenURL)
+        }
+    }
+}
+
+beforeSettings { mirror(it.pluginManagement.repositories, pluginURL) }
+allprojects {
+    mirror(buildscript.repositories, pluginURL)
+    mirror(repositories, mavenURL)
+}
+```
+
+Now build normally:
+```bash
+./gradlew build
+```
+
+
 ## Usage Options
 
 ### 1. All-in-One Bundle
@@ -54,12 +135,12 @@ If you want all extensions together, add `wiremock-extension-bundle` to your pro
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
 ```
 
 **WireMock Standalone CLI**:
 ```bash
-java -cp "wiremock-extension-bundle-0.1.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose
@@ -77,31 +158,31 @@ Each extension can be used independently without pulling in the others:
 
 - **JSON Logging Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
   ```
   See [wiremock-extension-json-logging/README.md](wiremock-extension-json-logging/README.md) for details.
 
 - **OpenTelemetry & Prometheus Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-otel:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
   ```
   See [wiremock-extension-otel/README.md](wiremock-extension-otel/README.md) for details.
 
 - **Web UI Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-ui:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
   ```
   See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
 
 - **Dynamic Stateful Simulation Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:1.2.0'
   ```
   See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
 
 - **L4 TCP Network Emulation & Chaos Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:0.1.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.2.0'
   ```
   See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md) for architecture, Toxiproxy API endpoints, and journal configuration.
 
@@ -189,7 +270,7 @@ repositories {
 
 dependencies {
     runtimeOnly 'org.wiremock:wiremock-standalone:3.12.1'
-    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:0.1.0'
+    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
 }
 
 application {
@@ -213,7 +294,7 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /wiremock
 
 ARG WIREMOCK_VERSION=3.12.1
-ARG BUNDLE_VERSION=0.1.0
+ARG BUNDLE_VERSION=1.2.0
 
 RUN wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
  && wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar

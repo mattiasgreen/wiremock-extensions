@@ -125,7 +125,16 @@ public final class WireMockConsoleProxy {
     }
 
     public String getLocalUiUrl() {
-        return "http://localhost:" + localPort + "/__admin/ui/";
+        return getLocalUiUrl(true);
+    }
+
+    public String getLocalUiUrl(boolean includeTargetParams) {
+        if (!includeTargetParams || defaultTargetUrl == null || defaultTargetUrl.isBlank()) {
+            return "http://localhost:" + localPort + "/__admin/ui/";
+        }
+        return "http://localhost:" + localPort + "/__admin/ui/?wiremock="
+                + java.net.URLEncoder.encode(defaultTargetUrl, StandardCharsets.UTF_8)
+                + "&strategy=proxy";
     }
 
     public String getDefaultTargetUrl() {
@@ -180,7 +189,7 @@ public final class WireMockConsoleProxy {
         }
 
         if ("/version".equals(assetPath)) {
-            byte[] json = "{\"version\":\"0.1.0-SNAPSHOT\",\"commit\":\"HEAD\",\"branch\":\"standalone\"}"
+            byte[] json = "{\"version\":\"1.2.0\",\"commit\":\"HEAD\",\"branch\":\"standalone\"}"
                     .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache, no-store, must-revalidate");
