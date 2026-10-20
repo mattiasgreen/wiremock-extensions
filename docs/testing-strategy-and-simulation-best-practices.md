@@ -208,3 +208,100 @@ Clear boundaries between producers, consumers, test frameworks, and the simulati
 4. **Premature Testcontainer Sprawl**:
    - *Anti-Pattern*: Spinning up 6 Docker containers for simple request-reply or test-driven async services.
    - *Consequence*: 10x slower build pipelines, memory exhaustion on developer laptops, and high developer friction.
+
+---
+
+## 7. Theoretical Grounding & Industry De Facto Standards
+
+The strategies and execution boundaries defined in this guide are not ad-hoc heuristics; they are directly anchored in foundational software engineering literature and de facto industry standards:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│             FOUNDATIONAL LITERATURE & DE FACTO STANDARDS               │
+├─────────────────────────┬────────────────────────┬─────────────────────┤
+│ Thinker / Authority     │ Landmark Work          │ Applied Principle   │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **Martin Fowler**       │ Mocks Aren't Stubs     │ Test Double         │
+│                         │ Practical Test Pyramid │ Taxonomy & Wire     │
+│                         │ Consumer-Driven        │ Boundary Isolation  │
+│                         │ Contracts              │                     │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **Kent Beck**           │ TDD By Example         │ Sub-Second Feedback │
+│                         │ Test Desiderata        │ & Test Isolation    │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **Nat Pryce &**         │ Growing Object-        │ "Don't Mock Types   │
+│ **Steve Freeman**       │ Oriented Software      │ You Don't Own"      │
+│                         │ (GOOS)                 │ (Producer TestKit)  │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **Gerard Meszaros**     │ xUnit Test Patterns    │ Test Doubles &      │
+│                         │                        │ Self-Shunting       │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **Michael Feathers**    │ Working Effectively    │ The Wire Seam &     │
+│                         │ with Legacy Code       │ Characterization    │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **Gojko Adzic &**       │ Specification by       │ Active BDD Driver   │
+│ **Dan North**           │ Example                │ vs Autonomous Mocks │
+└─────────────────────────┴────────────────────────┴─────────────────────┘
+```
+
+### 7.1. Martin Fowler: Test Double Taxonomy, Test Pyramids, and Contracts
+* **[Mocks Aren't Stubs (2007)](https://martinfowler.com/articles/mocksArentStubs.html)**:
+  - Fowler, following Gerard Meszaros, categorizes test doubles into **Dummies, Fakes, Stubs, Spies, and Mocks**.
+  - Our execution spectrum maps directly to this taxonomy:
+    - **Level 1** uses *Fakes & Synthesizers* (in-memory domain models).
+    - **Level 2** uses *Mocks & Spies* (Mockito verifying method invocations).
+    - **Level 3** uses *Wire Stubs & Wire Fakes* (WireMock returning canned or stateful responses over TCP/HTTP).
+* **[The Practical Test Pyramid (2018)](https://martinfowler.com/articles/practical-test-pyramid.html)**:
+  - Together with Ham Vocke, Fowler demonstrates how service and component tests over wire boundaries prevent the costly "ice-cream cone" anti-pattern (over-reliance on slow, brittle end-to-end UI tests). WireMock provides the sub-second component wire boundary advocated in the pyramid.
+* **[Consumer-Driven Contracts: A Service Evolution Pattern (2006)](https://martinfowler.com/articles/consumerDrivenContracts.html)**:
+  - Ian Robinson and Martin Fowler established that external dependencies must be verified against real producer contracts. Our **Brokerless Contract Parity** model realizes this vision: the producer runs the same BDD test against both their live service and their simulation SDK in CI.
+* **[Tolerant Reader Pattern (2011)](https://martinfowler.com/bliki/TolerantReader.html)**:
+  - WireMock enables testing consumer resilience against schema evolution (e.g. ignoring unknown fields, surviving reordered JSON keys) which in-JVM method mocking completely obscures.
+
+### 7.2. Kent Beck: Fast Feedback Loops and Test Desiderata
+* **[Test-Driven Development: By Example (2002)](https://www.oreilly.com/library/view/test-driven-development/0321146530/)**:
+  - Beck's foundational premise is the **rapid feedback loop**: developers write a failing test, write code to pass, and refactor in seconds.
+  - If integration testing requires spinning up multi-container Docker environments (Level 4), boot times (15–30s) shatter this rhythm, leading developers to abandon TDD. WireMock (Level 3) restores the sub-second cycle (<20ms boot, in-process execution).
+* **[Canon TDD & Test Desiderata (Kent Beck)](https://tidyfirst.substack.com/)**:
+  - Beck outlines the core properties of healthy tests: **Fast, Isolated, Deterministic, and Inspiring Confidence**.
+  - Driving async workflows from the BDD test runner rather than relying on autonomous simulator clocks preserves Beck's *Determinism* and *Isolation* criteria.
+
+### 7.3. Nat Pryce & Steve Freeman: "Don't Mock What You Don't Own"
+* **[Growing Object-Oriented Software, Guided by Tests (GOOS, 2009)](http://www.growing-object-oriented-software.com/)**:
+  - Freeman and Pryce formulated the seminal rule: **"Don't mock types you don't own."**
+  - When consumers write Mockito mocks for third-party or upstream APIs, they mock their *assumptions* of how the external API behaves—not its reality. When the upstream API changes, consumer unit tests remain green while production fails.
+  - **The Architectural Consequence**: This principle directly justifies why the **Producer must deliver the TestKit and Stub Pack**. If the producer provides the stubbing companion, the consumer tests against types and behaviors maintained and verified by the system's actual owner.
+
+### 7.4. Gerard Meszaros: xUnit Test Patterns
+* **[xUnit Test Patterns: Refactoring Test Code (2007)](http://xunitpatterns.com/)**:
+  - **Configurable Test Double**: WireMock acts as an out-of-process Configurable Test Double capable of simulating various response scenarios.
+  - **Self-Shunting & Callback Sensing**: When testing async workflows (Archetype 3), the BDD driver acts as the stimulus agent, matching Meszaros's self-shunting pattern where the test actively orchestrates the collaborators.
+  - **Fresh Fixtures vs. Shared Fixtures**: Meszaros warns against shared mutable state causing test leakage. WireMock Extensions addresses this via **Session Isolation (`X-Correlation-Id`)**, partitioning stateful AST models so parallel tests run against fresh, isolated state within the same process.
+
+### 7.5. Michael Feathers: The Wire Seam & Characterization Tests
+* **[Working Effectively with Legacy Code (2004)](https://www.oreilly.com/library/view/working-effectively-with/0131177052/)**:
+  - Feathers defines a **Seam** as *"a place where you can alter behavior in a program without editing in that place."*
+  - WireMock operates as an **External Network Seam (Wire Seam)**: by changing the upstream URL or DNS/proxy routing, the System Under Test can be redirected from live backends to recorded simulation stubs without modifying a single line of production code.
+  - **Characterization Testing**: When integrating against legacy systems that lack documentation, Feathers advocates capturing existing behavior before refactoring. WireMock's **Live Proxy $\to$ 1-Click Snapshot** workflow is the exact implementation of automated characterization testing over the wire.
+
+### 7.6. Gojko Adzic & Dan North: Specification by Example and BDD
+* **[Specification by Example (2011)](https://www.manning.com/books/specification-by-example)** & **Dan North (BDD)**:
+  - Tests should express business intent and orchestrate scenarios from a domain perspective.
+  - In our **Test-Driven Async Archetype**, Cucumber feature files describe the customer journey explicitly. The test runner drives the timeline, triggering the producer's callback when the scenario dictates, rather than delegating timing to an autonomous mock clock.
+
+---
+
+## 8. Further Reading & Canonical References
+
+1. **Fowler, Martin.** *"Mocks Aren't Stubs."* (2007). [martinfowler.com/articles/mocksArentStubs.html](https://martinfowler.com/articles/mocksArentStubs.html)
+2. **Vocke, Ham, & Fowler, Martin.** *"The Practical Test Pyramid."* (2018). [martinfowler.com/articles/practical-test-pyramid.html](https://martinfowler.com/articles/practical-test-pyramid.html)
+3. **Robinson, Ian, & Fowler, Martin.** *"Consumer-Driven Contracts: A Service Evolution Pattern."* (2006). [martinfowler.com/articles/consumerDrivenContracts.html](https://martinfowler.com/articles/consumerDrivenContracts.html)
+4. **Fowler, Martin.** *"Tolerant Reader."* (2011). [martinfowler.com/bliki/TolerantReader.html](https://martinfowler.com/bliki/TolerantReader.html)
+5. **Beck, Kent.** *Test-Driven Development: By Example.* Addison-Wesley Professional, 2002.
+6. **Beck, Kent.** *Tidy First? A Personal Exercise in Empirical Software Design.* O'Reilly Media, 2023.
+7. **Freeman, Steve, & Pryce, Nat.** *Growing Object-Oriented Software, Guided by Tests.* Addison-Wesley, 2009.
+8. **Meszaros, Gerard.** *xUnit Test Patterns: Refactoring Test Code.* Addison-Wesley, 2007. [xunitpatterns.com](http://xunitpatterns.com)
+9. **Feathers, Michael.** *Working Effectively with Legacy Code.* Prentice Hall, 2004.
+10. **Adzic, Gojko.** *Specification by Example: How Successful Teams Deliver the Right Software.* Manning Publications, 2011.
+11. **Rosenthal, Casey, et al.** *Principles of Chaos Engineering.* (2019). [principlesofchaos.org](https://principlesofchaos.org)
+
