@@ -3,7 +3,9 @@ package com.github.mattiasgreen.wiremock.ui;
 import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.HttpHeaders;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -16,17 +18,34 @@ public class JournalFilterService {
 
     /**
      * Filters a collection of serve events according to query string, verdict, unmatched flag, and limit.
+     */
+    public JournalFilterResult filter(
+            List<ServeEvent> events, String query, String verdict, boolean unmatchedOnly, Integer status, int limit) {
+        return filter(events, query, verdict, unmatchedOnly, status, null, null, limit);
+    }
+
+    /**
+     * Filters a collection of serve events according to query string, verdict, unmatched flag, datetime range, and limit.
      *
      * @param events all recorded serve events
      * @param query raw search query supporting boolean AND / OR
      * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stateful"}, {@code "stub"}, {@code "unmatched"})
      * @param unmatchedOnly if true, restricts exclusively to unmatched requests (404s)
      * @param status optional HTTP status code filter
+     * @param since optional lower datetime bound (inclusive)
+     * @param until optional upper datetime bound (inclusive)
      * @param limit maximum number of results to return
      * @return filtered result envelope
      */
     public JournalFilterResult filter(
-            List<ServeEvent> events, String query, String verdict, boolean unmatchedOnly, Integer status, int limit) {
+            List<ServeEvent> events,
+            String query,
+            String verdict,
+            boolean unmatchedOnly,
+            Integer status,
+            Instant since,
+            Instant until,
+            int limit) {
         if (events == null || events.isEmpty()) {
             return new JournalFilterResult(List.of(), 0, 0);
         }
@@ -37,6 +56,21 @@ public class JournalFilterService {
 
         List<ServeEvent> matched = new ArrayList<>();
         for (ServeEvent event : events) {
+            // Datetime range filter
+            if (since != null || until != null) {
+                Date loggedDate =
+                        event.getRequest() != null ? event.getRequest().getLoggedDate() : null;
+                if (loggedDate != null) {
+                    Instant eventInstant = loggedDate.toInstant();
+                    if (since != null && eventInstant.isBefore(since)) {
+                        continue;
+                    }
+                    if (until != null && eventInstant.isAfter(until)) {
+                        continue;
+                    }
+                }
+            }
+
             String eventVerdict = classifyVerdict(event);
 
             // Unmatched filter

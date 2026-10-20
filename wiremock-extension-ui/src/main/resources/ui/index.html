@@ -265,6 +265,22 @@
               </div>
               <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched (404) only</label>
               <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh" data-testid="journal-auto-refresh"> Live auto-refresh (3s)</label>
+              <label class="select-label" title="Filter requests by datetime range">
+                Time:
+                <select id="journal-time-range" data-testid="journal-time-range" class="select-small">
+                  <option value="all">All time</option>
+                  <option value="5m">Last 5m</option>
+                  <option value="15m">Last 15m</option>
+                  <option value="1h">Last 1h</option>
+                  <option value="24h">Last 24h</option>
+                  <option value="custom">Custom range...</option>
+                </select>
+              </label>
+              <div id="journal-custom-time" class="journal-custom-time hidden" data-testid="journal-custom-time">
+                <input type="datetime-local" id="journal-time-since" data-testid="journal-time-since" class="input-tiny" title="Since (start time)">
+                <span>—</span>
+                <input type="datetime-local" id="journal-time-until" data-testid="journal-time-until" class="input-tiny" title="Until (end time)">
+              </div>
               <label class="select-label" title="Maximum requests to fetch from WireMock journal">
                 Limit:
                 <input type="number" id="journal-limit-input" data-testid="journal-limit-input" min="1" step="50" value="100" class="input-tiny" style="width: 75px;">
@@ -272,6 +288,7 @@
               <span id="journal-filtered-count" class="muted-text"></span>
             </div>
             <div class="journal-actions-group">
+              <button id="btn-journal-snapshot-filtered" data-testid="btn-journal-snapshot-filtered" class="btn btn-small btn-primary" title="Snapshot filtered proxied traffic into offline disabled stubs" disabled>📸 Snapshot Filtered Proxied (<span id="journal-proxied-count">0</span>)</button>
               <button id="btn-refresh-journal" data-testid="btn-refresh-journal" class="btn btn-small btn-secondary" title="Refresh request journal">🔄 Refresh</button>
               <button id="btn-reset-journal" data-testid="btn-reset-journal" class="btn btn-small btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
             </div>

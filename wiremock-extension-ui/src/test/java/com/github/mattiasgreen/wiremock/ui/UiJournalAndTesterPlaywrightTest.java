@@ -484,4 +484,72 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             upstreamErp.stop();
         }
     }
+
+    @Test
+    @DisplayName("Scenario 11: Request Journal datetime filtering and 1-click snapshot of filtered proxied requests")
+    void testJournalTimeRangeAndFilteredStubSnapshot() throws Exception {
+        WireMockServer upstreamOrders =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstreamOrders.start();
+
+        try {
+            upstreamOrders.stubFor(get(urlEqualTo("/api/v1/orders/101"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"orderId\":101,\"status\":\"NEW\"}")));
+            upstreamOrders.stubFor(get(urlEqualTo("/api/v1/orders/102"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"orderId\":102,\"status\":\"SHIPPED\"}")));
+
+            wireMockServer.stubFor(get(urlMatching("/api/v1/orders/.*"))
+                    .willReturn(aResponse().proxiedFrom(upstreamOrders.baseUrl())));
+
+            // Execute proxied traffic
+            HttpClient httpClient = HttpClient.newHttpClient();
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/orders/101"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/orders/102"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+            page.waitForSelector("#journal-table");
+
+            // Verify time range selector exists
+            Locator timeRangeSelect = page.locator("#journal-time-range");
+            assertThat(timeRangeSelect.isVisible()).isTrue();
+            assertThat(timeRangeSelect.inputValue()).isEqualTo("all");
+
+            // Verify snapshot button exists
+            Locator snapshotBtn = page.locator("#btn-journal-snapshot-filtered");
+            assertThat(snapshotBtn.isVisible()).isTrue();
+
+            // Filter journal by "101"
+            page.locator("#journal-search").fill("101");
+            page.locator("#journal-search").press("Enter");
+
+            page.waitForSelector("#journal-list tr[data-testid='journal-row']");
+            assertThat(page.locator("#journal-list tr[data-testid='journal-row']")
+                            .count())
+                    .isEqualTo(1);
+            assertThat(page.locator("#journal-proxied-count").textContent()).isEqualTo("1");
+            assertThat(snapshotBtn.isEnabled()).isTrue();
+
+            // Click snapshot button
+            snapshotBtn.click();
+            page.waitForSelector("#btn-journal-snapshot-filtered:has-text('Snapshotted')");
+
+            // Verify in disabled stub store
+            assertThat(disabledStubStore.getAll().stream().anyMatch(s -> "/api/v1/orders/101"
+                            .equals(s.getRequest().getUrl())))
+                    .isTrue();
+
+        } finally {
+            upstreamOrders.stop();
+        }
+    }
 }

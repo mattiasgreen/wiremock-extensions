@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -151,5 +152,32 @@ class JournalFilterServiceTest {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         return objectMapper.readTree(response.body());
+    }
+
+    @Test
+    @DisplayName("GET /__admin/ui/api/requests: filters by datetime range (since and until)")
+    void testDatetimeRangeFiltering() throws Exception {
+        Instant t0 = Instant.now().minusSeconds(10);
+        executeGet("/api/cases", "BANK-TX-1001");
+        Instant t1 = Instant.now().plusMillis(50);
+        Thread.sleep(100);
+        executeGet("/api/crm/customers/42", "CRM-TRACE-99");
+        Instant t2 = Instant.now().plusSeconds(10);
+
+        // Filter since t1 (only the second request)
+        JsonNode sinceRes = queryJournal("since=" + t1.toEpochMilli());
+        assertThat(sinceRes.path("meta").path("filtered").asInt()).isEqualTo(1);
+        assertThat(sinceRes.path("requests").get(0).path("request").path("url").asText())
+                .contains("/api/crm/customers/42");
+
+        // Filter until t1 (only the first request)
+        JsonNode untilRes = queryJournal("until=" + t1.toEpochMilli());
+        assertThat(untilRes.path("meta").path("filtered").asInt()).isEqualTo(1);
+        assertThat(untilRes.path("requests").get(0).path("request").path("url").asText())
+                .contains("/api/cases");
+
+        // Filter ISO string format
+        JsonNode isoRes = queryJournal("since=" + t0.toString() + "&until=" + t2.toString());
+        assertThat(isoRes.path("meta").path("filtered").asInt()).isEqualTo(2);
     }
 }
