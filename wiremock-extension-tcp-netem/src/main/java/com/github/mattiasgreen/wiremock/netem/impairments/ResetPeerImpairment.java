@@ -22,9 +22,9 @@ public class ResetPeerImpairment implements NetEmImpairment {
 
     @Override
     public void onConnectionOpen(NetEmContext context, NetEmStreamDirection direction) throws IOException {
-        // If no correlation-id requirement exists, we can reset immediately on connection open
-        String requiredCorrelationId = config.getCorrelationId();
-        if ((requiredCorrelationId == null || requiredCorrelationId.isBlank()) && shouldApply(context, direction)) {
+        // If no pattern requirement exists, we can reset immediately on connection open
+        String requiredPattern = config.getPattern();
+        if ((requiredPattern == null || requiredPattern.isBlank()) && shouldApply(context, direction)) {
             resetSocket(context, direction);
         }
     }

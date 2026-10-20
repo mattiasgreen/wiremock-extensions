@@ -2605,6 +2605,12 @@ kbd {
   font-family: monospace;
 }
 
+.badge-ip {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  font-family: monospace;
+}
+
 .badge-all {
   background-color: rgba(100, 116, 139, 0.2);
   color: #94a3b8;

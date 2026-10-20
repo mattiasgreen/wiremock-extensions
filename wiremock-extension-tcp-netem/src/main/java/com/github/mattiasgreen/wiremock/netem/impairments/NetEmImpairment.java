@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.netem.impairments;
 
+import com.github.mattiasgreen.wiremock.netem.matcher.SourceIpMatcher;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmStreamDirection;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicConfig;
 import java.io.IOException;
@@ -17,16 +18,26 @@ public interface NetEmImpairment {
             return false;
         }
 
-        // 2. Correlation-ID matching
-        String requiredCorrelationId = config.getCorrelationId();
-        if (requiredCorrelationId != null && !requiredCorrelationId.isBlank()) {
-            String actualCorrelationId = context.getCorrelationId();
-            if (actualCorrelationId == null || !requiredCorrelationId.equalsIgnoreCase(actualCorrelationId.trim())) {
+        // 2. Client IP matching (Socket level)
+        if (config.getClientIp() != null && !config.getClientIp().isBlank()) {
+            if (!SourceIpMatcher.matches(context.getClientSocket(), config.getClientIp())) {
                 return false;
             }
         }
 
-        // 3. Toxicity probability (connection-scoped)
+        // 3. Stream pattern matching (Byte stream level)
+        String requiredPattern = config.getPattern();
+        if (requiredPattern != null && !requiredPattern.isBlank()) {
+            if (!context.hasMatchedToxic(config.getName())) {
+                if (context.matchesUpstreamPrefix(requiredPattern, config.getPatternType())) {
+                    context.markPatternMatched(config.getName(), requiredPattern);
+                } else {
+                    return false;
+                }
+            }
+        }
+
+        // 4. Toxicity probability (connection-scoped)
         double toxicity = config.getToxicity();
         if (toxicity >= 1.0) {
             return true;

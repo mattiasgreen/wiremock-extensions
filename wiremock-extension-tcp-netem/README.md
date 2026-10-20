@@ -17,8 +17,8 @@ Re-implements Shopify's Toxiproxy primitives natively inside the JVM using **Jav
   * `slow_close`: Delays socket teardown upon EOF/FIN detection.
   * `slicer`: Fragments packet buffers into micro-slices with inter-slice pauses.
   * `limit_data`: Abruptly cuts connection after transferring $N$ bytes.
-* **Zero Blast-Radius Per-Request `X-Correlation-Id` Scoping**: Selectively injects impairments only for matching HTTP sessions or test threads across persistent HTTP/1.1 keep-alive connections. Untargeted test suites running concurrently run at full line rate.
-* **High-Throughput Lock-Free Circular Journal**: Pre-allocated ring buffer in `AtomicReferenceArray` tracking transfer sizes, latency, correlation IDs, and toxic verdicts without object churning or heap fragmentation.
+* **Zero Blast-Radius Protocol-Agnostic Stream Scoping**: Selectively injects impairments only for matching raw byte stream sequences (ASCII substrings or raw Hex sequences for binary protocols like Casual/Tuxedo) or client socket IP/CIDR masks across persistent TCP connections. Untargeted test traffic running concurrently runs at full line rate with zero blast radius.
+* **High-Throughput Lock-Free Circular Journal**: Pre-allocated ring buffer in `AtomicReferenceArray` tracking transfer sizes, latency, client IP, target scope, and toxic verdicts without object churning or heap fragmentation.
 * **Declarative Stub Mapping Metadata**: Define network impairments directly inside WireMock stub mapping JSON under `metadata.netem`.
 * **Toxiproxy v2 REST API Compatibility**: Exposes endpoints compatible with official Toxiproxy SDKs (`/proxies`, `/proxies/{name}/toxics`, `/proxies/reset`).
 * **Dedicated NetEm Admin Routes**: `/__admin/tcp-netem/proxies`, `/__admin/tcp-netem/reset`, and one-click presets (`3G_MOBILE`, `FLAKY_WIFI`, `BLACK_HOLE`, `CHAOS_MONKEY`).
@@ -37,7 +37,7 @@ WireMock has built-in response delay (`withFixedDelay()`) and HTTP faults (`Faul
 | **Packet Fragmentation** | Sends entire HTTP chunks. | `slicer` breaks TCP frames into micro-packets with delay, triggering TCP reassembly timeouts. |
 | **Connection Blackhole** | Keeps HTTP request pending until server thread times out. | Drops incoming/outgoing TCP traffic entirely (`timeout`), testing OS socket read timeouts. |
 | **Directionality** | Downstream only (response delay). | Both **upstream** (client payload/upload) and **downstream** (response stream). |
-| **Blast Radius Isolation** | Requires mapping per stub or global delay. | Scoped down to individual `X-Correlation-Id` on shared persistent sockets! |
+| **Blast Radius Isolation** | Requires mapping per stub or global delay. | Scoped down to byte patterns (ASCII/Hex) or Client IP/CIDR on shared sockets! |
 
 ---
 
@@ -49,7 +49,7 @@ WireMock has built-in response delay (`withFixedDelay()`) and HTTP faults (`Faul
                       └───────┬──────────────────────────────┬───────┘
                               │                              │
                      [Direct HTTP Traffic]          [Impaired Traffic]
-                     [Admin API & Web UI]        [X-Correlation-Id: test-42]
+                     [Admin API & Web UI]        [Pattern/IP Matched Traffic]
                               │                              │
                               ▼                              ▼
                      ┌──────────────────┐          ┌──────────────────┐
@@ -72,7 +72,7 @@ The NetEm engine maintains an in-memory, circular ring buffer (`NetEmCircularJou
 
 ### Memory Footprint & Compact Representation
 Each event is recorded as an immutable Java record `NetEmJournalEntry`:
-- **Fields**: `id` (long), `timestamp` (long), `direction` (enum), `bytesTransferred` (int), `toxicApplied` (String), `correlationId` (String), `durationMs` (long).
+- **Fields**: `id` (long), `timestamp` (long), `direction` (enum), `bytesTransferred` (int), `toxicApplied` (String), `scope` (String), `clientIp` (String), `durationMs` (long).
 - **Size**: Approximately **80 to 128 bytes** per entry on 64-bit JVMs with Compressed OOPs (`-XX:+UseCompressedOops`).
 - **Data Structure**: Pre-allocated `AtomicReferenceArray<NetEmJournalEntry>`. Zero allocations on circular wrap-around, avoiding garbage collection pauses and heap fragmentation under heavy test loads.
 
@@ -106,10 +106,10 @@ TcpNetEmProxy proxy = TcpNetEmProxy.builder()
 | `POST` | `/__admin/tcp-netem/proxies` | Register a new proxy (`name`, `listenPort`, `targetHost`, `targetPort`). |
 | `GET` | `/__admin/tcp-netem/proxies/{name}` | Inspect proxy details and active toxics. |
 | `DELETE` | `/__admin/tcp-netem/proxies/{name}` | Stop and remove a proxy. |
-| `POST` | `/__admin/tcp-netem/proxies/{name}/toxics` | Add or update a toxic impairment on the proxy. |
+| `POST` | `/__admin/tcp-netem/proxies/{name}/toxics` | Add or update a toxic impairment on the proxy (`pattern`, `patternType`, `clientIp`). |
 | `DELETE` | `/__admin/tcp-netem/proxies/{name}/toxics/{toxic}` | Remove an active toxic from the proxy. |
 | `POST` | `/__admin/tcp-netem/proxies/{name}/presets/{preset}` | Apply a preset (`3G_MOBILE`, `FLAKY_WIFI`, `BLACK_HOLE`, `CHAOS_MONKEY`). |
-| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | Query recorded network events. Supports `?limit=100` and `?correlationId=...`. |
+| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | Query recorded network events. Supports `?limit=100` and `?scope=...` (or `?correlationId=...`). |
 | `DELETE` | `/__admin/tcp-netem/proxies/{name}/journal` | Clear the circular event journal for this proxy. |
 | `POST` | `/__admin/tcp-netem/reset` | Clear all toxics and re-enable all proxies globally. |
 
@@ -117,7 +117,7 @@ TcpNetEmProxy proxy = TcpNetEmProxy.builder()
 
 ## 6. Declarative Stub Metadata (`metadata.netem`)
 
-You can attach network impairments directly to WireMock stub definitions. When the stub matches, `NetEmStubListener` automatically installs the toxic scoped to the incoming request's `X-Correlation-Id`:
+You can attach network impairments directly to WireMock stub definitions. When the stub matches, `NetEmStubListener` automatically installs the toxic scoped to the upstream stream:
 
 ```json
 {
@@ -151,6 +151,6 @@ You can attach network impairments directly to WireMock stub definitions. When t
 
 See the end-to-end integration test in [`wiremock-examples`](../wiremock-examples/src/test/java/com/github/mattiasgreen/wiremock/examples/NetEmResilienceParallelIntegrationTest.java) for a complete reference implementation demonstrating:
 - A Resilience4j Circuit Breaker / Retry client calling WireMock via NetEm port `8081`.
-- Thread A injecting TCP resets or blackhole timeouts tagged with `X-Correlation-Id: test-chaos`.
-- Thread B simultaneously executing fast functional queries with `X-Correlation-Id: test-functional`.
+- Thread A injecting TCP resets or blackhole timeouts tagged with stream pattern `chaos-session-77`.
+- Thread B simultaneously executing fast functional queries with a different session identifier.
 - Thread A trips the circuit breaker cleanly while Thread B succeeds with 100% throughput and 0% errors.

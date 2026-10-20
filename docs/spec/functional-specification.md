@@ -119,9 +119,9 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** the user navigates to the NetEm Console tab and clicks preset "3G Mobile".
 - **Then** `latency` (300ms $\pm$ 50ms) and `bandwidth` (64 KB/s) toxics are registered on the proxy.
 - **And** the Active Toxics counter displays `2`.
-- **When** a client dispatches HTTP requests through port `8081` with header `X-Correlation-Id: test-chaos-42`.
-- **Then** the request experiences 300ms latency and throttled bandwidth, while traffic without the matching header or requests sent directly to port `8080` complete at normal line speed with zero blast radius.
-- **And** the NetEm Circular Event Journal logs both impaired and normal transfers, filterable by correlation ID.
+- **When** a client dispatches TCP traffic or HTTP requests through port `8081` matching a stream pattern (ASCII string, raw Hex byte sequence for binary protocols like Casual, or client IP/CIDR).
+- **Then** the request experiences 300ms latency and throttled bandwidth, while traffic without matching pattern/IP or requests sent directly to port `8080` complete at normal line speed with zero blast radius.
+- **And** the NetEm Circular Event Journal logs both impaired and normal transfers, filterable by scope / stream pattern.
 
 ### Story 8: Remote WireMock Target & Forwarded Proxy Strategy
 - **Given** the Web Console is accessed at `http://localhost:8090/__admin/ui/`.

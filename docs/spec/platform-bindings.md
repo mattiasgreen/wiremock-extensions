@@ -45,8 +45,11 @@
 | **NetEm Preset: 3G** | `#btn-preset-3g` | `"btn-preset-3g"` | Applies 3G Mobile preset (300ms latency, 64KB/s bandwidth). |
 | **NetEm Reset All** | `#btn-netem-reset-all` | `"btn-netem-reset-all"` | Clears all registered toxics on the active proxy. |
 | **NetEm Add Toxic Modal** | `#netem-add-toxic-modal` | `"netem-add-toxic-modal"` | Modal dialog for creating customized toxic impairments. |
-| **NetEm Journal Table** | `#netem-journal-table` | `"netem-journal-table"` | Table view of recorded network transfers and impairments. |
-| **NetEm Journal Filter** | `#netem-journal-filter-corr` | `"netem-journal-filter-corr"` | Correlation ID search filter for the NetEm journal. |
+| **NetEm Pattern Mode**    | `#netem-pattern-type-ascii` / `#netem-pattern-type-hex` | `"netem-pattern-type"` | Toggle between ASCII and Hex byte stream pattern modes. |
+| **NetEm Toxic Pattern**   | `#netem-toxic-pattern` | `"netem-toxic-pattern"` | Stream substring or raw Hex sequence pattern filter. |
+| **NetEm Toxic Client IP** | `#netem-toxic-client-ip`| `"netem-toxic-client-ip"`| Client socket IP or CIDR block filter (e.g. `10.0.0.0/8`). |
+| **NetEm Journal Table**   | `#netem-journal-table` | `"netem-journal-table"` | Table view of recorded network transfers and impairments. |
+| **NetEm Journal Filter**  | `#netem-journal-filter-corr` | `"netem-journal-filter-corr"` | Scope / target pattern search filter for the NetEm journal. |
 | **Target Host Trigger** | `#btn-target-host` | `"btn-target-host"` | Button opening Target Server configuration modal. |
 | **Target Host Label** | `#target-host-label` | `"target-host-label"` | Displays active remote target origin and proxy strategy. |
 | **Target Host Modal** | `#target-host-modal` | `"target-host-modal"` | Modal dialog for remote WireMock base URL and strategy. |

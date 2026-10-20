@@ -488,7 +488,7 @@
           <span class="muted-text text-small">Pre-allocated lock-free circular ring buffer (O(1) memory)</span>
         </div>
         <div class="netem-journal-controls">
-          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by X-Correlation-Id..." style="flex: 2;">
+          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by Scope / Target (ASCII/Hex)..." style="flex: 2;">
           <select id="netem-journal-filter-outcome" class="form-control" style="flex: 1;">
             <option value="">All Outcomes</option>
             <option value="impaired">⚠️ Impaired Only</option>
@@ -502,7 +502,7 @@
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Correlation ID</th>
+                <th>Scope / Target</th>
                 <th>Client</th>
                 <th>Duration</th>
                 <th>Bytes (Up / Down)</th>
@@ -926,18 +926,30 @@
             <input type="number" id="netem-toxic-toxicity" class="form-control" value="1.0" min="0.0" max="1.0" step="0.1">
           </div>
           <div class="form-group" style="flex: 1;">
-            <label for="netem-toxic-correlation-id">Correlation ID Filter (Optional):</label>
-            <input type="text" id="netem-toxic-correlation-id" class="form-control" placeholder="e.g. chaos-test-session">
+            <label for="netem-toxic-client-ip">Client IP / CIDR Subnet (Optional):</label>
+            <input type="text" id="netem-toxic-client-ip" class="form-control" placeholder="e.g. 127.0.0.1 or 10.0.0.0/8">
           </div>
+        </div>
+        <div class="form-group" style="margin-top: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="netem-toxic-pattern" id="lbl-toxic-pattern" style="margin-bottom: 0;">Stream Pattern Matcher (Optional):</label>
+            <div class="netem-mode-toggle" style="display: flex; gap: 2px;">
+              <button type="button" id="btn-pattern-ascii" class="btn btn-tiny active" style="padding: 2px 8px; font-size: 0.75rem;">ASCII</button>
+              <button type="button" id="btn-pattern-hex" class="btn btn-tiny" style="padding: 2px 8px; font-size: 0.75rem;">HEX</button>
+            </div>
+          </div>
+          <input type="text" id="netem-toxic-pattern" class="form-control" placeholder="e.g. chaos-test-session or order-service">
+          <small class="muted-text text-small" id="netem-pattern-hint">Matches unencoded UTF-8/ASCII substring in the stream.</small>
+          <input type="hidden" id="netem-toxic-correlation-id" value="">
         </div>
         <div class="editor-section-header" style="margin-top: 12px;">Impairment Attributes</div>
         <div id="netem-attribute-fields">
           <!-- Dynamically populated based on type -->
         </div>
-        <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 16px;">
-          <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
-          <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
-        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
+        <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
       </div>
     </div>
   </div>
