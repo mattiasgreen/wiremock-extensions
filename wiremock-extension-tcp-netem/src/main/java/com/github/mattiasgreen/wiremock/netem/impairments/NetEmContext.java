@@ -2,6 +2,7 @@ package com.github.mattiasgreen.wiremock.netem.impairments;
 
 import com.github.mattiasgreen.wiremock.netem.journal.NetEmCircularJournal;
 import com.github.mattiasgreen.wiremock.netem.journal.NetEmJournalEntry;
+import com.github.mattiasgreen.wiremock.netem.matcher.ByteStreamMatcher;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmStats;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmStreamDirection;
 import java.net.Socket;
@@ -25,8 +26,15 @@ public class NetEmContext {
     private final AtomicLong bytesUpstream = new AtomicLong(0);
     private final AtomicLong bytesDownstream = new AtomicLong(0);
     private final long startTimeEpochMs = System.currentTimeMillis();
-    private volatile String correlationId;
+    private volatile String scope = "";
     private volatile String terminationReason = "NORMAL_EOF";
+
+    // Retain initial upstream bytes (up to 8192 bytes) for late-binding declarative stub toxic matching
+    private final java.io.ByteArrayOutputStream upstreamBuffer = new java.io.ByteArrayOutputStream(8192);
+
+    // Dynamic stream pattern scanners and match state
+    private final ConcurrentMap<String, ByteStreamMatcher.StreamScanner> scanners = new ConcurrentHashMap<>();
+    private final Set<String> matchedToxicNames = ConcurrentHashMap.newKeySet();
 
     // Per-HTTP transaction tracking (for keep-alive connection reuse)
     private final AtomicBoolean txActive = new AtomicBoolean(false);
@@ -34,7 +42,7 @@ public class NetEmContext {
     private final AtomicLong txBytesDownstream = new AtomicLong(0);
     private final Set<String> txAppliedToxics = ConcurrentHashMap.newKeySet();
     private volatile long txStartTimeEpochMs = System.currentTimeMillis();
-    private volatile String txCorrelationId;
+    private volatile String txScope = "";
     private volatile String txTerminationReason = "NORMAL_EOF";
 
     public NetEmContext(long connectionId, Socket clientSocket, Socket targetSocket, NetEmStats stats) {
@@ -70,12 +78,31 @@ public class NetEmContext {
         return stats;
     }
 
-    public String getCorrelationId() {
-        return correlationId;
+    public String getScope() {
+        return scope;
     }
 
+    public void setScope(String scope) {
+        this.scope = scope != null ? scope : "";
+        if (txActive.get()) {
+            this.txScope = this.scope;
+        }
+    }
+
+    /**
+     * @deprecated Use {@link #getScope()} instead.
+     */
+    @Deprecated
+    public String getCorrelationId() {
+        return scope;
+    }
+
+    /**
+     * @deprecated Use {@link #setScope(String)} instead.
+     */
+    @Deprecated
     public void setCorrelationId(String correlationId) {
-        this.correlationId = correlationId;
+        setScope(correlationId);
     }
 
     public long getStartTimeEpochMs() {
@@ -143,16 +170,70 @@ public class NetEmContext {
         }
     }
 
+    // --- Stream Pattern Matching State ---
+
+    public ByteStreamMatcher.StreamScanner getOrCreateScanner(String toxicName, String pattern, String patternType) {
+        return scanners.computeIfAbsent(toxicName, k -> new ByteStreamMatcher(pattern, patternType).createScanner());
+    }
+
+    public void markPatternMatched(String toxicName, String pattern) {
+        if (toxicName != null) {
+            matchedToxicNames.add(toxicName);
+        }
+        if (pattern != null && !pattern.isBlank() && (this.scope == null || this.scope.isBlank())) {
+            this.scope = pattern;
+            if (txActive.get()) {
+                this.txScope = pattern;
+            }
+        }
+    }
+
+    public boolean hasMatchedToxic(String toxicName) {
+        return toxicName != null && matchedToxicNames.contains(toxicName);
+    }
+
+    public synchronized void recordUpstreamBytes(byte[] buffer, int offset, int length) {
+        if (upstreamBuffer.size() < 8192 && buffer != null && length > 0) {
+            int toWrite = Math.min(length, 8192 - upstreamBuffer.size());
+            upstreamBuffer.write(buffer, offset, toWrite);
+        }
+    }
+
+    public synchronized boolean matchesUpstreamPrefix(String pattern, String patternType) {
+        if (pattern == null || pattern.isBlank()) {
+            return true;
+        }
+        byte[] bytes = upstreamBuffer.toByteArray();
+        if (bytes.length == 0) {
+            return false;
+        }
+        ByteStreamMatcher matcher = new ByteStreamMatcher(pattern, patternType);
+        return matcher.matches(bytes, 0, bytes.length);
+    }
+
     // --- Per-transaction lifecycle methods ---
 
-    public void startTransaction(String correlationId) {
+    public void startTransaction() {
+        startTransaction("");
+    }
+
+    public void startTransaction(String initialScope) {
         txActive.set(true);
         txStartTimeEpochMs = System.currentTimeMillis();
-        this.txCorrelationId = correlationId;
-        this.correlationId = correlationId;
+        this.txScope = initialScope != null ? initialScope : "";
+        if (initialScope != null && !initialScope.isBlank()) {
+            this.scope = initialScope;
+        }
         txBytesUpstream.set(0);
         txBytesDownstream.set(0);
         txAppliedToxics.clear();
+        matchedToxicNames.clear();
+        synchronized (this) {
+            upstreamBuffer.reset();
+        }
+        for (ByteStreamMatcher.StreamScanner scanner : scanners.values()) {
+            scanner.reset();
+        }
         txTerminationReason = "NORMAL_EOF";
     }
 
@@ -177,12 +258,14 @@ public class NetEmContext {
                 ? clientSocket.getRemoteSocketAddress().toString()
                 : "unknown";
 
+        String recordedScope = (txScope != null && !txScope.isBlank()) ? txScope : scope;
+
         NetEmJournalEntry entry = new NetEmJournalEntry(
                 journal.getTotalRecordedCount(),
                 txStartTimeEpochMs,
                 proxyName,
                 clientAddr,
-                txCorrelationId != null ? txCorrelationId : correlationId,
+                recordedScope,
                 duration,
                 up,
                 down,

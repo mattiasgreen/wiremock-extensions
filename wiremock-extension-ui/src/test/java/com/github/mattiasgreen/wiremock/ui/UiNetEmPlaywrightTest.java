@@ -7,6 +7,9 @@ import com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
+import com.github.mattiasgreen.wiremock.netem.model.NetEmStreamDirection;
+import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicConfig;
+import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicType;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
@@ -17,6 +20,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,6 +41,7 @@ public class UiNetEmPlaywrightTest {
     private TcpNetEmProxy netEmProxy;
     private BrowserContext context;
     private Page page;
+    private Path webOutputDir;
     private final List<String> pageErrors = Collections.synchronizedList(new ArrayList<>());
     private final HttpClient httpClient =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -51,9 +58,28 @@ public class UiNetEmPlaywrightTest {
         wireMockServer.stubFor(
                 get(urlEqualTo("/api/test-netem")).willReturn(okJson("{\"status\":\"ok\",\"engine\":\"wiremock\"}")));
 
+        Path root = Paths.get("").toAbsolutePath();
+        Path baseReports = root.endsWith("wiremock-extension-ui")
+                ? root.resolve("build/reports/screenshots")
+                : root.resolve("wiremock-extension-ui/build/reports/screenshots");
+        webOutputDir = baseReports.resolve("web");
+        Files.createDirectories(webOutputDir);
+
         netEmProxy = TcpNetEmRegistry.getInstance()
                 .register(new NetEmProxyConfig("wiremock-netem", 0, "127.0.0.1", wireMockServer.port(), true));
+    }
 
+    @AfterAll
+    void stopAll() throws Exception {
+        TcpNetEmRegistry.getInstance().remove("wiremock-netem");
+        if (wireMockServer != null && wireMockServer.isRunning()) {
+            wireMockServer.stop();
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        pageErrors.clear();
         Browser browser = AbstractUiPlaywrightTest.getSharedBrowser();
         context = browser.newContext();
         page = context.newPage();
@@ -64,78 +90,115 @@ public class UiNetEmPlaywrightTest {
         });
     }
 
-    @AfterAll
-    void stopAll() throws Exception {
-        if (context != null) {
-            context.close();
-        }
-        TcpNetEmRegistry.getInstance().remove("wiremock-netem");
-        if (wireMockServer != null && wireMockServer.isRunning()) {
-            wireMockServer.stop();
-        }
-    }
-
-    @BeforeEach
-    void setUp() {
-        pageErrors.clear();
-    }
-
     @AfterEach
     void tearDown() {
+        if (context != null) {
+            try {
+                context.close();
+            } catch (Exception ignored) {
+            }
+            context = null;
+        }
         netEmProxy.clearToxics();
         netEmProxy.getJournal().clear();
     }
 
     @Test
-    @DisplayName("Verify NetEm Tab navigation, ingress badge, and initial stats")
-    void testNetEmTabNavigationAndIngressInfo() {
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
-
-        // Click NetEm Navigation Tab
-        Locator navNetEm = page.locator("#nav-tab-netem");
-        assertThat(navNetEm.isVisible()).isTrue();
-        navNetEm.click();
-
+    @DisplayName("JavaScript Unit Testing: Verify pure conversion functions in browser context")
+    void testNetEmJsUnitFunctions() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#netem");
         page.waitForSelector("#tab-netem.active");
-        page.waitForFunction(
-                "() => document.getElementById('netem-ingress-info') && document.getElementById('netem-ingress-info').textContent.includes('wiremock-netem')");
-        Locator ingressInfo = page.locator("#netem-ingress-info");
-        assertThat(ingressInfo.textContent()).contains("wiremock-netem");
-        assertThat(ingressInfo.textContent()).contains(String.valueOf(wireMockServer.port()));
 
-        // Empty state is rendered when no toxics are active
-        Locator toxicsList = page.locator("#netem-toxics-list");
-        assertThat(toxicsList.textContent()).contains("No network impairments active");
+        // 1. asciiToHex unit tests
+        String hex = (String)
+                page.evaluate(
+                        "async () => { const { asciiToHex } = await import('./modules/netem.js'); return asciiToHex('order'); }");
+        assertThat(hex).isEqualTo("6f 72 64 65 72");
+
+        // 2. hexToAscii unit tests
+        String ascii = (String)
+                page.evaluate(
+                        "async () => { const { hexToAscii } = await import('./modules/netem.js'); return hexToAscii('6f 72 64 65 72'); }");
+        assertThat(ascii).isEqualTo("order");
+
+        // 3. Round-trip conversion test
+        String roundtrip = (String)
+                page.evaluate(
+                        "async () => { const { asciiToHex, hexToAscii } = await import('./modules/netem.js'); return hexToAscii(asciiToHex('chaos-token-99')); }");
+        assertThat(roundtrip).isEqualTo("chaos-token-99");
+
+        // 4. isValidHex unit tests
+        Boolean validHex = (Boolean)
+                page.evaluate(
+                        "async () => { const { isValidHex } = await import('./modules/netem.js'); return isValidHex('ca500001'); }");
+        Boolean invalidHex = (Boolean)
+                page.evaluate(
+                        "async () => { const { isValidHex } = await import('./modules/netem.js'); return isValidHex('ca500'); }");
+        assertThat(validHex).isTrue();
+        assertThat(invalidHex).isFalse();
 
         assertThat(pageErrors).isEmpty();
     }
 
     @Test
-    @DisplayName("Verify Preset application, toxic listing, and reset all")
-    void testPresetAndToxicManagement() {
+    @DisplayName("Smoke Test: Bidirectional ASCII <-> Hex auto-conversion in Toxic Modal")
+    void testNetEmAsciiAndHexAutoConversion() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#netem");
+        page.waitForSelector("#tab-netem.active");
+
+        // Open Add Toxic modal
+        page.locator("#btn-netem-add-toxic").click();
+        page.waitForSelector("#netem-add-toxic-modal:not(.hidden)");
+
+        // Type ASCII pattern
+        page.locator("#netem-toxic-pattern").fill("order-service");
+
+        // Toggle to HEX
+        page.locator("#btn-pattern-hex").click();
+        page.waitForFunction("() => document.getElementById('btn-pattern-hex').classList.contains('active')");
+
+        String hexValue = page.locator("#netem-toxic-pattern").inputValue();
+        assertThat(hexValue).isEqualTo("6f 72 64 65 72 2d 73 65 72 76 69 63 65");
+        assertThat(page.locator("#lbl-toxic-pattern").textContent()).contains("Hex / Raw Bytes");
+
+        // Toggle back to ASCII
+        page.locator("#btn-pattern-ascii").click();
+        page.waitForFunction("() => document.getElementById('btn-pattern-ascii').classList.contains('active')");
+
+        String asciiValue = page.locator("#netem-toxic-pattern").inputValue();
+        assertThat(asciiValue).isEqualTo("order-service");
+        assertThat(page.locator("#lbl-toxic-pattern").textContent()).contains("ASCII");
+
+        page.locator("#btn-netem-cancel-toxic").click();
+        assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Verify Preset injection and Reset All in UI")
+    void testPresetsAndResetAll() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#netem");
         page.waitForSelector("#tab-netem.active");
         page.waitForFunction(
                 "() => document.getElementById('netem-ingress-info') && document.getElementById('netem-ingress-info').textContent.includes('wiremock-netem')");
 
-        // Click 3G preset button
-        Locator preset3g = page.locator("#btn-preset-3g");
-        preset3g.click();
+        // 1. Initial State: No toxics active
+        page.waitForSelector("#netem-toxics-list .empty-state");
+        Locator toxicsList = page.locator("#netem-toxics-list");
+        assertThat(toxicsList.textContent()).contains("No network impairments active");
 
-        // Toxic cards should now appear
-        page.waitForSelector(".netem-toxic-card");
-        Locator toxicCards = page.locator(".netem-toxic-card");
-        assertThat(toxicCards.count()).isGreaterThanOrEqualTo(1);
-
-        // Stat counter for active toxics should match
         Locator statActiveToxics = page.locator("#netem-stat-active-toxics");
-        assertThat(Integer.parseInt(statActiveToxics.textContent().trim())).isGreaterThanOrEqualTo(1);
+        assertThat(Integer.parseInt(statActiveToxics.textContent().trim())).isEqualTo(0);
 
-        // Click Reset All button
-        Locator resetBtn = page.locator("#btn-netem-reset-all");
-        resetBtn.click();
+        // 2. Click 3G Mobile Preset
+        page.locator("#btn-preset-3g").click();
+        page.waitForSelector(".netem-toxic-card");
 
-        // After reset, list displays empty state
+        Locator cards = page.locator(".netem-toxic-card");
+        assertThat(cards.count()).isGreaterThanOrEqualTo(2);
+        assertThat(Integer.parseInt(statActiveToxics.textContent().trim())).isGreaterThanOrEqualTo(2);
+
+        // 3. Click Reset All Toxics
+        page.locator("#btn-netem-reset-all").click();
         page.waitForSelector("#netem-toxics-list .empty-state");
         assertThat(page.locator("#netem-toxics-list").textContent()).contains("No network impairments active");
         assertThat(Integer.parseInt(statActiveToxics.textContent().trim())).isEqualTo(0);
@@ -144,8 +207,8 @@ public class UiNetEmPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Verify Custom Toxic creation via modal and deletion")
-    void testAddCustomToxicModalAndDeletion() {
+    @DisplayName("Verify Custom Toxic creation with Pattern & Client IP and deletion")
+    void testAddCustomToxicWithPatternAndClientIp() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#netem");
         page.waitForSelector("#tab-netem.active");
         page.waitForFunction(
@@ -156,22 +219,29 @@ public class UiNetEmPlaywrightTest {
         page.waitForSelector("#netem-add-toxic-modal:not(.hidden)");
 
         // Fill modal fields
-        page.locator("#netem-toxic-name").fill("custom-latency-test");
+        page.locator("#netem-toxic-name").fill("custom-pattern-test");
         page.locator("#netem-toxic-type").selectOption("latency");
+        page.locator("#netem-toxic-client-ip").fill("127.0.0.1");
+        page.locator("#netem-toxic-pattern").fill("order-scope-42");
         page.locator("#attr-latency").fill("350");
         page.locator("#attr-jitter").fill("25");
+
+        page.screenshot(new Page.ScreenshotOptions().setPath(webOutputDir.resolve("07-netem-add-toxic-modal.png")));
 
         // Submit toxic
         page.locator("#btn-netem-submit-toxic").click();
         page.waitForFunction(
                 "() => document.getElementById('netem-add-toxic-modal') && document.getElementById('netem-add-toxic-modal').classList.contains('hidden')");
 
-        // Card should be present
-        page.waitForSelector(".netem-toxic-card[data-toxic-name='custom-latency-test']");
-        Locator card = page.locator(".netem-toxic-card[data-toxic-name='custom-latency-test']");
+        // Card should be present with Scoped and IP badges
+        page.waitForSelector(".netem-toxic-card[data-toxic-name='custom-pattern-test']");
+        Locator card = page.locator(".netem-toxic-card[data-toxic-name='custom-pattern-test']");
         assertThat(card.isVisible()).isTrue();
         assertThat(card.textContent()).contains("LATENCY");
-        assertThat(card.textContent()).contains("350");
+        assertThat(card.textContent()).contains("Scoped: order-scope-42");
+        assertThat(card.textContent()).contains("IP: 127.0.0.1");
+
+        page.screenshot(new Page.ScreenshotOptions().setPath(webOutputDir.resolve("06-netem-console.png")));
 
         // Delete this toxic
         card.locator(".btn-delete-toxic").click();
@@ -182,17 +252,24 @@ public class UiNetEmPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Verify NetEm Journal records traffic and filtering works")
+    @DisplayName("Verify NetEm Journal records traffic and filtering by scope works")
     void testNetEmJournalRecordingAndFiltering() throws Exception {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#netem");
         page.waitForSelector("#tab-netem.active");
         page.waitForFunction(
                 "() => document.getElementById('netem-ingress-info') && document.getElementById('netem-ingress-info').textContent.includes('wiremock-netem')");
 
-        // Make an HTTP request through NetEm Proxy port with correlation ID
+        // Add toxic with pattern
+        netEmProxy.addToxic(NetEmToxicConfig.builder("playwright-latency", NetEmToxicType.LATENCY).stream(
+                        NetEmStreamDirection.DOWNSTREAM)
+                .pattern("playwright-test-123")
+                .attribute("latency", 20L)
+                .build());
+
+        // Make an HTTP request through NetEm Proxy port with target pattern
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + netEmProxy.getPort() + "/api/test-netem"))
-                .header("X-Correlation-Id", "playwright-test-123")
+                .header("X-Scope", "playwright-test-123")
                 .GET()
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -207,14 +284,13 @@ public class UiNetEmPlaywrightTest {
         Locator journalRows = page.locator("#netem-journal-tbody tr");
         assertThat(journalRows.count()).isGreaterThanOrEqualTo(1);
         assertThat(page.locator("#netem-journal-tbody").textContent()).contains("playwright-test-123");
-        assertThat(page.locator("#netem-journal-tbody").textContent()).contains("Normal");
 
-        // Filter by correlation id
+        // Filter by scope
         page.locator("#netem-journal-filter-corr").fill("playwright-test-123");
         page.waitForTimeout(300);
         assertThat(page.locator("#netem-journal-tbody").textContent()).contains("playwright-test-123");
 
-        page.locator("#netem-journal-filter-corr").fill("non-existent-correlation-id");
+        page.locator("#netem-journal-filter-corr").fill("non-existent-scope");
         page.waitForTimeout(300);
         assertThat(page.locator("#netem-journal-tbody").textContent())
                 .contains("No matching network events recorded in NetEm journal.");

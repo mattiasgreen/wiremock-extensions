@@ -154,7 +154,7 @@ public class TcpNetEmProxy implements AutoCloseable {
                             context.getStartTimeEpochMs(),
                             config.getName(),
                             clientAddr,
-                            context.getCorrelationId(),
+                            context.getScope(),
                             context.getDurationMs(),
                             connUpBytes,
                             connDownBytes,

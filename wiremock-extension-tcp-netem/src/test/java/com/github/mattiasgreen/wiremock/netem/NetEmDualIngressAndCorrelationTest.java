@@ -143,7 +143,7 @@ class NetEmDualIngressAndCorrelationTest {
         // Configure TCP RST strictly scoped to X-Correlation-Id: "chaos-canary-42"
         netEmProxy.addToxic(NetEmToxicConfig.builder("selective-rst", NetEmToxicType.RESET_PEER).stream(
                         NetEmStreamDirection.DOWNSTREAM)
-                .correlationId("chaos-canary-42")
+                .pattern("chaos-canary-42")
                 .toxicity(1.0)
                 .build());
 
@@ -183,7 +183,7 @@ class NetEmDualIngressAndCorrelationTest {
         // Configure 150ms latency scoped to X-Correlation-Id: "slow-session-99"
         netEmProxy.addToxic(NetEmToxicConfig.builder("selective-latency", NetEmToxicType.LATENCY).stream(
                         NetEmStreamDirection.DOWNSTREAM)
-                .correlationId("slow-session-99")
+                .pattern("slow-session-99")
                 .attribute("latency", 150L)
                 .attribute("jitter", 0L)
                 .toxicity(1.0)
