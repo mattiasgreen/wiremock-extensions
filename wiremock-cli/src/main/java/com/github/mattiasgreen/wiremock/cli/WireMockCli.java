@@ -72,8 +72,7 @@ public final class WireMockCli {
             out.println("\nOperation cancelled.");
             return 130;
         } catch (Exception e) {
-            String msg = e.getMessage() != null ? sanitize(e.getMessage()) : "Unknown error";
-            err.println("Error: " + msg);
+            err.println("Error: " + formatErrorMessage(e, serverUrl));
             return 1;
         }
     }
@@ -1003,7 +1002,50 @@ public final class WireMockCli {
     }
 
     private static String sanitize(String str) {
+        if (str == null) return "";
         return str.replace("\r", " ").replace("\n", " ");
+    }
+
+    private static String formatErrorMessage(Throwable e, String serverUrl) {
+        if (isConnectionFailure(e)) {
+            return "Cannot connect to WireMock server at " + sanitize(serverUrl) + ".\n"
+                    + "       Ensure the server is running, or specify a target server URL via:\n"
+                    + "         --server <url> (-s <url>)\n"
+                    + "         or WIREMOCK_URL environment variable.";
+        }
+        Throwable cur = e;
+        while (cur != null) {
+            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+                return sanitize(cur.getMessage());
+            }
+            cur = cur.getCause();
+        }
+        return "Unknown error (" + e.getClass().getSimpleName() + ")";
+    }
+
+    private static boolean isConnectionFailure(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            if (cur instanceof java.net.ConnectException
+                    || cur instanceof java.net.http.HttpConnectTimeoutException
+                    || cur instanceof java.net.http.HttpTimeoutException
+                    || cur instanceof java.nio.channels.ClosedChannelException
+                    || cur instanceof java.net.NoRouteToHostException
+                    || cur instanceof java.net.UnknownHostException) {
+                return true;
+            }
+            if (cur.getMessage() != null) {
+                String m = cur.getMessage().toLowerCase(Locale.ROOT);
+                if (m.contains("connection refused")
+                        || m.contains("connect timed out")
+                        || m.contains("failed to connect")
+                        || m.contains("unreachable")) {
+                    return true;
+                }
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     private static void printUsage(PrintStream out) {

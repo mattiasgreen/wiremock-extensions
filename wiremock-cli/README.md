@@ -158,15 +158,41 @@ wm proxy http://localhost:8080 19840
 
 ---
 
-## 5. Configuration & Environment Variables
+## 5. Configuration & Server Target Setup
+
+`wiremock-cli` requires a reachable WireMock instance. By default, it attempts to connect to `http://localhost:8080`.
+If your WireMock server runs on a custom port, in a Docker container, or on a remote staging host, you **must point the CLI to the server** using either of the following mechanisms:
+
+### A. Command-Line Argument (`-s` / `--server`)
+Pass `-s` or `--server` followed by the base URL to any command:
+```bash
+wm info -s http://staging-wiremock.internal:8080
+wm stubs "GET and /cases" --server https://mock.corp.example.com
+```
+
+### B. Environment Variable (`WIREMOCK_URL`)
+Define `WIREMOCK_URL` in your terminal shell, profile (`~/.bashrc` / `~/.zshrc`), or CI/CD environment to avoid specifying `-s` repeatedly:
+```bash
+# Linux / macOS / Git Bash
+export WIREMOCK_URL="http://localhost:8080"
+wm info
+
+# Windows PowerShell
+$env:WIREMOCK_URL = "http://localhost:8080"
+wm info
+```
+
+### Configuration Reference
 
 | Variable / Flag | Default | Description |
 | :--- | :--- | :--- |
-| `-s, --server <url>` | `http://localhost:8080` | Target WireMock base URL. |
-| `WIREMOCK_URL` | `http://localhost:8080` | Environment variable fallback for target URL. |
+| `-s, --server <url>` | `http://localhost:8080` | Target WireMock base URL (overrides `WIREMOCK_URL`). |
+| `WIREMOCK_URL` | `http://localhost:8080` | Environment variable fallback for target WireMock URL. |
 | `--no-color` | `false` | Explicitly disables ANSI terminal color formatting. |
 | `NO_COLOR` | Unset | Standard environment variable for suppressing terminal colors. |
 
+> [!TIP]
+> If the target server is down or unreachable, `wiremock-cli` exits with code `1` and prints an actionable diagnostic pointing to the target URL and configuration flags, rather than an opaque error.
 ---
 
 ## 6. Project Layout

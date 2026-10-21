@@ -275,9 +275,7 @@ public final class WireMockConsoleProxy {
             Thread.currentThread().interrupt();
             sendError(exchange, 502, "Proxy request interrupted");
         } catch (Exception e) {
-            String sanitized = e.getMessage() != null
-                    ? e.getMessage().replace("\r", " ").replace("\n", " ")
-                    : "Unknown error";
+            String sanitized = sanitizeError(e);
             sendError(exchange, 502, "Bad Gateway: Failed to connect to upstream " + targetBase + " (" + sanitized + ")");
         }
     }
@@ -378,6 +376,17 @@ public final class WireMockConsoleProxy {
     // =========================================================================
     // Entry Point (JDK 21 Single-File Launcher)
     // =========================================================================
+
+    private static String sanitizeError(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+                return cur.getMessage().replace("\r", " ").replace("\n", " ");
+            }
+            cur = cur.getCause();
+        }
+        return t.getClass().getSimpleName();
+    }
 
     public static void main(String[] args) {
         String target = (args.length > 0 && !args[0].isBlank()) ? args[0] : DEFAULT_TARGET_URL;
