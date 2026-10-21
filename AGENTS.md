@@ -72,6 +72,8 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - Delegate broad codebase searches or inspection of large test/HTML files (>30 KB) to the `research` subagent (`Model: "flash"`) so raw file dumps do not bloat the main planner context.
   - Use concurrent `self` subagents for independent parallel tasks (e.g., updating `docs/spec/` documentation while running module verification tests).
 - **On-Demand Workspace Skills (`.agents/skills/`)**:
+  - **`feature-pr-lifecycle`**: Activate when creating, verifying, opening PRs, monitoring CI, and merging feature branches to `main`.
+  - **`release-and-media`**: Activate when managing release-please PR approvals, tracking releases, and publishing zero-bloat demo video assets.
   - **`ux-audit-and-snapshots`**: Activate when designing, modifying, or reviewing UI features (5-Phase Senior Loop, `captureUiSnapshots`, multimodal inspection, and 5 Lenses UX review).
   - **`pr-and-release-prep`**: Activate before committing, creating a PR, or checking `release-please` / Maven Central readiness.
   - **`demo-video-recording`**: Activate when recording animated GIFs, pitch deck screenshots, or Playwright WebM video tours.
