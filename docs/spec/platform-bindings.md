@@ -99,3 +99,15 @@
 | **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
 | **Probe Stateful API** | `GET` | `/__admin/stateful/models` | None |
 | **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
+
+---
+
+## 3. Terminal CLI Platform Bindings (`wiremock-cli` / `wm`)
+
+| Abstract Semantic Action / View | CLI Command / Invocation | Description |
+| :--- | :--- | :--- |
+| **Probe Instance Capabilities** | `wm info [-s <url>]` | Probes core WireMock version and extension matrix (`tcp-netem`, `stateful`, `otel`, `ui`). |
+| **List & Search Stubs** | `wm stubs [expr] [--json]` | Displays formatted stubs catalog or JSON. Supports boolean expressions (`"GET and /cases"`, `"status=disabled"`). |
+| **Stream Request Journal** | `wm tail [-f] [-u] [-n <N>]` | Live streams incoming requests with status badges, latency, and near-miss diagnostics on 404s. |
+| **Inspect Network Toxics** | `wm toxics [--json]` | Inspects active L4 TCP proxies and toxics; outputs clean fallback notice if `tcp-netem` is not installed. |
+| **Launch Console Proxy** | `wm proxy [target] [port]` | Launches headless console reverse proxy and web UI server at `http://localhost:19840/__admin/ui/`. |
