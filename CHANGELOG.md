@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.4.0...v1.4.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **cli:** provide actionable connection error and document server configuration ([#38](https://github.com/mattiasgreen/wiremock-extensions/issues/38)) ([c9c1f28](https://github.com/mattiasgreen/wiremock-extensions/commit/c9c1f28bd028a16bd46fcbd8ea60ce56594615dc)), closes [#37](https://github.com/mattiasgreen/wiremock-extensions/issues/37)
+
 ## [1.4.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.3.0...v1.4.0) (2026-10-21)
 
 
