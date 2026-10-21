@@ -5,6 +5,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.3.0...v1.4.0) (2026-10-21)
+
+
+### Features
+
+* **cli:** add lightweight JDK 21 JEP 330 developer CLI and relocate console proxy ([e3a4248](https://github.com/mattiasgreen/wiremock-extensions/commit/e3a42485ea95abb6628f3ffc87621b6d32d9d9b1))
+* **netem:** protocol-agnostic stream pattern and client IP matching ([2a7a2ca](https://github.com/mattiasgreen/wiremock-extensions/commit/2a7a2ca73e81194a736b8e7b3b79b596fc061d7d))
+* **netem:** protocol-agnostic stream pattern and client IP matching ([3ee83a0](https://github.com/mattiasgreen/wiremock-extensions/commit/3ee83a0e488471c5545bc8c49ca4662f151cad95))
+* **ui:** add journal datetime range filtering and 1-click filtered stub snapshotting ([30b2b91](https://github.com/mattiasgreen/wiremock-extensions/commit/30b2b9103764ac5c82283465cb0da269a31a1740))
+* **ui:** add journal datetime range filtering and snapshotting ([cf18a5c](https://github.com/mattiasgreen/wiremock-extensions/commit/cf18a5cf99267bd6f1f0944c33b13b2e2318649c))
+* **workflow:** add feature PR and release management agent skills ([#36](https://github.com/mattiasgreen/wiremock-extensions/issues/36)) ([1681efd](https://github.com/mattiasgreen/wiremock-extensions/commit/1681efd3eeac3283b8fab2195e5c22bb183004cf))
+
+
+### Bug Fixes
+
+* **ui:** isolate playwright context per test and stabilize netem empty-state wait ([dff5859](https://github.com/mattiasgreen/wiremock-extensions/commit/dff58598f8baba6ed6d97d7da96869bb9d601af0))
+
 ## [1.3.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.2.1...v1.3.0) (2026-10-18)
 
 
