@@ -176,4 +176,20 @@ class WireMockCliIntegrationTest {
             netemServer.stop();
         }
     }
+
+    @Test
+    @DisplayName("wm without running server: reports actionable connection error instead of unknown error")
+    void shouldReportActionableConnectionErrorWhenServerUnreachable() {
+        int unusedPort = 59999;
+        String unreachableUrl = "http://localhost:" + unusedPort;
+
+        int code = WireMockCli.run(new String[] {"info", "-s", unreachableUrl, "--no-color"}, out, err);
+
+        assertThat(code).isEqualTo(1);
+        String errOutput = errCapture.toString(StandardCharsets.UTF_8);
+        assertThat(errOutput).contains("Cannot connect to WireMock server at http://localhost:" + unusedPort);
+        assertThat(errOutput).contains("--server");
+        assertThat(errOutput).contains("WIREMOCK_URL");
+        assertThat(errOutput).doesNotContain("Unknown error");
+    }
 }
