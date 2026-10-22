@@ -1,0 +1,83 @@
+{
+  "mappings": [
+    {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "name": "List Users",
+      "request": {
+        "method": "GET",
+        "url": "/api/v1/users"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]"
+      }
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "name": "Create Order",
+      "request": {
+        "method": "POST",
+        "url": "/api/v1/orders",
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": "$.item"
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"orderId\":\"ord-9921\",\"status\":\"CREATED\"}"
+      },
+      "metadata": {
+        "exampleRequest": {
+          "path": "/api/v1/orders",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": "{\n  \"item\": \"Wireless Noise-Canceling Headphones\",\n  \"quantity\": 1,\n  \"price\": 199.99,\n  \"customer\": \"alex@example.com\"\n}"
+        }
+      }
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000003",
+      "name": "Slow Latency Simulation",
+      "request": {
+        "method": "GET",
+        "url": "/api/v1/slow"
+      },
+      "response": {
+        "status": 200,
+        "fixedDelayMilliseconds": 150,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"latency\":\"delayed\"}"
+      }
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000004",
+      "name": "Internal Server Error Mock",
+      "request": {
+        "method": "GET",
+        "url": "/api/v1/error"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"error\":\"Internal Server Error\",\"code\":500}"
+      }
+    }
+  ],
+  "importOptions": {
+    "duplicatePolicy": "OVERWRITE",
+    "deleteAllNotInImport": false
+  }
+}
