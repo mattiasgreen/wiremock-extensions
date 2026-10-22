@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XAReturnCode;
@@ -178,12 +179,24 @@ public class CasualServer implements AutoCloseable {
         LOG.info("CasualServer stopped");
     }
 
-    private class ServerInboundHandler extends SimpleChannelInboundHandler<CasualNWMessage<?>> {
+    public ServerInboundHandler createInboundHandler() {
+        return new ServerInboundHandler();
+    }
+
+    public class ServerInboundHandler extends SimpleChannelInboundHandler<CasualNWMessage<?>> {
 
         @Override
         @SuppressWarnings("unchecked")
-        protected void channelRead0(ChannelHandlerContext ctx, CasualNWMessage<?> msg) {
+        public void channelRead0(ChannelHandlerContext ctx, CasualNWMessage<?> msg) {
             CasualNWMessageType type = msg.getType();
+
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(
+                        "[CASUAL-SERVER-INBOUND] Received frame type={} correlationId={} from={}",
+                        type,
+                        msg.getCorrelationId(),
+                        ctx.channel().remoteAddress());
+            }
 
             if (type == CasualNWMessageType.DOMAIN_CONNECT_REQUEST) {
                 handleDomainConnect(ctx, (CasualNWMessage<CasualDomainConnectRequestMessage>) msg);
@@ -199,8 +212,23 @@ public class CasualServer implements AutoCloseable {
                 handleRollback(ctx, (CasualNWMessage<CasualTransactionResourceRollbackRequestMessage>) msg);
             } else {
                 String safeType = String.valueOf(type).replaceAll("[\r\n]", "");
-                LOG.warn("Unsupported Casual message type received: {}", safeType);
+                LOG.error(
+                        "[CASUAL-SERVER-UNSUPPORTED] Unhandled Casual message type [{}] (correlationId={}) from [{}]. Closing channel immediately to fail fast and prevent client hang.",
+                        safeType,
+                        msg.getCorrelationId(),
+                        ctx.channel().remoteAddress());
+                ctx.close();
             }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            LOG.error(
+                    "[CASUAL-SERVER-ERROR] Netty channel error from [{}]: {}",
+                    ctx.channel().remoteAddress(),
+                    cause.getMessage(),
+                    cause);
+            ctx.close();
         }
 
         private void handleDomainConnect(
@@ -275,8 +303,23 @@ public class CasualServer implements AutoCloseable {
 
         private <T extends se.laz.casual.api.network.protocol.messages.CasualNetworkTransmittable> void writeMessage(
                 ChannelHandlerContext ctx, CasualNWMessage<T> msg) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(
+                        "[CASUAL-SERVER-OUTBOUND] Sending reply type={} correlationId={} to={}",
+                        msg.getType(),
+                        msg.getCorrelationId(),
+                        ctx.channel().remoteAddress());
+            }
             ByteBuf buf = ctx.alloc().buffer();
             CasualMessageEncoder.write(buf, msg);
+            if (LOG.isTraceEnabled()) {
+                byte[] bytes = new byte[buf.readableBytes()];
+                buf.getBytes(buf.readerIndex(), bytes);
+                LOG.trace(
+                        "[CASUAL-SERVER-HEX] Outbound frame ({} bytes):\n{}",
+                        bytes.length,
+                        CasualBufferUtils.toHexDump(bytes, 128));
+            }
             ctx.writeAndFlush(buf);
         }
     }

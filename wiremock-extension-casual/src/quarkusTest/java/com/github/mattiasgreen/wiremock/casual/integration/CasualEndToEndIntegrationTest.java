@@ -7,13 +7,17 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.TransactionOutcome;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
+import se.laz.casual.network.protocol.messages.domain.Service;
 
 /**
  * End-to-End 3-node integration tests verifying {@code CasualWireMockGateway} acting as a
@@ -144,5 +148,44 @@ class CasualEndToEndIntegrationTest {
         assertThat(outcome.prepareReturnCode()).isEqualTo(XAReturnCode.XAER_RMERR);
         assertThat(outcome.commitReturnCode()).isNull();
         assertThat(outcome.committed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Scenario 5: Transparent Discovery Aggregation Across Multi-Node Topology")
+    void shouldAggregateDiscoveryFromUpstreamServerAndLocalMitmStubs() throws Exception {
+        // Stub a local service on WireMock MitM
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/localMitmPayment"))
+                        .willReturn(aResponse().withStatus(200).withBody("{\"stub\":true}")));
+
+        // Query discovery from Client Initiator (Node 1) -> MitM Gateway (Node 2)
+        CasualDomainDiscoveryReplyMessage discoveryReply = harness.getClientInitiator()
+                .getTcpClient()
+                .discoverServices(List.of("casual/example", "localMitmPayment"));
+
+        assertThat(discoveryReply).isNotNull();
+        List<String> discoveredServices =
+                discoveryReply.getServices().stream().map(Service::getName).toList();
+
+        // Must discover both upstream Server B service ("casual/example") and MitM stub ("localMitmPayment")
+        assertThat(discoveredServices).contains("casual/example", "localMitmPayment");
+    }
+
+    @Test
+    @DisplayName("Scenario 6: Transparent Non-JSON Fielded Binary Buffer 2PC Pass-Through")
+    void shouldProxyNonJsonFieldedBufferAndCommitTwoPhaseCommit() throws Exception {
+        byte[] fieldedBytes = new byte[] {0x00, 0x05, 0x41, 0x42, 0x43};
+        ServiceBuffer fieldedBuffer = ServiceBuffer.of("CFIELD/", List.of(fieldedBytes));
+
+        TransactionOutcome outcome = harness.getClientInitiator().executeInTransaction("casual/example", fieldedBuffer);
+
+        assertThat(outcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+        assertThat(outcome.serviceTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+        assertThat(outcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(outcome.commitReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(outcome.committed()).isTrue();
+
+        assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
+        assertThat(harness.getUpstreamNode().getCommittedXids()).contains(outcome.xid());
     }
 }

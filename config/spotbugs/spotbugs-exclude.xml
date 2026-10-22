@@ -27,4 +27,14 @@
         <Class name="com.github.mattiasgreen.wiremock.ui.WireMockStudio"/>
         <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
     </Match>
+
+    <!-- Exclude CRLF log injection warnings for raw protocol frames and hex dumps in casual extension -->
+    <Match>
+        <Package name="~se\.laz\.casual\..*"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
 </FindBugsFilter>
