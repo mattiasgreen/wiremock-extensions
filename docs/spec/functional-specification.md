@@ -170,3 +170,16 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** the user resets the target back to same-origin.
 - **Then** the browser tab title reverts to `WMC - http://localhost:8080`.
 
+
+### Story 12: In-Process Casual (XATMI) Domain Gateway, Discovery Aggregation, and Fast-Fail Proxying
+- **Given** WireMock is running with the `wiremock-extension-casual` gateway listening on a raw TCP port, and optionally configured with an upstream Casual domain gateway (`upstreamHost`, `upstreamPort`, and fast timeout `upstreamTimeoutSeconds`).
+- **When** an XATMI client initiates a domain connect handshake (`DOMAIN_CONNECT_REQUEST`).
+- **Then** the gateway responds with `DOMAIN_CONNECT_REPLY` protocol version 1.0 without requiring an external JEE or C++ domain broker.
+- **When** the client issues a service discovery request (`DOMAIN_DISCOVERY_REQUEST`).
+- **Then** the gateway aggregates services registered in the upstream domain catalog with local WireMock stubs (`/__casual/services/*`), returning a unified service list.
+- **When** a service call (`SERVICE_CALL_REQUEST`) arrives for a stubbed service.
+- **Then** the gateway dispatches the payload to WireMock, respects `X-Casual-Error-State`, `X-Casual-User-Supplied-Error`, and `X-Casual-Transaction-State`, and responds with `SERVICE_CALL_REPLY`.
+- **When** an unmatched service call arrives with an upstream configured.
+- **Then** the gateway forwards the request transparently over TCP to the upstream domain, captures recordable responses as WireMock stubs (`recordStubs: true`), and fails fast with actionable diagnostic hints if the upstream call exceeds the timeout (default 4s).
+- **When** an unsupported frame or connection drop occurs.
+- **Then** the gateway fails fast and closes the TCP channel immediately (`ctx.close()`) to avoid client-side hangs.

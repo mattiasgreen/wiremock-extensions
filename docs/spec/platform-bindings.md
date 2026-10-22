@@ -88,3 +88,5 @@
 | **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
 
 
+| **Casual Service Dispatch** | `POST` | `/__casual/services/{serviceName}` | Service request payload (JSON or Base64) |
+| **Casual Service Stubs** | `POST` | `/__admin/mappings` | WireMock stub matching `POST /__casual/services/{name}` |
