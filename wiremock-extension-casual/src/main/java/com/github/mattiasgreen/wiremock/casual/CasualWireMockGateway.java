@@ -62,11 +62,12 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
     private final int port;
     private final String wireMockBaseUrl;
-    private final String upstreamHost;
-    private final int upstreamPort;
-    private final boolean recordStubs;
-    private final boolean recordFaults;
-    private final boolean recordNotFound;
+    private volatile String upstreamHost;
+    private volatile int upstreamPort;
+    private volatile boolean upstreamEnabled;
+    private volatile boolean recordStubs;
+    private volatile boolean recordFaults;
+    private volatile boolean recordNotFound;
     private final int upstreamTimeoutSeconds;
     private final UUID domainId;
     private final String domainName;
@@ -133,6 +134,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         this.wireMockBaseUrl = wireMockBaseUrl.replaceAll("/+$", "");
         this.upstreamHost = upstreamHost;
         this.upstreamPort = upstreamPort;
+        this.upstreamEnabled = upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0;
         this.recordStubs = recordStubs;
         this.recordFaults = recordFaults;
         this.recordNotFound = recordNotFound;
@@ -158,6 +160,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         private String wireMockBaseUrl;
         private String upstreamHost;
         private int upstreamPort = 0;
+        private boolean upstreamEnabled = true;
         private boolean recordStubs = false;
         private boolean recordFaults = true;
         private boolean recordNotFound = false;
@@ -176,6 +179,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         public Builder upstream(String host, int port) {
             this.upstreamHost = host;
             this.upstreamPort = port;
+            return this;
+        }
+
+        public Builder upstreamEnabled(boolean upstreamEnabled) {
+            this.upstreamEnabled = upstreamEnabled;
             return this;
         }
 
@@ -203,7 +211,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             if (wireMockBaseUrl == null || wireMockBaseUrl.isBlank()) {
                 throw new IllegalStateException("wireMockBaseUrl must be specified");
             }
-            return new CasualWireMockGateway(
+            CasualWireMockGateway gateway = new CasualWireMockGateway(
                     port,
                     wireMockBaseUrl,
                     upstreamHost,
@@ -212,6 +220,9 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                     recordFaults,
                     recordNotFound,
                     upstreamTimeoutSeconds);
+            gateway.setUpstreamEnabled(
+                    upstreamEnabled && upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0);
+            return gateway;
         }
     }
 
@@ -232,8 +243,66 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         return server != null ? server.getPort() : port;
     }
 
+    public synchronized boolean isRunning() {
+        return server != null && server.isRunning();
+    }
+
     public boolean hasUpstream() {
-        return upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0;
+        return upstreamEnabled && upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0;
+    }
+
+    public synchronized void setUpstream(String host, int port, boolean enabled) {
+        this.upstreamHost = host;
+        this.upstreamPort = port;
+        this.upstreamEnabled = enabled;
+        if (upstreamClient != null) {
+            try {
+                upstreamClient.close();
+            } catch (Exception e) {
+                LOG.debug("Error closing existing upstream client during reconnect", e);
+            }
+            upstreamClient = null;
+        }
+    }
+
+    public void setUpstreamEnabled(boolean enabled) {
+        this.upstreamEnabled = enabled;
+    }
+
+    public boolean isUpstreamEnabled() {
+        return upstreamEnabled;
+    }
+
+    public String getUpstreamHost() {
+        return upstreamHost;
+    }
+
+    public int getUpstreamPort() {
+        return upstreamPort;
+    }
+
+    public boolean isRecordStubs() {
+        return recordStubs;
+    }
+
+    public void setRecordStubs(boolean recordStubs) {
+        this.recordStubs = recordStubs;
+    }
+
+    public boolean isRecordFaults() {
+        return recordFaults;
+    }
+
+    public void setRecordFaults(boolean recordFaults) {
+        this.recordFaults = recordFaults;
+    }
+
+    public boolean isRecordNotFound() {
+        return recordNotFound;
+    }
+
+    public void setRecordNotFound(boolean recordNotFound) {
+        this.recordNotFound = recordNotFound;
     }
 
     public int getUpstreamTimeoutSeconds() {
@@ -255,7 +324,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
     @Override
     public synchronized void close() {
         if (upstreamClient != null) {
-            upstreamClient.close();
+            try {
+                upstreamClient.close();
+            } catch (Exception e) {
+                LOG.warn("Failed to cleanly close upstream client", e);
+            }
             upstreamClient = null;
         }
         if (server != null) {

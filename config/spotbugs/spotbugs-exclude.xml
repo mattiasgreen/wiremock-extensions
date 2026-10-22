@@ -16,9 +16,13 @@
         <Bug pattern="UNENCRYPTED_SERVER_SOCKET,UNENCRYPTED_SOCKET,PREDICTABLE_RANDOM"/>
     </Match>
 
-    <!-- Exclude singleton instance exposure for TcpNetEmRegistry -->
+    <!-- Exclude singleton instance exposure for registries -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualRegistry"/>
         <Bug pattern="MS_EXPOSE_REP"/>
     </Match>
 

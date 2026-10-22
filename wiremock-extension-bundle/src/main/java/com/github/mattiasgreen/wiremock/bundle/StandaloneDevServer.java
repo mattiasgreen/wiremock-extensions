@@ -1,5 +1,7 @@
 package com.github.mattiasgreen.wiremock.bundle;
 
+import com.github.mattiasgreen.wiremock.casual.CasualConfiguration;
+import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
@@ -20,14 +22,28 @@ public class StandaloneDevServer {
         WireMockServer server = startServer(port);
 
         int netemPort = Integer.getInteger("wiremock.netem.port", server.port() + 1);
-        int casualPort = Integer.getInteger("wiremock.casual.port", 7772);
+        CasualConfiguration casualConfig = CasualRegistry.getInstance().getConfig();
 
         System.out.println("=================================================================");
         System.out.println("🚀 WireMock Suite Server running at http://localhost:" + server.port());
         System.out.println("👉 WireMock Console UI: http://localhost:" + server.port() + "/__admin/ui");
         System.out.println(
                 "👉 TCP NetEm Ingress:   http://localhost:" + netemPort + " (dual-ingress -> :" + server.port() + ")");
-        System.out.println("👉 Casual TCP Gateway:  casual://127.0.0.1:" + casualPort);
+        if (casualConfig.isEnabled()) {
+            int casualPort = CasualRegistry.getInstance()
+                    .getGateway()
+                    .map(CasualWireMockGateway::getPort)
+                    .orElse(casualConfig.getPort());
+            String upstreamDesc = casualConfig.hasUpstreamConfigured()
+                    ? (casualConfig.getUpstreamHost() + ":" + casualConfig.getUpstreamPort()
+                            + (casualConfig.isUpstreamEnabled() ? " [ENABLED]" : " [DISABLED]"))
+                    : "NONE";
+            System.out.println("👉 Casual TCP Gateway:  casual://127.0.0.1:" + casualPort + " (upstream: "
+                    + upstreamDesc + ", record: " + (casualConfig.isRecordStubs() ? "ON" : "OFF") + ")");
+            System.out.println("👉 Casual Config API:   http://localhost:" + server.port() + "/__admin/casual/config");
+        } else {
+            System.out.println("👉 Casual TCP Gateway:  DISABLED");
+        }
         System.out.println("👉 NetEm Journal:       http://localhost:" + server.port() + "/__admin/tcp-netem/journal");
         System.out.println("👉 Prometheus Metrics:  http://localhost:" + server.port() + "/__admin/metrics/prometheus");
         System.out.println("👉 Tracing & Logging:   W3C Context Propagation & MDC Active");
@@ -51,16 +67,30 @@ public class StandaloneDevServer {
             System.err.println("Could not bind default TCP NetEm proxy on port " + netemPort + ": " + e.getMessage());
         }
 
-        int casualPort = Integer.getInteger("wiremock.casual.port", 7772);
-        try {
-            CasualWireMockGateway casualGateway = CasualWireMockGateway.builder()
-                    .port(casualPort)
-                    .wireMockBaseUrl("http://localhost:" + server.port())
-                    .build();
-            casualGateway.start();
-        } catch (Exception e) {
-            System.err.println(
-                    "Could not bind default Casual TCP gateway on port " + casualPort + ": " + e.getMessage());
+        CasualConfiguration casualConfig = CasualConfiguration.fromEnvironment();
+        CasualRegistry.getInstance().setConfig(casualConfig);
+
+        if (casualConfig.isEnabled()) {
+            try {
+                CasualWireMockGateway.Builder gatewayBuilder = CasualWireMockGateway.builder()
+                        .port(casualConfig.getPort())
+                        .wireMockBaseUrl("http://localhost:" + server.port())
+                        .recordStubs(casualConfig.isRecordStubs())
+                        .recordFaults(casualConfig.isRecordFaults())
+                        .recordNotFound(casualConfig.isRecordNotFound());
+
+                if (casualConfig.hasUpstreamConfigured()) {
+                    gatewayBuilder.upstream(casualConfig.getUpstreamHost(), casualConfig.getUpstreamPort());
+                    gatewayBuilder.upstreamEnabled(casualConfig.isUpstreamEnabled());
+                }
+
+                CasualWireMockGateway casualGateway = gatewayBuilder.build();
+                casualGateway.start();
+                CasualRegistry.getInstance().setGateway(casualGateway);
+            } catch (Exception e) {
+                System.err.println("Could not bind default Casual TCP gateway on port " + casualConfig.getPort() + ": "
+                        + e.getMessage());
+            }
         }
 
         return server;

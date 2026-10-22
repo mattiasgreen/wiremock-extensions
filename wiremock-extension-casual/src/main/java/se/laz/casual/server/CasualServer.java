@@ -162,6 +162,10 @@ public class CasualServer implements AutoCloseable {
         return boundPort > 0 ? boundPort : port;
     }
 
+    public synchronized boolean isRunning() {
+        return channelFuture != null && channelFuture.channel().isOpen();
+    }
+
     @Override
     public synchronized void close() {
         if (channelFuture != null) {

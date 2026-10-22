@@ -219,7 +219,65 @@ When enabling transparent proxy recording (`recordStubs: true`), the gateway enf
 
 ---
 
-## 8. Usage & Stubbing Examples
+## 8. Configuration & Admin API Control Plane
+
+The Casual extension supports flexible configuration via JVM system properties (highest precedence), environment variables (for Docker / containerized environments), or dynamic REST API updates at runtime.
+
+### A. Environment Variables & System Properties
+
+| Setting | Environment Variable | System Property | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Casual Enabled** | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` | Enables or disables the Casual TCP gateway. |
+| **Gateway Port** | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` | TCP port where the Casual server listens. |
+| **Upstream Host** | `WIREMOCK_CASUAL_UPSTREAM_HOST` | `wiremock.casual.upstream.host` | `null` | Upstream Casual domain hostname/IP for proxying. |
+| **Upstream Port** | `WIREMOCK_CASUAL_UPSTREAM_PORT` | `wiremock.casual.upstream.port` | `0` | Upstream Casual domain port for proxying. |
+| **Upstream Enabled** | `WIREMOCK_CASUAL_UPSTREAM_ENABLED` | `wiremock.casual.upstream.enabled` | Auto `true` | Automatically enabled when host & port are set. |
+| **Upstream Timeout** | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `wiremock.casual.upstream.timeout.seconds` | `4` | Upstream timeout in seconds before failing fast. |
+| **Record Stubs** | `WIREMOCK_CASUAL_RECORD_STUBS` | `wiremock.casual.record.stubs` | `false` | Automatically records proxied calls as WireMock stubs. |
+
+### B. Admin API REST Control Plane (`/__admin/casual/config`)
+
+WireMock Standalone exposes dedicated REST endpoints (auto-discovered via `CasualExtensionFactory` SPI) to inspect and reconfigure Casual gateway behavior at runtime without restarting the server:
+
+* **Inspect Configuration**:
+  ```bash
+  curl http://localhost:8080/__admin/casual/config
+  ```
+  Returns `200 OK`:
+  ```json
+  {
+    "enabled": true,
+    "port": 7772,
+    "upstreamHost": "upstream.casual.local",
+    "upstreamPort": 7771,
+    "upstreamEnabled": true,
+    "hasUpstreamConfigured": true,
+    "recordStubs": false,
+    "recordFaults": true,
+    "recordNotFound": false,
+    "running": true
+  }
+  ```
+
+* **Update Upstream & Recording at Runtime**:
+  ```bash
+  curl -X POST http://localhost:8080/__admin/casual/config \
+    -H "Content-Type: application/json" \
+    -d '{
+      "upstreamHost": "10.0.1.50",
+      "upstreamPort": 7771,
+      "recordStubs": true
+    }'
+  ```
+
+* **Reset to Defaults**:
+  ```bash
+  curl -X POST http://localhost:8080/__admin/casual/reset
+  ```
+
+---
+
+## 9. Usage & Stubbing Examples
 
 ### A. Starting the Gateway in Tests
 ```java
@@ -275,13 +333,15 @@ proxyGateway.start();
 
 ---
 
-## 9. Test Suite & Verification Matrix
+## 10. Test Suite & Verification Matrix
 
 The test suite covers comprehensive unit, integration, and E2E scenarios across multiple test sets:
 
 * **Unit & Fail-Fast Tests**:
   * [`CasualBufferUtilsTest`](src/test/java/se/laz/casual/api/buffer/CasualBufferUtilsTest.java): JSON detection (`.json/`, `JSON`), Base64 wrapping/unwrapping, and hex dump formatting.
   * [`CasualServerFailFastTest`](src/test/java/se/laz/casual/server/CasualServerFailFastTest.java): Netty `EmbeddedChannel` tests verifying immediate channel closure on unhandled frames or pipeline exceptions.
+  * [`CasualConfigurationTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualConfigurationTest.java): Environment variable, system property precedence, and upstream auto-enablement.
+  * [`CasualAdminEndpointTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualAdminEndpointTest.java): Admin API REST control plane (`/__admin/casual/config` and `/reset`) runtime updates.
 * **Gateway Suite (26 Scenarios)** in [`CasualWireMockGatewayTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGatewayTest.java):
   * Service discovery aggregation (upstream + local WireMock stubs).
   * Standard JSON stubbing, payload matching, and discrimination of matched 404 stubs.
@@ -294,3 +354,117 @@ The test suite covers comprehensive unit, integration, and E2E scenarios across 
   * JTA / Narayana two-phase commit pass-through and application-level rollbacks.
   * 2PC Phase-1 prepare failure chaos (`XAER_RMERR`).
   * Multi-node discovery aggregation and `.FIELDED` binary buffer 2PC pass-through.
+
+---
+
+## 11. Multi-Node Integration Test Architecture & Scenario Flyovers
+
+To validate end-to-end distributed transactions (JTA/Narayana 2PC) and transparent Man-in-the-Middle (MitM) behavior without slowing down the inner unit-test loop, `wiremock-extension-casual` provides an isolated integration test suite (`quarkusIntegrationTest`) modeling a 3-node Casual topology:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                         3-Node Casual / WireMock MitM Test Topology                             │
+├─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                 │
+│  ┌─────────────────────────┐       ┌─────────────────────────────────┐       ┌───────────────┐  │
+│  │  Node 1: Client Server  │       │   Node 2: WireMock Casual MitM  │       │ Node 3: Real  │  │
+│  │   (casual-quarkus A)    │       │     (CasualWireMockGateway)     │       │ Casual Server │  │
+│  │                         │       │                                 │       │  (Server B)   │  │
+│  │  • REST Endpoint        │       │  • Netty Casual Inbound (:7772) │       │               │  │
+│  │  • Narayana JTA TM      │       │  • CasualTransactionHandler     │       │ • Inbound     │  │
+│  │  • Outbound Pool ───────┼──────►│  • WireMock HTTP Engine (:8089) │       │   (:7771)     │  │
+│  │    (target -> :7772)    │  TCP  │  • Upstream Netty Client ───────┼──────►│ • @CasualSvc  │  │
+│  │                         │ Framing│    (upstream -> :7771)         │  TCP  │ • Local XA RM │  │
+│  └─────────────────────────┘       └─────────────────────────────────┘       └───────────────┘  │
+│                                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Scenario Flyover 1: Transparent Proxying & Stub Recording (With 2PC Pass-Through)
+When `CasualWireMockGateway` sits between **Node 1 (Client Initiator)** and **Node 3 (Upstream Server B)** with `recordStubs(true)` and an empty WireMock stub store:
+
+```mermaid
+sequenceDiagram
+    participant C as Node 1: Client (TM / Initiator)
+    participant G as Node 2: CasualWireMockGateway (MitM)
+    participant W as WireMock Engine (In-Process)
+    participant S as Node 3: Upstream Server B
+
+    Note over C,S: 1. Handshake & Service Discovery
+    C->>G: DOMAIN_CONNECT_REQUEST + DOMAIN_DISCOVERY_REQUEST("casual/example")
+    G->>W: POST /__casual/services/casual/example (Probe)
+    W-->>G: 404 Not Matched (No Stub Yet)
+    G->>S: Forward DOMAIN_DISCOVERY_REQUEST("casual/example")
+    S-->>G: DOMAIN_DISCOVERY_REPLY (Found, TransactionType=AUTOMATIC)
+    G-->>C: DOMAIN_DISCOVERY_REPLY
+
+    Note over C,S: 2. Transactional Service Call & Live Stub Recording
+    C->>C: UserTransaction.begin() -> allocates Xid1
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid1, JSON Payload)
+    G->>W: POST /__casual/services/casual/example (X-Casual-Xid: Xid1)
+    W-->>G: 404 Not Matched (No Matched-Stub-Id header)
+    G->>G: Enlist Xid1 in upstreamEnlistedXids
+    G->>S: Forward SERVICE_CALL_REQUEST("casual/example", Xid1, JSON Payload)
+    S-->>G: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply JSON)
+    G->>W: POST /__admin/mappings (Record request JSON + response JSON + headers)
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply JSON)
+
+    Note over C,S: 3. Two-Phase Commit (2PC) Pass-Through
+    C->>C: UserTransaction.commit() initiates 2PC
+    C->>G: PREPARE_REQUEST(Xid1, RM_ID)
+    G->>S: Forward PREPARE_REQUEST(Xid1, RM_ID) (Xid1 is in upstreamEnlistedXids)
+    S-->>G: PREPARE_REPLY(Xid1, XA_OK)
+    G-->>C: PREPARE_REPLY(Xid1, XA_OK)
+    C->>G: COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
+    G->>S: Forward COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
+    S-->>G: COMMIT_REPLY(Xid1, XA_OK)
+    G-->>C: COMMIT_REPLY(Xid1, XA_OK)
+```
+
+* **Key Takeaway**: Because `Xid1` was routed to **Node 3**, the gateway records `Xid1` in `upstreamEnlistedXids` and transparently forwards both `PREPARE_REQUEST` and `COMMIT_REQUEST` to Node 3 so that Node 3's real database/queue resources commit atomically with Node 1's transaction manager. Meanwhile, the service call payload is captured as a reusable WireMock stub.
+
+---
+
+### Scenario Flyover 2: Offline Stubbing, Application Faults & 2PC Chaos Simulation
+Once stubs are defined (or recorded from Scenario 1), **Node 3 (Upstream Server B)** can be shut down completely. **Node 2 (`CasualWireMockGateway`)** now acts as both the service endpoint and a **Synthetic XA Resource Manager**:
+
+```mermaid
+sequenceDiagram
+    participant C as Node 1: Client (TM / Initiator)
+    participant G as Node 2: CasualWireMockGateway (MitM)
+    participant W as WireMock Engine (Stub Store)
+    participant S as Node 3: Upstream Server B (OFFLINE)
+
+    Note over C,W: Case A: Stubbed Application Fault (TPESVCFAIL + ROLLBACK_ONLY)
+    C->>C: UserTransaction.begin() -> allocates Xid_Fault
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid_Fault, {"mode":"fail"})
+    G->>W: POST /__casual/services/casual/example
+    W-->>G: 500 Matched (X-Casual-Error-State: TPESVCFAIL, X-Casual-Transaction-State: ROLLBACK_ONLY)
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=TPESVCFAIL, TransactionState=ROLLBACK_ONLY)
+    C->>C: Marks transaction ROLLBACK_ONLY & aborts
+    C->>G: REQUEST_ROLLBACK(Xid_Fault, RM_ID)
+    G-->>C: ROLLBACK_REPLY(Xid_Fault, XA_OK) (Synthetic Vote — Server B never contacted)
+
+    Note over C,W: Case B: 2PC Phase-1 Prepare Failure Chaos (XAER_RMERR)
+    C->>C: UserTransaction.begin() -> allocates Xid_Chaos
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid_Chaos, {"mode":"2pc-chaos"})
+    G->>W: POST /__casual/services/casual/example
+    W-->>G: 200 Matched (X-Casual-XA-Prepare-Vote: XAER_RMERR)
+    G->>G: Store prepareVoteOverrides[Xid_Chaos] = XAER_RMERR
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE)
+    C->>C: Service call succeeded! UserTransaction.commit() starts 2PC Phase 1
+    C->>G: PREPARE_REQUEST(Xid_Chaos, RM_ID)
+    G-->>C: PREPARE_REPLY(Xid_Chaos, XAER_RMERR) (Synthetic Chaos Vote!)
+    C->>C: Coordinator aborts global transaction -> throws RollbackException
+```
+
+* **Key Takeaway**: Without running a real upstream Casual server or JEE Transaction Manager inside WireMock, tests can deterministically verify both **application-level rollbacks** (`TPESVCFAIL` + `ROLLBACK_ONLY` during the service call) and **infrastructure-level 2PC commit/prepare hazards** (`XAER_RMERR`, `XA_RBROLLBACK`, `XA_HEURRB` during `UserTransaction.commit()`).
+
+---
+
+## 12. Future Roadmap & Native Matching Engine
+
+See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
+* **In-Process WireMock `Request` Adapter**: Bypassing HTTP loopback sockets to evaluate directly against WireMock’s in-memory `StubMappings` for sub-millisecond ($\sim 50\mu\text{s}$) latency.
+* **Native Custom Matchers**: Adding a `RequestMatcherExtension` (`CasualFieldedMatcher`) to unpack and match on `.FIELDED` / FML binary buffers without requiring string conversions.
+* **Upstream Contributions**: Upstreaming standalone Java SE Netty client and server components to `casualcore/casual-java`.
