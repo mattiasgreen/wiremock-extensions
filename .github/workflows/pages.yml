@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'docs/site/**'
+      - 'wiremock-extension-ui/src/main/resources/ui/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -27,6 +28,11 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Assemble Interactive Demo from UI Extension Sources
+        run: |
+          mkdir -p docs/site/demo
+          cp -r wiremock-extension-ui/src/main/resources/ui/* docs/site/demo/
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5

@@ -9,9 +9,11 @@ import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.HttpHeaders;
 import com.github.tomakehurst.wiremock.http.LoggedResponse;
 import com.github.tomakehurst.wiremock.http.Request;
+import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,6 +102,41 @@ public class JsonLoggingListener implements ServeEventListener {
             event.setStubName(stubMapping.getName());
         }
 
+        ResponseDefinition respDef = serveEvent.getResponseDefinition();
+        LoggedResponse response = serveEvent.getResponse();
+        boolean isFault =
+                (respDef != null && respDef.getFault() != null) || (response != null && response.getFault() != null);
+
+        boolean isProxied = (respDef != null && respDef.isProxyResponse())
+                || (stubMapping != null
+                        && stubMapping.getResponse() != null
+                        && stubMapping.getResponse().isProxyResponse());
+
+        String targetUpstream = null;
+        if (respDef != null
+                && respDef.getProxyBaseUrl() != null
+                && !respDef.getProxyBaseUrl().isBlank()) {
+            targetUpstream = respDef.getProxyBaseUrl();
+        } else if (stubMapping != null
+                && stubMapping.getResponse() != null
+                && stubMapping.getResponse().getProxyBaseUrl() != null
+                && !stubMapping.getResponse().getProxyBaseUrl().isBlank()) {
+            targetUpstream = stubMapping.getResponse().getProxyBaseUrl();
+        }
+
+        String trafficType;
+        if (isFault) {
+            trafficType = "fault";
+        } else if (isProxied) {
+            trafficType = "proxied";
+        } else if (matched) {
+            trafficType = "stubbed";
+        } else {
+            trafficType = "unmatched";
+        }
+        event.setTrafficType(trafficType);
+        event.setTargetUpstream(targetUpstream);
+
         String mdcTraceId = MDC.get("trace_id");
         if (mdcTraceId != null && !mdcTraceId.isBlank()) {
             event.setTraceId(mdcTraceId);
@@ -110,6 +147,20 @@ public class JsonLoggingListener implements ServeEventListener {
         }
 
         Request request = serveEvent.getRequest();
+        String protocol = "http";
+        if (request != null) {
+            if (request.header("X-WireMock-Protocol").isPresent()) {
+                protocol = request.header("X-WireMock-Protocol").firstValue().toLowerCase(Locale.ROOT);
+            } else if (request.header("X-Casual-Service").isPresent()
+                    || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
+                protocol = "casual";
+            } else if ((request.header("Content-Type").isPresent()
+                            && request.header("Content-Type").firstValue().contains("application/grpc"))
+                    || request.header("X-Grpc-Service").isPresent()) {
+                protocol = "grpc";
+            }
+        }
+        event.setProtocol(protocol);
         if (request != null) {
             WireMockLogEvent.RequestDetails reqDetails = new WireMockLogEvent.RequestDetails();
             reqDetails.setMethod(request.getMethod().getName());
@@ -123,7 +174,6 @@ public class JsonLoggingListener implements ServeEventListener {
             event.setRequest(reqDetails);
         }
 
-        LoggedResponse response = serveEvent.getResponse();
         if (response != null) {
             WireMockLogEvent.ResponseDetails respDetails = new WireMockLogEvent.ResponseDetails();
             respDetails.setStatus(response.getStatus());

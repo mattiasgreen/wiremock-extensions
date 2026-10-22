@@ -65,7 +65,7 @@ By embedding these capabilities directly into WireMock via modern Java 21 featur
 ## 2. Network Chaos Engine (`wiremock-extension-chaos`)
 
 ### Re-writing Toxiproxy in Java 21
-Shopify's Toxiproxy is a TCP proxy written in Go that intercepts connections between a client and an upstream target to simulate network degradation. 
+Shopify's Toxiproxy is a TCP proxy written in Go that intercepts connections between a client and an upstream target to simulate network degradation.
 
 In Java 21, **Virtual Threads (`Thread.ofVirtual()`)** allow us to write a lightweight, non-blocking TCP proxy directly inside WireMock with no external C or Go dependencies:
 * Each inbound client connection spawns two virtual threads (Upstream -> Downstream, Downstream -> Upstream).

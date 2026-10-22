@@ -39,9 +39,9 @@ public class UiPitchDeckScreenshotsTest {
     void startAll() throws Exception {
         Path cwd = Paths.get("").toAbsolutePath();
         if (cwd.endsWith("wiremock-extension-ui")) {
-            outputDir = cwd.resolve("src/main/resources/ui/pitch/images");
+            outputDir = cwd.getParent().resolve("docs/site/assets");
         } else {
-            outputDir = cwd.resolve("wiremock-extension-ui/src/main/resources/ui/pitch/images");
+            outputDir = cwd.resolve("docs/site/assets");
         }
         Files.createDirectories(outputDir);
 

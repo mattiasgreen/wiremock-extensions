@@ -81,12 +81,15 @@ public class NetEmStubListener implements ServeEventListener {
             List<NetEmToxicConfig> presetToxics = NetEmPreset.getPresetToxics(presetName);
             for (NetEmToxicConfig p : presetToxics) {
                 String dynamicName = "stub-" + serveEvent.getId() + "-" + p.getName();
+                String pat = correlationId != null ? correlationId : p.getPattern();
                 toxicsToApply.add(new NetEmToxicConfig(
                         dynamicName,
                         p.getType(),
                         p.getStream(),
                         p.getToxicity(),
-                        correlationId != null ? correlationId : p.getCorrelationId(),
+                        pat,
+                        p.getPatternType(),
+                        p.getClientIp(),
                         p.getAttributes()));
             }
         }
@@ -183,16 +186,21 @@ public class NetEmStubListener implements ServeEventListener {
             toxicity = n.doubleValue();
         }
 
-        String corrId = defaultCorrelationId;
-        if (map.get("correlationId") instanceof String c && !c.isBlank()) {
-            corrId = c;
+        String pattern = map.get("pattern") instanceof String p && !p.isBlank() ? p : null;
+        if (pattern == null && map.get("correlationId") instanceof String c && !c.isBlank()) {
+            pattern = c;
         }
+        if (pattern == null && defaultCorrelationId != null && !defaultCorrelationId.isBlank()) {
+            pattern = defaultCorrelationId;
+        }
+        String patternType = map.get("patternType") instanceof String pt ? pt : "ASCII";
+        String clientIp = map.get("clientIp") instanceof String cip ? cip : null;
 
         Map<String, Object> attributes = Map.of();
         if (map.get("attributes") instanceof Map<?, ?> attrMap) {
             attributes = (Map<String, Object>) attrMap;
         }
 
-        return new NetEmToxicConfig(uniqueName, type, stream, toxicity, corrId, attributes);
+        return new NetEmToxicConfig(uniqueName, type, stream, toxicity, pattern, patternType, clientIp, attributes);
     }
 }

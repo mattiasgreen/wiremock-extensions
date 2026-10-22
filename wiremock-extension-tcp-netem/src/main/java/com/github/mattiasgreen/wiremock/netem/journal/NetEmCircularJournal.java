@@ -71,15 +71,15 @@ public class NetEmCircularJournal {
      * Retrieves up to {@code limit} recent entries in reverse chronological order (newest first),
      * applying optional filters.
      */
-    public List<NetEmJournalEntry> query(int limit, String proxyName, String correlationId, Boolean impaired) {
+    public List<NetEmJournalEntry> query(int limit, String proxyName, String scopeFilter, Boolean impaired) {
         int effectiveLimit = Math.clamp(limit <= 0 ? 100 : limit, 1, 1000);
         long currentSeq = sequence.get();
         long minSeq = Math.max(0, currentSeq - capacity);
 
         List<NetEmJournalEntry> results = new ArrayList<>();
         String normalizedProxy = proxyName != null && !proxyName.isBlank() ? proxyName.toLowerCase(Locale.ROOT) : null;
-        String normalizedCorr =
-                correlationId != null && !correlationId.isBlank() ? correlationId.toLowerCase(Locale.ROOT) : null;
+        String normalizedScope =
+                scopeFilter != null && !scopeFilter.isBlank() ? scopeFilter.toLowerCase(Locale.ROOT) : null;
 
         for (long seq = currentSeq - 1; seq >= minSeq && results.size() < effectiveLimit; seq--) {
             int slot = (int) (seq % capacity);
@@ -92,8 +92,8 @@ public class NetEmCircularJournal {
                     && !entry.proxyName().toLowerCase(Locale.ROOT).contains(normalizedProxy)) {
                 continue;
             }
-            if (normalizedCorr != null
-                    && !entry.correlationId().toLowerCase(Locale.ROOT).contains(normalizedCorr)) {
+            if (normalizedScope != null
+                    && !entry.scope().toLowerCase(Locale.ROOT).contains(normalizedScope)) {
                 continue;
             }
             if (impaired != null && entry.impaired() != impaired.booleanValue()) {

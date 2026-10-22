@@ -2,6 +2,7 @@ package com.github.mattiasgreen.wiremock.casual.integration;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
+import com.github.mattiasgreen.wiremock.casual.CasualProxyTransformer;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
@@ -60,7 +61,11 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
         this.upstreamNode = new UpstreamDomainNode();
         this.upstreamNode.start();
 
-        this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
+        CasualProxyTransformer proxyTransformer = new CasualProxyTransformer();
+        com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint netEmEndpoint =
+                new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint();
+        this.wireMockServer =
+                new WireMockServer(wireMockConfig().dynamicPort().extensions(proxyTransformer, netEmEndpoint));
         this.wireMockServer.start();
 
         this.mitmGateway = CasualWireMockGateway.builder()
@@ -70,6 +75,7 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
                 .recordStubs(true)
                 .recordFaults(true)
                 .recordNotFound(false)
+                .proxyTransformer(proxyTransformer)
                 .build();
         this.mitmGateway.start();
 
@@ -103,6 +109,8 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
 
     @Override
     public void close() {
+        com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
+                .closeAll();
         if (clientInitiator != null) {
             clientInitiator.close();
         }
@@ -136,7 +144,7 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
 
         private static final int RESOURCE_ID = 101;
         private final CasualTcpClient tcpClient;
-        private final AtomicInteger txSequence = new AtomicInteger(1);
+        private static final AtomicInteger txSequence = new AtomicInteger(1);
 
         public ClientInitiatorNode(String host, int port) {
             this.tcpClient = new CasualTcpClient(host, port, UUID.randomUUID(), "casual-quarkus-client-domain");

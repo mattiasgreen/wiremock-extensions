@@ -86,6 +86,10 @@ public class OtelTracingTest {
                 .isTrue();
         assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.stub_name")))
                 .isEqualTo("Get Order Stub");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.traffic_type")))
+                .isEqualTo("stubbed");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.protocol")))
+                .isEqualTo("http");
     }
 
     @Test
@@ -105,7 +109,7 @@ public class OtelTracingTest {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
 
-        List<SpanData> finishedSpans = spanExporter.getFinishedSpanItems();
+        List<SpanData> finishedSpans = awaitFinishedSpans(1);
         assertThat(finishedSpans).hasSize(1);
 
         SpanData span = finishedSpans.get(0);
@@ -123,15 +127,79 @@ public class OtelTracingTest {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(404);
 
-        List<SpanData> finishedSpans = spanExporter.getFinishedSpanItems();
+        List<SpanData> finishedSpans = awaitFinishedSpans(1);
         assertThat(finishedSpans).hasSize(1);
 
         SpanData span = finishedSpans.get(0);
         assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
         assertThat(span.getAttributes().get(AttributeKey.booleanKey("wiremock.matched")))
                 .isFalse();
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.traffic_type")))
+                .isEqualTo("unmatched");
         assertThat(span.getAttributes().get(AttributeKey.longKey("http.response.status_code")))
                 .isEqualTo(404L);
+    }
+
+    @Test
+    void testProxiedRequestRecordsTrafficTypeAndUpstreamTarget() throws Exception {
+        WireMockServer upstream =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstream.start();
+        try {
+            upstream.stubFor(get(urlEqualTo("/gateway/info")).willReturn(ok("upstream-data")));
+
+            server.stubFor(
+                    get(urlEqualTo("/gateway/info")).willReturn(aResponse().proxiedFrom(upstream.baseUrl())));
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(server.baseUrl() + "/gateway/info"))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).isEqualTo("upstream-data");
+
+            List<SpanData> finishedSpans = awaitFinishedSpans(1);
+            assertThat(finishedSpans).hasSize(1);
+
+            SpanData span = finishedSpans.get(0);
+            assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.traffic_type")))
+                    .isEqualTo("proxied");
+            assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.target_upstream")))
+                    .isEqualTo(upstream.baseUrl());
+        } finally {
+            upstream.stop();
+        }
+    }
+
+    @Test
+    void testCasualProtocolPopulatesRpcSpanAttributes() throws Exception {
+        server.stubFor(post(urlEqualTo("/__casual/services/order_service"))
+                .willReturn(okJson("{\"status\":\"COMMITTED\"}").withHeader("X-Casual-Error-State", "OK")));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__casual/services/order_service"))
+                .header("X-Casual-Service", "order_service")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"amount\":100}"))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        List<SpanData> finishedSpans = awaitFinishedSpans(1);
+        assertThat(finishedSpans).hasSize(1);
+
+        SpanData span = finishedSpans.get(0);
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.protocol")))
+                .isEqualTo("casual");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("rpc.system")))
+                .isEqualTo("casual");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("rpc.service")))
+                .isEqualTo("order_service");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("casual.error_state")))
+                .isEqualTo("OK");
     }
 
     @Test

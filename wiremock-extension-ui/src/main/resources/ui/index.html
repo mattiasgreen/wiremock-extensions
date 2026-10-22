@@ -63,6 +63,7 @@
           <span id="target-host-label">Target: (same-origin)</span>
         </button>
         <a href="https://mattiasgreen.github.io/wiremock-extensions/docs/" target="_blank" class="btn btn-link" id="link-docs" title="Open WireMock Extensions Documentation">📚 Docs</a>
+        <!-- WireMock Standalone bundles Swagger UI at /__admin/swagger-ui/ out of the box. When targeting a remote WireMock host, updateTargetHostDisplay() in app.js rewrites this href to <wiremock-base-uri>/__admin/swagger-ui/. -->
         <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
         <a href="../metrics/prometheus" target="_blank" class="btn btn-link" id="link-metrics" title="Open Prometheus Metrics">📊 Metrics</a>
       </div>
@@ -83,7 +84,7 @@
             <button class="filter-pill active" data-filter="all" id="btn-filter-all" data-testid="btn-filter-all">All (<span id="count-filter-all">0</span>)</button>
             <button class="filter-pill" data-filter="active" id="btn-filter-active" data-testid="btn-filter-active">Active (<span id="count-filter-active">0</span>)</button>
             <button class="filter-pill" data-filter="disabled" id="btn-filter-disabled" data-testid="btn-filter-disabled">Disabled (<span id="count-filter-disabled">0</span>)</button>
-            <button class="filter-pill" data-filter="dynamic" id="btn-filter-dynamic" data-testid="btn-filter-dynamic">⚡ Dynamic (<span id="count-filter-dynamic">0</span>)</button>
+            <button class="filter-pill" data-filter="dynamic" id="btn-filter-dynamic" data-testid="btn-filter-dynamic" title="Filter in-memory Stateful AST simulation rules">🧠 Stateful (<span id="count-filter-dynamic">0</span>)</button>
           </div>
         </div>
 
@@ -107,8 +108,8 @@
             <span id="stubs-count-label" class="muted-text">0 mappings</span>
           </div>
           <div class="stub-list-header-actions">
-            <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping">➕ New</button>
-            <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create a dynamic / stateful simulation stub">⚡ Dynamic</button>
+            <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping or proxy route">➕ New</button>
+            <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create an in-memory Stateful AST simulation model">🧠 Stateful</button>
             <button id="btn-open-openapi-modal" data-testid="btn-open-openapi-modal" class="btn btn-tiny btn-secondary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
             <button id="btn-export-stubs" data-testid="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
             <button id="btn-refresh-stubs" data-testid="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
@@ -180,7 +181,8 @@
                 <button id="btn-toggle-stub" data-testid="btn-toggle-stub" class="btn btn-small btn-warning" title="Toggle active/disabled state">⏸️ Disable Stub</button>
                 <button id="btn-delete-stub" data-testid="btn-delete-stub" class="btn btn-small btn-danger" title="Permanently delete this stub">🗑️ Delete</button>
                 <button id="btn-view-stub-in-journal" data-testid="btn-view-stub-in-journal" class="btn btn-small" title="Search for this stub in Request Journal">🔍 View in Journal</button>
-                <button id="btn-copy-curl" data-testid="btn-copy-curl" class="btn btn-small" title="Copy request as cURL command">📋 Copy cURL</button>
+                <button id="btn-copy-curl" data-testid="btn-copy-curl" class="btn btn-small" title="Copy as cURL command to create this stub mapping">📋 Copy cURL</button>
+                <button id="btn-copy-java" data-testid="btn-copy-java" class="btn btn-small" title="Copy as WireMock Java stubFor() DSL snippet">☕ Copy Java</button>
                 <button id="btn-copy-json" data-testid="btn-copy-json" class="btn btn-small" title="Copy stub mapping JSON">📋 Copy JSON</button>
               </div>
             </div>
@@ -212,7 +214,7 @@
             <div id="detail-stateful-section" class="detail-stateful-section hidden" data-testid="detail-stateful-section">
               <div class="stateful-spec-card">
                 <div class="stateful-card-header">
-                  <div class="stateful-title">⚡ Stateful Simulation Engine: <strong id="stateful-entity-label">cases</strong></div>
+                  <div class="stateful-title">🧠 Stateful Simulation Engine: <strong id="stateful-entity-label">cases</strong></div>
                   <span class="stateful-scope-pill" id="stateful-route-scope">/api/v1/cases/**</span>
                 </div>
                 <div class="stateful-details-grid">
@@ -250,12 +252,35 @@
 
         <div class="journal-controls">
           <div class="journal-controls-top">
-            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, header, body, or JSON (supports AND, OR)..." autocomplete="off">
+            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, header, body, or X-Correlation-Id (supports AND, OR)..." autocomplete="off">
           </div>
           <div class="journal-controls-bottom">
             <div class="journal-filters-group">
-              <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched only</label>
+              <div class="status-filter-pills journal-verdict-pills" data-testid="journal-verdict-pills">
+                <button type="button" class="filter-pill journal-verdict-pill active" data-verdict="all" id="btn-journal-verdict-all" data-testid="btn-journal-verdict-all">All</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="proxied" id="btn-journal-verdict-proxied" data-testid="btn-journal-verdict-proxied" title="Forwarded to live upstream via proxyBaseUrl">🌐 Proxied</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="stub" id="btn-journal-verdict-stub" data-testid="btn-journal-verdict-stub" title="Served locally from static or Handlebars-templated mapping">📌 Stub</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="stateful" id="btn-journal-verdict-stateful" data-testid="btn-journal-verdict-stateful" title="Served locally by in-memory Stateful AST engine">🧠 Stateful</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="unmatched" id="btn-journal-verdict-unmatched" data-testid="btn-journal-verdict-unmatched" title="No matching stub, stateful rule, or proxy route (404)">⚠️ Unmatched</button>
+              </div>
+              <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched (404) only</label>
               <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh" data-testid="journal-auto-refresh"> Live auto-refresh (3s)</label>
+              <label class="select-label" title="Filter requests by datetime range">
+                Time:
+                <select id="journal-time-range" data-testid="journal-time-range" class="select-small">
+                  <option value="all">All time</option>
+                  <option value="5m">Last 5m</option>
+                  <option value="15m">Last 15m</option>
+                  <option value="1h">Last 1h</option>
+                  <option value="24h">Last 24h</option>
+                  <option value="custom">Custom range...</option>
+                </select>
+              </label>
+              <div id="journal-custom-time" class="journal-custom-time hidden" data-testid="journal-custom-time">
+                <input type="datetime-local" id="journal-time-since" data-testid="journal-time-since" class="input-tiny" title="Since (start time)">
+                <span>—</span>
+                <input type="datetime-local" id="journal-time-until" data-testid="journal-time-until" class="input-tiny" title="Until (end time)">
+              </div>
               <label class="select-label" title="Maximum requests to fetch from WireMock journal">
                 Limit:
                 <input type="number" id="journal-limit-input" data-testid="journal-limit-input" min="1" step="50" value="100" class="input-tiny" style="width: 75px;">
@@ -263,6 +288,7 @@
               <span id="journal-filtered-count" class="muted-text"></span>
             </div>
             <div class="journal-actions-group">
+              <button id="btn-journal-snapshot-filtered" data-testid="btn-journal-snapshot-filtered" class="btn btn-small btn-primary" title="Snapshot filtered proxied traffic into offline disabled stubs" disabled>📸 Snapshot Filtered Proxied (<span id="journal-proxied-count">0</span>)</button>
               <button id="btn-refresh-journal" data-testid="btn-refresh-journal" class="btn btn-small btn-secondary" title="Refresh request journal">🔄 Refresh</button>
               <button id="btn-reset-journal" data-testid="btn-reset-journal" class="btn btn-small btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
             </div>
@@ -512,7 +538,7 @@
           <span class="muted-text text-small">Pre-allocated lock-free circular ring buffer (O(1) memory)</span>
         </div>
         <div class="netem-journal-controls">
-          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by X-Correlation-Id..." style="flex: 2;">
+          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by Scope / Target (ASCII/Hex)..." style="flex: 2;">
           <select id="netem-journal-filter-outcome" class="form-control" style="flex: 1;">
             <option value="">All Outcomes</option>
             <option value="impaired">⚠️ Impaired Only</option>
@@ -526,7 +552,7 @@
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Correlation ID</th>
+                <th>Scope / Target</th>
                 <th>Client</th>
                 <th>Duration</th>
                 <th>Bytes (Up / Down)</th>
@@ -699,6 +725,7 @@
                 <option value="body-json">Matching Request JSON Body (POST /api/v1/orders)</option>
                 <option value="url-pattern">Matching URL Regex Pattern (GET /api/v1/items/[0-9]+)</option>
                 <option value="error-response">Error Response (404 Not Found)</option>
+                <option value="proxy-route">🌐 Live Service Proxy Route (Forward to upstream ERP/CRM)</option>
               </select>
               <button type="button" id="btn-apply-template" class="btn btn-tiny btn-secondary">Apply Example</button>
             </div>
@@ -719,7 +746,7 @@
           <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
             <div class="form-group" style="flex: 1;">
               <label for="editor-project">Project / API Group:</label>
-              <input type="text" id="editor-project" class="form-control" placeholder="e.g. Warehouse Service">
+              <input type="text" id="editor-project" class="form-control" placeholder="e.g. ERP System">
             </div>
             <div class="form-group" style="flex: 1;">
               <label for="editor-tags">Tags (comma-separated):</label>
@@ -771,6 +798,10 @@
             <div class="form-group" style="flex: 1;">
               <label for="editor-status">Status Code:</label>
               <input type="number" id="editor-status" class="form-control" value="200">
+            </div>
+            <div class="form-group" style="flex: 2;">
+              <label for="editor-proxy-url">Proxy Base URL <span class="muted-text">(optional — forwards to live upstream)</span>:</label>
+              <input type="url" id="editor-proxy-url" data-testid="editor-proxy-url" class="form-control" placeholder="e.g. http://erp-system:8089 (leave empty for local stub)">
             </div>
           </div>
 
@@ -950,18 +981,30 @@
             <input type="number" id="netem-toxic-toxicity" class="form-control" value="1.0" min="0.0" max="1.0" step="0.1">
           </div>
           <div class="form-group" style="flex: 1;">
-            <label for="netem-toxic-correlation-id">Correlation ID Filter (Optional):</label>
-            <input type="text" id="netem-toxic-correlation-id" class="form-control" placeholder="e.g. chaos-test-session">
+            <label for="netem-toxic-client-ip">Client IP / CIDR Subnet (Optional):</label>
+            <input type="text" id="netem-toxic-client-ip" class="form-control" placeholder="e.g. 127.0.0.1 or 10.0.0.0/8">
           </div>
+        </div>
+        <div class="form-group" style="margin-top: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="netem-toxic-pattern" id="lbl-toxic-pattern" style="margin-bottom: 0;">Stream Pattern Matcher (Optional):</label>
+            <div class="netem-mode-toggle" style="display: flex; gap: 2px;">
+              <button type="button" id="btn-pattern-ascii" class="btn btn-tiny active" style="padding: 2px 8px; font-size: 0.75rem;">ASCII</button>
+              <button type="button" id="btn-pattern-hex" class="btn btn-tiny" style="padding: 2px 8px; font-size: 0.75rem;">HEX</button>
+            </div>
+          </div>
+          <input type="text" id="netem-toxic-pattern" class="form-control" placeholder="e.g. chaos-test-session or order-service">
+          <small class="muted-text text-small" id="netem-pattern-hint">Matches unencoded UTF-8/ASCII substring in the stream.</small>
+          <input type="hidden" id="netem-toxic-correlation-id" value="">
         </div>
         <div class="editor-section-header" style="margin-top: 12px;">Impairment Attributes</div>
         <div id="netem-attribute-fields">
           <!-- Dynamically populated based on type -->
         </div>
-        <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 16px;">
-          <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
-          <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
-        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
+        <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
       </div>
     </div>
   </div>

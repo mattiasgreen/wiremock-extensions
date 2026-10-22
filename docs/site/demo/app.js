@@ -21,14 +21,18 @@ import {
 import {
   getStubUrl,
   generateCurl,
+  generateCreateStubCurl,
+  generateJavaStubFor,
   renderStubList,
   selectStub,
   sendStubToTester
 } from './modules/stubs.js';
 import {
+  getRequestVerdict,
   renderJournal,
   setupJournalAutoRefresh,
-  registerJournalLoader
+  registerJournalLoader,
+  getFilteredProxiedRequests
 } from './modules/journal.js';
 import {
   renderScenarios,
@@ -80,7 +84,8 @@ import {
   loadJournal,
   loadScenarios,
   loadData,
-  executeTesterRequest
+  executeTesterRequest,
+  snapshotFilteredRecordings
 } from './modules/api.js';
 import {
   setupDynamicStubModal,
@@ -107,6 +112,8 @@ export {
   executeTesterRequest,
   highlightJson,
   generateCurl,
+  generateJavaStubFor,
+  getRequestVerdict,
   parseHash,
   setRoute,
   activateTab,
@@ -150,11 +157,17 @@ registerRouteHandlers({
       elements.journalSearch.value = q;
     }
     const unmatched = params.get('unmatched') === 'true';
+    const prevUnmatched = elements.filterUnmatchedOnly ? elements.filterUnmatchedOnly.checked : false;
     if (elements.filterUnmatchedOnly) {
       elements.filterUnmatchedOnly.checked = unmatched;
     }
     state.expandedRequestId = params.get('reqId') || null;
-    renderJournal();
+    if (unmatched !== prevUnmatched) {
+      renderJournal();
+      loadJournal();
+    } else {
+      renderJournal();
+    }
   },
   applyTester: (params) => {
     const m = params.get('m');
@@ -282,6 +295,7 @@ if (elements.btnViewStubInJournal) {
     const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (!stub) return;
     const path = getStubUrl(stub.request);
+    state.journalCurrentPage = 1;
     activateTab('tab-journal', false);
     if (elements.journalSearch) {
       elements.journalSearch.value = path;
@@ -298,6 +312,7 @@ if (elements.btnViewStubInJournal) {
 }
 if (elements.btnJournalClearStubFilter) {
   elements.btnJournalClearStubFilter.addEventListener('click', () => {
+    state.journalCurrentPage = 1;
     if (elements.journalSearch) {
       elements.journalSearch.value = '';
     }
@@ -346,25 +361,25 @@ if (elements.btnCopyCurl) {
     if (!state.selectedStubId) return;
     const stub = getAllStubs().find(s => s.id === state.selectedStubId);
     if (!stub) return;
-    const method = (stub.request && stub.request.method) || 'GET';
-    const path = getStubUrl(stub.request);
-    const headers = {};
-    if (stub.request && stub.request.headers) {
-      for (const [k, v] of Object.entries(stub.request.headers)) {
-        headers[k] = v.equalTo || v.matches || v.contains || Object.values(v)[0] || '';
-      }
-    }
-    let body = '';
-    if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
-      const bp = stub.request.bodyPatterns[0];
-      body = bp.equalToJson ? JSON.stringify(bp.equalToJson) : (bp.equalTo || '');
-    }
-    const cmd = generateCurl(method === 'ANY' ? 'GET' : method, path, headers, body);
+    const cmd = generateCreateStubCurl(stub);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(cmd).catch(() => {});
     }
     elements.btnCopyCurl.textContent = '✅ Copied!';
     setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
+  });
+}
+if (elements.btnCopyJava) {
+  elements.btnCopyJava.addEventListener('click', () => {
+    if (!state.selectedStubId) return;
+    const stub = getAllStubs().find(s => s.id === state.selectedStubId);
+    if (!stub) return;
+    const snippet = generateJavaStubFor(stub);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(snippet).catch(() => {});
+    }
+    elements.btnCopyJava.textContent = '✅ Copied!';
+    setTimeout(() => elements.btnCopyJava.textContent = '☕ Copy Java', 1500);
   });
 }
 
@@ -499,16 +514,169 @@ if (elements.bundleDropzone) {
 }
 
 // Event Listeners: Journal Tab
+['all', 'proxied', 'stub', 'stateful', 'unmatched'].forEach(verdict => {
+  const btn = document.getElementById(`btn-journal-verdict-${verdict}`);
+  if (btn) {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      state.journalVerdictFilter = verdict;
+      const wasUnmatched = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
+      const isNowUnmatched = (verdict === 'unmatched');
+      if (elements.filterUnmatchedOnly) {
+        elements.filterUnmatchedOnly.checked = isNowUnmatched;
+      }
+      renderJournal();
+      loadJournal();
+      setRoute('journal', { unmatched: isNowUnmatched ? 'true' : null }, true);
+    });
+  }
+});
 if (elements.filterUnmatchedOnly) {
   elements.filterUnmatchedOnly.addEventListener('change', () => {
+    const isChecked = elements.filterUnmatchedOnly.checked;
+    state.journalVerdictFilter = isChecked ? 'unmatched' : 'all';
+    document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
+    const activeBtn = document.getElementById(isChecked ? 'btn-journal-verdict-unmatched' : 'btn-journal-verdict-all');
+    if (activeBtn) activeBtn.classList.add('active');
     renderJournal();
-    setRoute('journal', { unmatched: elements.filterUnmatchedOnly.checked ? 'true' : null }, true);
+    loadJournal();
+    setRoute('journal', { unmatched: isChecked ? 'true' : null }, true);
   });
 }
 if (elements.journalSearch) {
   elements.journalSearch.addEventListener('input', () => {
     renderJournal();
     setRoute('journal', { q: elements.journalSearch.value.trim() }, true);
+  });
+  elements.journalSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadJournal();
+    }
+  });
+}
+if (elements.journalTimeRange) {
+  elements.journalTimeRange.addEventListener('change', () => {
+    const range = elements.journalTimeRange.value;
+    state.journalTimeRange = range;
+    const now = Date.now();
+    if (range === 'custom') {
+      if (elements.journalCustomTime) elements.journalCustomTime.classList.remove('hidden');
+      return;
+    }
+    if (elements.journalCustomTime) elements.journalCustomTime.classList.add('hidden');
+    if (range === '5m') {
+      state.journalSince = new Date(now - 5 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else if (range === '15m') {
+      state.journalSince = new Date(now - 15 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else if (range === '1h') {
+      state.journalSince = new Date(now - 60 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else if (range === '24h') {
+      state.journalSince = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+      state.journalUntil = null;
+    } else {
+      state.journalSince = null;
+      state.journalUntil = null;
+    }
+    renderJournal();
+    loadJournal();
+  });
+}
+if (elements.journalTimeSince) {
+  elements.journalTimeSince.addEventListener('change', () => {
+    state.journalSince = elements.journalTimeSince.value ? new Date(elements.journalTimeSince.value).toISOString() : null;
+    renderJournal();
+    loadJournal();
+  });
+  elements.journalTimeSince.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      state.journalSince = elements.journalTimeSince.value ? new Date(elements.journalTimeSince.value).toISOString() : null;
+      renderJournal();
+      loadJournal();
+    }
+  });
+}
+if (elements.journalTimeUntil) {
+  elements.journalTimeUntil.addEventListener('change', () => {
+    state.journalUntil = elements.journalTimeUntil.value ? new Date(elements.journalTimeUntil.value).toISOString() : null;
+    renderJournal();
+    loadJournal();
+  });
+  elements.journalTimeUntil.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      state.journalUntil = elements.journalTimeUntil.value ? new Date(elements.journalTimeUntil.value).toISOString() : null;
+      renderJournal();
+      loadJournal();
+    }
+  });
+}
+if (elements.btnJournalSnapshotFiltered) {
+  elements.btnJournalSnapshotFiltered.addEventListener('click', async () => {
+    const proxiedReqs = getFilteredProxiedRequests();
+    if (!proxiedReqs || proxiedReqs.length === 0) return;
+    const count = proxiedReqs.length;
+    const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
+      ? state.selectedProject
+      : 'Recorded Traffic';
+
+    elements.btnJournalSnapshotFiltered.disabled = true;
+    const origText = elements.btnJournalSnapshotFiltered.innerHTML;
+    elements.btnJournalSnapshotFiltered.textContent = '⏳ Snapshotting...';
+
+    try {
+      const requestIds = proxiedReqs.map(r => r.id);
+      if (state.capabilities.lifecycle) {
+        await snapshotFilteredRecordings(requestIds, targetProject, false);
+      } else {
+        // Vanilla WireMock fallback: create active mappings
+        for (const req of proxiedReqs) {
+          const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+          const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+          await doFetch('/__admin/mappings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: `[RECORDED ${req.request.method} ${status}] ${req.request.url}`,
+              priority: 5,
+              request: { method: req.request.method, url: req.request.url },
+              response: { status, body: resBody },
+              metadata: { source: 'recorded-proxy', project: targetProject, mode: 'static' }
+            })
+          });
+        }
+      }
+      await loadData();
+      elements.btnJournalSnapshotFiltered.textContent = `✅ Snapshotted ${count}!`;
+      setTimeout(() => {
+        elements.btnJournalSnapshotFiltered.innerHTML = origText;
+        renderJournal();
+      }, 2000);
+    } catch (err) {
+      alert('Failed to snapshot recordings: ' + err.message);
+      elements.btnJournalSnapshotFiltered.innerHTML = origText;
+      renderJournal();
+    }
+  });
+}
+if (elements.journalLimitInput) {
+  const handleLimitChange = () => {
+    const val = parseInt(elements.journalLimitInput.value, 10);
+    state.journalLimit = (val && val > 0) ? val : 100;
+    elements.journalLimitInput.value = state.journalLimit;
+    loadJournal();
+  };
+  elements.journalLimitInput.addEventListener('change', handleLimitChange);
+  elements.journalLimitInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleLimitChange();
+    }
   });
 }
 if (elements.journalAutoRefresh) {
@@ -526,7 +694,10 @@ if (elements.btnResetJournal) {
   elements.btnResetJournal.addEventListener('click', () => {
     if (confirm('Are you sure you want to clear the request journal?')) {
       doFetch('/__admin/requests', { method: 'DELETE' })
-        .then(() => loadJournal())
+        .then(() => {
+          state.journalCurrentPage = 1;
+          loadJournal();
+        })
         .catch(err => console.warn('Could not reset journal', err));
     }
   });

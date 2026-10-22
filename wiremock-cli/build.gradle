@@ -1,0 +1,7 @@
+dependencies {
+    implementation project(':wiremock-extension-ui')
+    testImplementation project(':wiremock-extension-tcp-netem')
+    testImplementation libs.wiremock
+    testImplementation libs.junit.jupiter
+    testImplementation libs.assertj.core
+}

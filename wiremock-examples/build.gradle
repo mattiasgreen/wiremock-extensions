@@ -9,3 +9,13 @@ dependencies {
     testImplementation libs.resilience4j.retry
 }
 
+tasks.register('recordDemoVideos', Test) {
+    group = 'verification'
+    description = 'Generates Playwright WebM demo video tour for Banking Progressive Simulation'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'recording'
+    }
+}
+

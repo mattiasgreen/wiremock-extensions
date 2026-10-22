@@ -119,11 +119,11 @@ class NetEmResilienceParallelIntegrationTest {
                 .build();
         CircuitBreaker chaosCircuitBreaker = CircuitBreaker.of("paymentServiceChaos", cbConfig);
 
-        // 2. Inject TCP RST impairment ONLY for X-Correlation-Id: "chaos-session-77"
+        // 2. Inject TCP RST impairment ONLY for stream pattern: "chaos-session-77"
         NetEmToxicConfig rstToxic = NetEmToxicConfig.builder("targeted-rst", NetEmToxicType.RESET_PEER).stream(
                         NetEmStreamDirection.DOWNSTREAM)
                 .toxicity(1.0)
-                .correlationId("chaos-session-77")
+                .pattern("chaos-session-77")
                 .build();
         netEmProxy.addToxic(rstToxic);
 

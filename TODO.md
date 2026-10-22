@@ -19,7 +19,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 | **Interactive Demo (GH Pages)**| README contains animated GIFs; no live web sandbox. | Static interactive browser demo on GitHub Pages with simulated Admin API responses. | **P2** | Pending |
 | **CI / CD Pipeline** | Minimal `ci.yml`; lacks Spotless check, Gradle build caching, and headless Playwright OS dependencies. | Full matrix/verification pipeline with `spotlessCheck`, headless test runner, and caching. | **P2** | *Deferred* |
 | **Extension Robustness** | Precompiled `Pattern` constants in `HeaderNormalizer.java`; instance-scoped tracing registry. | Instance-scoped metrics and tracing registries with test isolation. | **P2** | **Completed** |
-| **Automated Demo Videos** | Manual animated GIFs in `docs/images` with palette limitations and repository bloat risk. | Headless Playwright WebM video recordings with Hybrid docs title cards, zero-bloat GitHub Release Asset hosting, and release-please automation. | **P2** | Planned |
+| **Automated Demo Videos** | Manual animated GIFs in `docs/images` with palette limitations and repository bloat risk. | Headless Playwright WebM video recordings starting at frame 0 (no in-video slides/HUD), self-contained E2E flows, and agent-gated local execution via `git log` review. | **P2** | Planned |
 
 ---
 
@@ -45,9 +45,9 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ---
 
-## Phased Implementation Roadmap
+## Architecture & Implementation Roadmap
 
-### Phase 1: Build Modernization & Agent Governance
+### Build Modernization & Agent Governance
 
 - [x] **1.1. Create `AGENTS.md` in Repo Root**
   - [x] Define project philosophy, strict constraints (Vanilla JS only, 0-NPM).
@@ -77,7 +77,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ---
 
-### Phase 2: UI Asset Serving & Native ES-Module Decomposition
+### UI Asset Serving & Native ES-Module Architecture
 
 - [x] **2.1. Upgrade `UiAdminApiEndpoint.java` for Dynamic Modular Asset Serving**
   - [x] Dynamic static file resolution supporting subpaths (`/ui/modules/{module}`) and root files (`/ui/{file}`).
@@ -110,14 +110,26 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [x] Resolved 404 error when editing stubs by providing unified `PUT /stubs/{id}` in `StubLifecycleAdminEndpoint` supporting active stubs, disabled stubs, and upsert fallback.
   - [x] Added ad-hoc stub creation button (`➕ New` / `#btn-create-stub`) in UI header with clean modal defaults.
   - [x] Added Playwright integration test Scenario 12 verifying active editing, disabled editing without 404, and ad-hoc creation.
-  - [ ] **Roadmap Enhancements for Ad-Hoc Stubbing**:
-    - [ ] Advanced request matcher builder (header rules, query params, cookies, JSONPath matching).
-    - [ ] Dynamic response templating helper suggestions (Handlebars expressions like `{{request.path.[1]}}`, `{{randomValue type='UUID'}}`).
-    - [ ] Inline JSON schema validator and test-run response preview.
+
+- [x] **2.6. UI/UX Audit Overhaul & Progressive Simulation Workflows**
+  - [x] Remove 2.5 MB of pitch deck GIF/PNG bloat from `wiremock-extension-ui/src/main/resources/ui/pitch/` and deduplicate `docs/site/demo/` from Git.
+  - [x] **Verdict Taxonomy Unification (`PROXIED` / `STUB` / `STATEFUL` / `UNMATCHED`)**:
+    - [x] Distinguish `🌐 PROXIED` (forwarded via `proxyBaseUrl`), `📌 STUB` (local static or `STUB · TPL` Handlebars mapping), `🧠 STATEFUL` (AST stateful engine, replacing ambiguous `"DYNAMIC"` label), and `⚠️ UNMATCHED` (HTTP 404) across Request Journal badges, filter pills, and Stubs Catalog filters.
+  - [x] **End-to-End Request Journal Triage, Harvesting & Level-1 Java Codegen**:
+    - [x] Add `🚀 Replay in Tester` (`.btn-journal-to-tester`), `📋 Copy cURL` (`.btn-journal-copy-curl`), and `☕ Copy Java` (`#btn-copy-java` / `.btn-journal-copy-java` generating `stubFor(...)` DSL) on Stubs and Journal entries.
+    - [x] On `⚠️ UNMATCHED` entries: replace `📸 Freeze Stub` (which would freeze a 404) with `➕ Create Stub from Request` (`.btn-create-stub-from-req`, opens Stub Editor pre-populated with incoming method, URL, and body pattern, defaulting response to `200 OK`) and display an Unmatched Diagnostic banner.
+    - [x] On `🌐 PROXIED` entries: display target upstream origin and `📸 Freeze Stub`.
+    - [x] On `📌 STUB` / `🧠 STATEFUL` entries: add `🔗 Inspect Stub` link to jump directly to the matched mapping, and render `X-Correlation-Id` as a 1-click session filter chip (`.btn-journal-filter-corr`).
+  - [ ] **Zero-Bloat Request Matcher Builder & Handlebars Token Inserter**:
+    - [ ] Two-way synced Form $\leftrightarrow$ Raw JSON editor with a generic repeatable matcher row builder (`Header`, `Query`, `Cookie`, `Body` $\times$ `equalTo`, `contains`, `matches`, `equalToJson`, `matchesJsonPath`).
+    - [ ] 1-click Handlebars token bar (`{{request.pathSegments.[1]}}`, `{{request.query.id}}`, `{{jsonPath request.body '$.id'}}`, `{{randomValue type='UUID'}}`) that automatically enables `"transformers": ["response-template"]`.
+  - [x] **Service-Scoped Proxy Bootstrapper & Generic Stateful CRUD Generator**:
+    - [x] Allow creating a service-scoped `proxyBaseUrl` route directly from `➕ New` (`🌐 Live Service Proxy (ERP System)` preset + `#editor-proxy-url` field) without requiring an OpenAPI specification.
+    - [ ] Replace hardcoded domain templates in `dynamic-stubs.js` with a parameterized CRUD Entity Generator and add a Live Entity State Inspector & Reset view per `X-Correlation-Id`.
 
 ---
 
-### Phase 3: Extension Hardening & CI/CD Pipeline (Deferred)
+### Extension Hardening & CI/CD Pipeline
 
 - [ ] **3.1. Performance & Robustness Optimizations**
   - [ ] In `HeaderNormalizer.java`: Precompile `Pattern` constants for header normalization regexes instead of invoking `String.replaceAll` on every incoming request.
@@ -132,7 +144,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ---
 
-### Phase 4: Observability, Packaging & Enterprise Readiness
+### Observability, Packaging & Enterprise Readiness
 
 - [x] **4.1. Distributed Tracing with W3C Context Propagation (`wiremock-extension-otel`)**
   - [x] Extract incoming W3C `traceparent` and `tracestate` headers using standard OpenTelemetry `TextMapGetter`.
@@ -146,17 +158,12 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] Perform asset audit confirming zero outbound CDN requests, external web fonts, or remote analytic beacons.
   - [ ] Add an automated Playwright network interception test in `UiPlaywrightTest` verifying 100% of network requests remain strictly within `/__admin/ui/*` and `/__admin/*`.
 
-- [ ] **4.3. Packaging & Distribution (Maven Central, Docker Image etc.)**
-  - [ ] Configure Maven Central publishing workflow via Sonatype Central Portal.
-  - [ ] Configure `wiremock-extension-bundle` standalone fat JAR / shadow distribution for single-command CLI execution (`java -jar wiremock-standalone-qol-all.jar`).
-  - [ ] Provide production-ready `Dockerfile` and `docker-compose.yml` reference.
-
-- [ ] **4.4. Interactive GitHub Pages Demo & Documentation Hub**
+- [ ] **4.3. Interactive GitHub Pages Demo & Documentation Hub**
   - [ ] Build a zero-dependency static documentation and landing page hosted on GitHub Pages with simulated Admin API responses to allow instant evaluation of the UI, scenario DAG visualizer, and HTTP tester without running Java.
 
 ---
 
-### Phase 5: Architecture Decoupling & Storage Persistence
+### Architecture Decoupling & Storage Persistence
 
 - [x] **5.1. UI Feature Discovery Handshake & Graceful Degradation**
   - [x] Implement remote capability probing across Core, Lifecycle, Stateful, NetEm, and Metrics endpoints.
@@ -165,13 +172,13 @@ Comprehensive review of project structure, code style, architecture, and enginee
 - [ ] **5.2. Decouple Domain Lifecycle from UI Presentation**
   - [ ] Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module or merge with stateful domain logic, keeping `wiremock-extension-ui` purely presentation-focused.
 
-- [ ] **5.3. File-Backed Persistence for Disabled Stubs & Dynamic Sessions**
+- [ ] **5.3. File-Backed Persistence for Disabled Stubs & Stateful Sessions**
   - [ ] Persist disabled stubs to WireMock mapping JSON files using `"metadata": { "disabled": true }` or a dedicated `.disabled/` store across server restarts.
-  - [ ] Allow dynamic stateful simulation sessions to be serialized/deserialized to JSON for bug reporting and replay.
+  - [ ] Allow stateful simulation sessions to be serialized/deserialized to JSON for bug reporting and replay.
 
 ---
 
-### Phase 6: Contract Conformance & Security
+### Contract Conformance & Security
 
 - [ ] **6.1. OpenAPI Request & Response Schema Validation**
   - [ ] Request filter validating incoming payloads and headers against imported OpenAPI specs, returning HTTP 400/422 on violations.
@@ -182,13 +189,13 @@ Comprehensive review of project structure, code style, architecture, and enginee
 - [ ] **6.3. Zero-Dependency Realistic Mock Data Templating Helpers**
   - [ ] Introduce Handlebars helpers (`{{random.uuid}}`, `{{random.email}}`, `{{random.dateTime}}`, `{{random.name}}`).
 
-- [ ] **6.4. Per-Correlation Dynamic Scenario Visualizer & Form Builder**
+- [ ] **6.4. Per-Correlation Stateful Session Visualizer & Form Builder**
   - [ ] Visual form editor in Web UI for crafting stubs and matchers without writing raw JSON.
-  - [ ] Inspect dynamic state machines registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.
+  - [ ] Inspect stateful entity graphs registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.
 
 ---
 
-### Phase 7: Event-Driven Mocking & Webhooks
+### Event-Driven Mocking & Webhooks
 
 - [ ] **7.1. AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**
   - [ ] Parse `asyncapi.yaml` channels and schemas via `POST /__admin/asyncapi/import`.
@@ -203,74 +210,163 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 ---
 
-### Phase 8: Developer Experience & Inner Loop Performance
+### Developer Experience & Inner Loop Performance
 
-- [ ] **8.1. Gradle Parallelism & Build Caching**
-  - [ ] Add `org.gradle.parallel=true` to enable concurrent execution across subprojects.
-  - [ ] Add `org.gradle.caching=true` (Build Cache) to eliminate redundant Java compilation.
-  - [ ] Tune JVM memory (`org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8`) to prevent daemon crashes and memory thrashing.
-  - [ ] Implement automated daemon pruning (`./gradlew --stop`) to eliminate dead zombie daemons.
+- [x] **8.1. Gradle Parallelism & Build Caching**
+  - [x] Add `org.gradle.parallel=true` to enable concurrent execution across subprojects.
+  - [x] Add `org.gradle.caching=true` (Build Cache) to eliminate redundant Java compilation.
+  - [x] Tune JVM memory (`org.gradle.jvmargs=-Xmx2048m -XX:+UseParallelGC -Dfile.encoding=UTF-8`) to prevent daemon crashes and memory thrashing.
+  - [x] Configure default `WARN` test logging (`config/logback-test.xml`) and C1 JIT (`-XX:TieredStopAtLevel=1`) to eliminate 95 MB of Jetty/Netty DEBUG test report bloat.
 
-- [ ] **8.2. Fast Inner-Loop Test Strategy**
-  - [ ] Enforce strict method-level test filtering (`--tests "MyTest.method"`) during active authoring instead of running multi-suite E2E tests.
-  - [ ] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
-  - [ ] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
+- [x] **8.2. Fast Inner-Loop Test Strategy**
+  - [x] Enforce strict method-level test filtering (`--tests "MyTest.method"`) during active authoring instead of running multi-suite E2E tests.
+  - [x] Split monolithic 94 KB `UiPlaywrightTest.java` into 4 domain suites sharing a single Chromium browser (`AbstractUiPlaywrightTest`).
+  - [x] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
+  - [x] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
 
-- [ ] **8.3. Concurrent Subagent Task Delegation**
-  - [ ] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
+<<<<<<< HEAD
+- [x] **8.3. Hierarchical Agent Instructions, Skills & Subagent Delegation**
+  - [x] Refactor root `AGENTS.md` and add module-scoped `AGENTS.md` files (`ui`, `casual`, `tcp-netem`, `stateful`, `openapi`) plus on-demand `.agents/skills/` runbooks.
+  - [x] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
 
 ---
 
-### Phase 9: High-Scale Journal Architecture (Server-Side Paginated API & Hybrid Fallback)
+### High-Scale Journal Architecture (Server-Side Paginated API & Hybrid Fallback)
 
-- [ ] **9.1. Server-Side Lightweight Journal Endpoint (`UiAdminApiEndpoint`)**
-  - [ ] Implement `GET /__admin/ui/api/requests` (or `/ui/api/requests`) supporting query params: `limit`, `offset`/`page`, `q` (server-side substring search), and `unmatched` (boolean).
+- [x] **9.1. Server-Side Lightweight Journal Endpoint (`UiAdminApiEndpoint`)**
+  - [x] Implement `GET /__admin/ui/api/requests` supporting query params: `limit`, `q` (server-side boolean AND / OR search), `verdict` (`all`, `proxied`, `stateful`, `stub`, `unmatched`), `status`, and `unmatched` (boolean).
+  - [x] Return metadata envelope: `{ total, filtered, limit, requests: [...] }`.
   - [ ] **Lightweight Metadata Serialization**: Strip heavy request/response bodies from list results to shrink multi-thousand event payloads from 50MB+ down to <100KB JSON.
-  - [ ] Return pagination envelope: `{ total, page, limit, requests: [...] }`.
 - [ ] **9.2. On-Demand Lazy Detail Fetching**
   - [ ] Fetch complete request/response bodies, headers, and diffs on demand via `GET /__admin/requests/{id}` only when a user expands a specific row in the table.
-- [ ] **9.3. Dynamic Capability Detection & Graceful Fallback**
-  - [ ] Probe for `/__admin/ui/api/requests` via `capabilities.js`.
-  - [ ] If available, execute server-side paginated queries with instant sub-millisecond search across tens of thousands of records.
-  - [ ] If connecting to a vanilla/remote WireMock instance without custom extensions, automatically degrade to native `GET /__admin/requests?limit=...` and server-filtered `unmatched=true` with client-side windowing.
-### Phase 10: Automated Self-Contained E2E Video Tour & Asset Pipeline
+- [x] **9.3. Dynamic Capability Detection & Graceful Fallback**
+  - [x] Automatically query `/__admin/ui/api/requests` with server-side filtering on Enter key / search / verdict toggle.
+  - [x] If connecting to a vanilla/remote WireMock instance without custom extensions, automatically degrade to native `GET /__admin/requests?limit=...` and client-side windowing.
 
-- [ ] **10.1. Headless Playwright Native Video Recorder (`UiVideoRecordingTest.java`)**
-  - [ ] Leverage Playwright's native Chromium video recording (`Browser.NewContextOptions.setRecordVideoDir(...)`, `.setRecordVideoSize(1280, 720)`).
-  - [ ] Output native high-efficiency WebM format with 24-bit color depth, scrubbing controls, and 10x-20x smaller footprint compared to animated GIFs.
-  - [ ] Tag with `@Tag("recording")` to keep standard `./gradlew test` fast and non-mutating.
-  - [ ] Provide dedicated Gradle task: `./gradlew :wiremock-extension-ui:recordDemoVideos`.
+---
 
-- [ ] **10.2. Hybrid Story Presentation Pattern (Pattern C: Docs Title Card + In-Flight HUD)**
-  - [ ] Parse Given / When / Then acceptance criteria dynamically from `docs/spec/functional-specification.md`.
-  - [ ] Render 2.5-second introductory title card slide (`data:text/html` or HTML canvas) matching the console slate dark theme (`#0f172a`), showing story badge, scenario goal, and step breakdown.
-  - [ ] Transition smoothly to `/__admin/ui/` with active bottom-third toast or status badge displaying current step progress.
-  - [ ] Inject simulated human-like virtual mouse cursor (dot with click ripple) and humanized pacing (`slowMo(200)` + intentional inspection pauses).
+### Automated Self-Contained E2E Video Tour & Asset Pipeline
 
-- [ ] **10.3. Self-Contained Bite-Sized E2E Story Clips (Create ➔ Exercise ➔ Inspect)**
-  - [ ] **Story A (OpenAPI Ingestion to Verified Request)**:
-    - Start from clean slate (empty stubs).
-    - Import OpenAPI specification via modal.
-    - Synthesized endpoints appear with metadata badges.
-    - Send request in HTTP Tester (`200 OK`).
-    - Inspect serve event in Request Journal.
-  - [ ] **Story B (FSM Scenario Simulation & Reset)**:
-    - Display initial state `"Started"` in Scenarios DAG.
-    - Dispatch transition request in HTTP Tester.
-    - DAG node visibly transitions to `"CLOSED"`.
-    - Click *Reset Scenarios* returning all state machines to `"Started"`.
-  - [ ] **Story C (Unmatched Traffic Diagnostics & Diff)**:
-    - Dispatch near-miss request with path typo (`/api/case` vs `/api/cases`).
-    - Filter Request Journal by unmatched.
-    - Open diagnostic diff modal inspecting path distance and matcher diagnostics.
-    - Copy reproducible cURL command to clipboard.
+- [x] **10.1. Headless Playwright Native Video Recorder (`BankingDemoVideoRecordingTest.java`)**
+  - [x] Leverage Playwright's native Chromium video recording (`Browser.NewContextOptions.setRecordVideoDir(...)`, `.setRecordVideoSize(1280, 800)`).
+  - [x] Output native high-efficiency WebM format for `docs/` and `build/videos/` with 24-bit color depth and 10x-20x smaller footprint compared to animated GIFs.
+  - [x] Tag with `@Tag("recording")` to keep standard `./gradlew test` fast and non-mutating.
+  - [x] Provide dedicated Gradle tasks: `./gradlew :wiremock-examples:recordDemoVideos` and `./gradlew :wiremock-extension-ui:recordDemoVideos`.
 
-- [ ] **10.4. Zero-Bloat Asset Hosting Strategy (GitHub Release Assets)**
-  - [ ] Never commit generated binary video files (`.webm`) to Git history to protect clone speeds and avoid repository bloat.
-  - [ ] Upload video artifacts directly to GitHub Release assets using GitHub CLI (`gh release upload vX.Y.Z build/videos/*.webm`).
-  - [ ] Reference static CDN release URLs in `README.md` and `docs/site/` (`https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/...`).
+- [x] **10.2. Zero-Clutter Presentation (Frame-0 Start + HTML Story Context)**
+  - [x] Place scenario titles and `Given / When / Then` steps from `docs/spec/functional-specification.md` directly in documentation markdown—never bake text slides or HUD overlays into video pixels.
+  - [x] Start video recordings at **frame 0 directly inside `/__admin/ui/`** so viewers see immediate UI action.
+  - [x] Paced execution (`DEMO_STEP_PAUSE_MS = 1400`) for human-watchable demo tours.
 
-- [ ] **10.5. Pipeline Decoupling (Deferred to Release-Please / Post-Release Workflow)**
-  - [ ] Isolate video recording completely from daily PR and push CI pipelines (`ci.yml`) to preserve rapid developer turnaround.
-  - [ ] Automate video generation in `release.yml` post-release step triggered upon merging a `release-please` release PR and tag publication.
-  - [ ] Add `workflow_dispatch` manual trigger for on-demand generation and release asset uploads without cutting new versions.
+- [ ] **10.3. Agent-Gated Local Workflow & Zero-Bloat Hosting**
+  - [ ] **No CI / GitHub Actions Bloat**: Never run video generation automatically in GitHub Actions (`ci.yml`, `pages.yml`, or `release.yml`).
+  - [ ] **Semantic Detection via `git log`**: During PR or release preparation, the coding agent inspects `git log` / `git diff` on `wiremock-extension-ui/src/main/resources/ui/**` to judge whether user-visible demo flows meaningfully changed.
+  - [ ] **Zero-Bloat Publishing**: Publish generated `.webm` files to GitHub Pages / Release assets without committing binary media revisions into `main` Git history.
+
+---
+
+### Bottom-Up Simulation SDK & `TestDataBuilder` Synthesis
+
+Enable teams testing against 10+ downstream dependencies (ERP System, CRM System, Billing Platform, Risk Engine, Legacy ESB) to progress from live proxied integration tests to contract-verified, domain-driven Java Simulation SDKs—so the exact same BDD/Cucumber/JUnit test executes unmodified as **fully integrated**, **hybrid**, or **fully simulated**.
+
+- [ ] **11.1. Declarative Suite-Level Topology Instrumentation (`beforeAll`)**
+  - [ ] Provide fluent Java test harness builders allowing integration tests to configure the desired hybrid topology declaratively in `beforeAll()` (e.g. `WireMockSimulation.configure().withProxy("erp-system").withStub("billing").withStateful("crm")`).
+  - [ ] Synchronize suite configuration with `/__admin/projects/{service}/mode` so the Web UI reflects the test suite's topology.
+
+- [ ] **11.2. Level 1 — Deterministic Codegen (`stubFor()`, Model DTOs & Property Builders)**
+  - [x] **UI `☕ Copy Java stubFor()` Action**: Generate idiomatic WireMock Java DSL snippets directly from any Stub or recorded Journal entry.
+  - [ ] **Schema + Recorded Payload $\rightarrow$ DTO & `TestDataBuilder` Generator**: Combine OpenAPI 3.0/3.1 schemas (or inferred JSON shapes from recorded `PROXIED` journal entries) with captured baseline payloads to generate:
+    - [ ] Jackson-annotated Java 21 `record` / POJO model classes.
+    - [ ] Fluent `TestDataBuilder` classes pre-populated with realistic baseline defaults harvested from live service recordings.
+    - [ ] Low-level typed `*ServiceMock` endpoint wrappers with built-in `X-Correlation-Id` session scoping.
+
+- [ ] **11.3. Level 2 — Semantic Domain Builders & Scenario Orchestration (GenAI / Agent-Assisted Synthesis)**
+  - [ ] Elevate property-level builders (`withStatus("BLOCKED").withReasonCode("R-409")`) into high-level domain-intent methods (`org.crm.sdk.test.customer.CustomerBuilder.aCustomer().isVip()`, `.isBlockedDueToRisk()`, `.hasUpsellRecommendation()`).
+  - [ ] **Multi-Trace Scenario Synthesis**: Analyze and diff multiple recorded `X-Correlation-Id` journal traces (e.g., happy-path checkout vs. ERP business-rule rejection) alongside OpenAPI descriptions using an Agentic / GenAI synthesis workflow to generate cohesive scenario setup helpers that orchestrate multi-endpoint WireMock stubs, stateful AST rules, and L4/L7 fault expectations behind a single domain verb.
+
+---
+
+### Session Recording & Distributed Correlation Patterns (Priority)
+
+- [ ] **12.1. Compound Correlation Predicate & Seed Matcher**
+  - [ ] Multi-field session seed matching: evaluate compound boolean predicates combining HTTP headers (`X-Correlation-Id`), URL regex (`.*/cases/CASE-1001.*`), and JSON bodies (`$.customerId == "CUST-42"`).
+  - [ ] Admin API session lifecycle endpoints:
+    - `POST /__admin/simulations/sessions/start`: Registers an active named recording session with seed predicate criteria and entity extraction patterns.
+    - `POST /__admin/simulations/sessions/{id}/stop`: Concludes session recording and freezes captured events.
+    - `GET /__admin/simulations/sessions/{id}`: Returns the session tree, metadata, and harvested identifiers.
+  - [ ] Concurrent multi-session isolation: Thread-safe `ActiveSessionRegistry` isolating concurrent parallel test executions by customer/case ID seeds without cross-session pollution.
+
+- [ ] **12.2. Dynamic Causal Expansion ("Snowball Harvesting")**
+  - [ ] Automated response entity extraction: When any request matches the active session, inspect response payloads and headers for newly minted identifiers (`*Id`, `*Number`, `caseId`, `invoiceId`, `Xid`, `orderId`).
+  - [ ] Real-time in-memory filter expansion: Dynamically mutate the active session match criteria to append newly harvested identifiers as they are returned by upstream services.
+  - [ ] Transitive call-tree capture: Automatically capture subsequent asynchronous background workers, webhooks, or multi-protocol downstream calls (e.g. Casual 2PC billing) referencing the newly generated identifiers, even when the original root `X-Correlation-Id` is omitted or re-minted by sub-systems.
+
+- [ ] **12.3. Post-Run Visual Trace Clustering & Portable Bundle Export**
+  - [ ] Request Journal Causal Trace Visualizer: In the UI, click **"Cluster Causal Trace"** on any seed or downstream entry to visualize the transitive multi-protocol dependency graph (HTTP Gateway $\rightarrow$ CRM $\rightarrow$ Casual 2PC Billing $\rightarrow$ Async Polling).
+  - [ ] One-Click Simulation Bundle Export: Export the clustered session into a portable, self-contained `.json` or `.zip` **Simulation Bundle** containing:
+    - Captured stubs and proxy mappings.
+    - Full request/response payload fixtures.
+    - Stateful AST transitions and Casual 2PC outcomes.
+  - [ ] Offline Test Replay Loader: Provide `WireMockSimulation.loadBundle("simulations/loan-origination.json")` allowing developers to commit bundles under `src/test/resources/simulations/` and execute entire multi-tier enterprise integration suites 100% offline in CI without downstream live services.
+
+---
+
+### Casual Protocol Chaos & 2PC Heuristic Fault Injection (Priority)
+
+- [x] **13.1. Casual XATMI L7 Error State Injection**
+  - [x] Allow stubs matching `/__casual/services/{serviceName}` to return explicit Casual error codes:
+    - `TPETIME`: Transaction/call timeout simulation (HTTP 504).
+    - `TPESVCERR` / `TPESVCFAIL`: Service application failures (HTTP 500/502).
+    - `TPENOENT`: Service not found / unadvertised service (HTTP 404).
+- [x] **13.2. Casual 2PC Distributed Transaction Faults (XA Heuristics)**
+  - [x] Support injecting XA heuristic outcome codes on `xa_prepare` / `xa_commit`:
+    - `XA_RBROLLBACK`: Forced prepare rollback (`X-Casual-XA-Prepare-Vote`).
+    - `XA_HEURHAZ`: Heuristic hazard / commit failure (`X-Casual-XA-Commit-Vote`).
+- [x] **13.3. NetEm Virtual-Thread Latency on Casual Gateways**
+  - [x] Attach `wiremock-extension-tcp-netem` latency, jitter, and connection-drop impairments directly to Casual proxy listener ports via Toxiproxy REST API (`/__admin/tcp-netem/proxies`).
+
+---
+
+### Dynamic Stateful Simulation & Invariant Enforcement (Priority)
+
+- [ ] **16.1. Banking Domain Stateful FSM Simulation (`wiremock-extension-stateful`)**
+  - [ ] Maintain in-memory entity state machine for Banking Case (`DRAFT` $\rightarrow$ `OFFER_GENERATED` $\rightarrow$ `SETTLED`).
+  - [ ] Guard invariant rejection: Reject duplicate purchases with HTTP 409 Conflict ("Case already completed/settled"), reject settlement before offer with HTTP 400.
+  - [ ] Dynamic state variables: Track customer credit line and fee deductions dynamically across HTTP and Casual 2PC calls.
+  - [ ] Multi-tenant isolation: Support parallel test execution across distinct customer/case IDs (`CUST-42`, `CUST-99`) with isolated in-memory AST states.
+- [ ] **16.2. Distributed Correlation & Idempotency Key Tracing**
+  - [ ] Propagate `X-Correlation-Id` / idempotency key across Customer Portal $\rightarrow$ HTTP Case API $\rightarrow$ HTTP CRM API $\rightarrow$ Casual 2PC Billing.
+  - [ ] Support retry reconciliation for in-doubt 2PC transactions (`XA_HEURHAZ`) using the correlation ID as an idempotency key.
+
+---
+
+### Passive MITM Contract Drift & Shadow Diffing (Priority)
+
+- [ ] **14.1. In-Flight OpenAPI Schema Conformance Checker**
+  - [ ] In `LIVE PROXY` mode, asynchronously validate live upstream request and response payloads against imported OpenAPI 3.0/3.1 specs without intercepting, delaying, or altering the live traffic.
+- [ ] **14.2. Visual Drift Indicators in Request Journal**
+  - [ ] Tag drifting requests in the Request Journal with a distinct `⚠️ DRIFT` badge.
+  - [ ] Detailed inspection modal showing JSON Schema diff: missing required fields, unexpected types, deprecated field usage, or breaking contract modifications.
+
+---
+
+### Testcontainers & Container Distribution
+
+- [ ] **15.1. `wiremock-extension-testcontainers` Module**
+  - [ ] Fluent Testcontainers Java wrapper pre-configured with JDK 21 virtual threads, multi-protocol port bindings (HTTP + Casual TCP), and automatic Simulation Bundle mounting.
+- [ ] **15.2. Multi-Arch OCI Container Image (`ghcr.io`)**
+  - [ ] Automated GitHub Actions pipeline building and publishing `ghcr.io/mattiasgreen/wiremock-extensions` with Standalone Fat JAR and all SPI extensions baked in.
+
+---
+
+### Advanced Observability & Telemetry Governance
+
+- [ ] **17.1. AST Evaluation & Stateful Engine Metrics**
+  - [ ] Deferred until DSL operators and stateful simulation usage patterns stabilize.
+  - [ ] Counters for `wiremock_ast_evaluations_total{status="success|syntax_error|runtime_error"}`.
+  - [ ] Histograms for AST expression execution duration and multi-tenant entity count gauges.
+
+- [ ] **17.2. High-Cardinality Defense for OpenAPI & Dynamic Paths**
+  - [ ] Normalize parametrized route templates (`/api/orders/{id}`) from OpenAPI specs in metric attributes to prevent Prometheus cardinality explosions.
+  - [ ] Bounded metric label cache and dynamic stub name truncation/hashing.
+  - [ ] Configurable maximum distinct series threshold.

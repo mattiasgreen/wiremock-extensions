@@ -90,10 +90,10 @@ class NetEmJournalTest {
         assertThat(latest.get(0).id()).isEqualTo(149);
         assertThat(latest.get(99).id()).isEqualTo(50);
 
-        // Filter by correlationId
+        // Filter by scope
         List<NetEmJournalEntry> filteredCorr = journal.query(50, null, "corr-0", null);
         assertThat(filteredCorr).isNotEmpty();
-        assertThat(filteredCorr).allMatch(e -> e.correlationId().equals("corr-0"));
+        assertThat(filteredCorr).allMatch(e -> e.scope().equals("corr-0"));
 
         // Filter by impaired
         List<NetEmJournalEntry> impairedOnly = journal.query(50, null, null, true);
@@ -106,7 +106,7 @@ class NetEmJournalTest {
     }
 
     @Test
-    @DisplayName("End-to-end: NetEm journal records normal and impaired requests with correlation IDs and stats")
+    @DisplayName("End-to-end: NetEm journal records normal and impaired requests with patterns and stats")
     void shouldRecordNormalAndImpairedRequestsInJournal() throws Exception {
         // Register proxy on dynamic port forwarding to wireMockServer port
         TcpNetEmProxy proxy = TcpNetEmRegistry.getInstance()
@@ -116,25 +116,25 @@ class NetEmJournalTest {
         // 1. Send normal request
         HttpRequest normalReq = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + netemPort + "/api/data"))
-                .header("X-Correlation-Id", "session-normal-100")
+                .header("X-Scope", "session-normal-100")
                 .GET()
                 .build();
         HttpResponse<String> normalResp = httpClient.send(normalReq, HttpResponse.BodyHandlers.ofString());
         assertThat(normalResp.statusCode()).isEqualTo(200);
 
-        // 2. Add latency toxic matching X-Correlation-Id "session-chaos-200"
+        // 2. Add latency toxic matching pattern "session-chaos-200"
         NetEmToxicConfig toxic = NetEmToxicConfig.builder("latency-chaos", NetEmToxicType.LATENCY).stream(
                         NetEmStreamDirection.DOWNSTREAM)
                 .toxicity(1.0)
                 .attribute("latency", 50L)
-                .correlationId("session-chaos-200")
+                .pattern("session-chaos-200")
                 .build();
         proxy.addToxic(toxic);
 
         // 3. Send chaos request
         HttpRequest chaosReq = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + netemPort + "/api/data"))
-                .header("X-Correlation-Id", "session-chaos-200")
+                .header("X-Scope", "session-chaos-200")
                 .GET()
                 .build();
         HttpResponse<String> chaosResp = httpClient.send(chaosReq, HttpResponse.BodyHandlers.ofString());
@@ -153,14 +153,13 @@ class NetEmJournalTest {
 
         // Newest entry first: chaos request
         NetEmJournalEntry latestChaos = entries.get(0);
-        assertThat(latestChaos.correlationId()).isEqualTo("session-chaos-200");
+        assertThat(latestChaos.scope()).isEqualTo("session-chaos-200");
         assertThat(latestChaos.impaired()).isTrue();
         assertThat(latestChaos.appliedToxics()).contains("latency-chaos");
         assertThat(latestChaos.durationMs()).isGreaterThanOrEqualTo(40L);
 
         // Older entry: normal request
         NetEmJournalEntry olderNormal = entries.get(1);
-        assertThat(olderNormal.correlationId()).isEqualTo("session-normal-100");
         assertThat(olderNormal.impaired()).isFalse();
 
         // Verify differentiated stats

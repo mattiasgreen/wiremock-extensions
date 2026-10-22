@@ -18,7 +18,7 @@ allprojects {
 
 spotless {
     format 'misc', {
-        target '*.gradle', '*.md', '.gitignore'
+        target '*.gradle', '*.md', '*/AGENTS.md', '.agents/**/*.md', 'docs/**/*.md', '.gitignore'
         trimTrailingWhitespace()
         endWithNewline()
     }
@@ -29,7 +29,7 @@ subprojects {
     apply plugin: 'com.diffplug.spotless'
     apply plugin: 'com.github.spotbugs'
 
-    if (project.name != 'wiremock-examples') {
+    if (project.name != 'wiremock-examples' && project.name != 'wiremock-cli') {
         apply plugin: 'maven-publish'
         apply plugin: 'signing'
         apply plugin: 'com.gradleup.nmcp'
@@ -82,7 +82,7 @@ subprojects {
                 required = true
             }
             xml {
-                required = true
+                required = false
             }
         }
     }
@@ -93,9 +93,16 @@ subprojects {
         }
     }
 
+    tasks.withType(Test).configureEach {
+        jvmArgs '-XX:TieredStopAtLevel=1'
+        if (!file('src/test/resources/logback-test.xml').exists()) {
+            systemProperty 'logback.configurationFile', rootProject.file('config/logback-test.xml').absolutePath
+        }
+    }
+
     tasks.named('test') {
         useJUnitPlatform {
-            excludeTags 'recording', 'pitch-deck'
+            excludeTags 'recording', 'pitch-deck', 'ui-snapshot'
         }
     }
 
@@ -103,7 +110,7 @@ subprojects {
         dependsOn tasks.named('javadoc')
     }
 
-    if (project.name != 'wiremock-examples') {
+    if (project.name != 'wiremock-examples' && project.name != 'wiremock-cli') {
         publishing {
             publications {
                 mavenJava(MavenPublication) {
@@ -163,14 +170,9 @@ subprojects {
 }
 
 dependencies {
-    nmcpAggregation project(':wiremock-extension-bundle')
-    nmcpAggregation project(':wiremock-extension-json-logging')
-    nmcpAggregation project(':wiremock-extension-openapi')
-    nmcpAggregation project(':wiremock-extension-otel')
-    nmcpAggregation project(':wiremock-extension-stateful')
-    nmcpAggregation project(':wiremock-extension-tcp-netem')
-    nmcpAggregation project(':wiremock-extension-casual')
-    nmcpAggregation project(':wiremock-extension-ui')
+    subprojects.findAll { it.name != 'wiremock-examples' }.each { subproj ->
+        nmcpAggregation subproj
+    }
 }
 
 nmcpAggregation {

@@ -309,10 +309,13 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
             } catch (NumberFormatException ignored) {
             }
         }
-        String correlationId = request.queryParameter("correlationId") != null
-                        && request.queryParameter("correlationId").isPresent()
-                ? request.queryParameter("correlationId").firstValue()
-                : null;
+        String scope = request.queryParameter("scope") != null
+                        && request.queryParameter("scope").isPresent()
+                ? request.queryParameter("scope").firstValue()
+                : (request.queryParameter("correlationId") != null
+                                && request.queryParameter("correlationId").isPresent()
+                        ? request.queryParameter("correlationId").firstValue()
+                        : null);
         String proxy = request.queryParameter("proxy") != null
                         && request.queryParameter("proxy").isPresent()
                 ? request.queryParameter("proxy").firstValue()
@@ -323,7 +326,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
             impaired = Boolean.parseBoolean(request.queryParameter("impaired").firstValue());
         }
 
-        List<NetEmJournalEntry> entries = registry.getJournal().query(limit, proxy, correlationId, impaired);
+        List<NetEmJournalEntry> entries = registry.getJournal().query(limit, proxy, scope, impaired);
         try {
             return jsonResponse(200, MAPPER.writeValueAsString(entries));
         } catch (IOException e) {

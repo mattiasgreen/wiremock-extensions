@@ -5,9 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
-import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Playwright;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -21,8 +19,6 @@ import org.junit.jupiter.api.TestInstance;
 public class UiModuleUnitTest {
 
     private WireMockServer wireMockServer;
-    private Playwright playwright;
-    private Browser browser;
     private Page page;
 
     @BeforeAll
@@ -31,8 +27,7 @@ public class UiModuleUnitTest {
                 new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
         wireMockServer.start();
 
-        playwright = Playwright.create();
-        browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+        Browser browser = AbstractUiPlaywrightTest.getSharedBrowser();
         page = browser.newPage();
 
         // Navigate to the UI to ensure same-origin context for ES module imports
@@ -41,11 +36,8 @@ public class UiModuleUnitTest {
 
     @AfterAll
     void stopAll() {
-        if (browser != null) {
-            browser.close();
-        }
-        if (playwright != null) {
-            playwright.close();
+        if (page != null) {
+            page.close();
         }
         if (wireMockServer != null && wireMockServer.isRunning()) {
             wireMockServer.stop();
@@ -331,5 +323,63 @@ public class UiModuleUnitTest {
         assertThat(result.get("missAndCustomerAndProduct")).isFalse();
         assertThat(result.get("matchOrCustomer")).isTrue();
         assertThat(result.get("matchOrCustomer2")).isTrue();
+    }
+
+    @Test
+    @DisplayName("generateCreateStubCurl: Multi-line JSON stub creation cURL command with EOF heredoc")
+    void testGenerateCreateStubCurl() {
+        String script =
+                """
+            async () => {
+                const { generateCreateStubCurl } = await import('./modules/stubs.js');
+
+                const standardStub = {
+                    id: "stub-1234",
+                    name: "Get User",
+                    request: {
+                        method: "GET",
+                        url: "/api/users/1234"
+                    },
+                    response: {
+                        status: 200,
+                        body: '{"id": 1234, "name": "Alice"}'
+                    }
+                };
+
+                const dynamicStub = {
+                    id: "dynamic-cases-0",
+                    isDynamic: true,
+                    rule: {
+                        route: { method: "POST", pathPattern: "/api/cases" },
+                        mutations: [{ type: "init_entity", idParam: "caseId" }],
+                        response: { status: 201 }
+                    }
+                };
+
+                return {
+                    standardCurl: generateCreateStubCurl(standardStub),
+                    dynamicCurl: generateCreateStubCurl(dynamicStub)
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> result = (java.util.Map<String, String>) evalJs(script);
+
+        String standardCurl = result.get("standardCurl");
+        assertThat(standardCurl).contains("curl -X POST ");
+        assertThat(standardCurl).contains("/__admin/mappings");
+        assertThat(standardCurl).contains("-H \"Content-Type: application/json\"");
+        assertThat(standardCurl).contains("--data-binary @- << 'EOF'");
+        assertThat(standardCurl).contains("\"name\": \"Get User\"");
+        assertThat(standardCurl).contains("\"url\": \"/api/users/1234\"");
+        assertThat(standardCurl).endsWith("\nEOF");
+
+        String dynamicCurl = result.get("dynamicCurl");
+        assertThat(dynamicCurl).contains("curl -X POST ");
+        assertThat(dynamicCurl).contains("/__admin/stateful/rules");
+        assertThat(dynamicCurl).contains("--data-binary @- << 'EOF'");
+        assertThat(dynamicCurl).contains("\"pathPattern\": \"/api/cases\"");
+        assertThat(dynamicCurl).endsWith("\nEOF");
     }
 }

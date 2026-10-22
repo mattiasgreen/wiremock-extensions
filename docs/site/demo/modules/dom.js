@@ -42,7 +42,7 @@ export const elements = {
   detailLifecycleState: document.getElementById('detail-lifecycle-state'),
   detailStatefulSection: document.getElementById('detail-stateful-section'),
   stubJsonViewer: document.getElementById('stub-json-viewer'),
-  btnRefresh: document.getElementById('btn-refresh'),
+  btnRefresh: document.getElementById('btn-refresh-stubs'),
   btnRefreshStubs: document.getElementById('btn-refresh-stubs'),
   btnCreateStub: document.getElementById('btn-create-stub'),
   btnCreateDynamicStub: document.getElementById('btn-create-dynamic-stub'),
@@ -54,6 +54,7 @@ export const elements = {
   btnDeleteStub: document.getElementById('btn-delete-stub'),
   btnViewStubInJournal: document.getElementById('btn-view-stub-in-journal'),
   btnCopyCurl: document.getElementById('btn-copy-curl'),
+  btnCopyJava: document.getElementById('btn-copy-java'),
   btnCopyJson: document.getElementById('btn-copy-json'),
 
   // Bulk Actions
@@ -79,6 +80,7 @@ export const elements = {
   editorBodyMatchContainer: document.getElementById('editor-body-match-container'),
   editorBodyMatchLabel: document.getElementById('editor-body-match-label'),
   editorBodyMatchPattern: document.getElementById('editor-body-match-pattern'),
+  editorProxyUrl: document.getElementById('editor-proxy-url'),
 
   // Welcome Guide
   stubDetailEmptyDefault: document.getElementById('stub-detail-empty-default'),
@@ -124,11 +126,19 @@ export const elements = {
   journalContextBanner: document.getElementById('journal-context-banner'),
   journalFilterChipText: document.getElementById('journal-filter-chip-text'),
   btnJournalClearStubFilter: document.getElementById('btn-journal-clear-stub-filter'),
+  journalTable: document.getElementById('journal-table'),
   journalList: document.getElementById('journal-list'),
   journalSearch: document.getElementById('journal-search'),
   journalAutoRefresh: document.getElementById('journal-auto-refresh'),
+  journalLimitInput: document.getElementById('journal-limit-input'),
   journalFilteredCount: document.getElementById('journal-filtered-count'),
   filterUnmatchedOnly: document.getElementById('filter-unmatched-only'),
+  journalTimeRange: document.getElementById('journal-time-range'),
+  journalCustomTime: document.getElementById('journal-custom-time'),
+  journalTimeSince: document.getElementById('journal-time-since'),
+  journalTimeUntil: document.getElementById('journal-time-until'),
+  btnJournalSnapshotFiltered: document.getElementById('btn-journal-snapshot-filtered'),
+  journalProxiedCount: document.getElementById('journal-proxied-count'),
   btnRefreshJournal: document.getElementById('btn-refresh-journal'),
   btnResetJournal: document.getElementById('btn-reset-journal'),
 

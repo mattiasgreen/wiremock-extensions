@@ -17,6 +17,16 @@ tasks.register('recordDemoGifs', Test) {
     }
 }
 
+tasks.register('recordDemoVideos', Test) {
+    group = 'verification'
+    description = 'Generates Playwright WebM demo videos for UI documentation via Playwright'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'recording'
+    }
+}
+
 tasks.register('recordPitchDeckScreenshots', Test) {
     group = 'verification'
     description = 'Generates high-resolution screenshots for the pitch deck presentation via Playwright'
@@ -43,5 +53,18 @@ tasks.register('runProxy', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.ui.WireMockConsoleProxy'
     args = [project.findProperty('wiremock.url') ?: 'http://localhost:8080']
+}
+
+tasks.register('syncDemoSite', Copy) {
+    group = 'documentation'
+    description = 'Syncs single-source-of-truth UI assets into docs/site/demo for local static site preview'
+    from('src/main/resources/ui') {
+        exclude 'pitch/**'
+    }
+    into rootProject.file('docs/site/demo')
+}
+
+rootProject.tasks.matching { it.name.startsWith('spotless') }.configureEach {
+    mustRunAfter tasks.named('syncDemoSite')
 }
 

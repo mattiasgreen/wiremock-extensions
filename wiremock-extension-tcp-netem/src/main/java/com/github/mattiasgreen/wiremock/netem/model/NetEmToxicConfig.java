@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -15,7 +16,9 @@ public class NetEmToxicConfig {
     private final NetEmToxicType type;
     private final NetEmStreamDirection stream;
     private final double toxicity;
-    private final String correlationId;
+    private final String pattern;
+    private final String patternType;
+    private final String clientIp;
     private final Map<String, Object> attributes;
 
     @JsonCreator
@@ -24,7 +27,10 @@ public class NetEmToxicConfig {
             @JsonProperty("type") Object type,
             @JsonProperty("stream") NetEmStreamDirection stream,
             @JsonProperty("toxicity") Double toxicity,
-            @JsonProperty("correlationId") String correlationId,
+            @JsonProperty("pattern") String pattern,
+            @JsonProperty("patternType") String patternType,
+            @JsonProperty("clientIp") String clientIp,
+            @JsonProperty("correlationId") String legacyCorrelationId,
             @JsonProperty("attributes") Map<String, Object> attributes) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         if (type instanceof NetEmToxicType toxicType) {
@@ -36,8 +42,34 @@ public class NetEmToxicConfig {
         }
         this.stream = stream != null ? stream : NetEmStreamDirection.DOWNSTREAM;
         this.toxicity = toxicity != null ? toxicity : 1.0;
-        this.correlationId = correlationId;
+
+        if (pattern != null && !pattern.isBlank()) {
+            this.pattern = pattern;
+            this.patternType =
+                    (patternType != null && !patternType.isBlank()) ? patternType.toUpperCase(Locale.ROOT) : "ASCII";
+        } else if (legacyCorrelationId != null && !legacyCorrelationId.isBlank()) {
+            this.pattern = legacyCorrelationId;
+            this.patternType = "ASCII";
+        } else {
+            this.pattern = null;
+            this.patternType =
+                    (patternType != null && !patternType.isBlank()) ? patternType.toUpperCase(Locale.ROOT) : "ASCII";
+        }
+
+        this.clientIp = (clientIp != null && !clientIp.isBlank()) ? clientIp.trim() : null;
         this.attributes = attributes != null ? new HashMap<>(attributes) : new HashMap<>();
+    }
+
+    public NetEmToxicConfig(
+            String name,
+            Object type,
+            NetEmStreamDirection stream,
+            Double toxicity,
+            String pattern,
+            String patternType,
+            String clientIp,
+            Map<String, Object> attributes) {
+        this(name, type, stream, toxicity, pattern, patternType, clientIp, null, attributes);
     }
 
     public String getName() {
@@ -56,8 +88,24 @@ public class NetEmToxicConfig {
         return toxicity;
     }
 
+    public String getPattern() {
+        return pattern;
+    }
+
+    public String getPatternType() {
+        return patternType;
+    }
+
+    public String getClientIp() {
+        return clientIp;
+    }
+
+    /**
+     * @deprecated Use {@link #getPattern()} instead.
+     */
+    @Deprecated
     public String getCorrelationId() {
-        return correlationId;
+        return pattern;
     }
 
     public Map<String, Object> getAttributes() {
@@ -101,7 +149,9 @@ public class NetEmToxicConfig {
         private final NetEmToxicType type;
         private NetEmStreamDirection stream = NetEmStreamDirection.DOWNSTREAM;
         private double toxicity = 1.0;
-        private String correlationId;
+        private String pattern;
+        private String patternType = "ASCII";
+        private String clientIp;
         private final Map<String, Object> attributes = new HashMap<>();
 
         public Builder(String name, NetEmToxicType type) {
@@ -119,8 +169,28 @@ public class NetEmToxicConfig {
             return this;
         }
 
+        public Builder pattern(String pattern) {
+            this.pattern = pattern;
+            return this;
+        }
+
+        public Builder patternType(String patternType) {
+            this.patternType = patternType;
+            return this;
+        }
+
+        public Builder clientIp(String clientIp) {
+            this.clientIp = clientIp;
+            return this;
+        }
+
+        /**
+         * @deprecated Use {@link #pattern(String)} instead.
+         */
+        @Deprecated
         public Builder correlationId(String correlationId) {
-            this.correlationId = correlationId;
+            this.pattern = correlationId;
+            this.patternType = "ASCII";
             return this;
         }
 
@@ -137,7 +207,7 @@ public class NetEmToxicConfig {
         }
 
         public NetEmToxicConfig build() {
-            return new NetEmToxicConfig(name, type, stream, toxicity, correlationId, attributes);
+            return new NetEmToxicConfig(name, type, stream, toxicity, pattern, patternType, clientIp, null, attributes);
         }
     }
 }

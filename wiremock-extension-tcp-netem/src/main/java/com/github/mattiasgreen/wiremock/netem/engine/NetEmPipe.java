@@ -4,7 +4,9 @@ import com.github.mattiasgreen.wiremock.netem.impairments.ByteConsumer;
 import com.github.mattiasgreen.wiremock.netem.impairments.NetEmContext;
 import com.github.mattiasgreen.wiremock.netem.impairments.NetEmImpairment;
 import com.github.mattiasgreen.wiremock.netem.journal.NetEmCircularJournal;
+import com.github.mattiasgreen.wiremock.netem.matcher.ByteStreamMatcher;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmStreamDirection;
+import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicConfig;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -21,7 +23,6 @@ import java.util.function.Supplier;
 public class NetEmPipe implements Runnable {
 
     private static final int BUFFER_SIZE = 8192;
-    private static final String CORRELATION_HEADER = "x-correlation-id:";
 
     private final Socket sourceSocket;
     private final Socket destinationSocket;
@@ -96,13 +97,29 @@ public class NetEmPipe implements Runnable {
                         if (journal != null && context.isTransactionActive()) {
                             context.completeTransaction(journal, "NORMAL_HTTP_RESPONSE");
                         }
-                        String correlationId = extractCorrelationId(buffer, bytesRead);
-                        context.startTransaction(correlationId);
+                        context.startTransaction();
+                    }
+                } else {
+                    if (!context.isTransactionActive()) {
+                        context.startTransaction();
                     }
                 }
 
                 // Dynamically fetch current active impairments
                 List<NetEmImpairment> activeImpairments = new ArrayList<>(impairmentsSupplier.get());
+
+                // Scan incoming stream bytes for any configured toxic patterns
+                for (NetEmImpairment impairment : activeImpairments) {
+                    NetEmToxicConfig cfg = impairment.getConfig();
+                    String pat = cfg.getPattern();
+                    if (pat != null && !pat.isBlank() && !context.hasMatchedToxic(cfg.getName())) {
+                        ByteStreamMatcher.StreamScanner scanner =
+                                context.getOrCreateScanner(cfg.getName(), pat, cfg.getPatternType());
+                        if (scanner.update(buffer, 0, bytesRead)) {
+                            context.markPatternMatched(cfg.getName(), pat);
+                        }
+                    }
+                }
 
                 // Compose pipeline chain in reverse order
                 ByteConsumer chain = terminalWriter;
@@ -115,6 +132,7 @@ public class NetEmPipe implements Runnable {
                 chain.accept(buffer, 0, bytesRead);
 
                 if (direction == NetEmStreamDirection.UPSTREAM) {
+                    context.recordUpstreamBytes(buffer, 0, bytesRead);
                     context.addBytesUpstream(bytesRead);
                 } else {
                     context.addBytesDownstream(bytesRead);
@@ -246,24 +264,6 @@ public class NetEmPipe implements Runnable {
         }
         String text = new String(buffer, Math.max(0, length - 16), Math.min(length, 16), StandardCharsets.US_ASCII);
         return text.contains("0\r\n\r\n");
-    }
-
-    static String extractCorrelationId(byte[] buffer, int length) {
-        int inspectLen = Math.min(length, 4096);
-        String text = new String(buffer, 0, inspectLen, StandardCharsets.US_ASCII);
-        int idx = text.toLowerCase(Locale.ROOT).indexOf(CORRELATION_HEADER);
-        if (idx != -1) {
-            int start = idx + CORRELATION_HEADER.length();
-            int end = text.indexOf('\r', start);
-            if (end == -1) {
-                end = text.indexOf('\n', start);
-            }
-            if (end == -1) {
-                end = text.length();
-            }
-            return text.substring(start, end).trim();
-        }
-        return null;
     }
 
     private static void closeQuietly(Socket socket) {

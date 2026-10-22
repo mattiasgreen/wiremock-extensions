@@ -63,6 +63,7 @@
           <span id="target-host-label">Target: (same-origin)</span>
         </button>
         <a href="https://mattiasgreen.github.io/wiremock-extensions/docs/" target="_blank" class="btn btn-link" id="link-docs" title="Open WireMock Extensions Documentation">📚 Docs</a>
+        <!-- WireMock Standalone bundles Swagger UI at /__admin/swagger-ui/ out of the box. When targeting a remote WireMock host, updateTargetHostDisplay() in app.js rewrites this href to <wiremock-base-uri>/__admin/swagger-ui/. -->
         <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
         <a href="../metrics/prometheus" target="_blank" class="btn btn-link" id="link-metrics" title="Open Prometheus Metrics">📊 Metrics</a>
       </div>
@@ -72,7 +73,7 @@
       <!-- Sidebar / Stub List (Persistent for Stubs Explorer & HTTP Tester) -->
       <aside class="sidebar" id="sidebar-stubs" data-testid="sidebar-stubs">
         <div class="search-bar">
-          <input type="text" id="search-box" data-testid="search-box" placeholder="Filter stubs by URL, method, name, or tag..." autocomplete="off">
+          <input type="text" id="search-box" data-testid="search-box" placeholder="Filter stubs by URL, header, metadata, or JSON (supports AND, OR)..." autocomplete="off">
         </div>
         
         <div class="project-filter-bar">
@@ -83,7 +84,7 @@
             <button class="filter-pill active" data-filter="all" id="btn-filter-all" data-testid="btn-filter-all">All (<span id="count-filter-all">0</span>)</button>
             <button class="filter-pill" data-filter="active" id="btn-filter-active" data-testid="btn-filter-active">Active (<span id="count-filter-active">0</span>)</button>
             <button class="filter-pill" data-filter="disabled" id="btn-filter-disabled" data-testid="btn-filter-disabled">Disabled (<span id="count-filter-disabled">0</span>)</button>
-            <button class="filter-pill" data-filter="dynamic" id="btn-filter-dynamic" data-testid="btn-filter-dynamic">⚡ Dynamic (<span id="count-filter-dynamic">0</span>)</button>
+            <button class="filter-pill" data-filter="dynamic" id="btn-filter-dynamic" data-testid="btn-filter-dynamic" title="Filter in-memory Stateful AST simulation rules">🧠 Stateful (<span id="count-filter-dynamic">0</span>)</button>
           </div>
         </div>
 
@@ -107,8 +108,8 @@
             <span id="stubs-count-label" class="muted-text">0 mappings</span>
           </div>
           <div class="stub-list-header-actions">
-            <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping">➕ New</button>
-            <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create a dynamic / stateful simulation stub">⚡ Dynamic</button>
+            <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping or proxy route">➕ New</button>
+            <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create an in-memory Stateful AST simulation model">🧠 Stateful</button>
             <button id="btn-open-openapi-modal" data-testid="btn-open-openapi-modal" class="btn btn-tiny btn-secondary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
             <button id="btn-export-stubs" data-testid="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
             <button id="btn-refresh-stubs" data-testid="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
@@ -180,7 +181,8 @@
                 <button id="btn-toggle-stub" data-testid="btn-toggle-stub" class="btn btn-small btn-warning" title="Toggle active/disabled state">⏸️ Disable Stub</button>
                 <button id="btn-delete-stub" data-testid="btn-delete-stub" class="btn btn-small btn-danger" title="Permanently delete this stub">🗑️ Delete</button>
                 <button id="btn-view-stub-in-journal" data-testid="btn-view-stub-in-journal" class="btn btn-small" title="Search for this stub in Request Journal">🔍 View in Journal</button>
-                <button id="btn-copy-curl" data-testid="btn-copy-curl" class="btn btn-small" title="Copy request as cURL command">📋 Copy cURL</button>
+                <button id="btn-copy-curl" data-testid="btn-copy-curl" class="btn btn-small" title="Copy as cURL command to create this stub mapping">📋 Copy cURL</button>
+                <button id="btn-copy-java" data-testid="btn-copy-java" class="btn btn-small" title="Copy as WireMock Java stubFor() DSL snippet">☕ Copy Java</button>
                 <button id="btn-copy-json" data-testid="btn-copy-json" class="btn btn-small" title="Copy stub mapping JSON">📋 Copy JSON</button>
               </div>
             </div>
@@ -212,7 +214,7 @@
             <div id="detail-stateful-section" class="detail-stateful-section hidden" data-testid="detail-stateful-section">
               <div class="stateful-spec-card">
                 <div class="stateful-card-header">
-                  <div class="stateful-title">⚡ Stateful Simulation Engine: <strong id="stateful-entity-label">cases</strong></div>
+                  <div class="stateful-title">🧠 Stateful Simulation Engine: <strong id="stateful-entity-label">cases</strong></div>
                   <span class="stateful-scope-pill" id="stateful-route-scope">/api/v1/cases/**</span>
                 </div>
                 <div class="stateful-details-grid">
@@ -243,22 +245,50 @@
           <div class="journal-filter-chip">
             <span class="chip-icon">🏷️</span>
             <span id="journal-filter-chip-text">Filtered by Stub</span>
-            <button id="btn-journal-clear-stub-filter" title="Clear filter to view all global requests and unmatched 404s">✕</button>
+            <button id="btn-journal-clear-stub-filter" title="Clear filter to view all global requests and unmatched traffic">✕</button>
           </div>
-          <span class="journal-filter-hint">Showing matched requests only. Click ✕ to view all global requests & unmatched 404s.</span>
+          <span class="journal-filter-hint">Showing matched requests only. Click ✕ to view all global requests & unmatched traffic.</span>
         </div>
 
         <div class="journal-controls">
           <div class="journal-controls-top">
-            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, method, status code..." autocomplete="off">
+            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, header, body, or X-Correlation-Id (supports AND, OR)..." autocomplete="off">
           </div>
           <div class="journal-controls-bottom">
             <div class="journal-filters-group">
+              <div class="status-filter-pills journal-verdict-pills" data-testid="journal-verdict-pills">
+                <button type="button" class="filter-pill journal-verdict-pill active" data-verdict="all" id="btn-journal-verdict-all" data-testid="btn-journal-verdict-all">All</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="proxied" id="btn-journal-verdict-proxied" data-testid="btn-journal-verdict-proxied" title="Forwarded to live upstream via proxyBaseUrl">🌐 Proxied</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="stub" id="btn-journal-verdict-stub" data-testid="btn-journal-verdict-stub" title="Served locally from static or Handlebars-templated mapping">📌 Stub</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="stateful" id="btn-journal-verdict-stateful" data-testid="btn-journal-verdict-stateful" title="Served locally by in-memory Stateful AST engine">🧠 Stateful</button>
+                <button type="button" class="filter-pill journal-verdict-pill" data-verdict="unmatched" id="btn-journal-verdict-unmatched" data-testid="btn-journal-verdict-unmatched" title="No matching stub, stateful rule, or proxy route (404)">⚠️ Unmatched</button>
+              </div>
               <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched (404) only</label>
               <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh" data-testid="journal-auto-refresh"> Live auto-refresh (3s)</label>
+              <label class="select-label" title="Filter requests by datetime range">
+                Time:
+                <select id="journal-time-range" data-testid="journal-time-range" class="select-small">
+                  <option value="all">All time</option>
+                  <option value="5m">Last 5m</option>
+                  <option value="15m">Last 15m</option>
+                  <option value="1h">Last 1h</option>
+                  <option value="24h">Last 24h</option>
+                  <option value="custom">Custom range...</option>
+                </select>
+              </label>
+              <div id="journal-custom-time" class="journal-custom-time hidden" data-testid="journal-custom-time">
+                <input type="datetime-local" id="journal-time-since" data-testid="journal-time-since" class="input-tiny" title="Since (start time)">
+                <span>—</span>
+                <input type="datetime-local" id="journal-time-until" data-testid="journal-time-until" class="input-tiny" title="Until (end time)">
+              </div>
+              <label class="select-label" title="Maximum requests to fetch from WireMock journal">
+                Limit:
+                <input type="number" id="journal-limit-input" data-testid="journal-limit-input" min="1" step="50" value="100" class="input-tiny" style="width: 75px;">
+              </label>
               <span id="journal-filtered-count" class="muted-text"></span>
             </div>
             <div class="journal-actions-group">
+              <button id="btn-journal-snapshot-filtered" data-testid="btn-journal-snapshot-filtered" class="btn btn-small btn-primary" title="Snapshot filtered proxied traffic into offline disabled stubs" disabled>📸 Snapshot Filtered Proxied (<span id="journal-proxied-count">0</span>)</button>
               <button id="btn-refresh-journal" data-testid="btn-refresh-journal" class="btn btn-small btn-secondary" title="Refresh request journal">🔄 Refresh</button>
               <button id="btn-reset-journal" data-testid="btn-reset-journal" class="btn btn-small btn-secondary" title="Clear request journal">🗑️ Clear Journal</button>
             </div>
@@ -695,6 +725,7 @@
                 <option value="body-json">Matching Request JSON Body (POST /api/v1/orders)</option>
                 <option value="url-pattern">Matching URL Regex Pattern (GET /api/v1/items/[0-9]+)</option>
                 <option value="error-response">Error Response (404 Not Found)</option>
+                <option value="proxy-route">🌐 Live Service Proxy Route (Forward to upstream ERP/CRM)</option>
               </select>
               <button type="button" id="btn-apply-template" class="btn btn-tiny btn-secondary">Apply Example</button>
             </div>
@@ -715,7 +746,7 @@
           <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
             <div class="form-group" style="flex: 1;">
               <label for="editor-project">Project / API Group:</label>
-              <input type="text" id="editor-project" class="form-control" placeholder="e.g. Warehouse Service">
+              <input type="text" id="editor-project" class="form-control" placeholder="e.g. ERP System">
             </div>
             <div class="form-group" style="flex: 1;">
               <label for="editor-tags">Tags (comma-separated):</label>
@@ -767,6 +798,10 @@
             <div class="form-group" style="flex: 1;">
               <label for="editor-status">Status Code:</label>
               <input type="number" id="editor-status" class="form-control" value="200">
+            </div>
+            <div class="form-group" style="flex: 2;">
+              <label for="editor-proxy-url">Proxy Base URL <span class="muted-text">(optional — forwards to live upstream)</span>:</label>
+              <input type="url" id="editor-proxy-url" data-testid="editor-proxy-url" class="form-control" placeholder="e.g. http://erp-system:8089 (leave empty for local stub)">
             </div>
           </div>
 
