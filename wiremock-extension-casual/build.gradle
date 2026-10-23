@@ -18,6 +18,7 @@ dependencies {
     api libs.casual.network.protocol
     implementation libs.netty.all
     implementation libs.jackson.databind
+    testImplementation 'jakarta.enterprise.concurrent:jakarta.enterprise.concurrent-api:3.0.3'
     testImplementation project(':wiremock-extension-tcp-netem')
 }
 

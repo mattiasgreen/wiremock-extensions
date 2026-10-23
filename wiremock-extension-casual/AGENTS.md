@@ -37,3 +37,12 @@ To minimize Casual protocol maintenance inside `wiremock-extensions`, reusable p
 1. **Netty `ByteBuf` Lifecycle**: Ensure all inbound `ByteBuf` instances in `CasualFrameDecoder` and channel handlers are properly released across both normal decoding and exception paths.
 2. **Stub Match Discrimination**: Use the WireMock `Matched-Stub-Id` response header to distinguish a deliberate stubbed error (e.g., HTTP 404/500 mapped to `TPENOENT`/`TPESVCFAIL`) from an genuinely unmatched request that should be proxied upstream.
 3. **Fault Recording Defaults**: Record upstream `TPESVCFAIL` application faults via `X-Casual-Error-State` header mappings, but never auto-record `TPENOENT` (service not found) by default.
+
+---
+
+## 4. Upstream Casual Source Code Availability (Zero Decompilation)
+
+Sources and Javadoc for all upstream `se.laz.casual:*` libraries (`casual-api`, `casual-network`, `casual-network-protocol`, etc.) are published directly to Nexus / Maven Central, and full git commit history is hosted on GitHub at [`casualcore/casual-java`](https://github.com/casualcore/casual-java).
+
+* **Never decompile bytecode**: Agents and developers must inspect the published `-sources.jar` artifacts (via IDE or Gradle source resolution) or browse the GitHub repository directly.
+* All message decoders, builders, and protocol structures can be inspected in original Java source form with complete author comments and parameter names intact.

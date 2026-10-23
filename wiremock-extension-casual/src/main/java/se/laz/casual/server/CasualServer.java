@@ -227,8 +227,7 @@ public class CasualServer implements AutoCloseable {
             } else if (type == CasualNWMessageType.DOMAIN_DISCOVERY_REQUEST) {
                 handleDomainDiscovery(ctx, (CasualNWMessage<CasualDomainDiscoveryRequestMessage>) msg);
             } else if (type == CasualNWMessageType.SERVICE_CALL_REQUEST
-                    || type == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3
-                    || type == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_5) {
+                    || type == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3) {
                 handleServiceCall(ctx, (CasualNWMessage<CasualServiceCallRequestMessage>) msg);
             } else if (type == CasualNWMessageType.PREPARE_REQUEST) {
                 handlePrepare(ctx, (CasualNWMessage<CasualTransactionResourcePrepareRequestMessage>) msg);
@@ -322,11 +321,7 @@ public class CasualServer implements AutoCloseable {
             }
             if (connVersion != null) {
                 boolean needsRebuild = false;
-                if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_5)
-                        && reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5) {
-                    needsRebuild = true;
-                } else if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)
-                        && connVersion.isLessThan(ProtocolVersion.VERSION_1_5)
+                if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)
                         && reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3) {
                     needsRebuild = true;
                 }

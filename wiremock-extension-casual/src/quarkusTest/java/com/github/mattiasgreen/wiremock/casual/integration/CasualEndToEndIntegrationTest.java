@@ -411,10 +411,10 @@ class CasualEndToEndIntegrationTest {
 
         NetworkConnection connection = NettyNetworkConnection.of(ci, reason -> {});
         try {
-            assertThat(connection.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_5);
+            assertThat(connection.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_4);
 
             CasualServiceCallRequestMessage callReq = CasualServiceCallRequestMessage.createBuilder()
-                    .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_4)
                     .setExecution(UUID.randomUUID())
                     .setServiceName("realUpstreamService")
                     .setTimeout(5000L)

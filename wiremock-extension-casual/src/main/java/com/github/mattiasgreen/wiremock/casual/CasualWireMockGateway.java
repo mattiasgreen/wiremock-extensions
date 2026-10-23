@@ -693,9 +693,6 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
     private ProtocolVersion determineProtocolVersion(CasualServiceCallRequestMessage req) {
         if (req != null && req.getType() != null) {
-            if (req.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_5) {
-                return ProtocolVersion.VERSION_1_5;
-            }
             if (req.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3) {
                 return ProtocolVersion.VERSION_1_3;
             }

@@ -468,3 +468,13 @@ See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
 * **In-Process WireMock `Request` Adapter**: Bypassing HTTP loopback sockets to evaluate directly against WireMock’s in-memory `StubMappings` for sub-millisecond ($\sim 50\mu\text{s}$) latency.
 * **Native Custom Matchers**: Adding a `RequestMatcherExtension` (`CasualFieldedMatcher`) to unpack and match on `.FIELDED` / FML binary buffers without requiring string conversions.
 * **Upstream Contributions**: Upstreaming standalone Java SE Netty client and server components to `casualcore/casual-java`.
+
+---
+
+## 13. Upstream Casual Dependencies & Source Code Availability
+
+The extension builds upon upstream `se.laz.casual` libraries (`casual-api`, `casual-network`, `casual-network-protocol`). Full `-sources.jar` artifacts are published directly to Maven Central / Nexus and the complete open-source codebase is hosted on GitHub at [`casualcore/casual-java`](https://github.com/casualcore/casual-java).
+
+> [!NOTE]
+> Decompilation is never required when troubleshooting or inspecting upstream Casual protocol internals, framing, or message decoders. Developers and coding agents can reference published sources or GitHub directly.
+
