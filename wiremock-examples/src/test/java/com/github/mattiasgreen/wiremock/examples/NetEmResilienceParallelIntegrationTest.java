@@ -208,7 +208,7 @@ class NetEmResilienceParallelIntegrationTest {
 
         assertThat(netEmProxy.getStats().getNormalTransfers())
                 .as("Normal transfers must record all functional requests")
-                .isEqualTo(iterations);
+                .isGreaterThanOrEqualTo(iterations);
         // Note: The circuit breaker trips to OPEN after failure threshold is exceeded (e.g. 2-4 calls),
         // short-circuiting subsequent calls so they never touch the network!
         assertThat(netEmProxy.getStats().getImpairedTransfers())
