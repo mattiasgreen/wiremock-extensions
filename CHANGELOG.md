@@ -5,6 +5,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.5.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.4.1...v1.5.0) (2026-10-23)
+
+
+### Features
+
+* **casual:** upstream protocol engine refactor and dynamic version negotiation ([#43](https://github.com/mattiasgreen/wiremock-extensions/issues/43)) ([05c5001](https://github.com/mattiasgreen/wiremock-extensions/commit/05c50011151449bed3ab5c02ea3de0df5791a303))
+
+
+### Bug Fixes
+
+* **build:** remove JGit ratchetFrom to support shallow CI clones and worktrees ([347f6a2](https://github.com/mattiasgreen/wiremock-extensions/commit/347f6a223e5958006376bd0722dcc54ddec1a278))
+
+
+### Performance Improvements
+
+* **build:** enforce deterministic UNIX line endings and tune test worker JVM GC ([8c78dda](https://github.com/mattiasgreen/wiremock-extensions/commit/8c78ddabab8e561c393aa306c5ce1f346f74437a))
+* **build:** enforce deterministic UNIX line endings, enable safe Spotless ratchet, and tune test JVM GC ([968720e](https://github.com/mattiasgreen/wiremock-extensions/commit/968720e84ffd8f353ecf78e6bbdbad625562e54a))
+
 ## [1.4.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.4.0...v1.4.1) (2026-10-21)
 
 
