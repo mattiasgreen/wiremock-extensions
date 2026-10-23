@@ -149,6 +149,14 @@ class CasualEndToEndIntegrationTest {
         // Upstream call count remains 1 because Upstream Server B was offline during the second call
         assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
         assertThat(harness.getUpstreamNode().getCommittedXids()).doesNotContain(replayOutcome.xid());
+
+        // Verify WireMock Request Journal shows both invocations; the replayed call matched the recorded stub
+        var serveEvents = harness.getWireMockServer().getAllServeEvents();
+        assertThat(serveEvents).hasSize(2);
+        assertThat(serveEvents.get(0).getWasMatched()).isTrue();
+        assertThat(serveEvents.get(0).getRequest().getUrl()).isEqualTo("/__casual/services/casual/example");
+        assertThat(serveEvents.get(0).getResponse().getBodyAsString())
+                .contains("\"processedBy\":\"upstream-server-B\"");
     }
 
     @Test
@@ -372,6 +380,13 @@ class CasualEndToEndIntegrationTest {
 
         assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
         assertThat(harness.getUpstreamNode().getCommittedXids()).contains(outcome.xid());
+
+        // Verify WireMock Request Journal captured the fielded binary buffer dispatch
+        var serveEvents = harness.getWireMockServer().getAllServeEvents();
+        assertThat(serveEvents).isNotEmpty();
+        var fieldedEvent = serveEvents.get(0);
+        assertThat(fieldedEvent.getRequest().getUrl()).isEqualTo("/__casual/services/casual/example");
+        assertThat(fieldedEvent.getRequest().getHeader("X-Casual-Buffer-Type")).isEqualTo("CFIELD/");
     }
 
     @Test
@@ -423,6 +438,14 @@ class CasualEndToEndIntegrationTest {
             String payload =
                     CasualBufferUtils.extractPayload(replyMsg.getMessage().getServiceBuffer());
             assertThat(payload).contains("Hello from real NettyNetworkConnection");
+
+            // Verify WireMock Request Journal recorded the call from the real Netty client
+            var serveEvents = harness.getWireMockServer().getAllServeEvents();
+            assertThat(serveEvents).hasSize(1);
+            var event = serveEvents.get(0);
+            assertThat(event.getWasMatched()).isTrue();
+            assertThat(event.getRequest().getUrl()).isEqualTo("/__casual/services/realUpstreamService");
+            assertThat(event.getRequest().getBodyAsString()).isEqualTo("{\"ping\":true}");
         } finally {
             connection.close();
         }
