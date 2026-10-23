@@ -8,13 +8,16 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 
 ## 1. Key Capabilities
 
-* **Pure Java SE 21 + Netty Engine**: High-performance, lightweight in-process server and client utilizing `se.laz.casual:casual-network-protocol` and `casual-api`. Zero Jakarta EE, JCA, WildFly, or Quarkus runtime dependencies.
-* **XATMI Domain Handshake & Service Discovery**: Responds to Casual domain connect (`DOMAIN_CONNECT_REQUEST`) and dynamic service discovery (`DOMAIN_DISCOVERY_REQUEST`) handshakes over multiplexed TCP connections.
+* **Pure Java SE 21 + Netty Engine**: High-performance, lightweight in-process server and client utilizing upstream `se.laz.casual:casual-network`, `casual-network-protocol`, and `casual-api`. Fully dynamic protocol negotiation across versions 1.0 to 1.5 (`1000`–`1005`). Zero Jakarta EE, JCA, WildFly, or Quarkus runtime dependencies required.
+* **Transparent Domain Discovery Aggregation**: When an upstream domain is configured, dynamic service discovery queries both upstream services and local WireMock stubs (`/__casual/services/*`), merging them into a unified catalog. Empty discovery probes (`serviceNames = []`) discover the full upstream domain catalog.
+* **Fail-Fast Protocol Mechanics & Low Timeouts**: Default 4-second upstream timeouts prevent client hangs. Socket errors or unsupported message types close TCP connections immediately rather than silently hanging or dropping frames. Timeouts produce actionable error messages citing the exact configuration flag.
+* **Non-JSON Binary Buffer Support (`.FIELDED`, `CFIELD/`, `X_OCTET`)**: Binary and fielded buffers pass through transparently to upstream domains, and record/replay to WireMock stubs via Base64 serialization with `X-Casual-Buffer-Type` headers. Offline unmatched binary requests fail fast with `ErrorState.TPEITYPE`.
 * **WireMock Stub Engine Integration**: Translates Casual service calls (`tpcall`) to internal WireMock request structures (`POST /__casual/services/{serviceName}`), unlocking WireMock’s full matching engine, JSON body patterns, scenario state machines, response templating, and request journal.
 * **Stub Match Discrimination**: Accurately distinguishes matched stubs (flagged with `Matched-Stub-Id`) from unmatched services, preventing accidental short-circuits.
 * **Transparent L7 Proxy Forwarding**: Seamlessly forwards unmatched service requests over TCP to an upstream real or secondary Casual domain.
 * **Automatic Record-and-Replay**: Automatically captures forwarded upstream calls into persistent WireMock stubs (`recordStubs`), allowing test suites to be recorded once and replayed completely offline.
 * **Full XATMI Failure Mode & Transaction Simulation**: Comprehensive simulation of all 18 XATMI error states, custom user return codes (`urcode`), and distributed transaction rollback states.
+* **Hierarchical Observability**: Multi-tier SLF4J logging (`DEBUG` for inbound/outbound frame correlation and stub matches, `TRACE` for packet size inspection and canonical 128-byte hex dumps).
 
 ---
 
@@ -30,7 +33,7 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 ┌────────────────────────────────────────────────────────────────────────┐
 │          CasualWireMockGateway (In-Process Netty Server)               │
 │                                                                        │
-│  1. Decode Frame (CasualFrameDecoder)                                  │
+│  1. Decode Frame (CasualNWMessageDecoder / Protocol 1.0 - 1.5)        │
 │  2. Dispatch to WireMock (POST /__casual/services/createOrder)         │
 └───────────────────┬────────────────────────────────┬───────────────────┘
                     │                                │
@@ -58,9 +61,100 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 
 ---
 
-## 3. XATMI Failure Modes, Error States & Transaction Simulation
+## 3. Fast Timeouts & Fail-Fast Mechanics
 
-The extension faithfully reproduces Tuxedo / XATMI protocol behavior and distributed transaction semantics:
+Enterprise internal networks expect fast resolution within 3–5 seconds. The extension defaults to a **4-second upstream timeout** and strict fail-fast error reporting:
+
+### A. Configurable Upstream Timeout
+Configure the timeout via system property or the gateway builder:
+* **System Property**: `-Dwiremock.casual.upstream.timeout.seconds=<seconds>` (e.g. `-Dwiremock.casual.upstream.timeout.seconds=3`)
+* **Builder API**: `CasualWireMockGateway.builder().upstreamTimeoutSeconds(5)`
+
+When an upstream call times out, the client receives `ErrorState.TPESVCERR` and the log explicitly provides diagnostic hints:
+```
+[CASUAL-CLIENT-TIMEOUT] Upstream Casual call [SERVICE_CALL_REQUEST] to [server.internal:7771] timed out after 4s (correlationId=...). If your network or upstream service is slower, increase the timeout using system property -Dwiremock.casual.upstream.timeout.seconds=<seconds> or builder.upstreamTimeoutSeconds(int).
+```
+
+### B. Fail-Fast Socket Closure
+To ensure client applications never hang or block indefinitely waiting for orphaned replies:
+1. **Unsupported Message Types**: Inbound frames not recognized by the gateway immediately log an error and close the TCP channel (`ctx.close()`), triggering instant connection reset at the client.
+2. **Channel Exceptions**: Any uncaught Netty decode or network exception immediately closes the socket.
+3. **Offline Binary Payloads**: When unmatched binary buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`) arrive while offline (no upstream configured), the gateway returns `ErrorState.TPEITYPE` immediately rather than attempting invalid JSON string coercion.
+
+---
+
+## 4. Binary & Fielded Buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`)
+
+While JSON buffers (`.json/`, `JSON`) are stored as plain text strings, Casual applications frequently transmit binary fielded buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`):
+* **Live Upstream Proxying**: Raw byte arrays pass through untouched to the upstream domain.
+* **WireMock Recording**: When `recordStubs(true)` is active, binary payloads are encoded to **Standard Base64** in WireMock stub definitions:
+  ```json
+  {
+    "request": {
+      "method": "POST",
+      "url": "/__casual/services/fieldedService",
+      "headers": {
+        "X-Casual-Buffer-Type": { "equalTo": ".FIELDED" }
+      },
+      "bodyPatterns": [ { "equalTo": "AQIDBAU=" } ]
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/octet-stream",
+        "X-Casual-Buffer-Type": ".FIELDED"
+      },
+      "body": "BgcICQoL"
+    }
+  }
+  ```
+* **Offline Replay**: When replaying, the gateway decodes the Base64 response body back to raw bytes and constructs a native `ServiceBuffer` matching the declared buffer type.
+
+---
+
+## 5. Observability & Debug Logging Guide
+
+The Casual extension uses standard **SLF4J** logging. For inbound requests, outbound responses, and stub checks, structured log messages provide complete visibility into connection states, correlation IDs, and transaction XIDs.
+
+### Log Levels
+* **`DEBUG`**: Logs connection events, inbound frame headers (service name, buffer type, payload size, XID, execution UUID), WireMock stub match/unmatch status, upstream proxy forwarding, and stub recordings.
+* **`TRACE`**: Guarded payload logging including canonical 128-byte hex dumps (`CasualBufferUtils.toHexDump(...)`) for diagnosing byte-level protocol mismatches.
+
+### How to Enable Debug Logging
+
+#### 1. In `StandaloneDevServer` (Gradle)
+Pass the SLF4J simple logger system property when running the bundle:
+```bash
+./gradlew :wiremock-extension-bundle:runStandalone -Dorg.slf4j.simpleLogger.defaultLogLevel=debug
+```
+Or target only the Casual extension:
+```bash
+./gradlew :wiremock-extension-bundle:runStandalone \
+  -Dorg.slf4j.simpleLogger.log.se.laz.casual=debug \
+  -Dorg.slf4j.simpleLogger.log.com.github.mattiasgreen.wiremock.casual=debug
+```
+
+#### 2. In WireMock Standalone JAR
+Pass the logging configuration on the command line:
+```bash
+java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug \
+     -cp "wiremock-standalone-3.x.jar:wiremock-extension-casual.jar" \
+     com.github.tomakehurst.wiremock.standalone.WireMockServerRunner
+```
+
+#### 3. In Docker Containers
+Pass JVM flags via `JAVA_OPTS`:
+```bash
+docker run -it -p 8080:8080 -p 7001:7001 \
+  -e JAVA_OPTS="-Dorg.slf4j.simpleLogger.defaultLogLevel=debug -Dwiremock.casual.upstream.timeout.seconds=5" \
+  wiremock-custom:latest
+```
+
+---
+
+## 6. XATMI Failure Modes, Error States & Transaction Simulation
+
+The gateway faithfully reproduces Tuxedo / XATMI protocol behavior and distributed transaction semantics:
 
 ### A. All 18 Casual / XATMI Error States Supported
 The gateway inspects the response header `X-Casual-Error-State` (case-insensitive) to set the exact `se.laz.casual.api.flags.ErrorState`:
@@ -110,7 +204,7 @@ Simulate distributed transaction status (e.g. marking a transaction rollback-onl
 
 ---
 
-## 4. Recording Considerations & Sensible Defaults
+## 7. Recording Considerations & Sensible Defaults
 
 When enabling transparent proxy recording (`recordStubs: true`), the gateway enforces battle-tested recording defaults:
 
@@ -125,7 +219,65 @@ When enabling transparent proxy recording (`recordStubs: true`), the gateway enf
 
 ---
 
-## 5. Usage & Stubbing Examples
+## 8. Configuration & Admin API Control Plane
+
+The Casual extension supports flexible configuration via JVM system properties (highest precedence), environment variables (for Docker / containerized environments), or dynamic REST API updates at runtime.
+
+### A. Environment Variables & System Properties
+
+| Setting | Environment Variable | System Property | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Casual Enabled** | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` | Enables or disables the Casual TCP gateway. |
+| **Gateway Port** | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` | TCP port where the Casual server listens. |
+| **Upstream Host** | `WIREMOCK_CASUAL_UPSTREAM_HOST` | `wiremock.casual.upstream.host` | `null` | Upstream Casual domain hostname/IP for proxying. |
+| **Upstream Port** | `WIREMOCK_CASUAL_UPSTREAM_PORT` | `wiremock.casual.upstream.port` | `0` | Upstream Casual domain port for proxying. |
+| **Upstream Enabled** | `WIREMOCK_CASUAL_UPSTREAM_ENABLED` | `wiremock.casual.upstream.enabled` | Auto `true` | Automatically enabled when host & port are set. |
+| **Upstream Timeout** | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `wiremock.casual.upstream.timeout.seconds` | `4` | Upstream timeout in seconds before failing fast. |
+| **Record Stubs** | `WIREMOCK_CASUAL_RECORD_STUBS` | `wiremock.casual.record.stubs` | `false` | Automatically records proxied calls as WireMock stubs. |
+
+### B. Admin API REST Control Plane (`/__admin/casual/config`)
+
+WireMock Standalone exposes dedicated REST endpoints (auto-discovered via `CasualExtensionFactory` SPI) to inspect and reconfigure Casual gateway behavior at runtime without restarting the server:
+
+* **Inspect Configuration**:
+  ```bash
+  curl http://localhost:8080/__admin/casual/config
+  ```
+  Returns `200 OK`:
+  ```json
+  {
+    "enabled": true,
+    "port": 7772,
+    "upstreamHost": "upstream.casual.local",
+    "upstreamPort": 7771,
+    "upstreamEnabled": true,
+    "hasUpstreamConfigured": true,
+    "recordStubs": false,
+    "recordFaults": true,
+    "recordNotFound": false,
+    "running": true
+  }
+  ```
+
+* **Update Upstream & Recording at Runtime**:
+  ```bash
+  curl -X POST http://localhost:8080/__admin/casual/config \
+    -H "Content-Type: application/json" \
+    -d '{
+      "upstreamHost": "10.0.1.50",
+      "upstreamPort": 7771,
+      "recordStubs": true
+    }'
+  ```
+
+* **Reset to Defaults**:
+  ```bash
+  curl -X POST http://localhost:8080/__admin/casual/reset
+  ```
+
+---
+
+## 9. Usage & Stubbing Examples
 
 ### A. Starting the Gateway in Tests
 ```java
@@ -171,42 +323,41 @@ CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
         .port(7001)
         .wireMockBaseUrl(wireMock.baseUrl())
         .upstream("real-casual-domain.internal", 7000)
-        .recordStubs(true)    // Record unmatched upstream responses
-        .recordFaults(true)   // Record TPESVCFAIL business errors
-        .recordNotFound(false)// Do NOT freeze TPENOENT (keeps missing services open)
+        .upstreamTimeoutSeconds(4) // 4 second fast-fail timeout
+        .recordStubs(true)         // Record unmatched upstream responses
+        .recordFaults(true)        // Record TPESVCFAIL business errors
+        .recordNotFound(false)     // Do NOT freeze TPENOENT (keeps missing services open)
         .build();
 proxyGateway.start();
 ```
 
 ---
 
-## 6. Test Suite & Verification Matrix
+## 10. Test Suite & Verification Matrix
 
-The test suite in [`CasualWireMockGatewayTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGatewayTest.java) covers 19 scenarios:
+The test suite covers comprehensive unit, integration, and E2E scenarios across multiple test sets:
 
-1. **Service Discovery**: Responds to domain connect and queries for registered service names (`shouldDiscoverServices`).
-2. **Standard Stubbing**: Faithful serialization and deserialization of JSON payloads via WireMock (`shouldStubCasualServiceCallSuccessfully`).
-3. **Unstubbed Fallback**: Returns `TPENOENT` when no stub matches and no upstream is configured (`shouldReturnTpenoentWhenServiceNotFound`).
-4. **Matched-Stub-Id Discrimination**: Differentiates intentional 404 stubs from unmatched requests (`shouldDiscriminateMatched404StubFromUnmatchedRequest`).
-5. **Payload-Specific Matching**: Dispatches requests based on JSON request body patterns (`shouldMatchSpecificStubBasedOnJsonRequestBody`).
-6. **Transparent Proxying**: Forwards unmatched calls to an upstream Casual domain and returns its reply (`shouldForwardUnmatchedRequestToUpstreamCasualServer`).
-7. **Transparent Upstream Failure**: Handles upstream communication drops gracefully with `TPESVCERR` (`shouldReturnTpesvcerrWhenUpstreamFails`).
-8. **Upstream Stub Recording**: Captures successful upstream calls into WireMock stubs and serves second calls locally (`shouldRecordAndReplayUpstreamStubsWhenRecordStubsEnabled`).
-9. **Upstream Fault Recording**: Captures `TPESVCFAIL` application faults with response payloads (`shouldRecordAndReplayUpstreamFaultsWhenRecordStubsEnabled`).
-10. **Full XATMI Custom Faults**: Simulates custom `ErrorState` (e.g. `TPETRAN`), custom user codes, and `ROLLBACK_ONLY` (`shouldStubCasualFailureModeWithCustomErrorStateUserCodeAndTxState`).
-11. **HTTP Status Code Mapping**: Tests automatic mapping of 400 $\rightarrow$ `TPEINVAL`, 504 $\rightarrow$ `TPETIME`, 429 $\rightarrow$ `TPELIMIT`, and 502 $\rightarrow$ `TPESVCERR` (`shouldMapStandardHttpStatusCodesToCasualErrorStates`).
-12. **Safe Recording Defaults**: Verifies `TPENOENT` is not recorded by default and calls continue to fall through to upstream (`shouldNotRecordTpenoentByDefault`).
-13. **Explicit NotFound Recording**: Verifies `TPENOENT` is recorded when `recordNotFound(true)` is explicitly configured (`shouldRecordTpenoentWhenRecordNotFoundExplicitlyEnabled`).
-14–17. **All TransactionState Modes**: Parameterized test verifying all 4 `TransactionState` enum values (`TX_ACTIVE`, `ROLLBACK_ONLY`, `TIMEOUT_ROLLBACK_ONLY`, `ERROR`) (`shouldStubAllTransactionStatesCorrectly`).
-18. **TransactionState Fallbacks**: Verifies fallback to `TX_ACTIVE` when header is missing or malformed (`shouldDefaultToTxActiveWhenTransactionStateHeaderIsMissingOrInvalid`).
-19. **Upstream TransactionState Recording**: Verifies upstream transaction states (e.g. `TIMEOUT_ROLLBACK_ONLY`) are recorded into stubs and faithfully replayed (`shouldRecordAndReplayUpstreamTransactionState`).
-20. **Synthetic 2PC/XA Voting (`XA_OK`)**: Verifies default `XA_OK` responses for `PREPARE_REQUEST`, `COMMIT_REQUEST`, and `REQUEST_ROLLBACK` on stubbed transactional calls (`shouldReturnXaOkByDefaultForStubbed2pcTransactions`).
-21. **2PC Chaos Vote Overrides**: Verifies `X-Casual-XA-Prepare-Vote` (e.g. `XAER_RMERR`) overrides synthetic 2PC voting (`shouldHonorStubbedXaVoteHeadersFor2pcChaosSimulation`).
-22. **Transparent 2PC Upstream Forwarding**: Verifies 2PC `PREPARE` and `COMMIT` messages are transparently forwarded to the upstream Casual server when a transactional call was proxied (`shouldTransparentlyForward2pcMessagesToUpstreamCasualServer`).
+* **Unit & Fail-Fast Tests**:
+  * [`CasualBufferUtilsTest`](src/test/java/se/laz/casual/api/buffer/CasualBufferUtilsTest.java): JSON detection (`.json/`, `JSON`), Base64 wrapping/unwrapping, and hex dump formatting.
+  * [`CasualServerFailFastTest`](src/test/java/se/laz/casual/server/CasualServerFailFastTest.java): Netty `EmbeddedChannel` tests verifying immediate channel closure on unhandled frames or pipeline exceptions.
+  * [`CasualConfigurationTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualConfigurationTest.java): Environment variable, system property precedence, and upstream auto-enablement.
+  * [`CasualAdminEndpointTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualAdminEndpointTest.java): Admin API REST control plane (`/__admin/casual/config` and `/reset`) runtime updates.
+* **Gateway Suite (26 Scenarios)** in [`CasualWireMockGatewayTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGatewayTest.java):
+  * Service discovery aggregation (upstream + local WireMock stubs).
+  * Standard JSON stubbing, payload matching, and discrimination of matched 404 stubs.
+  * Transparent proxying of service calls and 2PC XA prepare/commit/rollback messages.
+  * Base64 `.FIELDED` non-JSON proxying, recording, and replay.
+  * Fail-fast `TPEITYPE` on unmatched binary buffers when offline.
+  * Fast timeout handling with actionable property hints (`-Dwiremock.casual.upstream.timeout.seconds`).
+* **Quarkus 2PC E2E Integration Suite (6 Scenarios)** in [`CasualEndToEndIntegrationTest`](src/quarkusTest/java/com/github/mattiasgreen/wiremock/casual/integration/CasualEndToEndIntegrationTest.java):
+  * 3-node distributed transaction topology (Quarkus REST Client + WireMock Casual Gateway + Upstream Quarkus Server).
+  * JTA / Narayana two-phase commit pass-through and application-level rollbacks.
+  * 2PC Phase-1 prepare failure chaos (`XAER_RMERR`).
+  * Multi-node discovery aggregation and `.FIELDED` binary buffer 2PC pass-through.
 
 ---
 
-## 7. Multi-Node Integration Test Architecture & Scenario Flyovers
+## 11. Multi-Node Integration Test Architecture & Scenario Flyovers
 
 To validate end-to-end distributed transactions (JTA/Narayana 2PC) and transparent Man-in-the-Middle (MitM) behavior without slowing down the inner unit-test loop, `wiremock-extension-casual` provides an isolated integration test suite (`quarkusIntegrationTest`) modeling a 3-node Casual topology:
 
@@ -311,10 +462,9 @@ sequenceDiagram
 
 ---
 
-## 8. Future Roadmap & Native Matching Engine
+## 12. Future Roadmap & Native Matching Engine
 
 See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
 * **In-Process WireMock `Request` Adapter**: Bypassing HTTP loopback sockets to evaluate directly against WireMock’s in-memory `StubMappings` for sub-millisecond ($\sim 50\mu\text{s}$) latency.
 * **Native Custom Matchers**: Adding a `RequestMatcherExtension` (`CasualFieldedMatcher`) to unpack and match on `.FIELDED` / FML binary buffers without requiring string conversions.
 * **Upstream Contributions**: Upstreaming standalone Java SE Netty client and server components to `casualcore/casual-java`.
-

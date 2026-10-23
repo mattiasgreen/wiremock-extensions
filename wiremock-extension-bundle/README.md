@@ -1,25 +1,29 @@
 # WireMock Extensions Bundle
 
-An umbrella module that packages all extensions (`json-logging`, `otel`, and `ui`) into a single artifact with zero-touch auto-discovery.
+An umbrella module that packages all extensions (`json-logging`, `otel`, `openapi`, `stateful`, `tcp-netem`, `casual`, and `ui`) into a single artifact with zero-touch auto-discovery.
 
 ## Problem Statement
 
-WireMock users who want structured JSON logging, Prometheus metrics, and the web UI typically need to manage three separate dependencies or download three separate JAR files for the CLI classpath.
+WireMock users who want structured JSON logging, Prometheus metrics, OpenAPI synthesis, dynamic stateful simulation, TCP network emulation, Casual protocol simulation, and the web UI typically need to manage separate dependencies or download separate JAR files for the CLI classpath.
 
 ## How It Addresses the Problem
 
 The bundle module aggregates:
 - `wiremock-extension-json-logging`
 - `wiremock-extension-otel`
+- `wiremock-extension-openapi`
+- `wiremock-extension-stateful`
+- `wiremock-extension-tcp-netem`
+- `wiremock-extension-casual`
 - `wiremock-extension-ui`
 
-It re-exports all three extensions under a single dependency coordinate and includes a pre-configured standalone runner for instant local development.
+It re-exports all extensions under a single dependency coordinate and includes a pre-configured standalone runner for instant local development.
 
 ## Features
 
-- **Single Dependency**: Includes all three extensions with a single artifact coordinate.
-- **Unified Java SPI Auto-Registration**: All extensions register automatically when the bundle JAR is on the classpath.
-- **Built-in Standalone Dev Server**: Includes `StandaloneDevServer` which launches WireMock on port 8080 pre-loaded with sample mock stubs (`/api/v1/users`, `/api/v1/orders`) for quick verification.
+- **Single Dependency**: Includes all extensions with a single artifact coordinate.
+- **Unified Java SPI Auto-Registration**: All extensions register automatically via `ExtensionFactory` when the bundle JAR is on the classpath.
+- **Built-in Standalone Dev Server**: Includes `StandaloneDevServer` which launches WireMock on port 8080 with all extensions active, TCP NetEm ingress, Casual TCP gateway, and a clean slate (no pre-populated stubs). Sample stubs can be loaded on demand from [`wiremock-examples/example-stubs.json`](../wiremock-examples/example-stubs.json).
 
 ## Usage
 
@@ -53,6 +57,8 @@ java -cp "wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
 Available endpoints:
 - **Web UI**: `http://localhost:8080/__admin/ui/`
 - **Prometheus Metrics**: `http://localhost:8080/__admin/metrics/prometheus`
+- **TCP NetEm Journal**: `http://localhost:8080/__admin/tcp-netem/journal`
+- **Casual Config API**: `http://localhost:8080/__admin/casual/config`
 - **JSON Admin API**: `http://localhost:8080/__admin/mappings`
 
 ### Local Development Runner
@@ -62,6 +68,32 @@ Run the interactive standalone dev server directly from source:
 ```bash
 ./gradlew :wiremock-extension-bundle:runStandalone
 ```
+
+The server starts clean with no pre-populated stubs. To populate sample stubs, import [`wiremock-examples/example-stubs.json`](../wiremock-examples/example-stubs.json) using cURL or the WireMock Console UI:
+
+```bash
+curl -X POST http://localhost:8080/__admin/mappings/import \
+  -H "Content-Type: application/json" \
+  -d @wiremock-examples/example-stubs.json
+```
+
+### Casual Configuration (Local & Docker)
+
+When running `StandaloneDevServer` locally or in Docker containers, Casual settings are configured via environment variables or JVM system properties:
+
+| Setting | Environment Variable | System Property | Default |
+| :--- | :--- | :--- | :--- |
+| Enable Casual Gateway | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` |
+| Casual TCP Port | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` |
+| Upstream Host | `WIREMOCK_CASUAL_UPSTREAM_HOST` | `wiremock.casual.upstream.host` | `null` |
+| Upstream Port | `WIREMOCK_CASUAL_UPSTREAM_PORT` | `wiremock.casual.upstream.port` | `0` |
+| Upstream Enabled | `WIREMOCK_CASUAL_UPSTREAM_ENABLED` | `wiremock.casual.upstream.enabled` | Auto `true` if host/port set |
+| Record Upstream Stubs | `WIREMOCK_CASUAL_RECORD_STUBS` | `wiremock.casual.record.stubs` | `false` |
+
+Settings can also be inspected and reconfigured dynamically at runtime without restarts:
+- Inspect configuration: `GET http://localhost:8080/__admin/casual/config`
+- Update configuration: `POST http://localhost:8080/__admin/casual/config` with JSON payload `{ "upstreamHost": "...", "upstreamPort": 7771, "recordStubs": true }`
+- Reset configuration: `POST http://localhost:8080/__admin/casual/reset`
 
 ## Build
 

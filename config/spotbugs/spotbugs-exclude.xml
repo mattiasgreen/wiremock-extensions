@@ -16,9 +16,13 @@
         <Bug pattern="UNENCRYPTED_SERVER_SOCKET,UNENCRYPTED_SOCKET,PREDICTABLE_RANDOM"/>
     </Match>
 
-    <!-- Exclude singleton instance exposure for TcpNetEmRegistry -->
+    <!-- Exclude singleton instance exposure for registries -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualRegistry"/>
         <Bug pattern="MS_EXPOSE_REP"/>
     </Match>
 
@@ -32,5 +36,15 @@
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.cli.WireMockCli"/>
         <Bug pattern="COMMAND_INJECTION"/>
+    </Match>
+
+    <!-- Exclude CRLF log injection warnings for raw protocol frames and hex dumps in casual extension -->
+    <Match>
+        <Package name="~se\.laz\.casual\..*"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
     </Match>
 </FindBugsFilter>

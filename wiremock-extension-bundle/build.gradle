@@ -29,7 +29,7 @@ application {
 
 tasks.register('runStandalone', JavaExec) {
     group = 'application'
-    description = 'Runs WireMock standalone with all QoL extensions and sample mocks'
+    description = 'Runs WireMock standalone with all extensions, TCP NetEm, Casual gateway, and active UI'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
 }
@@ -40,4 +40,3 @@ tasks.register('runUpstream', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.UpstreamMockServer'
 }
-

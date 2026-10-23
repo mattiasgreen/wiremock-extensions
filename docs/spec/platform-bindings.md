@@ -105,6 +105,11 @@
 
 ---
 
+| **Casual Service Dispatch** | `POST` | `/__casual/services/{serviceName}` | Service request payload (JSON or Base64) |
+| **Casual Service Stubs** | `POST` | `/__admin/mappings` | WireMock stub matching `POST /__casual/services/{name}` |
+
+---
+
 ## 3. Terminal CLI Platform Bindings (`wiremock-cli` / `wm`)
 
 | Abstract Semantic Action / View | CLI Command / Invocation | Description |

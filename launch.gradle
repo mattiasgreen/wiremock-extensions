@@ -1,7 +1,7 @@
 // launch.gradle - Single-file script to run WireMock Standalone with prebuilt wiremock-extensions
 // Usage:
 //   gradle -b launch.gradle runServer                     # Standard WireMock server (./mappings & ./__files)
-//   gradle -b launch.gradle runDevServer                  # Demo server with sample endpoints and active UI
+//   gradle -b launch.gradle runDevServer                  # Dev server with all extensions, TCP NetEm, and active UI
 //   gradle -b launch.gradle runServer -Pargs="--port 8888" # Custom CLI arguments
 //   gradle -b launch.gradle runDevServer -PextVersion=1.1.0
 
@@ -30,10 +30,10 @@ dependencies {
     wiremockServer "ch.qos.logback:logback-classic:${logbackVersion}"
 }
 
-// 1. Launches StandaloneDevServer with pre-configured sample mock APIs and active UI
+// 1. Launches StandaloneDevServer with all extensions, TCP NetEm ingress, and active UI
 tasks.register('runDevServer', JavaExec) {
     group = 'wiremock'
-    description = 'Launches WireMock standalone with demo mocks, active UI, metrics, and tracing'
+    description = 'Launches WireMock standalone with active UI, metrics, TCP NetEm ingress, and tracing'
     classpath = configurations.wiremockServer
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
     if (project.hasProperty('args')) {

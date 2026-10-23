@@ -212,13 +212,13 @@ Each extension can be used independently without pulling in the others:
 
 ### 3. Local Development Runner
 
-To launch WireMock with all extensions and pre-loaded sample stubs for local testing:
+To launch WireMock with all extensions and active Web UI for local testing (starts clean with no pre-populated stubs):
 
 ```bash
 ./gradlew :wiremock-extension-bundle:runStandalone
 ```
 
-The server starts on port `8080` with filesystem hot-reloading for UI development.
+The server starts on port `8080` with filesystem hot-reloading for UI development. Baseline sample stubs can be imported from [`wiremock-examples/example-stubs.json`](wiremock-examples/example-stubs.json).
 
 ### 4. Live Proxy & Traffic Recording Testing (Dual-Server Setup)
 

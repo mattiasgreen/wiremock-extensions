@@ -10,20 +10,44 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.ClientInitiatorNode;
 import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.TransactionOutcome;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import se.laz.casual.api.buffer.CasualBufferUtils;
+import se.laz.casual.api.buffer.type.JsonBuffer;
+import se.laz.casual.api.buffer.type.ServiceBuffer;
+import se.laz.casual.api.flags.AtmiFlags;
 import se.laz.casual.api.flags.ErrorState;
+import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.TransactionState;
+import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.api.xa.XID;
+import se.laz.casual.config.ConfigurationOptions;
+import se.laz.casual.config.ConfigurationService;
+import se.laz.casual.internal.network.NetworkConnection;
+import se.laz.casual.jca.SpanId;
+import se.laz.casual.network.ProtocolVersion;
+import se.laz.casual.network.outbound.CorrelatorImpl;
+import se.laz.casual.network.outbound.NettyConnectionInformation;
+import se.laz.casual.network.outbound.NettyNetworkConnection;
+import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
+import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
+import se.laz.casual.network.protocol.messages.domain.Service;
+import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
+import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 
 /**
  * End-to-End 3-node integration suite verifying {@code CasualWireMockGateway} as a
@@ -33,6 +57,8 @@ import se.laz.casual.api.xa.XAReturnCode;
  *   <li><b>Scenario 2: Transparent Stub Recording &amp; Server Decoupling (Offline Replay)</b></li>
  *   <li><b>Scenario 3: 2PC Resilience &amp; Heuristic Fault Injection (Prepare, Commit &amp; Timeout)</b></li>
  *   <li><b>Scenario 4: Multi-Protocol L4 Chaos &amp; Concurrent State Isolation (NetEm TCP Latency)</b></li>
+ *   <li><b>Scenario 5: Transparent Discovery Aggregation Across Multi-Node Topology</b></li>
+ *   <li><b>Scenario 6: Transparent Non-JSON Fielded Binary Buffer 2PC Pass-Through</b></li>
  * </ol>
  * Run via: {@code ./gradlew :wiremock-extension-casual:quarkusIntegrationTest}
  */
@@ -123,6 +149,14 @@ class CasualEndToEndIntegrationTest {
         // Upstream call count remains 1 because Upstream Server B was offline during the second call
         assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
         assertThat(harness.getUpstreamNode().getCommittedXids()).doesNotContain(replayOutcome.xid());
+
+        // Verify WireMock Request Journal shows both invocations; the replayed call matched the recorded stub
+        var serveEvents = harness.getWireMockServer().getAllServeEvents();
+        assertThat(serveEvents).hasSize(2);
+        assertThat(serveEvents.get(0).getWasMatched()).isTrue();
+        assertThat(serveEvents.get(0).getRequest().getUrl()).isEqualTo("/__casual/services/casual/example");
+        assertThat(serveEvents.get(0).getResponse().getBodyAsString())
+                .contains("\"processedBy\":\"upstream-server-B\"");
     }
 
     @Test
@@ -306,6 +340,114 @@ class CasualEndToEndIntegrationTest {
             // Verify gateway override maps are completely clean
             assertThat(harness.getMitmGateway().getPrepareVoteOverridesSize()).isEqualTo(0);
             assertThat(harness.getMitmGateway().getCommitVoteOverridesSize()).isEqualTo(0);
+        }
+    }
+
+    @Test
+    @DisplayName("Scenario 5: Transparent Discovery Aggregation Across Multi-Node Topology")
+    void shouldAggregateDiscoveryFromUpstreamServerAndLocalMitmStubs() throws Exception {
+        // Stub a local service on WireMock MitM
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/localMitmPayment"))
+                        .willReturn(aResponse().withStatus(200).withBody("{\"stub\":true}")));
+
+        // Query discovery from Client Initiator (Node 1) -> MitM Gateway (Node 2)
+        CasualDomainDiscoveryReplyMessage discoveryReply = harness.getClientInitiator()
+                .getTcpClient()
+                .discoverServices(List.of("casual/example", "localMitmPayment"));
+
+        assertThat(discoveryReply).isNotNull();
+        List<String> discoveredServices =
+                discoveryReply.getServices().stream().map(Service::getName).toList();
+
+        // Must discover both upstream Server B service ("casual/example") and MitM stub ("localMitmPayment")
+        assertThat(discoveredServices).contains("casual/example", "localMitmPayment");
+    }
+
+    @Test
+    @DisplayName("Scenario 6: Transparent Non-JSON Fielded Binary Buffer 2PC Pass-Through")
+    void shouldProxyNonJsonFieldedBufferAndCommitTwoPhaseCommit() throws Exception {
+        byte[] fieldedBytes = new byte[] {0x00, 0x05, 0x41, 0x42, 0x43};
+        ServiceBuffer fieldedBuffer = ServiceBuffer.of("CFIELD/", List.of(fieldedBytes));
+
+        TransactionOutcome outcome = harness.getClientInitiator().executeInTransaction("casual/example", fieldedBuffer);
+
+        assertThat(outcome.serviceErrorState()).isEqualTo(ErrorState.OK);
+        assertThat(outcome.serviceTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+        assertThat(outcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(outcome.commitReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(outcome.committed()).isTrue();
+
+        assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
+        assertThat(harness.getUpstreamNode().getCommittedXids()).contains(outcome.xid());
+
+        // Verify WireMock Request Journal captured the fielded binary buffer dispatch
+        var serveEvents = harness.getWireMockServer().getAllServeEvents();
+        assertThat(serveEvents).isNotEmpty();
+        var fieldedEvent = serveEvents.get(0);
+        assertThat(fieldedEvent.getRequest().getUrl()).isEqualTo("/__casual/services/casual/example");
+        assertThat(fieldedEvent.getRequest().getHeader("X-Casual-Buffer-Type")).isEqualTo("CFIELD/");
+    }
+
+    @Test
+    @DisplayName("Scenario 7: Real Upstream NettyNetworkConnection Integration & Protocol 1.5 Handshake")
+    void shouldInteroperateWithRealUpstreamCasualNettyNetworkConnection() throws Exception {
+        ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_OUTBOUND_UNMANAGED, true);
+        harness.getWireMockServer()
+                .stubFor(post(urlEqualTo("/__casual/services/realUpstreamService"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("{\"message\":\"Hello from real NettyNetworkConnection\"}")));
+
+        NettyConnectionInformation ci = NettyConnectionInformation.createBuilder()
+                .withAddress(new InetSocketAddress(
+                        "127.0.0.1", harness.getMitmGateway().getPort()))
+                .withDomainId(UUID.randomUUID())
+                .withDomainName("casual-quarkus-real-client")
+                .withChannelClass(NioSocketChannel.class)
+                .withCorrelator(CorrelatorImpl.of())
+                .build();
+
+        NetworkConnection connection = NettyNetworkConnection.of(ci, reason -> {});
+        try {
+            assertThat(connection.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_5);
+
+            CasualServiceCallRequestMessage callReq = CasualServiceCallRequestMessage.createBuilder()
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                    .setExecution(UUID.randomUUID())
+                    .setServiceName("realUpstreamService")
+                    .setTimeout(5000L)
+                    .setParentName("real-client-domain")
+                    .setParentSpan(SpanId.of())
+                    .setXid(XID.NULL_XID)
+                    .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                    .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{\"ping\":true}")))
+                    .build();
+
+            UUID correlationId = UUID.randomUUID();
+            CasualNWMessage<CasualServiceCallRequestMessage> requestMsg =
+                    CasualNWMessageImpl.of(correlationId, callReq);
+
+            CompletableFuture<CasualNWMessage<CasualServiceCallReplyMessage>> future = connection.request(requestMsg);
+            CasualNWMessage<CasualServiceCallReplyMessage> replyMsg = future.get(5, TimeUnit.SECONDS);
+
+            assertThat(replyMsg).isNotNull();
+            assertThat(replyMsg.getCorrelationId()).isEqualTo(correlationId);
+            assertThat(replyMsg.getMessage().getError()).isEqualTo(ErrorState.OK);
+            String payload =
+                    CasualBufferUtils.extractPayload(replyMsg.getMessage().getServiceBuffer());
+            assertThat(payload).contains("Hello from real NettyNetworkConnection");
+
+            // Verify WireMock Request Journal recorded the call from the real Netty client
+            var serveEvents = harness.getWireMockServer().getAllServeEvents();
+            assertThat(serveEvents).hasSize(1);
+            var event = serveEvents.get(0);
+            assertThat(event.getWasMatched()).isTrue();
+            assertThat(event.getRequest().getUrl()).isEqualTo("/__casual/services/realUpstreamService");
+            assertThat(event.getRequest().getBodyAsString()).isEqualTo("{\"ping\":true}");
+        } finally {
+            connection.close();
         }
     }
 }

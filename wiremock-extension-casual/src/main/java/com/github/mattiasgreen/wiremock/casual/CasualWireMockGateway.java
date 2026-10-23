@@ -11,7 +11,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,8 +38,10 @@ import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.client.CasualTcpClient;
+import se.laz.casual.jca.SpanId;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
+import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
@@ -55,8 +60,8 @@ import se.laz.casual.server.CasualTransactionHandler;
  * to WireMock HTTP stubbing endpoints without requiring Jakarta EE.
  * <p>
  * Supports transparent proxy forwarding to an upstream Casual domain when
- * stubs are unmatched, optional automatic stub recording for both successes and faults,
- * and 2PC/XA transaction pass-through and synthetic voting.
+ * stubs are unmatched, upstream domain discovery aggregation, Base64 non-JSON
+ * buffer handling, fail-fast mechanics, and 2PC/XA transaction pass-through.
  */
 public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHandler {
 
@@ -64,11 +69,13 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
     private final int port;
     private final String wireMockBaseUrl;
-    private final String upstreamHost;
-    private final int upstreamPort;
-    private final boolean recordStubs;
-    private final boolean recordFaults;
-    private final boolean recordNotFound;
+    private volatile String upstreamHost;
+    private volatile int upstreamPort;
+    private volatile boolean upstreamEnabled;
+    private volatile boolean recordStubs;
+    private volatile boolean recordFaults;
+    private volatile boolean recordNotFound;
+    private final int upstreamTimeoutSeconds;
     private final UUID domainId;
     private final String domainName;
     private final HttpClient httpClient;
@@ -111,18 +118,45 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             boolean recordStubs,
             boolean recordFaults,
             boolean recordNotFound) {
+        this(
+                port,
+                wireMockBaseUrl,
+                upstreamHost,
+                upstreamPort,
+                recordStubs,
+                recordFaults,
+                recordNotFound,
+                resolveDefaultTimeout());
+    }
+
+    public CasualWireMockGateway(
+            int port,
+            String wireMockBaseUrl,
+            String upstreamHost,
+            int upstreamPort,
+            boolean recordStubs,
+            boolean recordFaults,
+            boolean recordNotFound,
+            int upstreamTimeoutSeconds) {
         this.port = port;
         this.wireMockBaseUrl = wireMockBaseUrl.replaceAll("/+$", "");
         this.upstreamHost = upstreamHost;
         this.upstreamPort = upstreamPort;
+        this.upstreamEnabled = upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0;
         this.recordStubs = recordStubs;
         this.recordFaults = recordFaults;
         this.recordNotFound = recordNotFound;
+        this.upstreamTimeoutSeconds = upstreamTimeoutSeconds > 0 ? upstreamTimeoutSeconds : resolveDefaultTimeout();
         this.domainId = UUID.randomUUID();
         this.domainName = "wiremock-casual-domain";
-        this.httpClient =
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(this.upstreamTimeoutSeconds))
+                .build();
         this.objectMapper = new ObjectMapper();
+    }
+
+    private static int resolveDefaultTimeout() {
+        return Integer.getInteger(CasualTcpClient.TIMEOUT_PROPERTY, CasualTcpClient.DEFAULT_TIMEOUT_SECONDS);
     }
 
     public static Builder builder() {
@@ -134,9 +168,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         private String wireMockBaseUrl;
         private String upstreamHost;
         private int upstreamPort = 0;
+        private boolean upstreamEnabled = true;
         private boolean recordStubs = false;
         private boolean recordFaults = true;
         private boolean recordNotFound = false;
+        private int upstreamTimeoutSeconds = 0;
         private CasualProxyTransformer proxyTransformer;
 
         public Builder port(int port) {
@@ -155,6 +191,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             return this;
         }
 
+        public Builder upstreamEnabled(boolean upstreamEnabled) {
+            this.upstreamEnabled = upstreamEnabled;
+            return this;
+        }
+
         public Builder recordStubs(boolean recordStubs) {
             this.recordStubs = recordStubs;
             return this;
@@ -170,6 +211,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             return this;
         }
 
+        public Builder upstreamTimeoutSeconds(int seconds) {
+            this.upstreamTimeoutSeconds = seconds;
+            return this;
+        }
+
         public Builder proxyTransformer(CasualProxyTransformer proxyTransformer) {
             this.proxyTransformer = proxyTransformer;
             return this;
@@ -180,7 +226,16 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 throw new IllegalStateException("wireMockBaseUrl must be specified");
             }
             CasualWireMockGateway gateway = new CasualWireMockGateway(
-                    port, wireMockBaseUrl, upstreamHost, upstreamPort, recordStubs, recordFaults, recordNotFound);
+                    port,
+                    wireMockBaseUrl,
+                    upstreamHost,
+                    upstreamPort,
+                    recordStubs,
+                    recordFaults,
+                    recordNotFound,
+                    upstreamTimeoutSeconds);
+            gateway.setUpstreamEnabled(
+                    upstreamEnabled && upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0);
             if (proxyTransformer != null) {
                 proxyTransformer.setGateway(gateway);
             }
@@ -205,8 +260,70 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         return server != null ? server.getPort() : port;
     }
 
+    public synchronized boolean isRunning() {
+        return server != null && server.isRunning();
+    }
+
     public boolean hasUpstream() {
-        return upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0;
+        return upstreamEnabled && upstreamHost != null && !upstreamHost.isBlank() && upstreamPort > 0;
+    }
+
+    public synchronized void setUpstream(String host, int port, boolean enabled) {
+        this.upstreamHost = host;
+        this.upstreamPort = port;
+        this.upstreamEnabled = enabled;
+        if (upstreamClient != null) {
+            try {
+                upstreamClient.close();
+            } catch (Exception e) {
+                LOG.debug("Error closing existing upstream client during reconnect", e);
+            }
+            upstreamClient = null;
+        }
+    }
+
+    public void setUpstreamEnabled(boolean enabled) {
+        this.upstreamEnabled = enabled;
+    }
+
+    public boolean isUpstreamEnabled() {
+        return upstreamEnabled;
+    }
+
+    public String getUpstreamHost() {
+        return upstreamHost;
+    }
+
+    public int getUpstreamPort() {
+        return upstreamPort;
+    }
+
+    public boolean isRecordStubs() {
+        return recordStubs;
+    }
+
+    public void setRecordStubs(boolean recordStubs) {
+        this.recordStubs = recordStubs;
+    }
+
+    public boolean isRecordFaults() {
+        return recordFaults;
+    }
+
+    public void setRecordFaults(boolean recordFaults) {
+        this.recordFaults = recordFaults;
+    }
+
+    public boolean isRecordNotFound() {
+        return recordNotFound;
+    }
+
+    public void setRecordNotFound(boolean recordNotFound) {
+        this.recordNotFound = recordNotFound;
+    }
+
+    public int getUpstreamTimeoutSeconds() {
+        return upstreamTimeoutSeconds;
     }
 
     private synchronized CasualTcpClient getUpstreamClient() throws Exception {
@@ -214,7 +331,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             if (upstreamClient != null) {
                 upstreamClient.close();
             }
-            upstreamClient = new CasualTcpClient(upstreamHost, upstreamPort);
+            upstreamClient =
+                    new CasualTcpClient(upstreamHost, upstreamPort, domainId, domainName, upstreamTimeoutSeconds);
             upstreamClient.connect();
         }
         return upstreamClient;
@@ -223,7 +341,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
     @Override
     public synchronized void close() {
         if (upstreamClient != null) {
-            upstreamClient.close();
+            try {
+                upstreamClient.close();
+            } catch (Exception e) {
+                LOG.warn("Failed to cleanly close upstream client", e);
+            }
             upstreamClient = null;
         }
         if (server != null) {
@@ -233,25 +355,130 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         LOG.info("CasualWireMockGateway stopped");
     }
 
-    private List<Service> handleDiscovery(List<String> serviceNames) {
-        return serviceNames.stream()
-                .map(name -> Service.of(name, "wiremock-category", TransactionType.AUTOMATIC))
-                .toList();
+    private List<Service> handleDiscovery(List<String> requestedNames) {
+        Map<String, Service> aggregated = new LinkedHashMap<>();
+
+        // 1. If upstream is configured, query upstream domain catalog
+        if (hasUpstream()) {
+            try {
+                CasualTcpClient client = getUpstreamClient();
+                List<String> namesToQuery = requestedNames != null ? requestedNames : Collections.emptyList();
+                CasualDomainDiscoveryReplyMessage upstreamReply =
+                        client.discoverServices(namesToQuery, upstreamTimeoutSeconds, TimeUnit.SECONDS);
+
+                if (upstreamReply != null && upstreamReply.getServices() != null) {
+                    for (Service s : upstreamReply.getServices()) {
+                        aggregated.put(s.getName(), s);
+                    }
+                    LOG.debug(
+                            "[CASUAL-GATEWAY-DISCOVERY] Discovered {} service(s) from upstream Casual domain",
+                            upstreamReply.getServices().size());
+                }
+            } catch (Exception e) {
+                LOG.warn(
+                        "[CASUAL-GATEWAY-DISCOVERY] Failed to query upstream for domain discovery: {}. "
+                                + "Proceeding with local stubs. If this was a timeout, increase timeout using -D{}=<seconds>.",
+                        e.getMessage(),
+                        CasualTcpClient.TIMEOUT_PROPERTY);
+            }
+        }
+
+        // 2. Discover local stubs from WireMock mappings
+        Set<String> localStubNames = queryLocalWireMockServices();
+        for (String stubName : localStubNames) {
+            if (!aggregated.containsKey(stubName)) {
+                aggregated.put(stubName, Service.of(stubName, "wiremock-stub", TransactionType.AUTOMATIC));
+            }
+        }
+
+        // 3. If explicit names were queried, ensure they are registered so callers aren't blocked
+        if (requestedNames != null && !requestedNames.isEmpty()) {
+            for (String name : requestedNames) {
+                if (!aggregated.containsKey(name)) {
+                    aggregated.put(name, Service.of(name, "wiremock-category", TransactionType.AUTOMATIC));
+                }
+            }
+        }
+
+        LOG.debug("[CASUAL-GATEWAY-DISCOVERY] Returning {} discovered service(s) to client", aggregated.size());
+        return new ArrayList<>(aggregated.values());
+    }
+
+    private Set<String> queryLocalWireMockServices() {
+        Set<String> services = new LinkedHashSet<>();
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(wireMockBaseUrl + "/__admin/mappings"))
+                    .GET()
+                    .timeout(Duration.ofSeconds(2))
+                    .build();
+            HttpResponse<String> response =
+                    httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                Map<?, ?> root = objectMapper.readValue(response.body(), Map.class);
+                Object mappingsObj = root.get("mappings");
+                if (mappingsObj instanceof List<?> list) {
+                    for (Object item : list) {
+                        if (item instanceof Map<?, ?> stubMap && stubMap.get("request") instanceof Map<?, ?> reqMap) {
+                            String url = (String) reqMap.get("url");
+                            String urlPattern = (String) reqMap.get("urlPattern");
+                            String urlPath = (String) reqMap.get("urlPath");
+                            String urlPathTemplate = (String) reqMap.get("urlPathTemplate");
+                            String rawUrl = url != null
+                                    ? url
+                                    : (urlPath != null
+                                            ? urlPath
+                                            : (urlPathTemplate != null ? urlPathTemplate : urlPattern));
+                            if (rawUrl != null && rawUrl.startsWith("/__casual/services/")) {
+                                String svc = rawUrl.substring("/__casual/services/".length());
+                                if (!svc.isBlank() && !svc.contains("*") && !svc.contains(".")) {
+                                    services.add(svc);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            LOG.debug("Could not query WireMock mappings for discovery: {}", e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        return services;
     }
 
     CasualServiceCallReplyMessage handleServiceCall(CasualServiceCallRequestMessage req) {
         String serviceName = req.getServiceName();
         ServiceBuffer requestBuffer = req.getServiceBuffer();
+        String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
+        boolean isJson = CasualBufferUtils.isJsonType(bufferType);
+        byte[] rawBytes = CasualBufferUtils.toByteArray(requestBuffer);
+
+        if (LOG.isDebugEnabled()) {
+            LOG.debug(
+                    "[CASUAL-GATEWAY-INBOUND] Service [{}] bufferType [{}] size [{}] bytes, xid [{}] execution [{}]",
+                    serviceName,
+                    bufferType,
+                    rawBytes.length,
+                    req.getXid(),
+                    req.getExecution());
+        }
+        if (LOG.isTraceEnabled()) {
+            LOG.trace(
+                    "[CASUAL-GATEWAY-HEX] Service [{}] payload hex:\n{}",
+                    serviceName,
+                    CasualBufferUtils.toHexDump(rawBytes, 128));
+        }
 
         String requestPayload = CasualBufferUtils.extractPayload(requestBuffer);
-        String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
         String executionId = (req.getExecution() != null ? req.getExecution() : UUID.randomUUID()).toString();
 
         // Bridge to WireMock HTTP endpoint
         String wireMockUrl = wireMockBaseUrl + "/__casual/services/" + serviceName;
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(wireMockUrl))
-                .header("Content-Type", "application/json")
+                .header("Content-Type", isJson ? "application/json" : "application/octet-stream")
                 .header("X-Casual-Service", serviceName)
                 .header("X-Casual-Buffer-Type", bufferType)
                 .header("X-Casual-Execution", executionId);
@@ -269,7 +496,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         try {
             response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException | InterruptedException e) {
-            LOG.error("Failed to dispatch Casual service call to WireMock", e);
+            LOG.error("[CASUAL-GATEWAY-ERROR] Failed to dispatch Casual service call [{}] to WireMock", serviceName, e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -278,20 +505,41 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             inFlightRequests.remove(executionId);
         }
 
-        // A request was matched if WireMock provided a Matched-Stub-Id header
         boolean wasMatched = response.headers().firstValue("Matched-Stub-Id").isPresent();
 
         if (wasMatched) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(
+                        "[CASUAL-GATEWAY-MATCH] Service [{}] matched WireMock stub [{}] status [{}]",
+                        serviceName,
+                        response.headers().firstValue("Matched-Stub-Id").orElse("unknown"),
+                        response.statusCode());
+            }
             if (isTransactional(req.getXid()) && !upstreamEnlistedXids.contains(req.getXid())) {
                 localMatchedXids.add(req.getXid());
             }
-            // Matched stub: serve response directly from WireMock
             return buildMatchedReply(req, response);
         } else if (hasUpstream()) {
-            // Unmatched request: transparently forward to upstream Casual server
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(
+                        "[CASUAL-GATEWAY-UNMATCHED] Service [{}] unmatched in WireMock. Forwarding to upstream {}:{}",
+                        serviceName,
+                        upstreamHost,
+                        upstreamPort);
+            }
             return forwardToUpstream(req, serviceName, requestPayload);
+        } else if (!isJson) {
+            LOG.error(
+                    "[CASUAL-GATEWAY-REJECT] Service [{}] received non-JSON buffer [{}] ({} bytes) with no matching stub and no upstream proxy. "
+                            + "Failing fast with ErrorState.TPEITYPE.",
+                    serviceName,
+                    bufferType,
+                    rawBytes.length);
+            return buildErrorReply(req, ErrorState.TPEITYPE);
         } else {
-            // Unmatched request and no upstream configured: return TPENOENT
+            LOG.error(
+                    "[CASUAL-GATEWAY-NOTFOUND] Service [{}] unmatched in WireMock and no upstream configured. Returning TPENOENT.",
+                    serviceName);
             return buildErrorReply(req, ErrorState.TPENOENT);
         }
     }
@@ -324,6 +572,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                     .setServiceName(serviceName)
                     .setTimeout(10000L)
                     .setParentName(domainName)
+                    .setParentSpan(SpanId.of())
                     .setXid(XID.NULL_XID)
                     .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
                     .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of(requestPayload)))
@@ -422,19 +671,36 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         }
 
         String respBody = response.body();
+        Optional<String> bufferTypeHeader = response.headers().firstValue("X-Casual-Buffer-Type");
+        String bufferType = bufferTypeHeader.orElse("JSON");
         if (respBody != null && !respBody.isBlank()) {
-            replyBuffer = ServiceBuffer.of(JsonBuffer.of(respBody));
+            replyBuffer = CasualBufferUtils.wrapPayload(bufferType, respBody);
         }
 
-        return CasualServiceCallReplyMessage.createBuilder()
-                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+        ProtocolVersion version = determineProtocolVersion(req);
+        CasualServiceCallReplyMessage.Builder replyBuilder = CasualServiceCallReplyMessage.createBuilder()
+                .setProtocolVersion(version)
                 .setExecution(req.getExecution())
-                .setXid(req.getXid())
                 .setError(errorState)
                 .setUserSuppliedError(userSuppliedError)
                 .setTransactionState(transactionState)
-                .setServiceBuffer(replyBuffer)
-                .build();
+                .setServiceBuffer(replyBuffer);
+        if (version.isLessThan(ProtocolVersion.VERSION_1_3)) {
+            replyBuilder.setXid(req.getXid());
+        }
+        return replyBuilder.build();
+    }
+
+    private ProtocolVersion determineProtocolVersion(CasualServiceCallRequestMessage req) {
+        if (req != null && req.getType() != null) {
+            if (req.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_5) {
+                return ProtocolVersion.VERSION_1_5;
+            }
+            if (req.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3) {
+                return ProtocolVersion.VERSION_1_3;
+            }
+        }
+        return ProtocolVersion.VERSION_1_0;
     }
 
     private void recordVoteOverride(
@@ -456,8 +722,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 upstreamEnlistedXids.add(req.getXid());
             }
             CasualTcpClient client = getUpstreamClient();
-            CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg =
-                    client.sendAndReceive(CasualNWMessageType.SERVICE_CALL_REQUEST, req, 10, TimeUnit.SECONDS);
+            CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg = client.sendAndReceive(
+                    CasualNWMessageType.SERVICE_CALL_REQUEST, req, upstreamTimeoutSeconds, TimeUnit.SECONDS);
             CasualServiceCallReplyMessage upstreamReply = upstreamReplyMsg.getMessage();
 
             ErrorState errorState = upstreamReply.getError();
@@ -467,12 +733,18 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
             if (recordStubs && isRecordable) {
                 String replyPayload = CasualBufferUtils.extractPayload(upstreamReply.getServiceBuffer());
-                recordStubToWireMock(serviceName, requestPayload, replyPayload, upstreamReply);
+                recordStubToWireMock(serviceName, requestPayload, replyPayload, req, upstreamReply);
             }
 
             return upstreamReply;
         } catch (Exception e) {
-            LOG.error("Failed to forward Casual service call to upstream", e);
+            LOG.error(
+                    "[CASUAL-GATEWAY-UPSTREAM-FAIL] Failed to forward Casual service call [{}] to upstream {}:{}: {}",
+                    serviceName,
+                    upstreamHost,
+                    upstreamPort,
+                    e.getMessage(),
+                    e);
             return buildErrorReply(req, ErrorState.TPESVCERR);
         }
     }
@@ -481,8 +753,21 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             String serviceName,
             String requestPayload,
             String replyPayload,
+            CasualServiceCallRequestMessage req,
             CasualServiceCallReplyMessage upstreamReply) {
         try {
+            String reqType =
+                    (req.getServiceBuffer() != null && !req.getServiceBuffer().isEmpty())
+                            ? req.getServiceBuffer().getType()
+                            : "JSON";
+            boolean isReqJson = CasualBufferUtils.isJsonType(reqType);
+
+            String replyType = (upstreamReply.getServiceBuffer() != null
+                            && !upstreamReply.getServiceBuffer().isEmpty())
+                    ? upstreamReply.getServiceBuffer().getType()
+                    : "JSON";
+            boolean isReplyJson = CasualBufferUtils.isJsonType(replyType);
+
             ErrorState errorState = upstreamReply.getError();
             Map<String, Object> mapping = new LinkedHashMap<>();
             Map<String, Object> requestMap = new LinkedHashMap<>();
@@ -490,8 +775,15 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             requestMap.put("url", "/__casual/services/" + serviceName);
 
             if (requestPayload != null && !requestPayload.trim().isEmpty()) {
-                requestMap.put("bodyPatterns", List.of(Map.of("equalToJson", requestPayload)));
+                if (isReqJson) {
+                    requestMap.put("bodyPatterns", List.of(Map.of("equalToJson", requestPayload)));
+                } else {
+                    requestMap.put("bodyPatterns", List.of(Map.of("equalTo", requestPayload)));
+                }
             }
+            Map<String, Object> reqHeaders = new LinkedHashMap<>();
+            reqHeaders.put("X-Casual-Buffer-Type", Map.of("equalTo", reqType));
+            requestMap.put("headers", reqHeaders);
             mapping.put("request", requestMap);
 
             int statusCode = 200;
@@ -506,7 +798,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             }
 
             Map<String, String> responseHeaders = new LinkedHashMap<>();
-            responseHeaders.put("Content-Type", "application/json");
+            responseHeaders.put("Content-Type", isReplyJson ? "application/json" : "application/octet-stream");
+            responseHeaders.put("X-Casual-Buffer-Type", replyType);
             responseHeaders.put("X-Casual-Error-State", errorState.name());
             if (upstreamReply.getUserDefinedCode() != 0) {
                 responseHeaders.put("X-Casual-User-Supplied-Error", String.valueOf(upstreamReply.getUserDefinedCode()));
@@ -534,12 +827,18 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                     httpClient.send(recordRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (recordResponse.statusCode() >= 200 && recordResponse.statusCode() < 300) {
-                LOG.info("Recorded stub for Casual service to WireMock");
+                LOG.debug(
+                        "[CASUAL-GATEWAY-RECORD] Successfully recorded stub for [{}] (bufferType={})",
+                        serviceName,
+                        replyType);
             } else {
-                LOG.warn("Failed to record stub for Casual service to WireMock");
+                LOG.warn(
+                        "[CASUAL-GATEWAY-RECORD] Failed to record stub for [{}] - HTTP status {}",
+                        serviceName,
+                        recordResponse.statusCode());
             }
         } catch (IOException | InterruptedException e) {
-            LOG.warn("Failed to record stub for Casual service to WireMock", e);
+            LOG.warn("[CASUAL-GATEWAY-RECORD] Exception recording stub for [{}]", serviceName, e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -547,14 +846,17 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
     }
 
     private CasualServiceCallReplyMessage buildErrorReply(CasualServiceCallRequestMessage req, ErrorState errorState) {
-        return CasualServiceCallReplyMessage.createBuilder()
-                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
-                .setExecution(req.getExecution())
-                .setXid(req.getXid())
+        ProtocolVersion version = determineProtocolVersion(req);
+        CasualServiceCallReplyMessage.Builder replyBuilder = CasualServiceCallReplyMessage.createBuilder()
+                .setProtocolVersion(version)
+                .setExecution(req != null ? req.getExecution() : UUID.randomUUID())
                 .setError(errorState)
                 .setTransactionState(TransactionState.TX_ACTIVE)
-                .setServiceBuffer(ServiceBuffer.empty())
-                .build();
+                .setServiceBuffer(ServiceBuffer.empty());
+        if (version.isLessThan(ProtocolVersion.VERSION_1_3) && req != null) {
+            replyBuilder.setXid(req.getXid());
+        }
+        return replyBuilder.build();
     }
 
     private boolean isTransactional(Xid xid) {
@@ -593,11 +895,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         if (shouldForwardTransactionToUpstream(xid)) {
             try {
                 CasualTcpClient client = getUpstreamClient();
-                CasualNWMessage<CasualTransactionResourcePrepareReplyMessage> reply =
-                        client.sendAndReceive(CasualNWMessageType.PREPARE_REQUEST, req, 10, TimeUnit.SECONDS);
+                CasualNWMessage<CasualTransactionResourcePrepareReplyMessage> reply = client.sendAndReceive(
+                        CasualNWMessageType.PREPARE_REQUEST, req, upstreamTimeoutSeconds, TimeUnit.SECONDS);
                 return reply.getMessage();
             } catch (Exception e) {
-                LOG.error("Failed to forward Casual 2PC prepare request to upstream", e);
+                LOG.error("[CASUAL-GATEWAY-2PC] Failed to forward Casual 2PC prepare request to upstream", e);
                 return CasualTransactionResourcePrepareReplyMessage.of(
                         req.getExecution(), xid, req.getResourceId(), XAReturnCode.XAER_RMERR);
             }
@@ -622,11 +924,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         if (shouldForward) {
             try {
                 CasualTcpClient client = getUpstreamClient();
-                CasualNWMessage<CasualTransactionResourceCommitReplyMessage> reply =
-                        client.sendAndReceive(CasualNWMessageType.COMMIT_REQUEST, req, 10, TimeUnit.SECONDS);
+                CasualNWMessage<CasualTransactionResourceCommitReplyMessage> reply = client.sendAndReceive(
+                        CasualNWMessageType.COMMIT_REQUEST, req, upstreamTimeoutSeconds, TimeUnit.SECONDS);
                 return reply.getMessage();
             } catch (Exception e) {
-                LOG.error("Failed to forward Casual 2PC commit request to upstream", e);
+                LOG.error("[CASUAL-GATEWAY-2PC] Failed to forward Casual 2PC commit request to upstream", e);
                 return CasualTransactionResourceCommitReplyMessage.of(
                         req.getExecution(), xid, req.getResourceId(), XAReturnCode.XAER_RMERR);
             }
@@ -651,11 +953,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         if (shouldForward) {
             try {
                 CasualTcpClient client = getUpstreamClient();
-                CasualNWMessage<CasualTransactionResourceRollbackReplyMessage> reply =
-                        client.sendAndReceive(CasualNWMessageType.REQUEST_ROLLBACK, req, 10, TimeUnit.SECONDS);
+                CasualNWMessage<CasualTransactionResourceRollbackReplyMessage> reply = client.sendAndReceive(
+                        CasualNWMessageType.REQUEST_ROLLBACK, req, upstreamTimeoutSeconds, TimeUnit.SECONDS);
                 return reply.getMessage();
             } catch (Exception e) {
-                LOG.error("Failed to forward Casual 2PC rollback request to upstream", e);
+                LOG.error("[CASUAL-GATEWAY-2PC] Failed to forward Casual 2PC rollback request to upstream", e);
                 return CasualTransactionResourceRollbackReplyMessage.of(
                         req.getExecution(), xid, req.getResourceId(), XAReturnCode.XAER_RMERR);
             }

@@ -154,6 +154,66 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
             tcpClient.connect();
         }
 
+        public CasualTcpClient getTcpClient() {
+            return tcpClient;
+        }
+
+        public TransactionOutcome executeInTransaction(String serviceName, ServiceBuffer buffer) throws Exception {
+            int seq = txSequence.getAndIncrement();
+            Xid xid = XID.of(
+                    ("gtrid-quarkus-" + seq).getBytes(StandardCharsets.UTF_8),
+                    ("bqual-quarkus-" + seq).getBytes(StandardCharsets.UTF_8),
+                    42);
+
+            CasualServiceCallReplyMessage callReply = tcpClient.tpcall(serviceName, buffer, xid);
+            String replyPayload = CasualBufferUtils.extractPayload(callReply.getServiceBuffer());
+
+            if (callReply.getError() == ErrorState.OK
+                    && callReply.getTransactionState() == TransactionState.TX_ACTIVE) {
+                CasualTransactionResourcePrepareReplyMessage prepareReply = tcpClient.prepare(xid, RESOURCE_ID);
+                XAReturnCode prepareVote = prepareReply.getTransactionReturnCode();
+
+                if (prepareVote == XAReturnCode.XA_OK) {
+                    CasualTransactionResourceCommitReplyMessage commitReply = tcpClient.commit(xid, RESOURCE_ID, false);
+                    XAReturnCode commitVote = commitReply.getTransactionReturnCode();
+                    return new TransactionOutcome(
+                            xid,
+                            callReply.getError(),
+                            callReply.getUserDefinedCode(),
+                            callReply.getTransactionState(),
+                            replyPayload,
+                            prepareVote,
+                            commitVote,
+                            null,
+                            commitVote == XAReturnCode.XA_OK);
+                } else {
+                    CasualTransactionResourceRollbackReplyMessage rollbackReply = tcpClient.rollback(xid, RESOURCE_ID);
+                    return new TransactionOutcome(
+                            xid,
+                            callReply.getError(),
+                            callReply.getUserDefinedCode(),
+                            callReply.getTransactionState(),
+                            replyPayload,
+                            prepareVote,
+                            null,
+                            rollbackReply.getTransactionReturnCode(),
+                            false);
+                }
+            } else {
+                CasualTransactionResourceRollbackReplyMessage rollbackReply = tcpClient.rollback(xid, RESOURCE_ID);
+                return new TransactionOutcome(
+                        xid,
+                        callReply.getError(),
+                        callReply.getUserDefinedCode(),
+                        callReply.getTransactionState(),
+                        replyPayload,
+                        null,
+                        null,
+                        rollbackReply.getTransactionReturnCode(),
+                        false);
+            }
+        }
+
         /**
          * Executes a service call inside a global 2PC XA transaction:
          * <ol>
