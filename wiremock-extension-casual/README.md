@@ -8,7 +8,7 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 
 ## 1. Key Capabilities
 
-* **Pure Java SE 21 + Netty Engine**: High-performance, lightweight in-process server and client utilizing `se.laz.casual:casual-network-protocol` and `casual-api`. Zero Jakarta EE, JCA, WildFly, or Quarkus runtime dependencies.
+* **Pure Java SE 21 + Netty Engine**: High-performance, lightweight in-process server and client utilizing upstream `se.laz.casual:casual-network`, `casual-network-protocol`, and `casual-api`. Fully dynamic protocol negotiation across versions 1.0 to 1.5 (`1000`–`1005`). Zero Jakarta EE, JCA, WildFly, or Quarkus runtime dependencies required.
 * **Transparent Domain Discovery Aggregation**: When an upstream domain is configured, dynamic service discovery queries both upstream services and local WireMock stubs (`/__casual/services/*`), merging them into a unified catalog. Empty discovery probes (`serviceNames = []`) discover the full upstream domain catalog.
 * **Fail-Fast Protocol Mechanics & Low Timeouts**: Default 4-second upstream timeouts prevent client hangs. Socket errors or unsupported message types close TCP connections immediately rather than silently hanging or dropping frames. Timeouts produce actionable error messages citing the exact configuration flag.
 * **Non-JSON Binary Buffer Support (`.FIELDED`, `CFIELD/`, `X_OCTET`)**: Binary and fielded buffers pass through transparently to upstream domains, and record/replay to WireMock stubs via Base64 serialization with `X-Casual-Buffer-Type` headers. Offline unmatched binary requests fail fast with `ErrorState.TPEITYPE`.
@@ -33,7 +33,7 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 ┌────────────────────────────────────────────────────────────────────────┐
 │          CasualWireMockGateway (In-Process Netty Server)               │
 │                                                                        │
-│  1. Decode Frame (CasualFrameDecoder)                                  │
+│  1. Decode Frame (CasualNWMessageDecoder / Protocol 1.0 - 1.5)        │
 │  2. Dispatch to WireMock (POST /__casual/services/createOrder)         │
 └───────────────────┬────────────────────────────────┬───────────────────┘
                     │                                │
