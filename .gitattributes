@@ -1,5 +1,9 @@
-* text=auto
-
+* text=auto eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
 *.sh text eol=lf
 gradlew text eol=lf
 wiremock-cli/bin/wm text eol=lf

@@ -17,6 +17,7 @@ allprojects {
 }
 
 spotless {
+    lineEndings 'UNIX'
     format 'misc', {
         target '*.gradle', '*.md', '*/AGENTS.md', '.agents/**/*.md', 'docs/**/*.md', '.gitignore'
         trimTrailingWhitespace()
@@ -37,6 +38,10 @@ subprojects {
 
 
     spotless {
+        lineEndings 'UNIX'
+        if (rootProject.file('.git').isDirectory()) {
+            ratchetFrom 'origin/main'
+        }
         java {
             palantirJavaFormat('2.50.0')
             removeUnusedImports()
@@ -94,7 +99,7 @@ subprojects {
     }
 
     tasks.withType(Test).configureEach {
-        jvmArgs '-XX:TieredStopAtLevel=1'
+        jvmArgs '-XX:TieredStopAtLevel=1', '-XX:+UseParallelGC'
         if (!file('src/test/resources/logback-test.xml').exists()) {
             systemProperty 'logback.configurationFile', rootProject.file('config/logback-test.xml').absolutePath
         }
