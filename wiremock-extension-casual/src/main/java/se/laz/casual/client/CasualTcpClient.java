@@ -32,9 +32,13 @@ import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.XAFlags;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
 import se.laz.casual.api.xa.XID;
+import se.laz.casual.jca.SpanId;
+import se.laz.casual.network.CasualNWMessageDecoder;
+import se.laz.casual.network.CasualNWMessageEncoder;
 import se.laz.casual.network.ProtocolVersion;
-import se.laz.casual.network.protocol.decoding.CasualFrameDecoder;
+import se.laz.casual.network.inbound.ProtocolVersionValueHolder;
 import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
 import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMessage;
@@ -70,6 +74,8 @@ public class CasualTcpClient implements AutoCloseable {
     private final int defaultTimeoutSeconds;
     private final Map<UUID, CompletableFuture<CasualNWMessage<?>>> pendingReplies = new ConcurrentHashMap<>();
 
+    private ProtocolVersionValueHolder protocolHolder;
+    private volatile ProtocolVersion protocolVersion = ProtocolVersion.VERSION_1_0;
     private EventLoopGroup workerGroup;
     private Channel channel;
 
@@ -97,6 +103,10 @@ public class CasualTcpClient implements AutoCloseable {
         return defaultTimeoutSeconds;
     }
 
+    public synchronized ProtocolVersion getProtocolVersion() {
+        return protocolVersion;
+    }
+
     public synchronized void connect() throws Exception {
         if (isConnected()) {
             return;
@@ -105,6 +115,7 @@ public class CasualTcpClient implements AutoCloseable {
         String safeHost = host.replaceAll("[\r\n]", "");
         LOG.debug("[CASUAL-CLIENT] Connecting to upstream Casual domain at {}:{}", safeHost, port);
 
+        this.protocolHolder = ProtocolVersionValueHolder.of();
         workerGroup = new NioEventLoopGroup(1);
         Bootstrap bootstrap = new Bootstrap();
         bootstrap
@@ -115,7 +126,8 @@ public class CasualTcpClient implements AutoCloseable {
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new CasualFrameDecoder());
+                        ch.pipeline().addLast(CasualNWMessageDecoder.of(protocolHolder));
+                        ch.pipeline().addLast(CasualNWMessageEncoder.of());
                         ch.pipeline().addLast(new ClientReplyHandler());
                     }
                 });
@@ -123,12 +135,12 @@ public class CasualTcpClient implements AutoCloseable {
         ChannelFuture future = bootstrap.connect(host, port).sync();
         this.channel = future.channel();
 
-        // Perform initial domain connect handshake
+        // Perform initial domain connect handshake with full supported protocol version list
         CasualDomainConnectRequestMessage connectReq = CasualDomainConnectRequestMessage.createBuilder()
                 .withExecution(UUID.randomUUID())
                 .withDomainId(domainId)
                 .withDomainName(domainName)
-                .withProtocols(List.of(ProtocolVersion.VERSION_1_0.getVersion()))
+                .withProtocols(ProtocolVersion.supportedVersionNumbers())
                 .build();
 
         CasualNWMessage<CasualDomainConnectReplyMessage> reply = sendAndReceive(
@@ -139,11 +151,24 @@ public class CasualTcpClient implements AutoCloseable {
             throw new IllegalStateException(
                     "Failed to complete Casual domain connect handshake with " + safeHost + ":" + port);
         }
-        LOG.debug(
-                "[CASUAL-CLIENT] Handshake complete with domain [{}] at {}:{}",
+
+        long actualProtocolVersion = ProtocolVersion.supportedVersionNumbers().stream()
+                .filter(version -> version == reply.getMessage().getProtocolVersion())
+                .findFirst()
+                .orElse(ProtocolVersion.VERSION_1_0.getVersion());
+        this.protocolVersion = ProtocolVersion.unmarshall(actualProtocolVersion);
+        try {
+            protocolHolder.accept(this.protocolVersion);
+        } catch (CasualProtocolException e) {
+            LOG.debug("Protocol version already accepted: {}", e.getMessage());
+        }
+
+        LOG.info(
+                "[CASUAL-CLIENT] Handshake complete with domain [{}] at {}:{} (negotiated protocol version: {})",
                 reply.getMessage().getDomainName(),
                 safeHost,
-                port);
+                port,
+                this.protocolVersion);
     }
 
     public synchronized boolean isConnected() {
@@ -191,12 +216,14 @@ public class CasualTcpClient implements AutoCloseable {
     }
 
     public CasualServiceCallReplyMessage tpcall(String serviceName, ServiceBuffer buffer, Xid xid) throws Exception {
+        ProtocolVersion version = getProtocolVersion();
         CasualServiceCallRequestMessage callReq = CasualServiceCallRequestMessage.createBuilder()
-                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+                .setProtocolVersion(version != null ? version : ProtocolVersion.VERSION_1_0)
                 .setExecution(UUID.randomUUID())
                 .setServiceName(serviceName)
                 .setTimeout((long) defaultTimeoutSeconds * 1000)
                 .setParentName(domainName)
+                .setParentSpan(SpanId.of())
                 .setXid(xid != null ? xid : XID.NULL_XID)
                 .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
                 .setServiceBuffer(buffer)

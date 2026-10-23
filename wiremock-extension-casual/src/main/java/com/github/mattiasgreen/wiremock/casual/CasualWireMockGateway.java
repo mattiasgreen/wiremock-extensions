@@ -38,6 +38,7 @@ import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.client.CasualTcpClient;
+import se.laz.casual.jca.SpanId;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
@@ -571,6 +572,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                     .setServiceName(serviceName)
                     .setTimeout(10000L)
                     .setParentName(domainName)
+                    .setParentSpan(SpanId.of())
                     .setXid(XID.NULL_XID)
                     .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
                     .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of(requestPayload)))
@@ -675,15 +677,30 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             replyBuffer = CasualBufferUtils.wrapPayload(bufferType, respBody);
         }
 
-        return CasualServiceCallReplyMessage.createBuilder()
-                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+        ProtocolVersion version = determineProtocolVersion(req);
+        CasualServiceCallReplyMessage.Builder replyBuilder = CasualServiceCallReplyMessage.createBuilder()
+                .setProtocolVersion(version)
                 .setExecution(req.getExecution())
-                .setXid(req.getXid())
                 .setError(errorState)
                 .setUserSuppliedError(userSuppliedError)
                 .setTransactionState(transactionState)
-                .setServiceBuffer(replyBuffer)
-                .build();
+                .setServiceBuffer(replyBuffer);
+        if (version.isLessThan(ProtocolVersion.VERSION_1_3)) {
+            replyBuilder.setXid(req.getXid());
+        }
+        return replyBuilder.build();
+    }
+
+    private ProtocolVersion determineProtocolVersion(CasualServiceCallRequestMessage req) {
+        if (req != null && req.getType() != null) {
+            if (req.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_5) {
+                return ProtocolVersion.VERSION_1_5;
+            }
+            if (req.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3) {
+                return ProtocolVersion.VERSION_1_3;
+            }
+        }
+        return ProtocolVersion.VERSION_1_0;
     }
 
     private void recordVoteOverride(
@@ -829,14 +846,17 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
     }
 
     private CasualServiceCallReplyMessage buildErrorReply(CasualServiceCallRequestMessage req, ErrorState errorState) {
-        return CasualServiceCallReplyMessage.createBuilder()
-                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
-                .setExecution(req.getExecution())
-                .setXid(req.getXid())
+        ProtocolVersion version = determineProtocolVersion(req);
+        CasualServiceCallReplyMessage.Builder replyBuilder = CasualServiceCallReplyMessage.createBuilder()
+                .setProtocolVersion(version)
+                .setExecution(req != null ? req.getExecution() : UUID.randomUUID())
                 .setError(errorState)
                 .setTransactionState(TransactionState.TX_ACTIVE)
-                .setServiceBuffer(ServiceBuffer.empty())
-                .build();
+                .setServiceBuffer(ServiceBuffer.empty());
+        if (version.isLessThan(ProtocolVersion.VERSION_1_3) && req != null) {
+            replyBuilder.setXid(req.getXid());
+        }
+        return replyBuilder.build();
     }
 
     private boolean isTransactional(Xid xid) {

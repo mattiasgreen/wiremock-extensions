@@ -21,9 +21,13 @@ import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
 import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.network.CasualNWMessageDecoder;
+import se.laz.casual.network.CasualNWMessageEncoder;
+import se.laz.casual.network.ProtocolMatcher;
 import se.laz.casual.network.ProtocolVersion;
-import se.laz.casual.network.protocol.decoding.CasualFrameDecoder;
+import se.laz.casual.network.inbound.ProtocolVersionValueHolder;
 import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
 import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMessage;
@@ -146,8 +150,10 @@ public class CasualServer implements AutoCloseable {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new CasualFrameDecoder());
-                        ch.pipeline().addLast(new ServerInboundHandler());
+                        ProtocolVersionValueHolder protocolHolder = ProtocolVersionValueHolder.of();
+                        ch.pipeline().addLast(CasualNWMessageDecoder.of(protocolHolder));
+                        ch.pipeline().addLast(CasualNWMessageEncoder.of());
+                        ch.pipeline().addLast(new ServerInboundHandler(protocolHolder));
                     }
                 });
 
@@ -184,10 +190,24 @@ public class CasualServer implements AutoCloseable {
     }
 
     public ServerInboundHandler createInboundHandler() {
-        return new ServerInboundHandler();
+        return new ServerInboundHandler(ProtocolVersionValueHolder.of());
+    }
+
+    public ServerInboundHandler createInboundHandler(ProtocolVersionValueHolder protocolHolder) {
+        return new ServerInboundHandler(protocolHolder);
     }
 
     public class ServerInboundHandler extends SimpleChannelInboundHandler<CasualNWMessage<?>> {
+
+        private final ProtocolVersionValueHolder protocolHolder;
+
+        public ServerInboundHandler() {
+            this(ProtocolVersionValueHolder.of());
+        }
+
+        public ServerInboundHandler(ProtocolVersionValueHolder protocolHolder) {
+            this.protocolHolder = Objects.requireNonNull(protocolHolder, "protocolHolder cannot be null");
+        }
 
         @Override
         @SuppressWarnings("unchecked")
@@ -206,7 +226,9 @@ public class CasualServer implements AutoCloseable {
                 handleDomainConnect(ctx, (CasualNWMessage<CasualDomainConnectRequestMessage>) msg);
             } else if (type == CasualNWMessageType.DOMAIN_DISCOVERY_REQUEST) {
                 handleDomainDiscovery(ctx, (CasualNWMessage<CasualDomainDiscoveryRequestMessage>) msg);
-            } else if (type == CasualNWMessageType.SERVICE_CALL_REQUEST) {
+            } else if (type == CasualNWMessageType.SERVICE_CALL_REQUEST
+                    || type == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3
+                    || type == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_5) {
                 handleServiceCall(ctx, (CasualNWMessage<CasualServiceCallRequestMessage>) msg);
             } else if (type == CasualNWMessageType.PREPARE_REQUEST) {
                 handlePrepare(ctx, (CasualNWMessage<CasualTransactionResourcePrepareRequestMessage>) msg);
@@ -238,11 +260,27 @@ public class CasualServer implements AutoCloseable {
         private void handleDomainConnect(
                 ChannelHandlerContext ctx, CasualNWMessage<CasualDomainConnectRequestMessage> msg) {
             CasualDomainConnectRequestMessage req = msg.getMessage();
+            long matchedVersion = ProtocolMatcher.match(req.getProtocols());
+            ProtocolVersion negotiated = ProtocolVersion.unmarshall(matchedVersion);
+            try {
+                protocolHolder.accept(negotiated);
+            } catch (CasualProtocolException e) {
+                LOG.debug("Protocol version already accepted: {}", e.getMessage());
+            }
+
+            if (LOG.isInfoEnabled()) {
+                LOG.info(
+                        "[CASUAL-SERVER-CONNECT] Client from [{}] requested protocols {} -> negotiated version: {}",
+                        ctx.channel().remoteAddress(),
+                        req.getProtocols(),
+                        negotiated);
+            }
+
             CasualDomainConnectReplyMessage reply = CasualDomainConnectReplyMessage.createBuilder()
                     .withExecution(req.getExecution())
                     .withDomainId(domainId)
                     .withDomainName(domainName)
-                    .withProtocolVersion(ProtocolVersion.VERSION_1_0.getVersion())
+                    .withProtocolVersion(matchedVersion)
                     .build();
 
             CasualNWMessage<CasualDomainConnectReplyMessage> replyMsg =
@@ -253,8 +291,14 @@ public class CasualServer implements AutoCloseable {
         private void handleDomainDiscovery(
                 ChannelHandlerContext ctx, CasualNWMessage<CasualDomainDiscoveryRequestMessage> msg) {
             CasualDomainDiscoveryRequestMessage req = msg.getMessage();
-            CasualDomainDiscoveryReplyMessage reply = CasualDomainDiscoveryReplyMessage.of(
-                    req.getExecution(), domainId, domainName, ProtocolVersion.VERSION_1_0);
+            ProtocolVersion version = ProtocolVersion.VERSION_1_0;
+            try {
+                version = protocolHolder.get();
+            } catch (CasualProtocolException e) {
+                LOG.debug("Protocol version not yet available on discovery: {}", e.getMessage());
+            }
+            CasualDomainDiscoveryReplyMessage reply =
+                    CasualDomainDiscoveryReplyMessage.of(req.getExecution(), domainId, domainName, version);
 
             List<Service> services = discoveryHandler != null
                     ? discoveryHandler.discover(req.getServiceNames())
@@ -270,6 +314,40 @@ public class CasualServer implements AutoCloseable {
         private void handleServiceCall(
                 ChannelHandlerContext ctx, CasualNWMessage<CasualServiceCallRequestMessage> msg) {
             CasualServiceCallReplyMessage reply = serviceHandler.handle(msg.getMessage());
+            ProtocolVersion connVersion = ProtocolVersion.VERSION_1_0;
+            try {
+                connVersion = protocolHolder.get();
+            } catch (CasualProtocolException e) {
+                LOG.debug("Protocol version not yet available on service call: {}", e.getMessage());
+            }
+            if (connVersion != null) {
+                boolean needsRebuild = false;
+                if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_5)
+                        && reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5) {
+                    needsRebuild = true;
+                } else if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)
+                        && connVersion.isLessThan(ProtocolVersion.VERSION_1_5)
+                        && reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3) {
+                    needsRebuild = true;
+                }
+                if (needsRebuild) {
+                    CasualServiceCallReplyMessage.Builder b = CasualServiceCallReplyMessage.createBuilder()
+                            .setProtocolVersion(connVersion)
+                            .setExecution(reply.getExecution())
+                            .setError(reply.getError())
+                            .setUserSuppliedError(reply.getUserDefinedCode())
+                            .setTransactionState(reply.getTransactionState())
+                            .setServiceBuffer(reply.getServiceBuffer());
+                    if (connVersion.isLessThan(ProtocolVersion.VERSION_1_3)) {
+                        try {
+                            b.setXid(reply.getXid());
+                        } catch (CasualProtocolException e) {
+                            LOG.debug("XID not available on reply for downgrade: {}", e.getMessage());
+                        }
+                    }
+                    reply = b.build();
+                }
+            }
             CasualNWMessage<CasualServiceCallReplyMessage> replyMsg =
                     CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
             writeMessage(ctx, replyMsg);

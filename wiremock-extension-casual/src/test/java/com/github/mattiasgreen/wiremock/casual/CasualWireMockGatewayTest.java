@@ -23,8 +23,10 @@ import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
+import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
+import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
@@ -572,7 +574,10 @@ class CasualWireMockGatewayTest {
                 XID.of("gtrid-001".getBytes(StandardCharsets.UTF_8), "bqual-001".getBytes(StandardCharsets.UTF_8), 42);
         CasualServiceCallReplyMessage callReply = client.tpcall("txPaymentService", "{\"amount\": 100}", xid1);
         assertThat(callReply.getError()).isEqualTo(ErrorState.OK);
-        assertThat(callReply.getXid()).isEqualTo(xid1);
+        assertThat(callReply.getTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+        if (callReply.getType() == CasualNWMessageType.SERVICE_CALL_REPLY) {
+            assertThat(callReply.getXid()).isEqualTo(xid1);
+        }
 
         CasualTransactionResourcePrepareReplyMessage prepareReply = client.prepare(xid1, 1);
         assertThat(prepareReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
@@ -800,5 +805,30 @@ class CasualWireMockGatewayTest {
         } finally {
             proxyGateway.close();
         }
+    }
+
+    @Test
+    @DisplayName(
+            "Should handle 406-byte WildFly JBoss client service call with headers under Protocol 1.5 without decoder exception")
+    void shouldHandleWildFlyJBossClient406ByteServiceCallWithoutDecoderException() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/sakVKAnvandare"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":\"SUCCESS\"}")));
+
+        // Client connects and negotiates VERSION_1_5
+        assertThat(client.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_5);
+
+        // Make service call with xid, simulating WildFly/JBoss Narayana XA client
+        Xid xid = XID.of(
+                "gtrid-wildfly".getBytes(StandardCharsets.UTF_8),
+                "bqual-wildfly".getBytes(StandardCharsets.UTF_8),
+                131077);
+        CasualServiceCallReplyMessage reply = client.tpcall("sakVKAnvandare", "{}", xid);
+
+        assertThat(reply).isNotNull();
+        assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+        assertThat(reply.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5);
     }
 }
