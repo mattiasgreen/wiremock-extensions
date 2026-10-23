@@ -39,9 +39,6 @@ subprojects {
 
     spotless {
         lineEndings 'UNIX'
-        if (rootProject.file('.git').isDirectory()) {
-            ratchetFrom 'origin/main'
-        }
         java {
             palantirJavaFormat('2.50.0')
             removeUnusedImports()
