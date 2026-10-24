@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Admin API Extension providing REST control plane endpoints under {@code /__admin/casual/config}
- * for querying and updating Casual protocol gateway configuration, upstream targets, and recording state at runtime.
+ * for querying and updating Casual protocol gateway configuration at runtime.
  */
 public class CasualAdminEndpoint implements AdminApiExtension {
 
@@ -105,12 +105,10 @@ public class CasualAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition errorResponse(int status, String message) {
-        String sanitized =
-                message != null ? message.replace('\r', ' ').replace('\n', ' ').replace("\"", "\\\"") : "";
         return ResponseDefinitionBuilder.responseDefinition()
                 .withStatus(status)
                 .withHeader("Content-Type", "application/json")
-                .withBody("{\"error\": \"" + sanitized + "\"}")
+                .withBody("{\"error\":\"" + message.replace("\"", "\\\"") + "\"}")
                 .build();
     }
 }

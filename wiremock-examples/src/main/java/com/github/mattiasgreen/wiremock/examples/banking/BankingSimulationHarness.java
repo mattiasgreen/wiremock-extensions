@@ -6,7 +6,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
-import com.github.mattiasgreen.wiremock.casual.CasualProxyTransformer;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.mattiasgreen.wiremock.ui.UiExtensionFactory;
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -39,19 +38,12 @@ public final class BankingSimulationHarness implements AutoCloseable {
         this.upstreamBackend = new UpstreamBackendServer();
         this.upstreamBackend.start();
 
-        CasualProxyTransformer casualProxyTransformer = new CasualProxyTransformer();
-        this.wireMockServer = new WireMockServer(wireMockConfig()
-                .dynamicPort()
-                .extensions(new UiExtensionFactory())
-                .extensions(casualProxyTransformer));
+        this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort().extensions(new UiExtensionFactory()));
         this.wireMockServer.start();
 
         this.casualGateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(wireMockServer.baseUrl())
-                .upstream("127.0.0.1", upstreamBackend.getCasualPort())
-                .recordStubs(false)
-                .proxyTransformer(casualProxyTransformer)
+                .wireMockServer(wireMockServer)
                 .build();
         this.casualGateway.start();
 
@@ -93,7 +85,7 @@ public final class BankingSimulationHarness implements AutoCloseable {
                         "mode", "proxy",
                         "protocol", "casual",
                         "targetBaseUrl", "casual://127.0.0.1:" + upstreamBackend.getCasualPort()))
-                .willReturn(aResponse().withStatus(200).withTransformers(CasualProxyTransformer.NAME)));
+                .willReturn(aResponse().withStatus(200)));
     }
 
     /**

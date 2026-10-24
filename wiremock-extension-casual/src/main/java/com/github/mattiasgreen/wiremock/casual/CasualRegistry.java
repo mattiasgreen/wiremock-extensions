@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.casual;
 
+import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -18,6 +19,7 @@ public class CasualRegistry {
     private final AtomicReference<CasualConfiguration> configRef =
             new AtomicReference<>(CasualConfiguration.fromEnvironment());
     private final AtomicReference<CasualWireMockGateway> gatewayRef = new AtomicReference<>(null);
+    private final AtomicReference<WireMockServices> servicesRef = new AtomicReference<>(null);
 
     private CasualRegistry() {}
 
@@ -41,6 +43,14 @@ public class CasualRegistry {
         gatewayRef.set(gateway);
     }
 
+    public Optional<WireMockServices> getWireMockServices() {
+        return Optional.ofNullable(servicesRef.get());
+    }
+
+    public void setWireMockServices(WireMockServices services) {
+        servicesRef.set(services);
+    }
+
     public synchronized CasualConfiguration updateConfig(CasualConfiguration newConfig) {
         if (newConfig == null) {
             return getConfig();
@@ -51,19 +61,10 @@ public class CasualRegistry {
 
         CasualWireMockGateway gateway = gatewayRef.get();
         if (gateway != null) {
-            gateway.setUpstream(current.getUpstreamHost(), current.getUpstreamPort(), current.isUpstreamEnabled());
-            gateway.setRecordStubs(current.isRecordStubs());
-            gateway.setRecordFaults(current.isRecordFaults());
-            gateway.setRecordNotFound(current.isRecordNotFound());
-            String safeHost = current.getUpstreamHost() != null
-                    ? current.getUpstreamHost().replace('\r', '_').replace('\n', '_')
-                    : "null";
             LOG.info(
-                    "Updated Casual runtime configuration: upstream={}:{} (enabled={}), record={}",
-                    safeHost,
-                    current.getUpstreamPort(),
-                    current.isUpstreamEnabled(),
-                    current.isRecordStubs());
+                    "Updated Casual runtime configuration: enabled={}, port={}",
+                    current.isEnabled(),
+                    current.getPort());
         }
 
         return current;

@@ -3,6 +3,7 @@ package com.github.mattiasgreen.wiremock.casual.integration;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.recordSpec;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,8 +88,13 @@ class CasualEndToEndIntegrationTest {
                 .stubFor(post(urlMatching("/__casual/services/.*"))
                         .withName("Live Casual Proxy (Billing)")
                         .atPriority(10)
-                        .withMetadata(Map.of("project", "billing-service", "mode", "proxy"))
-                        .willReturn(aResponse().withStatus(200).withTransformers("casual-proxy-transformer")));
+                        .withMetadata(Map.of(
+                                "project", "billing-service",
+                                "mode", "proxy",
+                                "targetBaseUrl",
+                                        "casual://127.0.0.1:"
+                                                + harness.getUpstreamNode().getPort()))
+                        .willReturn(aResponse().withStatus(200)));
 
         TransactionOutcome outcome = harness.getClientInitiator()
                 .executeInTransaction("casual/example", "{\"customer\":\"Alice\",\"amount\":250}");
@@ -131,6 +137,13 @@ class CasualEndToEndIntegrationTest {
         assertThat(liveOutcome.committed()).isTrue();
         assertThat(liveOutcome.replyPayload()).contains("\"processedBy\":\"upstream-server-B\"");
         assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(1);
+
+        // Snapshot recorded serve events into offline stubs (replaces legacy recordStubs out-of-band writer)
+        harness.getWireMockServer()
+                .snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
         assertThat(harness.getWireMockServer().getStubMappings()).isNotEmpty();
 
         // 2. Shut down Upstream Server B completely
