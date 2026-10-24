@@ -24,7 +24,21 @@ Always prioritize defects and security before formatting polish:
   ```
 - **If `wiremock-extension-ui` static assets were modified**: Verify `syncDemoSite` keeps the static demo in sync without committing duplicate files if excluded by `.gitignore`.
 
-## 2. Release-Please & Versioning Rules
+## 2. Comprehensive Documentation & GitHub Pages Review
+During release preparation, perform a thorough documentation audit across the repo and documentation sites:
+1. **GitHub Pages Documentation (`docs/site/`)**:
+   - **Landing Page (`docs/site/index.html`)**: Ensure new modules, core capabilities, and SPI routes are represented in the Core Features Showcase grid and auto-discovery list.
+   - **Full Documentation Guide (`docs/site/docs/index.html`)**: Ensure the Quickstart subproject topology table, sidebar navigation links, and module reference cards (`#ext-*`) document new features, routes, and DSL patterns.
+   - **Pitch Deck (`docs/site/pitch/index.html`)**: Verify the SPI Extension Factory topology diagram and 1-minute adoption slides.
+2. **Root & Module READMEs**:
+   - Verify root `README.md`, `wiremock-extension-bundle/README.md`, and scoped module READMEs reflect the latest architectural choices, CLI commands, and Docker options.
+   - **Dependency Coordinates**: Ensure Maven/Gradle dependency coordinates and standalone CLI execution snippets reference the target/latest published version.
+3. **Functional Specs & Architectural Plans**:
+   - Confirm `docs/spec/functional-specification.md`, `docs/spec/platform-bindings.md`, and progressive simulation specs accurately reflect current system behavior.
+4. **Static Demo Synchronization**:
+   - If `wiremock-extension-ui` static assets or capabilities were updated, run `./gradlew :wiremock-extension-ui:syncDemoSite` to keep `docs/site/demo/` synchronized without manual copying.
+
+## 3. Release-Please & Versioning Rules
 - **Conventional Commits**: Always use `feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`, `refactor(scope): ...`, `docs(scope): ...`, or `test(scope): ...`.
 - **Never Hand-Edit `CHANGELOG.md` or `gradle.properties` Version**: Both are managed automatically by `release-please` (`release.yml`). Do not waste tokens viewing `CHANGELOG.md`.
 - **New Extension Module Checklist**: When adding a new subproject to `settings.gradle`:
@@ -32,7 +46,7 @@ Always prioritize defects and security before formatting polish:
   2. Root `build.gradle` automatically aggregates all subprojects (except `wiremock-examples`) into `nmcpAggregation` for Maven Central publishing.
   3. Add a scoped `AGENTS.md` inside the new module and a row in root `AGENTS.md`.
 
-## 3. PR Summary Output Checklist
+## 4. PR Summary Output Checklist
 Before presenting a completed PR to the user, verify and output:
 1. **Abstract Spec & Docs Alignment**: Confirm `docs/spec/functional-specification.md`, `docs/spec/platform-bindings.md`, and relevant module `README.md` files are updated.
 2. **Senior Self-Review Reflection**: For UI/UX or developer-experience changes, include the 5 Lenses self-critique.
