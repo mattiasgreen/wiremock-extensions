@@ -45,6 +45,7 @@
         <li><a href="#ext-stateful">Stateful AST Engine</a></li>
         <li><a href="#ext-netem">TCP NetEm Chaos</a></li>
         <li><a href="#ext-openapi">OpenAPI Ingestion</a></li>
+        <li><a href="#ext-casual">Casual (XATMI) Gateway</a></li>
         <li><a href="#ext-otel">OpenTelemetry &amp; Scrape</a></li>
         <li><a href="#ext-logging">JSON MDC Logging</a></li>
       </ul>
@@ -110,6 +111,11 @@
                 <td><code>/__admin/openapi/import</code></td>
               </tr>
               <tr>
+                <td><strong><code>wiremock-extension-casual</code></strong></td>
+                <td>In-process Netty Casual (XATMI) domain gateway, stub-driven dynamic proxying, 2PC stickiness, and synthetic XA voting.</td>
+                <td><code>/__admin/casual/config</code> (TCP :7772)</td>
+              </tr>
+              <tr>
                 <td><strong><code>wiremock-extension-otel</code></strong></td>
                 <td>In-process request counters, latency histograms, and W3C tracing spans.</td>
                 <td><code>/__admin/metrics/prometheus</code></td>
@@ -131,7 +137,7 @@
         <h3>Standalone CLI Execution</h3>
         <p>WireMock discovers extensions via standard Java SPI (<code>java.util.ServiceLoader</code>). Place both JARs on the classpath:</p>
         <pre class="code-block"><code><span class="comment"># Download WireMock Standalone &amp; the Extension Bundle:</span>
-java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+java -cp <span class="str">"wiremock-extension-bundle-1.6.0.jar:wiremock-standalone-3.12.1.jar"</span> \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 --verbose</code></pre>
 
@@ -141,12 +147,12 @@ java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standal
 <span class="kw">WORKDIR</span> /wiremock
 
 <span class="kw">ARG</span> WIREMOCK_VERSION=3.12.1
-<span class="kw">ARG</span> BUNDLE_VERSION=1.2.0
+<span class="kw">ARG</span> BUNDLE_VERSION=1.6.0
 
 <span class="kw">RUN</span> wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
  &amp;&amp; wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
 
-<span class="kw">EXPOSE</span> 8080 8081
+<span class="kw">EXPOSE</span> 8080 8081 7772
 <span class="kw">ENTRYPOINT</span> ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]</code></pre>
 
         <h3 id="jvm-junit" style="margin-top: 2rem;">JUnit 5 Test Embedding</h3>
@@ -155,7 +161,7 @@ java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standal
           Simply add the bundle to your test dependencies:
         </p>
         <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
-testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'</span>
 
 <span class="comment">// In your test class:</span>
 <span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)
@@ -235,6 +241,28 @@ StateModel model = StateModel.named(<span class="str">"CaseManagement"</span>)
           <p style="margin-top: 0.5rem;">
             Supports <strong>Live Proxy Recording</strong>: forwards unmatched calls to an upstream API, logs traffic into the Request Journal, and lets you snapshot recorded sessions into offline stubs with one click.
           </p>
+        </div>
+
+        <!-- Casual Extension -->
+        <div id="ext-casual" class="card" style="margin-bottom: 2rem;">
+          <h3>🏛️ Casual Domain Gateway &amp; 2PC Simulation (`wiremock-extension-casual`)</h3>
+          <p>
+            An in-process Layer 7 Tuxedo / Casual domain gateway on raw TCP (Port 7772) built on Netty. Enables end-to-end integration testing of distributed XATMI RPCs and Two-Phase Commit (2PC) transactions without heavy C++ domain brokers or JEE application servers.
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><strong>Stub-Driven Dynamic Proxying</strong>: Declare dynamic proxy routes in standard WireMock proxy stubs where <code>targetBaseUrl</code> points to <code>casual://&lt;host&gt;:&lt;port&gt;</code>. Probes stubs in-memory with microsecond latency and forwards natively socket-to-socket over TCP.</li>
+            <li><strong>Multi-Upstream 2PC / XA Stickiness</strong>: Tracks upstream connection enlistment per transaction identifier (<code>Xid</code>). Transparently routes <code>PREPARE</code>, <code>COMMIT</code>, and <code>ROLLBACK</code> frames across disparate remote domains.</li>
+            <li><strong>Human-Readable Buffer Mediation</strong>: Automatically converts Fielded buffers (<code>.FIELDED</code> / <code>CFIELD/</code>) to/from structured JSON via <code>FieldedTypeBuffer</code>, strips/restores <code>CSTRING/</code> null terminators, and records JSON text directly in the Request Journal.</li>
+            <li><strong>Synthetic XA Participant</strong>: When decoupled from upstream servers or running offline, acts as a synthetic XA Resource Manager, automatically voting <code>XA_OK</code> (or simulating chaos via <code>XAER_RMERR</code>) to complete client commit loops.</li>
+          </ul>
+          <pre class="code-block"><code><span class="comment">// Configure dynamic Casual proxy route in WireMock:</span>
+wireMock.stubFor(post(urlMatching(<span class="str">"/__casual/services/.*"</span>))
+    .withName(<span class="str">"Billing Service Proxy"</span>)
+    .atPriority(10)
+    .withMetadata(Map.of(
+        <span class="str">"mode"</span>, <span class="str">"proxy"</span>,
+        <span class="str">"targetBaseUrl"</span>, <span class="str">"casual://billing-upstream.corp:7771"</span>))
+    .willReturn(aResponse().withStatus(200)));</code></pre>
         </div>
 
         <!-- OTEL Extension -->

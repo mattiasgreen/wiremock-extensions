@@ -147,12 +147,12 @@ If you want all extensions together, add `wiremock-extension-bundle` to your pro
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'
 ```
 
 **WireMock Standalone CLI**:
 ```bash
-java -cp "wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-bundle-1.6.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose
@@ -162,6 +162,8 @@ All extensions auto-register via Java Service Provider Interface (SPI):
 - Web UI: `http://localhost:8080/__admin/ui/`
 - Prometheus Metrics: `http://localhost:8080/__admin/metrics/prometheus`
 - OpenAPI Spec Importer: `http://localhost:8080/__admin/openapi/import`
+- Casual Config API: `http://localhost:8080/__admin/casual/config`
+- Casual TCP Gateway: `casual://127.0.0.1:7772`
 - Admin API: `http://localhost:8080/__admin/mappings`
 
 ### 2. Individual Extensions
@@ -170,33 +172,39 @@ Each extension can be used independently without pulling in the others:
 
 - **JSON Logging Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.6.0'
   ```
   See [wiremock-extension-json-logging/README.md](wiremock-extension-json-logging/README.md) for details.
 
 - **OpenTelemetry & Prometheus Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.6.0'
   ```
   See [wiremock-extension-otel/README.md](wiremock-extension-otel/README.md) for details.
 
 - **Web UI Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.6.0'
   ```
   See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
 
 - **Dynamic Stateful Simulation Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:1.2.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:1.6.0'
   ```
   See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
 
 - **L4 TCP Network Emulation & Chaos Only**:
   ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.2.0'
+  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.6.0'
   ```
   See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md) for architecture, Toxiproxy API endpoints, and journal configuration.
+
+- **Casual (XATMI / Tuxedo) Domain Gateway Only**:
+  ```groovy
+  implementation 'io.github.mattiasgreen:wiremock-extension-casual:1.6.0'
+  ```
+  See [wiremock-extension-casual/README.md](wiremock-extension-casual/README.md) for stub-driven dynamic proxying, multi-upstream 2PC stickiness, and buffer mediation.
 
   #### Dual-Ingress Architecture & Port Separation
   `tcp-netem` implements an in-process Dual-Ingress pattern using Java 21 Virtual Threads:
@@ -222,7 +230,15 @@ Each extension can be used independently without pulling in the others:
   * **Default (50,000 entries)**: Consumes only ~6 MB of heap with zero allocation churn on wrap-around.
   * **Recommended JVM Options**: `-Xms512m -Xmx2g` for high-throughput enterprise mock clusters.
 
-### 3. Local Development Runner
+### 3. Deep Dive: In-Process Casual (XATMI / Tuxedo) Gateway & 2PC Simulation
+`wiremock-extension-casual` embeds a Layer 7 Netty-based Casual domain gateway on raw TCP (Port `7772`), allowing enterprise integration suites to simulate distributed Tuxedo/XATMI RPCs and Two-Phase Commit (2PC) transactions without JEE containers or C++ domain brokers:
+
+* **Stub-Driven Dynamic Proxying (`targetBaseUrl: casual://...`)**: Declare dynamic proxy routes in standard WireMock stubs (`metadata.mode = "proxy"`). Inbound Casual frames probe WireMock stubs in-memory with microsecond latency and zero HTTP loopback overhead, forwarding matching calls natively socket-to-socket over TCP.
+* **Multi-Upstream 2PC / XA Stickiness**: Because 2PC frames (`PREPARE`, `COMMIT`, `ROLLBACK`) contain only an `Xid` without a `serviceName`, the gateway dynamically tracks client connections enlisted per `Xid` (`enlistedXidClients`), enabling coordinated distributed transactions across disparate remote domains under a single global XA coordinator.
+* **Human-Readable Buffer Mediation**: Translates binary Fielded buffers (`.FIELDED` / `CFIELD/`) to and from structured JSON objects via `FieldedTypeBuffer`, automatically strips/restores `CSTRING/` null terminators, and records JSON text directly in the Request Journal for seamless observability.
+* **Offline Replay & Synthetic XA Voting**: When upstream servers are severed, the gateway acts as a Synthetic XA Resource Manager (`XA_OK` voter) for recorded stubs, enabling complete offline test replay.
+
+### 4. Local Development Runner
 
 To launch WireMock with all extensions and active Web UI for local testing (starts clean with no pre-populated stubs):
 
@@ -232,7 +248,7 @@ To launch WireMock with all extensions and active Web UI for local testing (star
 
 The server starts on port `8080` with filesystem hot-reloading for UI development. Baseline sample stubs can be imported from [`wiremock-examples/example-stubs.json`](wiremock-examples/example-stubs.json).
 
-### 4. Live Proxy & Traffic Recording Testing (Dual-Server Setup)
+### 5. Live Proxy & Traffic Recording Testing (Dual-Server Setup)
 
 To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, and Project Lifecycle workflow:
 
@@ -267,7 +283,7 @@ To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, and Proj
    - Terminate the upstream service (Ctrl+C on port `8089`).
    - Re-send the request in the HTTP Tester: it is now served completely offline from the recorded stub!
 
-### 5. Zero-Build Consumer Runner
+### 6. Zero-Build Consumer Runner
 
 You can run WireMock Standalone with the complete extension bundle loaded in any empty folder using a single minimal `build.gradle` file, without cloning or building this repository:
 
@@ -282,7 +298,7 @@ repositories {
 
 dependencies {
     runtimeOnly 'org.wiremock:wiremock-standalone:3.12.1'
-    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
+    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'
 }
 
 application {
@@ -297,7 +313,7 @@ gradle run --args="--port 8080 --verbose"
 
 Because all extensions implement `ExtensionFactory` via Java SPI, WireMock automatically discovers and loads the Web UI, metrics, and OpenAPI endpoints on startup.
 
-### 6. Docker Reference Architecture
+### 7. Docker Reference Architecture
 
 To deploy a containerized mock server with the extension bundle, you can assemble an image directly using published artifacts:
 
@@ -306,12 +322,12 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /wiremock
 
 ARG WIREMOCK_VERSION=3.12.1
-ARG BUNDLE_VERSION=1.2.0
+ARG BUNDLE_VERSION=1.6.0
 
 RUN wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
  && wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
 
-EXPOSE 8080
+EXPOSE 8080 8081 7772
 ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]
 ```
 
@@ -329,6 +345,13 @@ The suite is expanding into a **zero-sprawl Simulator Stack** running entirely i
   * All 7 toxics supported: `latency` (with jitter), `bandwidth` throttling, `slow_close`, `timeout` (black hole), `reset_peer` (TCP RST via `setSoLinger(true,0)`), `slicer` (packet fragmentation), and `limit_data`.
   * Zero blast-radius parallel testing via `X-Correlation-Id` scoping and declarative `metadata.netem` stubs.
   * High-throughput circular event journal and Web UI NetEm console with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey").
+
+* **✅ 🏛️ Casual (XATMI / Tuxedo) Domain Gateway & 2PC Simulation (`wiremock-extension-casual`) [AVAILABLE]**:
+  * In-process Layer 7 Tuxedo / Casual domain gateway on raw TCP (Port 7772) built on Netty without JEE containers or C++ domain brokers.
+  * Stub-driven dynamic proxying (`targetBaseUrl: casual://host:port`) with in-memory microsecond stub probing.
+  * Multi-upstream 2PC XA transaction stickiness (`Xid` tracking across distributed upstreams).
+  * Human-readable buffer mediation: FML (`.FIELDED`/`CFIELD/`) ↔ structured JSON via `FieldedTypeBuffer`, `CSTRING/` null terminators, and `JSON` text in Request Journal.
+  * Synthetic XA Resource Manager (`XA_OK` voting) for severed or offline upstream servers.
 
 * **📬 AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**:
   * Ingest AsyncAPI 2.x and 3.x specifications (`asyncapi.yaml`) via `POST /__admin/asyncapi/import` and synthesize mock event publishers and schema payload generators.
