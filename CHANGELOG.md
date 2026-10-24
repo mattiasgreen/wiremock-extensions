@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.5.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.5.0...v1.5.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **casual:** downgrade to casual 3.4.0 for WildFly backward compatibility ([#44](https://github.com/mattiasgreen/wiremock-extensions/issues/44)) ([953975c](https://github.com/mattiasgreen/wiremock-extensions/commit/953975ca1021b377cc93b29e7649e91603679034))
+
 ## [1.5.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.4.1...v1.5.0) (2026-10-23)
 
 
