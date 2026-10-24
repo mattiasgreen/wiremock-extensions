@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import javax.transaction.xa.Xid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.CasualBufferUtils;
@@ -23,6 +24,7 @@ import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
 import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.api.xa.XID;
 import se.laz.casual.network.CasualNWMessageDecoder;
 import se.laz.casual.network.CasualNWMessageEncoder;
 import se.laz.casual.network.ProtocolMatcher;
@@ -321,9 +323,14 @@ public class CasualServer implements AutoCloseable {
             }
             if (connVersion != null) {
                 boolean needsRebuild = false;
-                if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)
-                        && reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3) {
-                    needsRebuild = true;
+                if (connVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
+                    if (reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3) {
+                        needsRebuild = true;
+                    }
+                } else {
+                    if (reply.getType() != CasualNWMessageType.SERVICE_CALL_REPLY) {
+                        needsRebuild = true;
+                    }
                 }
                 if (needsRebuild) {
                     CasualServiceCallReplyMessage.Builder b = CasualServiceCallReplyMessage.createBuilder()
@@ -334,11 +341,18 @@ public class CasualServer implements AutoCloseable {
                             .setTransactionState(reply.getTransactionState())
                             .setServiceBuffer(reply.getServiceBuffer());
                     if (connVersion.isLessThan(ProtocolVersion.VERSION_1_3)) {
+                        Xid replyXid = null;
                         try {
-                            b.setXid(reply.getXid());
-                        } catch (CasualProtocolException e) {
-                            LOG.debug("XID not available on reply for downgrade: {}", e.getMessage());
+                            replyXid = reply.getXid();
+                        } catch (CasualProtocolException ignored) {
                         }
+                        if (replyXid == null && msg.getMessage() != null) {
+                            try {
+                                replyXid = msg.getMessage().getXid();
+                            } catch (CasualProtocolException ignored) {
+                            }
+                        }
+                        b.setXid(replyXid != null ? replyXid : XID.NULL_XID);
                     }
                     reply = b.build();
                 }

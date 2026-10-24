@@ -917,9 +917,111 @@ class CasualWireMockGatewayTest {
                     java.nio.ByteBuffer.wrap(replyHeaderBytes, 24, 8).getLong();
             byte[] serviceReplyPayload = in.readNBytes((int) serviceReplyPayloadSize);
 
-            // Verify clean success without decoder exception!
+            // Verify clean success without decoder exception and with normalized SERVICE_CALL_REPLY (3101, not 3103)!
+            long replyMessageType =
+                    java.nio.ByteBuffer.wrap(replyHeaderBytes, 0, 8).getLong();
+            assertThat(replyMessageType).isEqualTo((long) CasualNWMessageType.SERVICE_CALL_REPLY.getMessageId());
             assertThat(serviceReplyPayloadSize).isGreaterThan(0);
             wireMockServer.verify(1, postRequestedFor(urlEqualTo("/__casual/services/sakVKAnvandare")));
+        }
+    }
+
+    @Test
+    @DisplayName("Should normalize upstream Protocol 1.3+ reply to Protocol 1.2 client when proxied")
+    void shouldNormalizeUpstreamProtocol13ReplyToProtocol12ClientWhenProxied() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/upstreamAccountBlocked"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"status\":\"ACCOUNT_OK\"}")));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(false)
+                    .build();
+            proxyGateway.start();
+
+            try (java.net.Socket socket = new java.net.Socket("127.0.0.1", proxyGateway.getPort())) {
+                socket.setSoTimeout(5000);
+                java.io.OutputStream out = socket.getOutputStream();
+                java.io.InputStream in = socket.getInputStream();
+
+                // Propose [1000, 1001, 1002] to negotiate VERSION_1_2
+                se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage connectReq =
+                        se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage.createBuilder()
+                                .withExecution(UUID.randomUUID())
+                                .withDomainId(UUID.randomUUID())
+                                .withDomainName("wildfly-domain")
+                                .withProtocols(List.of(1000L, 1001L, 1002L))
+                                .build();
+                se.laz.casual.api.network.protocol.messages.CasualNWMessage<
+                                se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage>
+                        connectEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                UUID.randomUUID(), connectReq);
+                for (byte[] b : connectEnvelope.toNetworkBytes()) {
+                    out.write(b);
+                }
+                out.flush();
+
+                byte[] connectReplyHeader = in.readNBytes(32);
+                long replyPayloadSize =
+                        java.nio.ByteBuffer.wrap(connectReplyHeader, 24, 8).getLong();
+                byte[] connectReplyPayload = in.readNBytes((int) replyPayloadSize);
+                long negotiatedVersion = java.nio.ByteBuffer.wrap(
+                                connectReplyPayload, connectReplyPayload.length - 8, 8)
+                        .getLong();
+                assertThat(negotiatedVersion).isEqualTo(1002L);
+
+                // Call unmatched service on proxy gateway -> forwarded upstream
+                Xid originalXid = XID.of(
+                        "gtrid-test".getBytes(StandardCharsets.UTF_8),
+                        "bqual-test".getBytes(StandardCharsets.UTF_8),
+                        131077);
+                CasualServiceCallRequestMessage callMsg = CasualServiceCallRequestMessage.createBuilder()
+                        .setProtocolVersion(ProtocolVersion.VERSION_1_2)
+                        .setExecution(UUID.randomUUID())
+                        .setServiceName("upstreamAccountBlocked")
+                        .setTimeout(5000L)
+                        .setParentName("wildfly-domain")
+                        .setXid(originalXid)
+                        .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                        .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}")))
+                        .build();
+
+                se.laz.casual.api.network.protocol.messages.CasualNWMessage<CasualServiceCallRequestMessage>
+                        callEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                UUID.randomUUID(), callMsg);
+                for (byte[] b : callEnvelope.toNetworkBytes()) {
+                    out.write(b);
+                }
+                out.flush();
+
+                byte[] replyHeaderBytes = in.readNBytes(32);
+                long replyMessageType =
+                        java.nio.ByteBuffer.wrap(replyHeaderBytes, 0, 8).getLong();
+                long serviceReplyPayloadSize =
+                        java.nio.ByteBuffer.wrap(replyHeaderBytes, 24, 8).getLong();
+                byte[] serviceReplyPayload = in.readNBytes((int) serviceReplyPayloadSize);
+
+                // Upstream returned 3103 (SERVICE_CALL_REPLY_V_1_3), but gateway MUST have normalized to 3101
+                // (SERVICE_CALL_REPLY)
+                assertThat(replyMessageType).isEqualTo((long) CasualNWMessageType.SERVICE_CALL_REPLY.getMessageId());
+                assertThat(serviceReplyPayloadSize).isGreaterThan(0);
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/upstreamAccountBlocked")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
         }
     }
 }

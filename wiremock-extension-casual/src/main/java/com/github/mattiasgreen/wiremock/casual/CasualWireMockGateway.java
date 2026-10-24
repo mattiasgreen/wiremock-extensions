@@ -35,6 +35,7 @@ import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.client.CasualTcpClient;
@@ -719,8 +720,46 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 upstreamEnlistedXids.add(req.getXid());
             }
             CasualTcpClient client = getUpstreamClient();
-            CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg = client.sendAndReceive(
-                    CasualNWMessageType.SERVICE_CALL_REQUEST, req, upstreamTimeoutSeconds, TimeUnit.SECONDS);
+            CasualServiceCallRequestMessage upstreamReq = req;
+            ProtocolVersion upstreamVersion = client.getProtocolVersion();
+            if (upstreamVersion != null) {
+                boolean needsReqRebuild = false;
+                if (upstreamVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
+                    if (req.getType() != CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3) {
+                        needsReqRebuild = true;
+                    }
+                } else {
+                    if (req.getType() != CasualNWMessageType.SERVICE_CALL_REQUEST) {
+                        needsReqRebuild = true;
+                    }
+                }
+                if (needsReqRebuild) {
+                    CasualServiceCallRequestMessage.Builder b = CasualServiceCallRequestMessage.createBuilder()
+                            .setProtocolVersion(upstreamVersion)
+                            .setExecution(req.getExecution())
+                            .setServiceName(req.getServiceName())
+                            .setTimeout(req.getTimeout())
+                            .setParentName(req.getParentName())
+                            .setXid(req.getXid())
+                            .setXatmiFlags(req.getXatmiFlags())
+                            .setServiceBuffer(req.getServiceBuffer());
+                    try {
+                        SpanId span = req.getParentSpan();
+                        if (span != null) {
+                            b.setParentSpan(span);
+                        } else if (upstreamVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
+                            b.setParentSpan(SpanId.of());
+                        }
+                    } catch (CasualProtocolException ignored) {
+                        if (upstreamVersion.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
+                            b.setParentSpan(SpanId.of());
+                        }
+                    }
+                    upstreamReq = b.build();
+                }
+            }
+            CasualNWMessage<CasualServiceCallReplyMessage> upstreamReplyMsg =
+                    client.sendAndReceive(upstreamReq.getType(), upstreamReq, upstreamTimeoutSeconds, TimeUnit.SECONDS);
             CasualServiceCallReplyMessage upstreamReply = upstreamReplyMsg.getMessage();
 
             ErrorState errorState = upstreamReply.getError();
