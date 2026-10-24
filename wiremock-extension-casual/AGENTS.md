@@ -37,3 +37,16 @@ To minimize Casual protocol maintenance inside `wiremock-extensions`, reusable p
 1. **Netty `ByteBuf` Lifecycle**: Ensure all inbound `ByteBuf` instances in `CasualFrameDecoder` and channel handlers are properly released across both normal decoding and exception paths.
 2. **Stub Match Discrimination**: Use the WireMock `Matched-Stub-Id` response header to distinguish a deliberate stubbed error (e.g., HTTP 404/500 mapped to `TPENOENT`/`TPESVCFAIL`) from an genuinely unmatched request that should be proxied upstream.
 3. **Fault Recording Defaults**: Record upstream `TPESVCFAIL` application faults via `X-Casual-Error-State` header mappings, but never auto-record `TPENOENT` (service not found) by default.
+4. **Bidirectional L7 Protocol Normalization Invariant**:
+   - Outbound service replies sent by `CasualServer` MUST strictly match the client's negotiated `connVersion` (`SERVICE_CALL_REPLY` / 3101 with `XID` for `< 1.3`, `SERVICE_CALL_REPLY_V_1_3` / 3103 for `>= 1.3`).
+   - Outbound proxied service requests sent by `CasualWireMockGateway` to upstream domains MUST match `upstreamClient.getProtocolVersion()`.
+   - Never leak Protocol 1.3+ frames (such as `3103`) to a Protocol 1.2 client or vice versa; doing so triggers `DecoderException: Unknown message type` and permanent TCP byte-stream desynchronization.
+
+---
+
+## 4. Upstream Casual Source Code Availability (Zero Decompilation)
+
+Sources and Javadoc for all upstream `se.laz.casual:*` libraries (`casual-api`, `casual-network`, `casual-network-protocol`, etc.) are published directly to Nexus / Maven Central, and full git commit history is hosted on GitHub at [`casualcore/casual-java`](https://github.com/casualcore/casual-java).
+
+* **Never decompile bytecode**: Agents and developers must inspect the published `-sources.jar` artifacts (via IDE or Gradle source resolution) or browse the GitHub repository directly.
+* All message decoders, builders, and protocol structures can be inspected in original Java source form with complete author comments and parameter names intact.

@@ -61,7 +61,28 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 
 ---
 
-## 3. Fast Timeouts & Fail-Fast Mechanics
+## 3. Bidirectional L7 Protocol Normalization & Heterogeneous Interoperability
+
+In enterprise topologies, clients and upstream domains often run disparate versions of the Casual protocol:
+* **Legacy Clients (e.g. WildFly 3.3.x / JBoss EAP)**: Only support Protocols `1.0` through `1.2` (`[1000, 1001, 1002]`). They require transactional `XID` fields in `SERVICE_CALL_REPLY` (`3101`) and crash with `Unknown message type: 3103` if sent Protocol 1.3+ replies.
+* **Modern Upstream Domains / Tuxedo Gateways**: Run Protocol `1.3` or `1.4` (`[1000..1004]`). They omit `XID` from `SERVICE_CALL_REPLY_V_1_3` (`3103`), require mandatory `parentSpan` in `SERVICE_CALL_REQUEST_V_1_3` (`3102`), and reject legacy `3100` frames with `Message type 3100 is not supported by protocol version VERSION_1_4`.
+
+### Architectural Choice: L7 Gateway Normalization (Decoupled Legs)
+
+Rather than forcing 1:1 protocol pass-through—which would break upstream connection pooling across heterogeneous clients and fail when upstream and downstream versions diverge—WireMock acts as a **true Layer 7 protocol-normalizing gateway**:
+
+1. **Downstream Leg (Client -> Gateway)**: The client negotiates its preferred protocol version (`connVersion`) with `CasualServer`. All outbound service replies sent by `CasualServer` are strictly normalized to match `connVersion`:
+   - If `connVersion < VERSION_1_3`: Replies are formatted as `CasualNWMessageType.SERVICE_CALL_REPLY` (`3101`), recovering the client's `XID` from the in-flight request.
+   - If `connVersion >= VERSION_1_3`: Replies are formatted as `CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3` (`3103`).
+2. **Upstream Leg (Gateway -> Upstream Domain)**: The pooled `CasualTcpClient` negotiates the highest mutually supported protocol version with the upstream server (`upstreamVersion`). All forwarded requests are normalized to match `upstreamVersion`:
+   - If `upstreamVersion >= VERSION_1_3`: Legacy requests are upgraded to `CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3` (`3102`), populating `parentSpan` with `SpanId.of()` when not present.
+   - If `upstreamVersion < VERSION_1_3`: Requests are formatted as legacy `3100` frames.
+
+This ensures zero framing desynchronization, maintains clean connection pooling, and allows legacy and modern enterprise components to interoperate transparently.
+
+---
+
+## 4. Fast Timeouts & Fail-Fast Mechanics
 
 Enterprise internal networks expect fast resolution within 3–5 seconds. The extension defaults to a **4-second upstream timeout** and strict fail-fast error reporting:
 
@@ -83,7 +104,7 @@ To ensure client applications never hang or block indefinitely waiting for orpha
 
 ---
 
-## 4. Binary & Fielded Buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`)
+## 5. Binary & Fielded Buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`)
 
 While JSON buffers (`.json/`, `JSON`) are stored as plain text strings, Casual applications frequently transmit binary fielded buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`):
 * **Live Upstream Proxying**: Raw byte arrays pass through untouched to the upstream domain.
@@ -112,7 +133,7 @@ While JSON buffers (`.json/`, `JSON`) are stored as plain text strings, Casual a
 
 ---
 
-## 5. Observability & Debug Logging Guide
+## 6. Observability & Debug Logging Guide
 
 The Casual extension uses standard **SLF4J** logging. For inbound requests, outbound responses, and stub checks, structured log messages provide complete visibility into connection states, correlation IDs, and transaction XIDs.
 
@@ -152,7 +173,7 @@ docker run -it -p 8080:8080 -p 7001:7001 \
 
 ---
 
-## 6. XATMI Failure Modes, Error States & Transaction Simulation
+## 7. XATMI Failure Modes, Error States & Transaction Simulation
 
 The gateway faithfully reproduces Tuxedo / XATMI protocol behavior and distributed transaction semantics:
 
@@ -204,7 +225,7 @@ Simulate distributed transaction status (e.g. marking a transaction rollback-onl
 
 ---
 
-## 7. Recording Considerations & Sensible Defaults
+## 8. Recording Considerations & Sensible Defaults
 
 When enabling transparent proxy recording (`recordStubs: true`), the gateway enforces battle-tested recording defaults:
 
@@ -219,7 +240,7 @@ When enabling transparent proxy recording (`recordStubs: true`), the gateway enf
 
 ---
 
-## 8. Configuration & Admin API Control Plane
+## 9. Configuration & Admin API Control Plane
 
 The Casual extension supports flexible configuration via JVM system properties (highest precedence), environment variables (for Docker / containerized environments), or dynamic REST API updates at runtime.
 
@@ -277,7 +298,7 @@ WireMock Standalone exposes dedicated REST endpoints (auto-discovered via `Casua
 
 ---
 
-## 9. Usage & Stubbing Examples
+## 10. Usage & Stubbing Examples
 
 ### A. Starting the Gateway in Tests
 ```java
@@ -333,7 +354,7 @@ proxyGateway.start();
 
 ---
 
-## 10. Test Suite & Verification Matrix
+## 11. Test Suite & Verification Matrix
 
 The test suite covers comprehensive unit, integration, and E2E scenarios across multiple test sets:
 
@@ -357,7 +378,7 @@ The test suite covers comprehensive unit, integration, and E2E scenarios across 
 
 ---
 
-## 11. Multi-Node Integration Test Architecture & Scenario Flyovers
+## 12. Multi-Node Integration Test Architecture & Scenario Flyovers
 
 To validate end-to-end distributed transactions (JTA/Narayana 2PC) and transparent Man-in-the-Middle (MitM) behavior without slowing down the inner unit-test loop, `wiremock-extension-casual` provides an isolated integration test suite (`quarkusIntegrationTest`) modeling a 3-node Casual topology:
 
@@ -462,9 +483,19 @@ sequenceDiagram
 
 ---
 
-## 12. Future Roadmap & Native Matching Engine
+## 13. Future Roadmap & Native Matching Engine
 
 See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
 * **In-Process WireMock `Request` Adapter**: Bypassing HTTP loopback sockets to evaluate directly against WireMock’s in-memory `StubMappings` for sub-millisecond ($\sim 50\mu\text{s}$) latency.
 * **Native Custom Matchers**: Adding a `RequestMatcherExtension` (`CasualFieldedMatcher`) to unpack and match on `.FIELDED` / FML binary buffers without requiring string conversions.
 * **Upstream Contributions**: Upstreaming standalone Java SE Netty client and server components to `casualcore/casual-java`.
+
+---
+
+## 14. Upstream Casual Dependencies & Source Code Availability
+
+The extension builds upon upstream `se.laz.casual` libraries (`casual-api`, `casual-network`, `casual-network-protocol`). Full `-sources.jar` artifacts are published directly to Maven Central / Nexus and the complete open-source codebase is hosted on GitHub at [`casualcore/casual-java`](https://github.com/casualcore/casual-java).
+
+> [!NOTE]
+> Decompilation is never required when troubleshooting or inspecting upstream Casual protocol internals, framing, or message decoders. Developers and coding agents can reference published sources or GitHub directly.
+

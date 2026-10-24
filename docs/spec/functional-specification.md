@@ -211,7 +211,7 @@ These stories define the **inviolable acceptance criteria** for any client front
 ### Story 14: In-Process Casual (XATMI) Domain Gateway, Discovery Aggregation, and Fast-Fail Proxying
 - **Given** WireMock is running with the `wiremock-extension-casual` gateway listening on a raw TCP port, and optionally configured with an upstream Casual domain gateway (`upstreamHost`, `upstreamPort`, and fast timeout `upstreamTimeoutSeconds`).
 - **When** an XATMI client initiates a domain connect handshake (`DOMAIN_CONNECT_REQUEST`).
-- **Then** the gateway dynamically negotiates the highest mutually supported protocol version (1.0 through 1.5) using upstream `casual-network` decoders, supporting modern WildFly / JBoss and Quarkus Narayana XA clients without requiring an external JEE or C++ domain broker.
+- **Then** the gateway dynamically negotiates the highest mutually supported protocol version using upstream `casual-network` decoders, supporting modern WildFly / JBoss and Quarkus Narayana XA clients without requiring an external JEE or C++ domain broker, and transparently normalizes protocol versions across decoupled downstream and upstream legs (preventing legacy Protocol 1.2 clients from encountering Protocol 1.3+ framing exceptions).
 - **When** the client issues a service discovery request (`DOMAIN_DISCOVERY_REQUEST`).
 - **Then** the gateway aggregates services registered in the upstream domain catalog with local WireMock stubs (`/__casual/services/*`), returning a unified service list.
 - **When** a service call (`SERVICE_CALL_REQUEST`) arrives for a stubbed service.

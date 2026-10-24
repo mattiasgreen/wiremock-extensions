@@ -12,6 +12,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import javax.transaction.xa.Xid;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,8 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import se.laz.casual.api.buffer.CasualBufferUtils;
+import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
+import se.laz.casual.api.flags.AtmiFlags;
 import se.laz.casual.api.flags.ErrorState;
+import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XAReturnCode;
@@ -30,6 +34,7 @@ import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
+import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareReplyMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
@@ -817,8 +822,8 @@ class CasualWireMockGatewayTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"status\":\"SUCCESS\"}")));
 
-        // Client connects and negotiates VERSION_1_5
-        assertThat(client.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_5);
+        // Client connects and negotiates VERSION_1_4
+        assertThat(client.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_4);
 
         // Make service call with xid, simulating WildFly/JBoss Narayana XA client
         Xid xid = XID.of(
@@ -829,6 +834,194 @@ class CasualWireMockGatewayTest {
 
         assertThat(reply).isNotNull();
         assertThat(reply.getError()).isEqualTo(ErrorState.OK);
-        assertThat(reply.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5);
+        assertThat(reply.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3);
+    }
+
+    @Test
+    @DisplayName("Should cleanly decode WildFly 3.3.x client service call on Protocol 1.2 with 8-byte trailing buffer")
+    void shouldCleanlyDecodeWildFlyClientOnProtocol12With336Trailer() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/sakVKAnvandare"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":\"SUCCESS\"}")));
+
+        // Simulate WildFly 3.3.x client by connecting over TCP socket directly proposing [1000, 1001, 1002]
+        try (java.net.Socket socket = new java.net.Socket("127.0.0.1", gateway.getPort())) {
+            socket.setSoTimeout(5000);
+            java.io.OutputStream out = socket.getOutputStream();
+            java.io.InputStream in = socket.getInputStream();
+
+            // Send domain connect request proposing [1000, 1001, 1002]
+            se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage connectReq =
+                    se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage.createBuilder()
+                            .withExecution(UUID.randomUUID())
+                            .withDomainId(UUID.randomUUID())
+                            .withDomainName("wildfly-domain")
+                            .withProtocols(List.of(1000L, 1001L, 1002L))
+                            .build();
+            se.laz.casual.api.network.protocol.messages.CasualNWMessage<
+                            se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage>
+                    connectEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                            UUID.randomUUID(), connectReq);
+            for (byte[] b : connectEnvelope.toNetworkBytes()) {
+                out.write(b);
+            }
+            out.flush();
+
+            // Read connect reply header + payload (32 bytes header: UUID (16) + type (8) + payloadSize (8))
+            byte[] connectReplyHeader = in.readNBytes(32);
+            long replyPayloadSize =
+                    java.nio.ByteBuffer.wrap(connectReplyHeader, 24, 8).getLong();
+            byte[] connectReplyPayload = in.readNBytes((int) replyPayloadSize);
+            long negotiatedVersion = java.nio.ByteBuffer.wrap(connectReplyPayload, connectReplyPayload.length - 8, 8)
+                    .getLong();
+            assertThat(negotiatedVersion).isEqualTo(1002L); // Negotiated VERSION_1_2
+
+            // Build service call message under VERSION_1_2
+            Xid xid = XID.of(
+                    "gtrid-wildfly".getBytes(StandardCharsets.UTF_8),
+                    "bqual-wildfly".getBytes(StandardCharsets.UTF_8),
+                    131077);
+            CasualServiceCallRequestMessage callMsg = CasualServiceCallRequestMessage.createBuilder()
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_2)
+                    .setExecution(UUID.randomUUID())
+                    .setServiceName("sakVKAnvandare")
+                    .setTimeout(5000L)
+                    .setParentName("wildfly-domain")
+                    .setXid(xid)
+                    .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                    .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}")))
+                    .build();
+
+            // In Casual 3.3.x, the message buffer had 8 trailing zero bytes from CALL_DESCRIPTOR allocation
+            byte[] normalPayload = callMsg.toNetworkBytes().get(0);
+            byte[] wildfly336Payload = new byte[normalPayload.length + 8]; // exact 8 trailing zero bytes!
+            System.arraycopy(normalPayload, 0, wildfly336Payload, 0, normalPayload.length);
+
+            // Construct network frame with 406 bytes payload
+            se.laz.casual.network.protocol.messages.CasualNWMessageHeader callHeader =
+                    se.laz.casual.network.protocol.messages.CasualNWMessageHeader.createBuilder()
+                            .setCorrelationId(UUID.randomUUID())
+                            .setType(CasualNWMessageType.SERVICE_CALL_REQUEST)
+                            .setPayloadSize(wildfly336Payload.length)
+                            .build();
+
+            out.write(callHeader.toNetworkBytes());
+            out.write(wildfly336Payload);
+            out.flush();
+
+            // Read service call reply header (32 bytes header)
+            byte[] replyHeaderBytes = in.readNBytes(32);
+            long serviceReplyPayloadSize =
+                    java.nio.ByteBuffer.wrap(replyHeaderBytes, 24, 8).getLong();
+            byte[] serviceReplyPayload = in.readNBytes((int) serviceReplyPayloadSize);
+
+            // Verify clean success without decoder exception and with normalized SERVICE_CALL_REPLY (3101, not 3103)!
+            long replyMessageType =
+                    java.nio.ByteBuffer.wrap(replyHeaderBytes, 0, 8).getLong();
+            assertThat(replyMessageType).isEqualTo((long) CasualNWMessageType.SERVICE_CALL_REPLY.getMessageId());
+            assertThat(serviceReplyPayloadSize).isGreaterThan(0);
+            wireMockServer.verify(1, postRequestedFor(urlEqualTo("/__casual/services/sakVKAnvandare")));
+        }
+    }
+
+    @Test
+    @DisplayName("Should normalize upstream Protocol 1.3+ reply to Protocol 1.2 client when proxied")
+    void shouldNormalizeUpstreamProtocol13ReplyToProtocol12ClientWhenProxied() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/upstreamAccountBlocked"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"status\":\"ACCOUNT_OK\"}")));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockBaseUrl(wireMockServer.baseUrl())
+                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .recordStubs(false)
+                    .build();
+            proxyGateway.start();
+
+            try (java.net.Socket socket = new java.net.Socket("127.0.0.1", proxyGateway.getPort())) {
+                socket.setSoTimeout(5000);
+                java.io.OutputStream out = socket.getOutputStream();
+                java.io.InputStream in = socket.getInputStream();
+
+                // Propose [1000, 1001, 1002] to negotiate VERSION_1_2
+                se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage connectReq =
+                        se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage.createBuilder()
+                                .withExecution(UUID.randomUUID())
+                                .withDomainId(UUID.randomUUID())
+                                .withDomainName("wildfly-domain")
+                                .withProtocols(List.of(1000L, 1001L, 1002L))
+                                .build();
+                se.laz.casual.api.network.protocol.messages.CasualNWMessage<
+                                se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage>
+                        connectEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                UUID.randomUUID(), connectReq);
+                for (byte[] b : connectEnvelope.toNetworkBytes()) {
+                    out.write(b);
+                }
+                out.flush();
+
+                byte[] connectReplyHeader = in.readNBytes(32);
+                long replyPayloadSize =
+                        java.nio.ByteBuffer.wrap(connectReplyHeader, 24, 8).getLong();
+                byte[] connectReplyPayload = in.readNBytes((int) replyPayloadSize);
+                long negotiatedVersion = java.nio.ByteBuffer.wrap(
+                                connectReplyPayload, connectReplyPayload.length - 8, 8)
+                        .getLong();
+                assertThat(negotiatedVersion).isEqualTo(1002L);
+
+                // Call unmatched service on proxy gateway -> forwarded upstream
+                Xid originalXid = XID.of(
+                        "gtrid-test".getBytes(StandardCharsets.UTF_8),
+                        "bqual-test".getBytes(StandardCharsets.UTF_8),
+                        131077);
+                CasualServiceCallRequestMessage callMsg = CasualServiceCallRequestMessage.createBuilder()
+                        .setProtocolVersion(ProtocolVersion.VERSION_1_2)
+                        .setExecution(UUID.randomUUID())
+                        .setServiceName("upstreamAccountBlocked")
+                        .setTimeout(5000L)
+                        .setParentName("wildfly-domain")
+                        .setXid(originalXid)
+                        .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                        .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}")))
+                        .build();
+
+                se.laz.casual.api.network.protocol.messages.CasualNWMessage<CasualServiceCallRequestMessage>
+                        callEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                UUID.randomUUID(), callMsg);
+                for (byte[] b : callEnvelope.toNetworkBytes()) {
+                    out.write(b);
+                }
+                out.flush();
+
+                byte[] replyHeaderBytes = in.readNBytes(32);
+                long replyMessageType =
+                        java.nio.ByteBuffer.wrap(replyHeaderBytes, 0, 8).getLong();
+                long serviceReplyPayloadSize =
+                        java.nio.ByteBuffer.wrap(replyHeaderBytes, 24, 8).getLong();
+                byte[] serviceReplyPayload = in.readNBytes((int) serviceReplyPayloadSize);
+
+                // Upstream returned 3103 (SERVICE_CALL_REPLY_V_1_3), but gateway MUST have normalized to 3101
+                // (SERVICE_CALL_REPLY)
+                assertThat(replyMessageType).isEqualTo((long) CasualNWMessageType.SERVICE_CALL_REPLY.getMessageId());
+                assertThat(serviceReplyPayloadSize).isGreaterThan(0);
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/upstreamAccountBlocked")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
     }
 }

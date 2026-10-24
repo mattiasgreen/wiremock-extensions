@@ -15,7 +15,7 @@ swagger-parser = "2.1.25"
 resilience4j = "2.2.0"
 spotbugs-plugin = "6.1.7"
 findsecbugs = "1.14.0"
-casual = "3.6.0"
+casual = "3.4.0"
 netty = "4.1.121.Final"
 
 [libraries]
