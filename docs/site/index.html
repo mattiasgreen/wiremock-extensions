@@ -17,6 +17,7 @@
     </a>
     <ul class="nav-links">
       <li><a href="#features">Features</a></li>
+      <li><a href="#tour">Video Tour</a></li>
       <li><a href="#architecture">Architecture</a></li>
       <li><a href="#comparison">Compare</a></li>
       <li><a href="#quickstart">Quickstart</a></li>
@@ -153,6 +154,40 @@
             <li>CRLF-sanitized dynamic input fields</li>
             <li>MDC correlation propagation across threads</li>
           </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- Progressive Simulation Video Tour Showcase -->
+  <section id="tour" style="background: var(--bg-secondary);">
+    <div class="container">
+      <div class="section-header">
+        <span class="badge indigo">End-to-End Video Tour</span>
+        <h2 style="margin-top: 0.5rem;">Progressive Simulation in Action</h2>
+        <p>Watch a multi-protocol banking application (HTTP REST + Casual 2PC distributed transactions) transition from live proxy recording to 100% offline stub replay&mdash;with zero code changes.</p>
+      </div>
+
+      <div class="hero-media" style="margin-bottom: 2.5rem;">
+        <video controls poster="assets/screenshot-stubs-explorer.png" preload="metadata">
+          <source src="https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm" type="video/webm">
+          Your browser does not support the video tag. You can <a href="https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm">download the WebM video tour directly</a>.
+        </video>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <h4 style="color: var(--accent-blue); margin-bottom: 0.5rem;">1. Live Proxy Recording</h4>
+          <p style="font-size: 0.95rem;">System Under Test interacts with live CRM, Case API, and Casual 2PC billing. WireMock records every HTTP and binary XATMI call transparently into the unified request journal.</p>
+        </div>
+        <div class="card">
+          <h4 style="color: var(--accent-emerald); margin-bottom: 0.5rem;">2. 1-Click Snapshot &amp; Flip</h4>
+          <p style="font-size: 0.95rem;">With one click in the Web UI, captured sessions are harvested into deterministic stubs, and project routes instantly switch from <code>LIVE PROXY</code> to <code>STUBS MODE</code>.</p>
+        </div>
+        <div class="card">
+          <h4 style="color: var(--accent-purple); margin-bottom: 0.5rem;">3. 100% Offline Replay</h4>
+          <p style="font-size: 0.95rem;">Live backend servers are shut down completely. The identical test suite replays flawlessly with zero upstream dependencies, local 2PC transaction synthesis, and zero flakes.</p>
         </div>
       </div>
     </div>

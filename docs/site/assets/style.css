@@ -283,7 +283,8 @@ section {
   background: #000;
 }
 
-.hero-media img {
+.hero-media img,
+.hero-media video {
   width: 100%;
   height: auto;
   display: block;

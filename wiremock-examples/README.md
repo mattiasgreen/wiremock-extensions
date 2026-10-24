@@ -43,6 +43,23 @@ stateDiagram-v2
    - **Request Journal Verification**: Uses `wireMockServer.verify(...)` to assert HTTP requests against the journal.
    - **Playwright DAG Visualizer**: Opens `/__admin/ui/#scenarios`, validates the interactive DAG visualizer, checks pipeline steps, and verifies real-time state synchronization when cases transition.
 
+## Multi-Protocol Progressive Simulation: Banking Reference Architecture
+
+The `wiremock-examples` module includes an end-to-end 3-node banking reference harness demonstrating how to transition a distributed system (HTTP REST CRM & Case Management + binary Casual XATMI 2PC billing) from live proxying to 100% offline simulation:
+
+- **Node 1: Customer Portal & Product System SUT** (`ProductPortalServer`): Embedded web portal and orchestrator submitting applications and executing XA transactions.
+- **Node 2: WireMock Gateway** (`WireMockServer` + `CasualWireMockGateway`): Layer 7 HTTP & L4 Casual reverse proxy recording traffic and managing stub lifecycles.
+- **Node 3: Upstream Backend** (`UpstreamBackendServer`): Serves live Case API, CRM, and Casual billing with 2PC XA Resource Manager. Can be terminated between test runs to prove complete offline decoupling.
+
+### 🎥 Progressive Simulation Video Tour
+
+▶️ **[Download / Watch Banking Progressive Simulation Tour (WebM)](https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm)** *(Hosted on GitHub Releases, zero git bloat)*
+
+#### Walkthrough Scenario:
+1. **Live Proxy Recording**: SUT submits application and confirms purchase with live backend servers. WireMock captures all HTTP calls and binary `CASUAL` `OK` frames into the unified request journal.
+2. **1-Click Harvest & Flip**: With one click in the Web UI, captured sessions are harvested into deterministic stubs, and project routes instantly switch from `LIVE PROXY` to `STUBS MODE`.
+3. **100% Offline Replay**: The upstream backend server is terminated completely. Replaying the identical application and purchase journey succeeds 100% from local stubs with local 2PC transaction synthesis.
+
 ## Running the Examples
 
 ```bash
