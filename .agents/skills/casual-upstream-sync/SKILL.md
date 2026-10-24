@@ -27,3 +27,26 @@ Classes inside `se.laz.casual.*` must **NEVER** import `com.github.tomakehurst.w
 3. Run 3-node 2PC/XA MitM integration harness (~15s):
    `./gradlew :wiremock-extension-casual:quarkusIntegrationTest -q --console=plain`
 4. Update [`wiremock-extension-casual/TODO.md`](../../../wiremock-extension-casual/TODO.md) if upstream readiness status changes.
+
+## 3. Working with Upstream Git Repositories Locally (`.upstream/`)
+
+Rather than relying on source JARs or decompiled bytecode, work directly with the actual upstream Git repositories cloned under `.upstream/` (git-ignored):
+
+1. **Clone or Update Upstream Sources**:
+   ```bash
+   powershell -ExecutionPolicy Bypass -File .agents/scripts/sync-upstream-casual.ps1
+   ```
+   *(Windows requires `core.longpaths true` due to deep package nesting in Java EE resource adapters).*
+
+2. **Inspect Commit History & Changes**:
+   ```bash
+   cd .upstream/casual-java
+   git log --oneline -S "DecoderReaderValidator"
+   git show <commit_hash>
+   git checkout <release_tag>   # e.g., 3.4.0, 3.5.0
+   ```
+
+3. **Branching & PR Preparation for `casualcore/casual-java`**:
+   - Create a branch in `.upstream/casual-java` (e.g., `git checkout -b fix/caller-padding-tolerance`).
+   - Run upstream builds & tests: `./gradlew check`.
+   - Submit PR upstream using `gh pr create --repo casualcore/casual-java`.

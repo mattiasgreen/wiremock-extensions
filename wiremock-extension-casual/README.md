@@ -492,10 +492,15 @@ See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
 
 ---
 
-## 14. Upstream Casual Dependencies & Source Code Availability
+## 14. Direct Upstream Git Sources (`casualcore/casual-java` & `casualcore/casual-quarkus`)
 
-The extension builds upon upstream `se.laz.casual` libraries (`casual-api`, `casual-network`, `casual-network-protocol`). Full `-sources.jar` artifacts are published directly to Maven Central / Nexus and the complete open-source codebase is hosted on GitHub at [`casualcore/casual-java`](https://github.com/casualcore/casual-java).
+The extension builds upon upstream `se.laz.casual` libraries (`casual-api`, `casual-network`, `casual-network-protocol`). Rather than relying on decompilation or downloading source JARs manually, developers and coding agents should work directly with the actual upstream Git repositories cloned under `.upstream/`:
 
-> [!NOTE]
-> Decompilation is never required when troubleshooting or inspecting upstream Casual protocol internals, framing, or message decoders. Developers and coding agents can reference published sources or GitHub directly.
+```bash
+# Clone or update upstream repositories locally:
+powershell -ExecutionPolicy Bypass -File .agents/scripts/sync-upstream-casual.ps1
+```
 
+- **Commit History & Blame**: Use `git log -S <symbol>` to track when specific message decoders, validators, or protocol versions were introduced.
+- **Tag Inspection**: Checkout specific release tags (e.g. `git checkout 3.4.0`) to compare behaviors against the version specified in `gradle/libs.versions.toml`.
+- **Zero Decompilation**: Original Java source files with author comments, tests, and commit discussions are always accessible.
