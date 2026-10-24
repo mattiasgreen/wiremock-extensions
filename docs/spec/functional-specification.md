@@ -158,6 +158,15 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **And** features backed by missing extensions gracefully degrade with visual hints (`.cap-disabled`) and descriptive tooltips rather than vanishing from the UI:
   - TCP NetEm tab (`#nav-tab-netem`) is styled as `.cap-disabled` with a tooltip indicating missing `wiremock-extension-tcp-netem`.
   - Metrics link (`#link-metrics`) is styled as `.cap-disabled`.
+
+### Story 10: Persistent Local Browser Headers in HTTP Tester
+- **Given** an engineer is testing services requiring mandatory corporate headers (`X-Correlation-Id`, `X-Tenant-Id`, `Authorization`).
+- **When** the user configures local persistent headers in the tester and enables them.
+- **Then** the headers are stored exclusively in browser `localStorage` and never transmitted to or stored in server-side stub files.
+- **And** the headers are rendered visibly in the Request Headers section as distinctive chips displaying key-value pairs (with dynamic macros like `{{uuid}}`, `{{now}}`, `{{timestamp}}` supported).
+- **And** if the user specifies an identical header key in the per-request textarea, the local header chip shows an `(overridden)` visual state and the textarea header takes precedence.
+- **When** the user dispatches the request or clicks "Copy as cURL".
+- **Then** the resolved headers (combining enabled local persistent headers and per-request headers) are sent and included in the cURL command and Sent Request inspector.
   - Dynamic stub controls (`#btn-create-dynamic-stub`, `#btn-filter-dynamic`) are styled as `.cap-disabled`.
   - Stub pause/lifecycle controls (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk disable) are styled as `.cap-disabled` with explanatory tooltips.
   - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational with zero console exceptions.
