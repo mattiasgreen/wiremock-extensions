@@ -1,10 +1,13 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.recordSpec;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -12,6 +15,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.transaction.xa.Xid;
 import org.junit.jupiter.api.AfterEach;
@@ -55,7 +59,10 @@ class CasualWireMockGatewayTest {
         wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
         wireMockServer.start();
 
-        gateway = new CasualWireMockGateway(0, wireMockServer.baseUrl());
+        gateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(wireMockServer)
+                .build();
         gateway.start();
 
         client = new SimpleCasualTestClient("127.0.0.1", gateway.getPort());
@@ -71,6 +78,7 @@ class CasualWireMockGatewayTest {
             gateway.close();
         }
         if (wireMockServer != null) {
+            wireMockServer.resetAll();
             wireMockServer.stop();
         }
     }
@@ -151,12 +159,14 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
-    @DisplayName("Should forward unmatched service call to upstream Casual server")
+    @DisplayName("Should forward service call to upstream Casual server via stub-driven proxy")
     void shouldForwardUnmatchedServiceToUpstreamCasualServer() throws Exception {
-        // Set up upstream WireMock server and upstream Casual gateway
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
@@ -166,12 +176,16 @@ class CasualWireMockGatewayTest {
                             .withHeader("Content-Type", "application/json")
                             .withBody("{\"orderId\": \"UPSTREAM-123\", \"routedVia\": \"upstream\"}")));
 
-            // Configure proxy gateway pointing to upstream
+            // Configure stub-driven proxy route
+            wireMockServer.stubFor(post(urlMatching("/__casual/services/.*"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(false)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
@@ -199,11 +213,14 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
-    @DisplayName("Should forward unmatched call to upstream and record stub for subsequent replay")
+    @DisplayName("Should forward call to upstream and snapshot record for subsequent offline replay")
     void shouldForwardAndRecordUnmatchedServiceWhenRecordStubsEnabled() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
@@ -213,19 +230,22 @@ class CasualWireMockGatewayTest {
                             .withHeader("Content-Type", "application/json")
                             .withBody("{\"sku\": \"SKU-555\", \"inStock\": true}")));
 
-            // Configure proxy gateway pointing to upstream with recordStubs = true
+            wireMockServer.stubFor(post(urlMatching("/__casual/services/.*"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(true)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
             try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
-                // 1st Call: Unmatched in wireMockServer -> forwarded to upstream and recorded
+                // 1st Call: Forwarded to upstream and recorded in Request Journal
                 CasualServiceCallReplyMessage firstReply =
                         proxyClient.tpcall("recordedInventoryService", "{\"sku\": \"SKU-555\"}");
 
@@ -237,6 +257,12 @@ class CasualWireMockGatewayTest {
 
                 // Upstream received exactly 1 request
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService")));
+
+                // Snapshot record journal entries into offline stub mappings
+                wireMockServer.snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
 
                 // 2nd Call: Must match the newly recorded stub in wireMockServer directly!
                 CasualServiceCallReplyMessage secondReply =
@@ -252,7 +278,7 @@ class CasualWireMockGatewayTest {
                 // stub
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService")));
 
-                // Verify wireMockServer now has the recorded stub mapping
+                // Verify wireMockServer now has recorded requests in journal
                 wireMockServer.verify(
                         2,
                         postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService"))
@@ -271,18 +297,24 @@ class CasualWireMockGatewayTest {
     void shouldForwardUpstreamErrorStates() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
             upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/upstreamFailing"))
                     .willReturn(aResponse().withStatus(500).withBody("Upstream fatal error")));
 
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/upstreamFailing"))
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(false)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
@@ -303,11 +335,14 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
-    @DisplayName("Should record and replay upstream faults when recordStubs and recordFaults are enabled")
+    @DisplayName("Should record and replay upstream faults via snapshot record")
     void shouldRecordAndReplayUpstreamFaultsWhenRecordStubsEnabled() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
@@ -318,19 +353,22 @@ class CasualWireMockGatewayTest {
                             .withHeader("X-Casual-Error-State", "TPESVCFAIL")
                             .withBody("{\"error\": \"Account blocked\", \"code\": \"ACC-BLOCKED\"}")));
 
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/upstreamAccountBlocked"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(true)
-                    .recordFaults(true)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
             try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
-                // 1st Call: Forwarded to upstream and recorded as a fault stub
+                // 1st Call: Forwarded to upstream and recorded in Request Journal
                 CasualServiceCallReplyMessage firstReply =
                         proxyClient.tpcall("upstreamAccountBlocked", "{\"accountId\": \"ACC-999\"}");
 
@@ -341,6 +379,12 @@ class CasualWireMockGatewayTest {
                 assertThat(firstBody).contains("Account blocked").contains("ACC-BLOCKED");
 
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/upstreamAccountBlocked")));
+
+                // Snapshot record journal entries into offline stub mappings
+                wireMockServer.snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
 
                 // 2nd Call: Replayed directly from the newly recorded fault stub in wireMockServer
                 CasualServiceCallReplyMessage secondReply =
@@ -360,6 +404,133 @@ class CasualWireMockGatewayTest {
         } finally {
             upstreamGateway.close();
             upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Should prioritize high-priority mock stub over catch-all proxy stub")
+    void shouldPrioritizeLocalMockStubOverCatchAllProxyStub() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/myService"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"source\": \"upstream\"}")));
+
+            // Catch-all proxy at priority 10
+            wireMockServer.stubFor(post(urlMatching("/__casual/services/.*"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            // Local mock stub at priority 1
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/myService"))
+                    .atPriority(1)
+                    .willReturn(aResponse().withStatus(200).withBody("{\"source\": \"local-mock\"}")));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(wireMockServer)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                CasualServiceCallReplyMessage reply = proxyClient.tpcall("myService", "{}");
+                assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+                String body = new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(body).contains("local-mock");
+
+                // Upstream must NOT be called
+                upstreamWireMock.verify(0, postRequestedFor(urlEqualTo("/__casual/services/myService")));
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "Should route different services to different upstreams and fan-out 2PC prepare/commit across all enlisted upstreams")
+    void shouldRouteToMultipleUpstreamsAndFanOut2pc() throws Exception {
+        WireMockServer upstream1WM = new WireMockServer(wireMockConfig().dynamicPort());
+        WireMockServer upstream2WM = new WireMockServer(wireMockConfig().dynamicPort());
+        upstream1WM.start();
+        upstream2WM.start();
+
+        CasualWireMockGateway upstream1 = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstream1WM)
+                .build();
+        CasualWireMockGateway upstream2 = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstream2WM)
+                .build();
+        upstream1.start();
+        upstream2.start();
+
+        try {
+            upstream1WM.stubFor(post(urlEqualTo("/__casual/services/orderService"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"order\": \"123\"}")));
+            upstream2WM.stubFor(post(urlEqualTo("/__casual/services/paymentService"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"payment\": \"456\"}")));
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/orderService"))
+                    .withMetadata(Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstream1.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/paymentService"))
+                    .withMetadata(Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstream2.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(wireMockServer)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                Xid xid = XID.of(
+                        "gtrid-multi".getBytes(StandardCharsets.UTF_8),
+                        "bqual-multi".getBytes(StandardCharsets.UTF_8),
+                        42);
+
+                CasualServiceCallReplyMessage r1 = proxyClient.tpcall("orderService", "{}", xid);
+                assertThat(r1.getError()).isEqualTo(ErrorState.OK);
+
+                CasualServiceCallReplyMessage r2 = proxyClient.tpcall("paymentService", "{}", xid);
+                assertThat(r2.getError()).isEqualTo(ErrorState.OK);
+
+                // Both upstreams called
+                upstream1WM.verify(1, postRequestedFor(urlEqualTo("/__casual/services/orderService")));
+                upstream2WM.verify(1, postRequestedFor(urlEqualTo("/__casual/services/paymentService")));
+
+                // 2PC prepare fans out to both upstreams
+                CasualTransactionResourcePrepareReplyMessage prepReply = proxyClient.prepare(xid, 1);
+                assertThat(prepReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+
+                // 2PC commit fans out to both upstreams
+                CasualTransactionResourceCommitReplyMessage commitReply = proxyClient.commit(xid, 1, false);
+                assertThat(commitReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            upstream1.close();
+            upstream2.close();
+            upstream1WM.stop();
+            upstream2WM.stop();
         }
     }
 
@@ -404,85 +575,6 @@ class CasualWireMockGatewayTest {
         assertThat(client.tpcall("backendError", "{}").getError()).isEqualTo(ErrorState.TPESVCERR);
     }
 
-    @Test
-    @DisplayName("Should NOT record TPENOENT by default so subsequent calls continue to forward upstream")
-    void shouldNotRecordTpenoentByDefault() throws Exception {
-        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
-        upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
-        upstreamGateway.start();
-
-        try {
-            // Upstream returns TPENOENT (no stub / 404)
-            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
-                    .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(true)
-                    .recordFaults(true)
-                    // recordNotFound is false by default
-                    .build();
-            proxyGateway.start();
-
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
-                proxyClient.connect();
-
-                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("missingService", "{}");
-                assertThat(reply1.getError()).isEqualTo(ErrorState.TPENOENT);
-
-                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("missingService", "{}");
-                assertThat(reply2.getError()).isEqualTo(ErrorState.TPENOENT);
-
-                // Both calls reached upstream because TPENOENT was NOT recorded as a matching stub!
-                upstreamWireMock.verify(2, postRequestedFor(urlEqualTo("/__casual/services/missingService")));
-            } finally {
-                proxyGateway.close();
-            }
-        } finally {
-            upstreamGateway.close();
-            upstreamWireMock.stop();
-        }
-    }
-
-    @Test
-    @DisplayName("Should record TPENOENT when recordNotFound is explicitly enabled")
-    void shouldRecordTpenoentWhenRecordNotFoundExplicitlyEnabled() throws Exception {
-        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
-        upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
-        upstreamGateway.start();
-
-        try {
-            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
-                    .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(true)
-                    .recordFaults(true)
-                    .recordNotFound(true)
-                    .build();
-            proxyGateway.start();
-
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
-                proxyClient.connect();
-
-                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("notFoundService", "{}");
-                assertThat(reply1.getError()).isEqualTo(ErrorState.TPENOENT);
-
-                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("notFoundService", "{}");
-                assertThat(reply2.getError()).isEqualTo(ErrorState.TPENOENT);
-
-                // Upstream called only once because TPENOENT was recorded into wireMockServer!
-                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/notFoundService")));
-            } finally {
-                proxyGateway.close();
-            }
-        } finally {
-            upstreamGateway.close();
-            upstreamWireMock.stop();
-        }
-    }
-
     @ParameterizedTest
     @EnumSource(TransactionState.class)
     @DisplayName("Should faithfully stub all Casual TransactionState enum modes")
@@ -523,7 +615,10 @@ class CasualWireMockGatewayTest {
     void shouldRecordAndReplayUpstreamTransactionState() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
@@ -535,24 +630,33 @@ class CasualWireMockGatewayTest {
                             .withHeader("X-Casual-Transaction-State", "TIMEOUT_ROLLBACK_ONLY")
                             .withBody("{\"error\": \"Transaction deadline exceeded\"}")));
 
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/timedOutTxService"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(true)
-                    .recordFaults(true)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
             try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
-                // 1st call: Forwarded upstream & recorded
+                // 1st call: Forwarded upstream & recorded in Request Journal
                 CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("timedOutTxService", "{}");
                 assertThat(reply1.getTransactionState()).isEqualTo(TransactionState.TIMEOUT_ROLLBACK_ONLY);
-                assertThat(reply1.getError()).isEqualTo(ErrorState.TPESVCFAIL); // Recorded as 500 fault
+                assertThat(reply1.getError()).isEqualTo(ErrorState.TPESVCFAIL);
 
                 upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/timedOutTxService")));
+
+                // Snapshot record journal entries into offline stub mappings
+                wireMockServer.snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
 
                 // 2nd call: Replayed from recorded WireMock stub
                 CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("timedOutTxService", "{}");
@@ -620,7 +724,10 @@ class CasualWireMockGatewayTest {
     void shouldTransparentlyForward2pcMessagesToUpstreamCasualServer() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
@@ -631,11 +738,14 @@ class CasualWireMockGatewayTest {
                             .withHeader("X-Casual-XA-Prepare-Vote", "XA_RDONLY")
                             .withBody("{\"upstream\": true}")));
 
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/upstreamTxService"))
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(false)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
@@ -675,19 +785,30 @@ class CasualWireMockGatewayTest {
 
         CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(upstreamWireMock.baseUrl())
+                .wireMockServer(upstreamWireMock)
                 .build();
         upstreamGateway.start();
 
         try {
+            // Upstream provides upstreamCatalogService
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/upstreamCatalogService"))
+                    .willReturn(aResponse().withStatus(200).withBody("{}")));
+
             // Local stub in proxy's WireMock
             wireMockServer.stubFor(post(urlEqualTo("/__casual/services/localStubService"))
+                    .atPriority(1)
                     .willReturn(aResponse().withStatus(200).withBody("{}")));
+
+            // Catch-all proxy stub pointing to upstream
+            wireMockServer.stubFor(post(urlMatching("/__casual/services/.*"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
 
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
@@ -735,7 +856,7 @@ class CasualWireMockGatewayTest {
 
         CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(upstreamWireMock.baseUrl())
+                .wireMockServer(upstreamWireMock)
                 .build();
         upstreamGateway.start();
 
@@ -750,11 +871,15 @@ class CasualWireMockGatewayTest {
                             .withHeader("X-Casual-Buffer-Type", "CFIELD/")
                             .withBody(base64Reply)));
 
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/fieldedService"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(true)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
@@ -771,6 +896,12 @@ class CasualWireMockGatewayTest {
                 assertThat(CasualBufferUtils.toByteArray(reply1.getServiceBuffer()))
                         .isEqualTo(upstreamReplyBytes);
 
+                // Snapshot record journal entries into offline stub mappings
+                wireMockServer.snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
+
                 // Stop upstream gateway completely to test offline replay from recorded Base64 stub
                 upstreamGateway.close();
                 upstreamWireMock.stop();
@@ -785,18 +916,27 @@ class CasualWireMockGatewayTest {
                 proxyGateway.close();
             }
         } finally {
-            upstreamGateway.close();
-            upstreamWireMock.stop();
+            if (upstreamGateway.isRunning()) {
+                upstreamGateway.close();
+            }
+            if (upstreamWireMock.isRunning()) {
+                upstreamWireMock.stop();
+            }
         }
     }
 
     @Test
     @DisplayName("Should include config property hint in timeout error message when upstream call times out")
     void shouldIncludeConfigPropertyHintOnUpstreamTimeout() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/timeoutTestService"))
+                .withMetadata(Map.of(
+                        "mode", "proxy",
+                        "targetBaseUrl", "casual://127.0.0.1:1"))
+                .willReturn(aResponse().withStatus(200)));
+
         CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(wireMockServer.baseUrl())
-                .upstream("127.0.0.1", 1) // Unreachable/non-existent upstream port
+                .wireMockServer(wireMockServer)
                 .upstreamTimeoutSeconds(1) // 1s fast timeout
                 .build();
         proxyGateway.start();
@@ -931,7 +1071,10 @@ class CasualWireMockGatewayTest {
     void shouldNormalizeUpstreamProtocol13ReplyToProtocol12ClientWhenProxied() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
-        CasualWireMockGateway upstreamGateway = new CasualWireMockGateway(0, upstreamWireMock.baseUrl());
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
         upstreamGateway.start();
 
         try {
@@ -941,11 +1084,14 @@ class CasualWireMockGatewayTest {
                             .withHeader("Content-Type", "application/json")
                             .withBody("{\"status\":\"ACCOUNT_OK\"}")));
 
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/upstreamAccountBlocked"))
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
             CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
                     .port(0)
-                    .wireMockBaseUrl(wireMockServer.baseUrl())
-                    .upstream("127.0.0.1", upstreamGateway.getPort())
-                    .recordStubs(false)
+                    .wireMockServer(wireMockServer)
                     .build();
             proxyGateway.start();
 
@@ -1022,6 +1168,82 @@ class CasualWireMockGatewayTest {
         } finally {
             upstreamGateway.close();
             upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Should extract CSTRING buffer payload into human-readable string in journal and replay offline")
+    void shouldExtractCStringBufferHumanReadable() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/cstringService"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "text/plain")
+                            .withHeader("X-Casual-Buffer-Type", "CSTRING/")
+                            .withBody("Hello from upstream CSTRING")));
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/cstringService"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(wireMockServer)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                byte[] cstringBytes = "Inbound CSTRING request\0".getBytes(StandardCharsets.UTF_8);
+                ServiceBuffer requestBuffer = ServiceBuffer.of("CSTRING/", List.of(cstringBytes));
+
+                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("cstringService", requestBuffer);
+                assertThat(reply1.getError()).isEqualTo(ErrorState.OK);
+                assertThat(reply1.getServiceBuffer().getType()).isEqualTo("CSTRING/");
+                String replyText =
+                        new String(CasualBufferUtils.toByteArray(reply1.getServiceBuffer()), StandardCharsets.UTF_8);
+                assertThat(replyText).contains("Hello from upstream CSTRING");
+
+                // Verify the Request Journal captured the string body without trailing null
+                wireMockServer.verify(postRequestedFor(urlEqualTo("/__casual/services/cstringService"))
+                        .withRequestBody(equalTo("Inbound CSTRING request")));
+
+                // Snapshot record journal entries into offline stub mappings
+                wireMockServer.snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
+
+                upstreamGateway.close();
+                upstreamWireMock.stop();
+
+                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("cstringService", requestBuffer);
+                assertThat(reply2.getError()).isEqualTo(ErrorState.OK);
+                assertThat(reply2.getServiceBuffer().getType()).isEqualTo("CSTRING/");
+                String replayedText =
+                        new String(CasualBufferUtils.toByteArray(reply2.getServiceBuffer()), StandardCharsets.UTF_8);
+                assertThat(replayedText).contains("Hello from upstream CSTRING");
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            if (upstreamGateway.isRunning()) {
+                upstreamGateway.close();
+            }
+            if (upstreamWireMock.isRunning()) {
+                upstreamWireMock.stop();
+            }
         }
     }
 }

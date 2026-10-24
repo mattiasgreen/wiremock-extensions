@@ -2,7 +2,6 @@ package com.github.mattiasgreen.wiremock.casual.integration;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
-import com.github.mattiasgreen.wiremock.casual.CasualProxyTransformer;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
@@ -61,23 +60,25 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
         this.upstreamNode = new UpstreamDomainNode();
         this.upstreamNode.start();
 
-        CasualProxyTransformer proxyTransformer = new CasualProxyTransformer();
         com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint netEmEndpoint =
                 new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint();
-        this.wireMockServer =
-                new WireMockServer(wireMockConfig().dynamicPort().extensions(proxyTransformer, netEmEndpoint));
+        this.wireMockServer = new WireMockServer(wireMockConfig().dynamicPort().extensions(netEmEndpoint));
         this.wireMockServer.start();
 
         this.mitmGateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(wireMockServer.baseUrl())
-                .upstream("127.0.0.1", upstreamNode.getPort())
-                .recordStubs(true)
-                .recordFaults(true)
-                .recordNotFound(false)
-                .proxyTransformer(proxyTransformer)
+                .wireMockServer(wireMockServer)
                 .build();
         this.mitmGateway.start();
+
+        // Seed catch-all proxy stub for upstreamNode
+        this.wireMockServer.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(
+                        com.github.tomakehurst.wiremock.client.WireMock.urlMatching("/__casual/services/.*"))
+                .atPriority(10)
+                .withMetadata(java.util.Map.of(
+                        "mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamNode.getPort()))
+                .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+                        .withStatus(200)));
 
         this.clientInitiator = new ClientInitiatorNode("127.0.0.1", mitmGateway.getPort());
         this.clientInitiator.connect();

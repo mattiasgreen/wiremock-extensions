@@ -47,7 +47,7 @@ class CasualWireMockGatewayUnitTest {
 
         gateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(wireMockServer.baseUrl())
+                .wireMockServer(wireMockServer)
                 .build();
     }
 

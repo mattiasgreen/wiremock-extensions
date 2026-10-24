@@ -85,15 +85,10 @@ When running `StandaloneDevServer` locally or in Docker containers, Casual setti
 | :--- | :--- | :--- | :--- |
 | Enable Casual Gateway | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` |
 | Casual TCP Port | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` |
-| Upstream Host | `WIREMOCK_CASUAL_UPSTREAM_HOST` | `wiremock.casual.upstream.host` | `null` |
-| Upstream Port | `WIREMOCK_CASUAL_UPSTREAM_PORT` | `wiremock.casual.upstream.port` | `0` |
-| Upstream Enabled | `WIREMOCK_CASUAL_UPSTREAM_ENABLED` | `wiremock.casual.upstream.enabled` | Auto `true` if host/port set |
-| Record Upstream Stubs | `WIREMOCK_CASUAL_RECORD_STUBS` | `wiremock.casual.record.stubs` | `false` |
+| Upstream Timeout | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `wiremock.casual.upstream.timeout.seconds` | `4` |
 
-Settings can also be inspected and reconfigured dynamically at runtime without restarts:
+Dynamic upstream proxying and recording are declared directly in standard WireMock stub mappings (`targetBaseUrl: "casual://host:port"` with `metadata.mode = "proxy"`), with multi-upstream 2PC XA stickiness and human-readable Request Journal logging. Settings can be inspected via:
 - Inspect configuration: `GET http://localhost:8080/__admin/casual/config`
-- Update configuration: `POST http://localhost:8080/__admin/casual/config` with JSON payload `{ "upstreamHost": "...", "upstreamPort": 7771, "recordStubs": true }`
-- Reset configuration: `POST http://localhost:8080/__admin/casual/reset`
 
 ## Build
 

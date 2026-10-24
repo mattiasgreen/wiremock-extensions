@@ -24,26 +24,24 @@ class CasualAdminEndpointTest {
     @BeforeEach
     void setUp() {
         CasualRegistry.getInstance().reset();
-
         wireMockServer = new WireMockServer(wireMockConfig().dynamicPort().extensions(new CasualExtensionFactory()));
         wireMockServer.start();
 
         adminBaseUrl = "http://127.0.0.1:" + wireMockServer.port() + "/__admin";
-        httpClient =
-                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+        httpClient = HttpClient.newHttpClient();
         objectMapper = new ObjectMapper();
     }
 
     @AfterEach
     void tearDown() {
-        CasualRegistry.getInstance().reset();
         if (wireMockServer != null) {
             wireMockServer.stop();
         }
+        CasualRegistry.getInstance().reset();
     }
 
     @Test
-    void shouldReturnDefaultConfigOnGet() throws Exception {
+    void shouldReturnConfigJsonWithDefaultValues() throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(adminBaseUrl + "/casual/config"))
                 .GET()
@@ -57,28 +55,22 @@ class CasualAdminEndpointTest {
         JsonNode root = objectMapper.readTree(response.body());
         assertThat(root.get("enabled").asBoolean()).isTrue();
         assertThat(root.get("port").asInt()).isEqualTo(7772);
-        assertThat(root.get("upstreamHost").isNull()).isTrue();
-        assertThat(root.get("upstreamPort").asInt()).isEqualTo(0);
-        assertThat(root.get("upstreamEnabled").asBoolean()).isFalse();
-        assertThat(root.get("recordStubs").asBoolean()).isFalse();
         assertThat(root.get("running").asBoolean()).isFalse();
     }
 
     @Test
     void shouldUpdateConfigAndGatewayViaPost() throws Exception {
-        // Register mock/real gateway in registry to verify dynamic update
         CasualWireMockGateway gateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl("http://127.0.0.1:" + wireMockServer.port())
+                .wireMockServer(wireMockServer)
                 .build();
         CasualRegistry.getInstance().setGateway(gateway);
 
         String updateJson =
                 """
                 {
-                    "upstreamHost": "upstream.casual.local",
-                    "upstreamPort": 7780,
-                    "recordStubs": true
+                    "enabled": false,
+                    "port": 8888
                 }
                 """;
 
@@ -93,24 +85,15 @@ class CasualAdminEndpointTest {
         assertThat(response.statusCode()).isEqualTo(200);
 
         JsonNode root = objectMapper.readTree(response.body());
-        assertThat(root.get("upstreamHost").asText()).isEqualTo("upstream.casual.local");
-        assertThat(root.get("upstreamPort").asInt()).isEqualTo(7780);
-        assertThat(root.get("upstreamEnabled").asBoolean()).isTrue();
-        assertThat(root.get("recordStubs").asBoolean()).isTrue();
-
-        // Verify gateway was updated dynamically
-        assertThat(gateway.getUpstreamHost()).isEqualTo("upstream.casual.local");
-        assertThat(gateway.getUpstreamPort()).isEqualTo(7780);
-        assertThat(gateway.isUpstreamEnabled()).isTrue();
-        assertThat(gateway.isRecordStubs()).isTrue();
+        assertThat(root.get("enabled").asBoolean()).isFalse();
+        assertThat(root.get("port").asInt()).isEqualTo(8888);
     }
 
     @Test
     void shouldResetConfigViaPost() throws Exception {
         CasualConfiguration custom = new CasualConfiguration();
-        custom.setUpstreamHost("temp.host");
-        custom.setUpstreamPort(9999);
-        custom.setRecordStubs(true);
+        custom.setEnabled(false);
+        custom.setPort(9999);
         CasualRegistry.getInstance().updateConfig(custom);
 
         HttpRequest resetReq = HttpRequest.newBuilder()
@@ -122,8 +105,7 @@ class CasualAdminEndpointTest {
 
         assertThat(response.statusCode()).isEqualTo(200);
         JsonNode root = objectMapper.readTree(response.body());
-        assertThat(root.get("upstreamHost").isNull()).isTrue();
-        assertThat(root.get("upstreamPort").asInt()).isEqualTo(0);
-        assertThat(root.get("recordStubs").asBoolean()).isFalse();
+        assertThat(root.get("enabled").asBoolean()).isTrue();
+        assertThat(root.get("port").asInt()).isEqualTo(7772);
     }
 }

@@ -209,14 +209,14 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** a portable bundle (`.json`/`.zip`) is generated containing all stubs, fixtures, and state transitions, ready to be committed to Git and replayed 100% offline in CI.
 
 ### Story 14: In-Process Casual (XATMI) Domain Gateway, Discovery Aggregation, and Fast-Fail Proxying
-- **Given** WireMock is running with the `wiremock-extension-casual` gateway listening on a raw TCP port, and optionally configured with an upstream Casual domain gateway (`upstreamHost`, `upstreamPort`, and fast timeout `upstreamTimeoutSeconds`).
+- **Given** WireMock is running with the `wiremock-extension-casual` gateway listening on a raw TCP port, and active WireMock proxy stubs specifying `targetBaseUrl: casual://<host>:<port>`.
 - **When** an XATMI client initiates a domain connect handshake (`DOMAIN_CONNECT_REQUEST`).
 - **Then** the gateway dynamically negotiates the highest mutually supported protocol version using upstream `casual-network` decoders, supporting modern WildFly / JBoss and Quarkus Narayana XA clients without requiring an external JEE or C++ domain broker, and transparently normalizes protocol versions across decoupled downstream and upstream legs (preventing legacy Protocol 1.2 clients from encountering Protocol 1.3+ framing exceptions).
 - **When** the client issues a service discovery request (`DOMAIN_DISCOVERY_REQUEST`).
-- **Then** the gateway aggregates services registered in the upstream domain catalog with local WireMock stubs (`/__casual/services/*`), returning a unified service list.
+- **Then** the gateway queries upstreams from active proxy stubs and aggregates them with local WireMock mock stubs (`/__casual/services/*`), returning a unified service list.
 - **When** a service call (`SERVICE_CALL_REQUEST`) arrives for a stubbed service.
-- **Then** the gateway dispatches the payload to WireMock, respects `X-Casual-Error-State`, `X-Casual-User-Supplied-Error`, and `X-Casual-Transaction-State`, and responds with `SERVICE_CALL_REPLY`.
-- **When** an unmatched service call arrives with an upstream configured.
-- **Then** the gateway forwards the request transparently over TCP to the upstream domain, captures recordable responses as WireMock stubs (`recordStubs: true`), and fails fast with actionable diagnostic hints if the upstream call exceeds the timeout (default 4s).
+- **Then** the gateway evaluates WireMock stubs in-memory; if matching an offline mock, it respects `X-Casual-Error-State`, `X-Casual-User-Supplied-Error`, and `X-Casual-Transaction-State`, responding with `SERVICE_CALL_REPLY`.
+- **When** an inbound call matches a Casual proxy stub (`targetBaseUrl: casual://...`).
+- **Then** the gateway forwards the request natively over TCP socket-to-socket to the designated upstream domain, enlists the connection for multi-upstream 2PC transaction stickiness (`Xid`), records human-readable request/response events into WireMock's Request Journal (enabling native WireMock snapshot recording), and fails fast with actionable diagnostic hints if the upstream call exceeds the timeout (default 4s).
 - **When** an unsupported frame or connection drop occurs.
 - **Then** the gateway fails fast and closes the TCP channel immediately (`ctx.close()`) to avoid client-side hangs.

@@ -64,12 +64,13 @@ When accepted upstream, these components can be deleted from this extension and 
 - [x] Automatic stub record-and-replay via WireMock Admin API (`POST /__admin/mappings`).
 - [x] Refactor upstream candidate classes into their target `se.laz.casual.*` packages for seamless deletion once upstreamed.
 - [x] Record and replay upstream faults (`TPESVCFAIL`) with sensible defaults (`TPENOENT` not recorded by default).
-- [ ] Implement Transparent 2PC Protocol Forwarding (`PREPARE_REQUEST`, `COMMIT_REQUEST`, `REQUEST_ROLLBACK`) to prevent breaking upstream distributed transactions.
-- [ ] Implement Synthetic XA Resource Participant (automatic `XA_OK` voting for offline stubs) and chaos simulation (`XAER_RMERR`).
-- [ ] Implement Path A: In-process WireMock `Request` adapter (bypass HTTP loopback, evaluate directly against `StubMappings`).
-- [ ] Implement Custom Matchers (`CasualFieldedMatcher`, `CasualBufferMatcher`) for non-JSON (`.FIELDED`, `.X_OCTET`) payloads.
-- [ ] Implement WireMock `ExtensionFactory` and `ServerLifecycleListener` to bind gateway lifecycle to WireMock start/stop.
-- [ ] Admin API and UI visualization for Casual service mappings and stats.
+- [x] Implement Transparent 2PC Protocol Forwarding (`PREPARE_REQUEST`, `COMMIT_REQUEST`, `REQUEST_ROLLBACK`) with multi-upstream `Xid` stickiness.
+- [x] Implement Synthetic XA Resource Participant (automatic `XA_OK` voting for offline stubs) and chaos simulation (`XAER_RMERR`).
+- [x] Implement Path A: In-process WireMock `Request` adapter (bypass HTTP loopback, evaluate directly against `StubMappings`).
+- [x] Implement Human-readable Buffer Mediation (`.FIELDED`/`CFIELD/` <-> JSON via `FieldedTypeBuffer`, `CSTRING/` null-terminator handling, `X_OCTET` Base64).
+- [x] Implement WireMock `ExtensionFactory` and `ServerLifecycleListener` to bind gateway lifecycle to WireMock start/stop.
+- [x] Admin API and UI visualization for Casual service mappings and stats.
+- [x] Implement Stub-Driven Dynamic Proxying (`targetBaseUrl: casual://...`) replacing out-of-band writers and hardcoded upstreams.
 
 ---
 

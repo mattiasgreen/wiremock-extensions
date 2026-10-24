@@ -73,6 +73,24 @@ class CasualBufferUtilsTest {
     }
 
     @Test
+    @DisplayName("Should extract and wrap CSTRING buffer stripping and adding null terminator")
+    void shouldExtractAndWrapCStringBuffer() {
+        String originalText = "Hello Casual CSTRING";
+        ServiceBuffer buffer = ServiceBuffer.of(
+                "CSTRING/", List.of((originalText + "\0").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        String extracted = CasualBufferUtils.extractPayload(buffer);
+        assertThat(extracted).isEqualTo(originalText);
+        assertThat(extracted).doesNotEndWith("\0");
+
+        ServiceBuffer wrapped = CasualBufferUtils.wrapPayload("CSTRING/", extracted);
+        assertThat(wrapped.getType()).isEqualTo("CSTRING/");
+        String recoveredRaw =
+                new String(CasualBufferUtils.toByteArray(wrapped), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(recoveredRaw).isEqualTo(originalText + "\0");
+    }
+
+    @Test
     @DisplayName("Should produce clean hex dumps for TRACE logging")
     void shouldProduceCleanHexDump() {
         byte[] bytes = new byte[] {0x01, 0x02, (byte) 0xAA, (byte) 0xBB};

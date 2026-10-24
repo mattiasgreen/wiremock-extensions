@@ -34,12 +34,8 @@ public class StandaloneDevServer {
                     .getGateway()
                     .map(CasualWireMockGateway::getPort)
                     .orElse(casualConfig.getPort());
-            String upstreamDesc = casualConfig.hasUpstreamConfigured()
-                    ? (casualConfig.getUpstreamHost() + ":" + casualConfig.getUpstreamPort()
-                            + (casualConfig.isUpstreamEnabled() ? " [ENABLED]" : " [DISABLED]"))
-                    : "NONE";
-            System.out.println("👉 Casual TCP Gateway:  casual://127.0.0.1:" + casualPort + " (upstream: "
-                    + upstreamDesc + ", record: " + (casualConfig.isRecordStubs() ? "ON" : "OFF") + ")");
+            System.out.println(
+                    "👉 Casual TCP Gateway:  casual://127.0.0.1:" + casualPort + " (stub-driven proxy & 2PC enabled)");
             System.out.println("👉 Casual Config API:   http://localhost:" + server.port() + "/__admin/casual/config");
         } else {
             System.out.println("👉 Casual TCP Gateway:  DISABLED");
@@ -72,19 +68,10 @@ public class StandaloneDevServer {
 
         if (casualConfig.isEnabled()) {
             try {
-                CasualWireMockGateway.Builder gatewayBuilder = CasualWireMockGateway.builder()
+                CasualWireMockGateway casualGateway = CasualWireMockGateway.builder()
                         .port(casualConfig.getPort())
-                        .wireMockBaseUrl("http://localhost:" + server.port())
-                        .recordStubs(casualConfig.isRecordStubs())
-                        .recordFaults(casualConfig.isRecordFaults())
-                        .recordNotFound(casualConfig.isRecordNotFound());
-
-                if (casualConfig.hasUpstreamConfigured()) {
-                    gatewayBuilder.upstream(casualConfig.getUpstreamHost(), casualConfig.getUpstreamPort());
-                    gatewayBuilder.upstreamEnabled(casualConfig.isUpstreamEnabled());
-                }
-
-                CasualWireMockGateway casualGateway = gatewayBuilder.build();
+                        .wireMockServer(server)
+                        .build();
                 casualGateway.start();
                 CasualRegistry.getInstance().setGateway(casualGateway);
             } catch (Exception e) {
