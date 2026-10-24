@@ -11,6 +11,7 @@ import { renderProjectSelector, updateFilterCounts } from './projects.js';
 import { updateBulkToolbar } from './bulk-actions.js';
 import {
   parseHeadersInput,
+  getEffectiveTesterHeaders,
   updateTesterRoute,
   displaySentRequest,
   displayResponseResult,
@@ -357,11 +358,17 @@ export function executeTesterRequest() {
     url = '/' + url;
   }
   const headersText = elements.testerHeaders ? elements.testerHeaders.value : '';
-  const headers = parseHeadersInput(headersText);
+  const { headers } = getEffectiveTesterHeaders(headersText, true);
   const bodyText = elements.testerBody ? elements.testerBody.value.trim() : '';
 
+  const sentHeadersLines = [];
+  for (const [k, v] of Object.entries(headers)) {
+    sentHeadersLines.push(`${k}: ${v}`);
+  }
+  const sentHeadersText = sentHeadersLines.join('\n');
+
   updateTesterRoute(false);
-  displaySentRequest(method, url, headersText, bodyText);
+  displaySentRequest(method, url, sentHeadersText, bodyText);
 
   if (elements.btnTesterSend) {
     elements.btnTesterSend.disabled = true;
@@ -411,6 +418,7 @@ export function executeTesterRequest() {
         method: method,
         url: url,
         headersText: headersText,
+        sentHeadersText: sentHeadersText,
         bodyText: bodyText,
         status: responseMeta.status,
         statusText: responseMeta.statusText,
@@ -431,6 +439,7 @@ export function executeTesterRequest() {
         method: method,
         url: url,
         headersText: headersText,
+        sentHeadersText: sentHeadersText,
         bodyText: bodyText,
         status: 0,
         statusText: err.message,

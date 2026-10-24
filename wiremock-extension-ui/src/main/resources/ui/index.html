@@ -381,6 +381,27 @@
                         <span class="preset-badge" id="btn-preset-accept" title="Add Accept: application/json">+ Accept</span>
                       </div>
                     </div>
+
+                    <!-- Local Storage Persistent Corporate Headers -->
+                    <div id="tester-local-headers-container" class="tester-local-headers-container" data-testid="tester-local-headers-container">
+                      <div class="tester-local-headers-bar">
+                        <div class="local-headers-title-group">
+                          <label class="checkbox-label" title="Enable or disable persistent headers across all requests">
+                            <input type="checkbox" id="tester-local-headers-toggle" data-testid="tester-local-headers-toggle" checked>
+                            <span class="local-headers-title">
+                              <span class="local-headers-icon" title="Stored in browser local storage only">🔒</span>
+                              <strong>Persistent Headers</strong>
+                              <span id="tester-local-headers-count" class="badge-count" data-testid="tester-local-headers-count" title="Active persistent headers">0</span>
+                            </span>
+                          </label>
+                        </div>
+                        <button id="btn-manage-local-headers" type="button" class="btn btn-tiny" data-testid="btn-manage-local-headers" title="Configure persistent corporate headers stored in your browser">⚙️ Manage</button>
+                      </div>
+                      <div id="tester-local-headers-chips" class="tester-local-headers-chips" data-testid="tester-local-headers-chips">
+                        <span class="muted-text text-small">No persistent headers configured (click ⚙️ Manage to add).</span>
+                      </div>
+                    </div>
+
                     <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
                   </div>
 
@@ -1005,6 +1026,47 @@
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
         <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
         <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Local Corporate Headers Modal -->
+  <div id="modal-local-headers" class="modal-backdrop hidden" data-testid="modal-local-headers">
+    <div class="modal-dialog" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🔒</span>
+          <h3>Browser-Persistent Corporate Headers</h3>
+        </div>
+        <button id="btn-close-local-headers-modal" class="btn btn-tiny modal-close-btn" data-testid="btn-close-local-headers-modal" title="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+          These headers are saved <strong>exclusively in your browser's local storage</strong>. They are never sent to WireMock for storage or committed to repository stubs.
+        </p>
+        <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
+          💡 <strong>Dynamic macros supported:</strong> <code>{{uuid}}</code> (fresh UUIDv4), <code>{{now}}</code> (ISO timestamp), <code>{{timestamp}}</code> (epoch ms).
+        </div>
+        <div style="max-height: 260px; overflow-y: auto; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 4px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+            <thead>
+              <tr style="background: var(--bg-tertiary); text-align: left; color: var(--text-muted);">
+                <th style="width: 36px; padding: 6px 8px; text-align: center;">On</th>
+                <th style="padding: 6px 8px; width: 38%;">Header Name</th>
+                <th style="padding: 6px 8px;">Value / Macro</th>
+                <th style="width: 40px; padding: 6px 8px; text-align: center;"></th>
+              </tr>
+            </thead>
+            <tbody id="local-headers-tbody" data-testid="local-headers-tbody">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+        <button id="btn-add-local-header-row" type="button" class="btn btn-small" data-testid="btn-add-local-header-row">➕ Add Header</button>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-cancel-local-headers" class="btn btn-secondary" data-testid="btn-cancel-local-headers">Cancel</button>
+        <button id="btn-save-local-headers" class="btn btn-primary" data-testid="btn-save-local-headers">💾 Save to Browser</button>
       </div>
     </div>
   </div>

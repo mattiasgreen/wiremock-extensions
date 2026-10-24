@@ -382,4 +382,86 @@ public class UiModuleUnitTest {
         assertThat(dynamicCurl).contains("\"pathPattern\": \"/api/cases\"");
         assertThat(dynamicCurl).endsWith("\nEOF");
     }
+
+    @Test
+    @DisplayName("testerLocalHeaders: Macro resolution, storage persistence, and precedence override")
+    void testTesterLocalHeaders() {
+        String script =
+                """
+            async () => {
+                const {
+                    resolveMacro,
+                    loadLocalHeaders,
+                    saveLocalHeaders,
+                    isLocalHeadersEnabled,
+                    setLocalHeadersEnabled,
+                    getEffectiveTesterHeaders,
+                    LOCAL_HEADERS_KEY,
+                    LOCAL_HEADERS_ENABLED_KEY
+                } = await import('./modules/tester.js');
+
+                // 1. Test Macro resolution
+                const resolvedUuid = resolveMacro("Bearer {{uuid}}");
+                const resolvedNow = resolveMacro("{{now}}");
+                const resolvedTs = resolveMacro("{{timestamp}}");
+
+                // 2. Storage save and load
+                const sampleHeaders = [
+                    { name: "X-Tenant-Id", value: "corp-internal", enabled: true },
+                    { name: "X-User-Id", value: "user-123", enabled: true },
+                    { name: "X-Disabled-Header", value: "should-not-apply", enabled: false }
+                ];
+                saveLocalHeaders(sampleHeaders);
+                const loaded = loadLocalHeaders();
+
+                // 3. Effective headers calculation without overrides
+                setLocalHeadersEnabled(true);
+                const effectiveNoOverride = getEffectiveTesterHeaders("Accept: application/json", true);
+
+                // 4. Effective headers calculation with case-insensitive override
+                const effectiveWithOverride = getEffectiveTesterHeaders("x-tenant-id: tenant-override\\nAccept: application/json", true);
+
+                // 5. Disabled state
+                setLocalHeadersEnabled(false);
+                const effectiveDisabled = getEffectiveTesterHeaders("Accept: application/json", true);
+
+                // Reset storage
+                localStorage.removeItem(LOCAL_HEADERS_KEY);
+                localStorage.removeItem(LOCAL_HEADERS_ENABLED_KEY);
+
+                return {
+                    uuidMatchesPattern: /^Bearer [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(resolvedUuid),
+                    nowIsIso: !isNaN(Date.parse(resolvedNow)),
+                    tsIsNumeric: !isNaN(Number(resolvedTs)),
+                    loadedCount: loaded.length,
+                    noOverrideTenant: effectiveNoOverride.headers["X-Tenant-Id"],
+                    noOverrideUser: effectiveNoOverride.headers["X-User-Id"],
+                    noOverrideAccept: effectiveNoOverride.headers["Accept"],
+                    hasDisabledHeader: Boolean(effectiveNoOverride.headers["X-Disabled-Header"]),
+                    withOverrideTenant: effectiveWithOverride.headers["x-tenant-id"],
+                    withOverrideOverriddenKeysCount: effectiveWithOverride.overriddenKeys.size,
+                    withOverrideHasTenantOverridden: effectiveWithOverride.overriddenKeys.has("x-tenant-id"),
+                    disabledHasTenant: Boolean(effectiveDisabled.headers["X-Tenant-Id"]),
+                    disabledAccept: effectiveDisabled.headers["Accept"]
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("uuidMatchesPattern")).isEqualTo(true);
+        assertThat(result.get("nowIsIso")).isEqualTo(true);
+        assertThat(result.get("tsIsNumeric")).isEqualTo(true);
+        assertThat(result.get("loadedCount")).isEqualTo(3);
+        assertThat(result.get("noOverrideTenant")).isEqualTo("corp-internal");
+        assertThat(result.get("noOverrideUser")).isEqualTo("user-123");
+        assertThat(result.get("noOverrideAccept")).isEqualTo("application/json");
+        assertThat(result.get("hasDisabledHeader")).isEqualTo(false);
+        assertThat(result.get("withOverrideTenant")).isEqualTo("tenant-override");
+        assertThat(result.get("withOverrideOverriddenKeysCount")).isEqualTo(1);
+        assertThat(result.get("withOverrideHasTenantOverridden")).isEqualTo(true);
+        assertThat(result.get("disabledHasTenant")).isEqualTo(false);
+        assertThat(result.get("disabledAccept")).isEqualTo("application/json");
+    }
 }
