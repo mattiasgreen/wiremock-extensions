@@ -6,3 +6,4 @@ build/
 *.iml
 .vscode/
 *.log
+.upstream/

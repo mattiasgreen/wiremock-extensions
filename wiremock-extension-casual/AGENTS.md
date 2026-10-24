@@ -44,9 +44,30 @@ To minimize Casual protocol maintenance inside `wiremock-extensions`, reusable p
 
 ---
 
-## 4. Upstream Casual Source Code Availability (Zero Decompilation)
+## 4. Direct Git Upstream Repositories (`casualcore/casual-java` & `casualcore/casual-quarkus`)
 
-Sources and Javadoc for all upstream `se.laz.casual:*` libraries (`casual-api`, `casual-network`, `casual-network-protocol`, etc.) are published directly to Nexus / Maven Central, and full git commit history is hosted on GitHub at [`casualcore/casual-java`](https://github.com/casualcore/casual-java).
+Instead of decompiling bytecode or downloading source JARs manually, work directly with the actual upstream Git repositories cloned locally under `.upstream/` (git-ignored):
 
-* **Never decompile bytecode**: Agents and developers must inspect the published `-sources.jar` artifacts (via IDE or Gradle source resolution) or browse the GitHub repository directly.
-* All message decoders, builders, and protocol structures can be inspected in original Java source form with complete author comments and parameter names intact.
+1. **One-Time Sync / Clone**:
+   Run `.agents/scripts/sync-upstream-casual.ps1` (or clone manually with `core.longpaths=true`):
+   ```bash
+   powershell -ExecutionPolicy Bypass -File .agents/scripts/sync-upstream-casual.ps1
+   # Or manual clone (Windows requires core.longpaths true due to deep Java EE package paths):
+   git clone -c core.longpaths=true --filter=blob:none https://github.com/casualcore/casual-java.git .upstream/casual-java
+   git clone -c core.longpaths=true --filter=blob:none https://github.com/casualcore/casual-quarkus.git .upstream/casual-quarkus
+   ```
+2. **Git Log, Diffs & Release Tags**:
+   - Inspect commit logs and PR history directly:
+     ```bash
+     cd .upstream/casual-java
+     git log --oneline -S "DecoderReaderValidator"
+     git show <commit_hash>
+     ```
+   - Checkout specific version tags matching `gradle/libs.versions.toml`:
+     ```bash
+     git checkout 3.4.0
+     git diff 3.4.0..3.5.0 -- casual/casual-network-protocol/
+     ```
+3. **Upstream Contribution Preparation**:
+   - Create branches in `.upstream/casual-java` when proposing enhancements or bug fixes for `se.laz.casual.*`.
+   - Never decompile bytecode; always use full git sources, commit history, and upstream test suites.
