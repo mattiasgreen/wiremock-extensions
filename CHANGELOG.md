@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.6.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.5.1...v1.6.0) (2026-10-24)
+
+
+### Features
+
+* **casual:** integrate direct upstream git repositories workflow and sync tooling ([#47](https://github.com/mattiasgreen/wiremock-extensions/issues/47)) ([901fce4](https://github.com/mattiasgreen/wiremock-extensions/commit/901fce42b383304c1e82996e799a0a2e476a1a36))
+* **casual:** stub-driven dynamic proxying, multi-upstream 2PC, and human-readable buffer mediation ([#49](https://github.com/mattiasgreen/wiremock-extensions/issues/49)) ([a1be1b8](https://github.com/mattiasgreen/wiremock-extensions/commit/a1be1b85f64072143b252594b93cf67787910918))
+
 ## [1.5.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.5.0...v1.5.1) (2026-10-24)
 
 
