@@ -155,6 +155,16 @@
             <li>MDC correlation propagation across threads</li>
           </ul>
         </div>
+
+        <div class="card">
+          <h3>🏛️ Casual / XATMI Domain Gateway</h3>
+          <p>In-process Layer 7 Tuxedo / Casual domain gateway on raw TCP. Stub-driven dynamic proxying, multi-upstream 2PC transaction stickiness, and synthetic XA voting.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>Zero C++ broker or JEE container requirements</li>
+            <li>Dynamic proxy routing via <code>casual://host:port</code></li>
+            <li>Human-readable Fielded (FML) &amp; CSTRING JSON translation</li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
@@ -220,14 +230,15 @@
         <div class="card">
           <h3>Zero-Sprawl Java SPI Auto-Discovery</h3>
           <p>
-            Drop <code>wiremock-extension-bundle-1.2.0.jar</code> onto the classpath alongside <code>wiremock-standalone</code>.
+            Drop <code>wiremock-extension-bundle-1.6.0.jar</code> onto the classpath alongside <code>wiremock-standalone</code>.
             Standard Java <code>ServiceLoader</code> dynamically registers every extension without XML or manual configuration:
           </p>
           <pre class="code-block"><code><span class="comment">// ExtensionFactory auto-registers all endpoints:</span>
 http://localhost:8080/__admin/ui/
 http://localhost:8080/__admin/openapi/import
 http://localhost:8080/__admin/metrics/prometheus
-http://localhost:8080/__admin/netem/proxies</code></pre>
+http://localhost:8080/__admin/netem/proxies
+http://localhost:8080/__admin/casual/config</code></pre>
         </div>
       </div>
     </div>
@@ -330,7 +341,7 @@ http://localhost:8080/__admin/netem/proxies</code></pre>
         <div class="card">
           <h3>Option A: Standalone CLI Runner</h3>
           <p>Drop the bundle JAR alongside your standard WireMock Standalone JAR:</p>
-          <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+          <pre class="code-block"><code>java -cp <span class="str">"wiremock-extension-bundle-1.6.0.jar:wiremock-standalone-3.12.1.jar"</span> \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 --verbose</code></pre>
           <p style="margin-top: 1rem; color: var(--accent-emerald); font-weight: 600;">
@@ -342,7 +353,7 @@ http://localhost:8080/__admin/netem/proxies</code></pre>
           <h3>Option B: Gradle &amp; JUnit 5 Test Suite</h3>
           <p>Add the extension bundle as a test dependency:</p>
           <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
-testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'</span>
 
 <span class="comment">// In your tests, standard WireMock auto-discovers all extensions:</span>
 <span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)

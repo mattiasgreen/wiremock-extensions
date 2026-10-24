@@ -31,7 +31,7 @@ It re-exports all extensions under a single dependency coordinate and includes a
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'
 ```
 
 **Maven**:
@@ -39,7 +39,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-bundle</artifactId>
-    <version>1.2.0</version>
+    <version>1.6.0</version>
 </dependency>
 ```
 
@@ -48,7 +48,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.2.0'
 Run WireMock Standalone with the bundle JAR on the classpath:
 
 ```bash
-java -cp "wiremock-extension-bundle-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-bundle-1.6.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose

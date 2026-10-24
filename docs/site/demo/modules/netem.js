@@ -8,6 +8,32 @@ import { doFetch } from './api.js';
 
 let journalRefreshTimer = null;
 let currentProxyName = 'wiremock-netem';
+let currentPatternType = 'ASCII';
+
+export function asciiToHex(str) {
+  if (!str) return '';
+  const bytes = new TextEncoder().encode(str);
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join(' ');
+}
+
+export function hexToAscii(hex) {
+  if (!hex) return '';
+  const clean = hex.replace(/[^0-9a-fA-F]/g, '');
+  if (clean.length === 0 || clean.length % 2 !== 0) return '';
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.substring(i, i + 2), 16);
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+}
+
+export function isValidHex(hex) {
+  if (!hex) return true;
+  const clean = hex.replace(/[^0-9a-fA-F]/g, '');
+  return clean.length % 2 === 0;
+}
 
 export function initNetEmTab() {
   const refreshBtn = document.getElementById('btn-netem-refresh');
@@ -47,6 +73,41 @@ export function initNetEmTab() {
   if (cancelToxicModalBtn && addToxicModal) {
     cancelToxicModalBtn.addEventListener('click', () => {
       addToxicModal.classList.add('hidden');
+    });
+  }
+
+  // ASCII / HEX Toggle
+  const btnAscii = document.getElementById('btn-pattern-ascii');
+  const btnHex = document.getElementById('btn-pattern-hex');
+  const patternInput = document.getElementById('netem-toxic-pattern');
+  const patternLbl = document.getElementById('lbl-toxic-pattern');
+  const patternHint = document.getElementById('netem-pattern-hint');
+
+  if (btnAscii && btnHex && patternInput) {
+    btnAscii.addEventListener('click', () => {
+      if (currentPatternType === 'ASCII') return;
+      currentPatternType = 'ASCII';
+      btnAscii.classList.add('active');
+      btnHex.classList.remove('active');
+      if (patternLbl) patternLbl.textContent = 'Stream Pattern Matcher (ASCII):';
+      if (patternHint) patternHint.textContent = 'Matches unencoded UTF-8/ASCII substring in the stream.';
+      patternInput.placeholder = 'e.g. chaos-test-session or order-service';
+      if (patternInput.value.trim()) {
+        patternInput.value = hexToAscii(patternInput.value);
+      }
+    });
+
+    btnHex.addEventListener('click', () => {
+      if (currentPatternType === 'HEX') return;
+      currentPatternType = 'HEX';
+      btnHex.classList.add('active');
+      btnAscii.classList.remove('active');
+      if (patternLbl) patternLbl.textContent = 'Stream Pattern Matcher (Hex / Raw Bytes):';
+      if (patternHint) patternHint.textContent = 'Matches exact raw byte sequence on the wire.';
+      patternInput.placeholder = 'e.g. CA 50 00 01 (Casual) or DE AD BE EF';
+      if (patternInput.value.trim()) {
+        patternInput.value = asciiToHex(patternInput.value);
+      }
     });
   }
 
@@ -140,48 +201,45 @@ export async function loadNetEmStatus(silent = false) {
     }
 
     const proxy = proxies[0];
-    currentProxyName = proxy.name || 'wiremock-netem';
+    currentProxyName = proxy.name;
 
-    // Ingress banner
-    const ingressInfo = document.getElementById('netem-ingress-info');
-    if (ingressInfo) {
-      ingressInfo.textContent = `Proxy [${proxy.name}]: Port ${proxy.listenPort} ➔ Target ${proxy.targetHost}:${proxy.targetPort}`;
+    // Ingress badge
+    const badge = document.getElementById('netem-ingress-info');
+    if (badge) {
+      badge.textContent = `Ingress: 127.0.0.1:${proxy.listenPort} ➔ Target: ${proxy.targetHost}:${proxy.targetPort} (${proxy.name})`;
     }
 
     // Stats
     const stats = proxy.stats || {};
-    setStatText('netem-stat-normal-transfers', stats.normalTransfers || 0);
-    setStatText('netem-stat-impaired-transfers', stats.impairedTransfers || 0);
-    setStatText('netem-stat-active-conn', stats.activeConnections || 0);
+    setStatValue('netem-stat-normal-transfers', stats.normalTransfers || 0);
+    setStatValue('netem-stat-impaired-transfers', stats.impairedTransfers || 0);
+    setStatValue('netem-stat-active-conn', stats.activeConnections || 0);
+    setStatValue('netem-stat-active-toxics', (proxy.toxics || []).length);
 
-    const toxics = proxy.toxics || [];
-    setStatText('netem-stat-active-toxics', toxics.length);
-    const navBadge = document.getElementById('stat-netem-toxics');
-    if (navBadge) navBadge.textContent = toxics.length;
-
-    renderToxics(toxics);
+    // Toxics
+    renderToxicsList(proxy.toxics || []);
   } catch (e) {
     if (!silent) console.error('Failed to load NetEm status', e);
   }
 }
 
-function setStatText(id, val) {
+function setStatValue(id, val) {
   const el = document.getElementById(id);
-  if (el) el.textContent = val;
+  if (el) el.textContent = String(val);
 }
 
 function renderNoProxies() {
   const container = document.getElementById('netem-toxics-list');
   if (container) {
-    container.innerHTML = '<div class="empty-state">No NetEm proxies configured. Default port 8081 is unassigned.</div>';
+    container.innerHTML = '<div class="empty-state">No TCP NetEm proxy active. Run Standalone with NetEm extension enabled.</div>';
   }
 }
 
-function renderToxics(toxics) {
+function renderToxicsList(toxics) {
   const container = document.getElementById('netem-toxics-list');
   if (!container) return;
 
-  if (!toxics || toxics.length === 0) {
+  if (toxics.length === 0) {
     container.innerHTML = '<div class="empty-state">✅ No network impairments active. All traffic on port 8081 flows at line rate.</div>';
     return;
   }
@@ -191,9 +249,15 @@ function renderToxics(toxics) {
       ? '<span class="netem-badge badge-upstream">⬆ Upstream</span>'
       : '<span class="netem-badge badge-downstream">⬇ Downstream</span>';
 
-    const corrBadge = t.correlationId
-      ? `<span class="netem-badge badge-corr" title="Scoped to Correlation ID">Scoped: ${escapeHtml(t.correlationId)}</span>`
-      : '<span class="netem-badge badge-all" title="Applies to all connections">Global</span>';
+    const pattern = t.pattern || t.correlationId;
+    let scopeBadge = '<span class="netem-badge badge-all" title="Applies to all connections">Global</span>';
+    if (pattern) {
+      const typeLabel = t.patternType === 'HEX' ? 'Hex' : 'Scoped';
+      scopeBadge = `<span class="netem-badge badge-corr" title="Stream pattern matcher">${typeLabel}: ${escapeHtml(pattern)}</span>`;
+    }
+    if (t.clientIp) {
+      scopeBadge += ` <span class="netem-badge badge-ip" title="Client IP scope">IP: ${escapeHtml(t.clientIp)}</span>`;
+    }
 
     const attrs = t.attributes || {};
     const attrDetails = Object.entries(attrs).map(([k, v]) => `<strong>${k}:</strong> ${v}`).join(' &bull; ');
@@ -208,7 +272,7 @@ function renderToxics(toxics) {
           <button class="btn btn-tiny btn-danger btn-delete-toxic" data-name="${escapeHtml(t.name)}" title="Delete Toxic">✕</button>
         </div>
         <div class="toxic-card-body">
-          <div class="toxic-tags">${streamBadge} ${corrBadge} <span class="netem-badge">Rate: ${Math.round(t.toxicity * 100)}%</span></div>
+          <div class="toxic-tags">${streamBadge} ${scopeBadge} <span class="netem-badge">Rate: ${Math.round(t.toxicity * 100)}%</span></div>
           <div class="toxic-attributes">${attrDetails || '<em>Default settings</em>'}</div>
         </div>
       </div>
@@ -264,38 +328,39 @@ export async function applyPreset(presetName) {
 }
 
 export async function loadNetEmJournal() {
+  const filterCorr = document.getElementById('netem-journal-filter-corr')?.value?.trim();
+  const filterOutcome = document.getElementById('netem-journal-filter-outcome')?.value;
+
+  let url = '/__admin/tcp-netem/journal?limit=100';
+  if (filterCorr) url += `&scope=${encodeURIComponent(filterCorr)}`;
+  if (filterOutcome === 'impaired') url += '&impaired=true';
+  else if (filterOutcome === 'normal') url += '&impaired=false';
+
   try {
-    const filterCorr = document.getElementById('netem-journal-filter-corr')?.value?.trim();
-    const filterOutcome = document.getElementById('netem-journal-filter-outcome')?.value;
-
-    let url = '/__admin/tcp-netem/journal?limit=100';
-    if (filterCorr) url += `&correlationId=${encodeURIComponent(filterCorr)}`;
-    if (filterOutcome === 'impaired') url += `&impaired=true`;
-    else if (filterOutcome === 'normal') url += `&impaired=false`;
-
     const res = await doFetch(url);
     if (!res.ok) return;
     const entries = await res.json();
-    renderJournalTable(entries);
+    renderJournal(entries || []);
   } catch (e) {
     console.error('Failed to load NetEm journal', e);
   }
 }
 
-function renderJournalTable(entries) {
+function renderJournal(entries) {
   const tbody = document.getElementById('netem-journal-tbody');
   if (!tbody) return;
 
-  if (!entries || entries.length === 0) {
+  if (entries.length === 0) {
     tbody.innerHTML = '<tr class="empty-state-row"><td colspan="7" class="empty-state-cell">No matching network events recorded in NetEm journal.</td></tr>';
     return;
   }
 
   tbody.innerHTML = entries.map(e => {
     const timeStr = new Date(e.timestampEpochMs).toLocaleTimeString();
-    const corrBadge = e.correlationId
-      ? `<span class="badge-corr-table">${escapeHtml(e.correlationId)}</span>`
-      : '<span class="muted-text">none</span>';
+    const targetScope = e.scope || e.correlationId;
+    const corrBadge = targetScope
+      ? `<span class="badge-corr-table">${escapeHtml(targetScope)}</span>`
+      : '<span class="muted-text">-</span>';
 
     const outcomeBadge = e.impaired
       ? `<span class="netem-outcome outcome-impaired" title="${escapeHtml(e.appliedToxics)}">⚠️ Impaired</span>`
@@ -361,11 +426,11 @@ function updateAttributeInputs(type) {
     container.innerHTML = `
       <div class="form-row" style="display: flex; gap: 12px;">
         <div class="form-group" style="flex: 1;">
-          <label>Average Size (bytes):</label>
+          <label>Average Slice Size (bytes):</label>
           <input type="number" id="attr-avg-size" class="form-control" value="64" min="1">
         </div>
         <div class="form-group" style="flex: 1;">
-          <label>Delay (ms):</label>
+          <label>Inter-slice Delay (ms):</label>
           <input type="number" id="attr-slicer-delay" class="form-control" value="10" min="0">
         </div>
       </div>
@@ -373,7 +438,7 @@ function updateAttributeInputs(type) {
   } else if (type === 'limit_data') {
     container.innerHTML = `
       <div class="form-group">
-        <label>Max Bytes:</label>
+        <label>Byte Limit:</label>
         <input type="number" id="attr-limit-bytes" class="form-control" value="1024" min="1">
       </div>
     `;
@@ -391,7 +456,12 @@ async function submitNewToxic() {
   const type = document.getElementById('netem-toxic-type')?.value;
   const stream = document.getElementById('netem-toxic-stream')?.value;
   const toxicity = parseFloat(document.getElementById('netem-toxic-toxicity')?.value || '1.0');
-  const correlationId = document.getElementById('netem-toxic-correlation-id')?.value?.trim() || null;
+
+  const patternVal = document.getElementById('netem-toxic-pattern')?.value?.trim()
+    || document.getElementById('netem-toxic-correlation-id')?.value?.trim()
+    || null;
+  const clientIp = document.getElementById('netem-toxic-client-ip')?.value?.trim() || null;
+  const patternType = patternVal ? currentPatternType : 'ASCII';
 
   const attributes = {};
   if (type === 'latency') {
@@ -413,7 +483,9 @@ async function submitNewToxic() {
     type,
     stream,
     toxicity,
-    correlationId,
+    pattern: patternVal,
+    patternType,
+    clientIp,
     attributes
   };
 
