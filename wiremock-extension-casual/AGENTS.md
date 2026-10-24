@@ -35,9 +35,10 @@ To minimize Casual protocol maintenance inside `wiremock-extensions`, reusable p
 ## 3. Protocol & Concurrency Invariants
 
 1. **Netty `ByteBuf` Lifecycle**: Ensure all inbound `ByteBuf` instances in `CasualFrameDecoder` and channel handlers are properly released across both normal decoding and exception paths.
-2. **Stub Match Discrimination**: Use the WireMock `Matched-Stub-Id` response header to distinguish a deliberate stubbed error (e.g., HTTP 404/500 mapped to `TPENOENT`/`TPESVCFAIL`) from an genuinely unmatched request that should be proxied upstream.
-3. **Fault Recording Defaults**: Record upstream `TPESVCFAIL` application faults via `X-Casual-Error-State` header mappings, but never auto-record `TPENOENT` (service not found) by default.
-4. **Bidirectional L7 Protocol Normalization Invariant**:
+2. **Stub-Driven Dynamic Proxying & Microsecond Probing**: Use WireMock proxy stubs (`targetBaseUrl: casual://host:port`) with in-memory probing to evaluate priority, headers, and body patterns with zero HTTP loopback overhead. Forward matching calls natively socket-to-socket over TCP.
+3. **Multi-Upstream 2PC Stickiness**: 2PC frames (`prepare`, `commit`, `rollback`) lack `serviceName` and only contain `Xid`. Enlisted upstream clients must be tracked per `Xid` (`enlistedXidClients`) to ensure atomic multi-upstream 2PC propagation.
+4. **Human-Readable Buffer Mediation**: Convert Fielded buffers (`.FIELDED`/`CFIELD/`) to/from structured JSON, strip null-terminators for `CSTRING/`, and preserve text in WireMock's Request Journal and offline stubs.
+5. **Bidirectional L7 Protocol Normalization Invariant**:
    - Outbound service replies sent by `CasualServer` MUST strictly match the client's negotiated `connVersion` (`SERVICE_CALL_REPLY` / 3101 with `XID` for `< 1.3`, `SERVICE_CALL_REPLY_V_1_3` / 3103 for `>= 1.3`).
    - Outbound proxied service requests sent by `CasualWireMockGateway` to upstream domains MUST match `upstreamClient.getProtocolVersion()`.
    - Never leak Protocol 1.3+ frames (such as `3103`) to a Protocol 1.2 client or vice versa; doing so triggers `DecoderException: Unknown message type` and permanent TCP byte-stream desynchronization.

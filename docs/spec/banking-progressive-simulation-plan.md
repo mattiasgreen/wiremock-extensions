@@ -46,11 +46,11 @@ flowchart LR
      - **Billing Platform (Casual XATMI + 2PC/XA via `CasualWireMockGateway`)**:
        - Executes `tpcall("billing/charge", ...)` inside a global XA transaction (`Xid`), followed by 2PC Phase 1 (`prepare` -> `XA_OK`) and Phase 2 (`commit` -> `XA_OK`).
 2. **Node 2 — WireMock MitM (`WireMockServer` + `CasualWireMockGateway`)**:
-   - Runs `WireMockServer` with `UiExtensionFactory` (`/__admin/ui/` + `StubLifecycleAdminEndpoint`) and `CasualProxyTransformer`.
+   - Runs `WireMockServer` with `UiExtensionFactory` (`/__admin/ui/` + `StubLifecycleAdminEndpoint`) and native `CasualWireMockGateway`.
    - Configured with 3 project-grouped **Proxy Stubs** (initially in `LIVE PROXY` mode):
      - `case-service`: `ANY /api/cases/.*` -> `proxyBaseUrl` to Server B HTTP
      - `crm-service`: `ANY /api/crm/.*` -> `proxyBaseUrl` to Server B HTTP
-     - `billing-service`: `/__casual/services/.*` (`metadata.mode = "proxy"`, `transformers = ["casual-proxy-transformer"]`) -> forwards via `CasualWireMockGateway` over Casual TCP to Server B
+     - `billing-service`: `/__casual/services/.*` (`metadata.mode = "proxy"`, `metadata.targetBaseUrl = "casual://127.0.0.1:<port>"`) -> forwards via `CasualWireMockGateway` natively over Casual TCP socket-to-socket to Server B
 3. **Node 3 — Server B (`UpstreamBackendServer`)**:
    - Hosts both the **Upstream HTTP Backend** (serving live CRM and Case Management endpoints and counting hits) and the **Upstream Casual Server** (serving `billing/charge` and maintaining the live XA Resource Manager ledger of prepared/committed `Xid`s).
    - Can be **completely shut down** (`stopUpstreamServer()`) between Run 1 and Run 2 to prove 100% backend decoupling.
@@ -59,18 +59,18 @@ flowchart LR
 
 ## 2. Protocol-Aware Unified Journal & In-Process Casual Proxy
 
-### A. In-Process Casual Proxy Stub (`CasualProxyTransformer`)
-Instead of opening an extra HTTP port or recording out-of-band on a 404 miss:
-- A lightweight WireMock `ResponseDefinitionTransformerV2` (`casual-proxy-transformer`, non-global) in `wiremock-extension-casual` delegates active Casual proxy stubs (`metadata.mode = "proxy"`) directly to `CasualWireMockGateway`'s upstream TCP client.
+### A. Stub-Driven Casual Proxy (`targetBaseUrl: casual://...`)
+Instead of hardcoding global upstreams or routing through intermediate HTTP transformers:
+- Standard WireMock proxy stubs with `metadata.mode = "proxy"` and `targetBaseUrl` pointing to `casual://<host>:<port>` declare dynamic proxy routes.
 - **Run 1 (`LIVE PROXY` Mode)**:
   1. Product System sends Casual TCP `tpcall("billing/charge", payload, xid)` to `CasualWireMockGateway`.
-  2. `CasualWireMockGateway` dispatches `/__casual/services/billing/charge` to `WireMockServer`.
-  3. `WireMockServer` matches the `billing-service` proxy stub (`metadata.mode = "proxy"`) and invokes `casual-proxy-transformer`.
-  4. The transformer forwards the binary `SERVICE_CALL_REQUEST` over TCP to Server B, enlists `xid` in `upstreamEnlistedXids` (so 2PC `prepare` and `commit` are also forwarded to Server B), and returns the upstream reply (`X-Casual-Error-State: OK`, `X-Casual-Transaction-State: TX_ACTIVE`, JSON payload) to `WireMockServer`.
+  2. `CasualWireMockGateway` evaluates WireMock stubs in-memory with priority ordering and zero HTTP loopback overhead.
+  3. WireMock matches the `billing-service` proxy stub (`metadata.mode = "proxy"`).
+  4. The gateway forwards the frame socket-to-socket over TCP to Server B, maintains `xid` stickiness in `enlistedXidClients` (so 2PC `prepare` and `commit` are also forwarded to Server B), and logs a unified `ServeEvent` into the Request Journal.
 - **Run 2 (`STUBS MODE`, Server B Offline)**:
   1. Clicking **Snapshot (`📸`)** and flipping **`LIVE PROXY` -> `STUBS MODE`** in the UI disables the Casual proxy stub and enables the recorded static stub.
-  2. `WireMockServer` serves the recorded stub directly without invoking `casual-proxy-transformer`.
-  3. `CasualWireMockGateway` sees the local stub match (`localMatchedXids`) and synthesizes the 2PC `XA_OK` `prepare` and `commit` votes locally.
+  2. `WireMockServer` serves the recorded stub directly from memory/disk.
+  3. `CasualWireMockGateway` synthesizes the 2PC `XA_OK` `prepare` and `commit` votes locally.
 
 ### B. Protocol-Agnostic Resolution Badges & Casual-Native Terms in the UI
 Because the Request Journal and Stubs list are unified across HTTP and Casual XATMI:
@@ -94,8 +94,8 @@ Because the Request Journal and Stubs list are unified across HTTP and Casual XA
 
 ## 4. Phased Delivery Plan
 
-1. **Commit 1 — `wiremock-extension-casual` In-Process Proxy Transformer & UI Casual Protocol Formatting**:
-   - Add `CasualProxyTransformer` (`ResponseDefinitionTransformerV2`) to `CasualWireMockGateway` so a `metadata.mode = "proxy"` stub in WireMock forwards Casual calls over TCP to Server B and logs them as `🌐 PROXIED` in the WireMock Journal.
+1. **Commit 1 — `wiremock-extension-casual` In-Process Stub-Driven Proxy & UI Casual Protocol Formatting**:
+   - Add stub-driven dynamic proxying to `CasualWireMockGateway` so a `metadata.mode = "proxy"` stub in WireMock with `targetBaseUrl: casual://...` forwards Casual calls over TCP to Server B and logs them as `🌐 PROXIED` in the WireMock Journal.
    - Update `wiremock-extension-ui` (`journal.js` & `stubs.js`) so `/__casual/services/*` entries display **`CASUAL`** and Casual `ErrorState` (**`OK`**, **`TPESVCFAIL`**, etc.) instead of HTTP `POST` / `200`.
    - Include `:wiremock-extension-casual` in `wiremock-extension-bundle`.
 2. **Commit 2 — `wiremock-examples` 3-Node Banking Topology & Headless JUnit Verification**:

@@ -104,11 +104,15 @@ To ensure client applications never hang or block indefinitely waiting for orpha
 
 ---
 
-## 5. Binary & Fielded Buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`)
+## 5. Binary, Fielded & Text Buffers (`JSON`, `CSTRING/`, `CFIELD/`, `X_OCTET`)
 
-While JSON buffers (`.json/`, `JSON`) are stored as plain text strings, Casual applications frequently transmit binary fielded buffers (`.FIELDED`, `CFIELD/`, `X_OCTET`):
-* **Live Upstream Proxying**: Raw byte arrays pass through untouched to the upstream domain.
-* **WireMock Recording**: When `recordStubs(true)` is active, binary payloads are encoded to **Standard Base64** in WireMock stub definitions:
+Casual applications use a variety of buffer formats. `CasualWireMockGateway` normalizes all payloads to **human-readable representations** in the WireMock Request Journal and stub definitions:
+
+* **`JSON` (`.json/`, `JSON`)**: Ingested and stored directly as standard UTF-8 JSON text strings with `Content-Type: application/json`.
+* **`CSTRING/`**: Null-terminated ASCII/UTF-8 C-strings are automatically stripped of trailing `\0` upon extraction and recorded as human-readable text with `Content-Type: text/plain; charset=UTF-8`. When returned to downstream clients, the null terminator is transparently restored.
+* **`CFIELD/` / `.FIELDED`**: Fielded Buffers (FML) are automatically translated to/from structured JSON objects using `FieldedTypeBuffer` and `CasualFieldedLookup`. Downstream clients receive binary FML while WireMock journals and stubs display human-readable JSON properties (with graceful Base64 fallback if a field buffer is unmapped or binary).
+* **`X_OCTET/` (Binary)**: Pure raw binary buffers fallback to standard Base64 encoding with `Content-Type: application/octet-stream`.
+* **Live Upstream Proxying**: When forwarding to upstream Casual domains, buffers are proxied natively over TCP socket-to-socket without redundant conversion or lossy transcoding.
   ```json
   {
     "request": {
@@ -225,24 +229,53 @@ Simulate distributed transaction status (e.g. marking a transaction rollback-onl
 
 ---
 
-## 8. Recording Considerations & Sensible Defaults
+## 8. Stub-Driven Dynamic Proxying & Multi-Upstream 2PC Stickiness
 
-When enabling transparent proxy recording (`recordStubs: true`), the gateway enforces battle-tested recording defaults:
+Rather than requiring out-of-band global upstream host/port configuration or separate proxy transformers, `wiremock-extension-casual` implements **stub-driven dynamic proxying**:
 
-| Upstream Result | Nature | Default Recording Behavior | Rationale |
-| :--- | :--- | :--- | :--- |
-| **`ErrorState.OK`** | Normal success | **Recorded** | Captures golden responses for offline playback. |
-| **`ErrorState.TPESVCFAIL`** | Business failure with payload | **Recorded** (if `recordFaults = true`) | Real business validation errors (e.g., account locked) should be preserved in stubs. |
-| **`ErrorState.TPENOENT`** | Service not found | **NOT recorded by default** | **Prevents the "Poisoned Missing Stub" problem**: If an upstream service is temporarily undeployed or has a typo during recording, recording a 404 stub permanently blocks future requests from reaching upstream even after the service is restored. |
-| **`ErrorState.TPESVCERR`** | Infrastructure failure | **NOT recorded** | Transient upstream network drops/crashes should not be frozen into permanent stubs. |
+### A. Dynamic Proxy Routing via WireMock Stubs
+Upstream Casual destinations are declared natively in standard WireMock stubs where `targetBaseUrl` starts with `casual://`:
 
-> 💡 **Opt-in for Negative Test Recording**: If your test suite explicitly tests how client applications react to permanently missing services, enable `.recordNotFound(true)` on the builder.
+```java
+wireMock.stubFor(post(urlMatching("/__casual/services/.*"))
+        .withName("Billing Service Proxy")
+        .atPriority(10)
+        .withMetadata(Map.of(
+                "mode", "proxy",
+                "targetBaseUrl", "casual://billing-upstream.internal:7771"))
+        .willReturn(aResponse().withStatus(200)));
+```
+
+* **Microsecond In-Memory Probing**: For every inbound Casual frame, the gateway evaluates WireMock's stub store in-memory. Zero Jetty or HTTP loopback overhead.
+* **Priority Matching**: Priority ordering is strictly respected. High-priority mock stubs (e.g., Priority 1) override broad proxy routes (e.g., Priority 10) without modifying proxy rules.
+* **Zero Superfluous Protocol Conversion**: When a stub matches with `casual://...`, the gateway establishes a pooled TCP connection directly to the target upstream domain, forwarding the native Casual frame socket-to-socket. No ping-pong through HTTP.
+
+### B. Multi-Upstream 2PC / XA Transaction Stickiness
+In Tuxedo and Casual, Two-Phase Commit frames (`PREPARE_REQUEST`, `COMMIT_REQUEST`, `ROLLBACK_REQUEST`) only transmit the transaction identifier (`Xid`), **not** the `serviceName`. Therefore, distributed transactions cannot resolve upstream destinations by URL path at commit time.
+
+`CasualWireMockGateway` tracks dynamic enlistment stickiness (`enlistedXidClients`):
+* Any upstream connection utilized during an active transaction (`Xid`) is tracked in memory.
+* When 2PC frames arrive for that `Xid`, the gateway forwards the prepare/commit/rollback requests to all enlisted upstream domains.
+* Supports **multi-upstream transactions** spanning different remote domains under a single global XA coordinator.
+
+### C. Standard Snapshot Recording & Offline Replay
+Because proxying records standard `ServeEvent`s into the WireMock Request Journal, you can capture stubs using WireMock's built-in Snapshot API:
+
+```java
+// Snapshot recorded live proxy interactions into offline stubs
+wireMock.snapshotRecord(recordSpec()
+        .makeStubsPersistent(false)
+        .extractTextBodiesOver(Long.MAX_VALUE)
+        .extractBinaryBodiesOver(Long.MAX_VALUE));
+```
+
+Once snapshot, upstream servers can be shut down entirely. WireMock serves recorded stubs offline while the gateway acts as a **Synthetic XA Resource Manager**, voting `XA_OK` to complete client 2PC commit loops.
 
 ---
 
 ## 9. Configuration & Admin API Control Plane
 
-The Casual extension supports flexible configuration via JVM system properties (highest precedence), environment variables (for Docker / containerized environments), or dynamic REST API updates at runtime.
+The Casual extension supports lightweight configuration via JVM system properties, environment variables, or dynamic REST API queries:
 
 ### A. Environment Variables & System Properties
 
@@ -250,51 +283,22 @@ The Casual extension supports flexible configuration via JVM system properties (
 | :--- | :--- | :--- | :--- | :--- |
 | **Casual Enabled** | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` | Enables or disables the Casual TCP gateway. |
 | **Gateway Port** | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` | TCP port where the Casual server listens. |
-| **Upstream Host** | `WIREMOCK_CASUAL_UPSTREAM_HOST` | `wiremock.casual.upstream.host` | `null` | Upstream Casual domain hostname/IP for proxying. |
-| **Upstream Port** | `WIREMOCK_CASUAL_UPSTREAM_PORT` | `wiremock.casual.upstream.port` | `0` | Upstream Casual domain port for proxying. |
-| **Upstream Enabled** | `WIREMOCK_CASUAL_UPSTREAM_ENABLED` | `wiremock.casual.upstream.enabled` | Auto `true` | Automatically enabled when host & port are set. |
 | **Upstream Timeout** | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `wiremock.casual.upstream.timeout.seconds` | `4` | Upstream timeout in seconds before failing fast. |
-| **Record Stubs** | `WIREMOCK_CASUAL_RECORD_STUBS` | `wiremock.casual.record.stubs` | `false` | Automatically records proxied calls as WireMock stubs. |
 
 ### B. Admin API REST Control Plane (`/__admin/casual/config`)
 
-WireMock Standalone exposes dedicated REST endpoints (auto-discovered via `CasualExtensionFactory` SPI) to inspect and reconfigure Casual gateway behavior at runtime without restarting the server:
-
-* **Inspect Configuration**:
-  ```bash
-  curl http://localhost:8080/__admin/casual/config
-  ```
-  Returns `200 OK`:
-  ```json
-  {
-    "enabled": true,
-    "port": 7772,
-    "upstreamHost": "upstream.casual.local",
-    "upstreamPort": 7771,
-    "upstreamEnabled": true,
-    "hasUpstreamConfigured": true,
-    "recordStubs": false,
-    "recordFaults": true,
-    "recordNotFound": false,
-    "running": true
-  }
-  ```
-
-* **Update Upstream & Recording at Runtime**:
-  ```bash
-  curl -X POST http://localhost:8080/__admin/casual/config \
-    -H "Content-Type: application/json" \
-    -d '{
-      "upstreamHost": "10.0.1.50",
-      "upstreamPort": 7771,
-      "recordStubs": true
-    }'
-  ```
-
-* **Reset to Defaults**:
-  ```bash
-  curl -X POST http://localhost:8080/__admin/casual/reset
-  ```
+Inspect the Casual gateway state at runtime:
+```bash
+curl http://localhost:8080/__admin/casual/config
+```
+Returns `200 OK`:
+```json
+{
+  "enabled": true,
+  "port": 7772,
+  "running": true
+}
+```
 
 ---
 
@@ -338,17 +342,17 @@ wireMock.stubFor(post(urlEqualTo("/__casual/services/transferFunds"))
                 .withBody("{\"error\": \"Insufficient funds\", \"balance\": 4.50}")));
 ```
 
-### D. Configuring Transparent Upstream Proxy with Recording
+### D. Configuring Dynamic Stub-Driven Casual Proxy
 ```java
-CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
-        .port(7001)
-        .wireMockBaseUrl(wireMock.baseUrl())
-        .upstream("real-casual-domain.internal", 7000)
-        .upstreamTimeoutSeconds(4) // 4 second fast-fail timeout
-        .recordStubs(true)         // Record unmatched upstream responses
-        .recordFaults(true)        // Record TPESVCFAIL business errors
-        .recordNotFound(false)     // Do NOT freeze TPENOENT (keeps missing services open)
-        .build();
+// Routes all /__casual/services/* calls to an upstream Casual server
+wireMock.stubFor(post(urlMatching("/__casual/services/.*"))
+        .withName("Casual Proxy to Billing")
+        .atPriority(10)
+        .withMetadata(Map.of(
+                "mode", "proxy",
+                "targetBaseUrl", "casual://upstream.billing.internal:7771"))
+        .willReturn(aResponse().withStatus(200)));
+```
 proxyGateway.start();
 ```
 
@@ -401,48 +405,48 @@ To validate end-to-end distributed transactions (JTA/Narayana 2PC) and transpare
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Scenario Flyover 1: Transparent Proxying & Stub Recording (With 2PC Pass-Through)
-When `CasualWireMockGateway` sits between **Node 1 (Client Initiator)** and **Node 3 (Upstream Server B)** with `recordStubs(true)` and an empty WireMock stub store:
+### Scenario Flyover 1: Stub-Driven Proxying & Journal Recording (With 2PC Pass-Through)
+When `CasualWireMockGateway` sits between **Node 1 (Client Initiator)** and **Node 3 (Upstream Server B)** with a WireMock proxy stub (`targetBaseUrl = "casual://127.0.0.1:7771"`):
 
 ```mermaid
 sequenceDiagram
     participant C as Node 1: Client (TM / Initiator)
     participant G as Node 2: CasualWireMockGateway (MitM)
-    participant W as WireMock Engine (In-Process)
+    participant W as WireMock Engine (In-Memory Probe)
     participant S as Node 3: Upstream Server B
 
     Note over C,S: 1. Handshake & Service Discovery
     C->>G: DOMAIN_CONNECT_REQUEST + DOMAIN_DISCOVERY_REQUEST("casual/example")
-    G->>W: POST /__casual/services/casual/example (Probe)
-    W-->>G: 404 Not Matched (No Stub Yet)
-    G->>S: Forward DOMAIN_DISCOVERY_REQUEST("casual/example")
+    G->>W: In-memory probe: findMatchingStub("casual/example")
+    W-->>G: Matched proxy stub (targetBaseUrl: casual://127.0.0.1:7771)
+    G->>S: Pure TCP Forward DOMAIN_DISCOVERY_REQUEST("casual/example")
     S-->>G: DOMAIN_DISCOVERY_REPLY (Found, TransactionType=AUTOMATIC)
     G-->>C: DOMAIN_DISCOVERY_REPLY
 
-    Note over C,S: 2. Transactional Service Call & Live Stub Recording
+    Note over C,S: 2. Transactional Service Call & Pure Casual TCP Forwarding
     C->>C: UserTransaction.begin() -> allocates Xid1
-    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid1, JSON Payload)
-    G->>W: POST /__casual/services/casual/example (X-Casual-Xid: Xid1)
-    W-->>G: 404 Not Matched (No Matched-Stub-Id header)
-    G->>G: Enlist Xid1 in upstreamEnlistedXids
-    G->>S: Forward SERVICE_CALL_REQUEST("casual/example", Xid1, JSON Payload)
-    S-->>G: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply JSON)
-    G->>W: POST /__admin/mappings (Record request JSON + response JSON + headers)
-    G-->>C: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply JSON)
+    C->>G: SERVICE_CALL_REQUEST("casual/example", Xid1, JSON/FML Payload)
+    G->>W: In-memory probe: findMatchingStub("casual/example")
+    W-->>G: Matched proxy stub (targetBaseUrl: casual://127.0.0.1:7771)
+    G->>G: Enlist client for Xid1 in enlistedXidClients
+    G->>S: Pure TCP Forward SERVICE_CALL_REQUEST("casual/example", Xid1, Payload)
+    S-->>G: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply Payload)
+    G->>W: Record ServeEvent in Request Journal (Human-readable payload + upstream response)
+    G-->>C: SERVICE_CALL_REPLY(ErrorState=OK, TransactionState=TX_ACTIVE, Reply Payload)
 
     Note over C,S: 3. Two-Phase Commit (2PC) Pass-Through
     C->>C: UserTransaction.commit() initiates 2PC
     C->>G: PREPARE_REQUEST(Xid1, RM_ID)
-    G->>S: Forward PREPARE_REQUEST(Xid1, RM_ID) (Xid1 is in upstreamEnlistedXids)
+    G->>S: Pure TCP Forward PREPARE_REQUEST(Xid1, RM_ID) (via enlistedXidClients)
     S-->>G: PREPARE_REPLY(Xid1, XA_OK)
     G-->>C: PREPARE_REPLY(Xid1, XA_OK)
     C->>G: COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
-    G->>S: Forward COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
+    G->>S: Pure TCP Forward COMMIT_REQUEST(Xid1, RM_ID, TMNOFLAGS)
     S-->>G: COMMIT_REPLY(Xid1, XA_OK)
     G-->>C: COMMIT_REPLY(Xid1, XA_OK)
 ```
 
-* **Key Takeaway**: Because `Xid1` was routed to **Node 3**, the gateway records `Xid1` in `upstreamEnlistedXids` and transparently forwards both `PREPARE_REQUEST` and `COMMIT_REQUEST` to Node 3 so that Node 3's real database/queue resources commit atomically with Node 1's transaction manager. Meanwhile, the service call payload is captured as a reusable WireMock stub.
+* **Key Takeaway**: Because `Xid1` was routed to **Node 3**, the gateway records the upstream client connection in `enlistedXidClients` and transparently forwards both `PREPARE_REQUEST` and `COMMIT_REQUEST` socket-to-socket over TCP. The interaction is recorded as a standard `ServeEvent` in WireMock's Request Journal and can be snapshotted into offline stubs at any time via `wireMock.snapshotRecord(...)`.
 
 ---
 
