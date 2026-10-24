@@ -14,6 +14,8 @@ A collection of lightweight, production-grade extensions for [WireMock](https://
 
 > 🌐 **Documentation & Interactive Demo**: Visit [https://mattiasgreen.github.io/wiremock-extensions/](https://mattiasgreen.github.io/wiremock-extensions/) for our product landing page, interactive live console sandbox, and technical docs.
 >
+> 📹 **Video Tour**: Watch the [Progressive Simulation Walkthrough](https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm) (HTTP REST + Casual 2PC offline transition).
+>
 > 📋 **Roadmap & Architecture Backlog**: See [TODO.md](TODO.md) for current progress and future release milestones.
 
 Each extension is **modular and standalone**: you can pick and choose only the extensions you need, or use the all-in-one bundle to include everything.
@@ -37,6 +39,16 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | Overview Tour | OpenAPI Spec Import & Testing | Dynamic Stateful Simulation |
 | :--- | :--- | :--- |
 | ![WireMock Console Overview](docs/images/demo-ui-tour.gif) | ![OpenAPI Spec Import Workflow](docs/images/demo-openapi-import.gif) | ![Dynamic Stateful Simulation](docs/images/demo-stateful-simulation.gif) |
+
+### 🎥 End-to-End Progressive Simulation Tour (WebM)
+
+Watch how a multi-protocol enterprise system (combining HTTP REST and binary Casual XATMI 2PC distributed transactions) transitions from live upstream proxy recording to 100% offline stub playback in seconds:
+
+> 📹 **[Watch / Download Progressive Simulation Tour Video (WebM)](https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm)** *(Hosted on GitHub Releases, zero git bloat)*
+>
+> 1. **Live Proxy Recording**: SUT interacts with live Case Management, CRM, and Casual 2PC billing services while WireMock records every call into the unified journal.
+> 2. **1-Click Harvest & Flip**: Harvest captured sessions into deterministic stubs and switch project routes from `LIVE PROXY` to `STUBS MODE`.
+> 3. **100% Offline Replay**: Terminate upstream backend services completely; the exact same customer journey replays with 100% fidelity and local 2PC transaction synthesis.
 
 ## Building
 

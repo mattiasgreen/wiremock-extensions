@@ -18,6 +18,7 @@
       <li><a href="../">Home</a></li>
       <li><a href="#quickstart" class="active">Documentation</a></li>
       <li><a href="#extensions">Extensions</a></li>
+      <li><a href="#video-tour">Video Tour</a></li>
       <li><a href="#use-cases">Use Cases</a></li>
       <li><a href="../demo/">Live Demo</a></li>
     </ul>
@@ -50,6 +51,7 @@
 
       <h4>Architecture &amp; Best Practices</h4>
       <ul>
+        <li><a href="#video-tour">Progressive Simulation Tour</a></li>
         <li><a href="#architecture">Zero-Sprawl SPI Architecture</a></li>
         <li><a href="#use-cases">Flake-Free CI Scenarios</a></li>
         <li><a href="#zero-npm">Zero-NPM Web Principles</a></li>
@@ -263,6 +265,35 @@ StateModel model = StateModel.named(<span class="str">"CaseManagement"</span>)
   <span class="str">"x_correlation_id"</span>: <span class="str">"ci-runner-worker-3"</span>,
   <span class="str">"x_tenant_id"</span>: <span class="str">"tenant-alpha"</span>
 }</code></pre>
+        </div>
+      </section>
+
+
+      <!-- Section: Progressive Simulation Video Tour -->
+      <section id="video-tour" style="padding: 1.5rem 0 2.5rem;">
+        <span class="badge indigo">Interactive Showcase</span>
+        <h2>Progressive Simulation Walkthrough Tour</h2>
+        <p>
+          Watch how a real-world multi-protocol system (combining HTTP REST and binary Casual XATMI 2PC transactions)
+          progresses from live upstream proxy recording to 100% offline simulation without touching a single line of client test code.
+        </p>
+
+        <div class="hero-media" style="margin: 1.5rem 0;">
+          <video controls poster="../assets/screenshot-stubs-explorer.png" preload="metadata">
+            <source src="https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm" type="video/webm">
+            Your browser does not support the video tag. Download the <a href="https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm">WebM video tour</a> directly.
+          </video>
+        </div>
+
+        <div class="card">
+          <h3>Simulation Lifecycle Breakdown:</h3>
+          <ol style="margin-left: 1.25rem; line-height: 1.8; margin-top: 0.5rem;">
+            <li><strong>Live Proxy Mode</strong>: WireMock intercepts HTTP (CRM &amp; Case APIs) and Casual TCP (2PC Billing) routes, passing traffic through to live backend services.</li>
+            <li><strong>Customer Journey Execution</strong>: The Customer Portal UI submits an application (creating cases, checking KYC) and confirms purchase with an XA-distributed billing charge.</li>
+            <li><strong>Unified Journal Observability</strong>: The WireMock Console UI displays both HTTP REST (<code>200 OK</code>) and protocol-native <code>CASUAL</code> (<code>OK</code>) frames side by side in the request journal.</li>
+            <li><strong>1-Click Harvesting &amp; Mode Switch</strong>: Traffic is snapshotted into deterministic stubs, and project groups are switched from <code>LIVE PROXY</code> to <code>STUBS MODE</code>.</li>
+            <li><strong>Upstream Severing &amp; Offline Replay</strong>: The upstream backend is completely terminated. Replaying the identical application and purchase journey succeeds 100% from local stubs with local 2PC transaction synthesis.</li>
+          </ol>
         </div>
       </section>
 
