@@ -185,6 +185,17 @@ export const elements = {
   testerSentUrl: document.getElementById('tester-sent-url'),
   testerSentHeaders: document.getElementById('tester-sent-headers'),
   testerSentBody: document.getElementById('tester-sent-body'),
+  testerLocalHeadersContainer: document.getElementById('tester-local-headers-container'),
+  testerLocalHeadersToggle: document.getElementById('tester-local-headers-toggle'),
+  testerLocalHeadersCount: document.getElementById('tester-local-headers-count'),
+  btnManageLocalHeaders: document.getElementById('btn-manage-local-headers'),
+  testerLocalHeadersChips: document.getElementById('tester-local-headers-chips'),
+  modalLocalHeaders: document.getElementById('modal-local-headers'),
+  btnCloseLocalHeadersModal: document.getElementById('btn-close-local-headers-modal'),
+  localHeadersTbody: document.getElementById('local-headers-tbody'),
+  btnAddLocalHeaderRow: document.getElementById('btn-add-local-header-row'),
+  btnCancelLocalHeaders: document.getElementById('btn-cancel-local-headers'),
+  btnSaveLocalHeaders: document.getElementById('btn-save-local-headers'),
 
   // Scenarios Tab
   scenariosContainer: document.getElementById('scenarios-container'),

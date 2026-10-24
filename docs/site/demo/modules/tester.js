@@ -15,6 +15,7 @@ export function appendHeader(name, value) {
   const current = elements.testerHeaders.value.trim();
   if (current.toLowerCase().includes(name.toLowerCase() + ':')) return;
   elements.testerHeaders.value = (current ? current + '\n' : '') + `${name}: ${value}`;
+  renderLocalHeaderChips();
   updateTesterRoute(true);
 }
 
@@ -158,6 +159,7 @@ export function restoreHistoryItem(item) {
   if (elements.testerHeaders) elements.testerHeaders.value = item.headersText || '';
   if (elements.testerBody) elements.testerBody.value = item.bodyText || '';
 
+  renderLocalHeaderChips();
   displaySentRequest(item.method, item.url, item.headersText || '', item.bodyText || '');
   displayResponseResult(item.status, item.statusText || '', item.duration || 0, item.responseHeaders || [], item.responseBody || '');
   updateTesterRoute(true);
@@ -259,4 +261,221 @@ export function renderTesterResponse(bodyText) {
   } else {
     elements.testerResponseBody.innerHTML = highlightJson(bodyText);
   }
+}
+
+// -----------------------------------------------------------------------------
+// Browser-Persistent Corporate Headers (Local Storage)
+// -----------------------------------------------------------------------------
+
+export const LOCAL_HEADERS_KEY = 'wiremock_ui_local_headers';
+export const LOCAL_HEADERS_ENABLED_KEY = 'wiremock_ui_local_headers_enabled';
+
+export function loadLocalHeaders() {
+  try {
+    const raw = localStorage.getItem(LOCAL_HEADERS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (_) {}
+  return [];
+}
+
+export function saveLocalHeaders(headers) {
+  try {
+    localStorage.setItem(LOCAL_HEADERS_KEY, JSON.stringify(headers));
+  } catch (_) {}
+}
+
+export function isLocalHeadersEnabled() {
+  try {
+    const val = localStorage.getItem(LOCAL_HEADERS_ENABLED_KEY);
+    return val !== 'false';
+  } catch (_) {
+    return true;
+  }
+}
+
+export function setLocalHeadersEnabled(enabled) {
+  try {
+    localStorage.setItem(LOCAL_HEADERS_ENABLED_KEY, enabled ? 'true' : 'false');
+  } catch (_) {}
+  renderLocalHeaderChips();
+}
+
+export function resolveMacro(value) {
+  if (!value || typeof value !== 'string') return value;
+  let res = value;
+  if (res.includes('{{uuid}}')) {
+    const uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+    res = res.replaceAll('{{uuid}}', uuid);
+  }
+  if (res.includes('{{now}}')) {
+    res = res.replaceAll('{{now}}', new Date().toISOString());
+  }
+  if (res.includes('{{timestamp}}')) {
+    res = res.replaceAll('{{timestamp}}', String(Date.now()));
+  }
+  return res;
+}
+
+export function getEffectiveTesterHeaders(textareaText, resolveMacros = true) {
+  const customHeaders = parseHeadersInput(textareaText);
+  const customKeysLower = new Set(Object.keys(customHeaders).map(k => k.toLowerCase()));
+
+  const localHeaders = loadLocalHeaders();
+  const enabled = isLocalHeadersEnabled();
+
+  const effective = {};
+  const overriddenKeys = new Set();
+  const appliedLocalHeaders = [];
+
+  if (enabled) {
+    for (const h of localHeaders) {
+      if (!h.enabled || !h.name || !h.name.trim()) continue;
+      const name = h.name.trim();
+      if (customKeysLower.has(name.toLowerCase())) {
+        overriddenKeys.add(name.toLowerCase());
+      } else {
+        const finalVal = resolveMacros ? resolveMacro(h.value || '') : (h.value || '');
+        effective[name] = finalVal;
+        appliedLocalHeaders.push({ name, value: finalVal, rawValue: h.value || '' });
+      }
+    }
+  }
+
+  for (const [k, v] of Object.entries(customHeaders)) {
+    effective[k] = v;
+  }
+
+  return {
+    headers: effective,
+    customHeaders,
+    overriddenKeys,
+    appliedLocalHeaders,
+    localHeaders,
+    isEnabled: enabled
+  };
+}
+
+export function renderLocalHeaderChips() {
+  if (!elements.testerLocalHeadersChips) return;
+
+  const localHeaders = loadLocalHeaders();
+  const isEnabled = isLocalHeadersEnabled();
+  const textareaVal = elements.testerHeaders ? elements.testerHeaders.value : '';
+  const { overriddenKeys } = getEffectiveTesterHeaders(textareaVal, false);
+
+  const activeHeaders = localHeaders.filter(h => h.enabled && h.name && h.name.trim());
+  if (elements.testerLocalHeadersCount) {
+    elements.testerLocalHeadersCount.textContent = activeHeaders.length;
+  }
+
+  if (elements.testerLocalHeadersToggle) {
+    elements.testerLocalHeadersToggle.checked = isEnabled;
+  }
+
+  if (elements.testerLocalHeadersContainer) {
+    if (!isEnabled) {
+      elements.testerLocalHeadersContainer.classList.add('disabled');
+    } else {
+      elements.testerLocalHeadersContainer.classList.remove('disabled');
+    }
+  }
+
+  if (!isEnabled) {
+    elements.testerLocalHeadersChips.innerHTML = '<span class="muted-text text-small">Persistent headers paused (toggle switch to re-enable).</span>';
+    return;
+  }
+
+  if (activeHeaders.length === 0) {
+    elements.testerLocalHeadersChips.innerHTML = '<span class="muted-text text-small">No persistent headers configured (click ⚙️ Manage to add).</span>';
+    return;
+  }
+
+  elements.testerLocalHeadersChips.innerHTML = '';
+  for (const h of activeHeaders) {
+    const isOverridden = overriddenKeys.has(h.name.trim().toLowerCase());
+    const chip = document.createElement('div');
+    chip.className = isOverridden ? 'local-header-chip overridden' : 'local-header-chip';
+    chip.setAttribute('data-header-name', h.name.trim());
+    if (isOverridden) {
+      chip.setAttribute('title', 'Overridden by Request Headers textarea');
+      chip.innerHTML = `<span class="chip-name">${escapeHtml(h.name.trim())}:</span> <span class="chip-val">${escapeHtml(h.value || '')}</span><span class="chip-override-badge">(overridden)</span>`;
+    } else {
+      chip.setAttribute('title', 'From browser local storage');
+      chip.innerHTML = `<span class="chip-name">${escapeHtml(h.name.trim())}:</span> <span class="chip-val">${escapeHtml(h.value || '')}</span>`;
+    }
+    elements.testerLocalHeadersChips.appendChild(chip);
+  }
+}
+
+export function openLocalHeadersModal() {
+  if (!elements.modalLocalHeaders || !elements.localHeadersTbody) return;
+  const list = loadLocalHeaders();
+  elements.localHeadersTbody.innerHTML = '';
+  if (list.length === 0) {
+    addLocalHeaderRow('X-Correlation-Id', '{{uuid}}', true);
+    addLocalHeaderRow('X-Tenant-Id', 'corp-default', true);
+  } else {
+    list.forEach(h => addLocalHeaderRow(h.name, h.value, h.enabled !== false));
+  }
+  elements.modalLocalHeaders.classList.remove('hidden');
+}
+
+export function closeLocalHeadersModal() {
+  if (elements.modalLocalHeaders) {
+    elements.modalLocalHeaders.classList.add('hidden');
+  }
+}
+
+export function addLocalHeaderRow(name = '', value = '', enabled = true) {
+  if (!elements.localHeadersTbody) return;
+  const tr = document.createElement('tr');
+  tr.className = 'local-header-row';
+  tr.innerHTML = `
+    <td style="text-align: center;">
+      <input type="checkbox" class="header-row-enabled" ${enabled ? 'checked' : ''} title="Enable this header">
+    </td>
+    <td>
+      <input type="text" class="form-control header-row-name" placeholder="Header-Name" value="${escapeHtml(name)}" autocomplete="off" spellcheck="false">
+    </td>
+    <td>
+      <input type="text" class="form-control header-row-value" placeholder="Value or {{uuid}}" value="${escapeHtml(value)}" autocomplete="off" spellcheck="false">
+    </td>
+    <td style="text-align: center;">
+      <button type="button" class="btn-del-header-row" title="Delete header">🗑️</button>
+    </td>
+  `;
+  const delBtn = tr.querySelector('.btn-del-header-row');
+  if (delBtn) {
+    delBtn.addEventListener('click', () => tr.remove());
+  }
+  elements.localHeadersTbody.appendChild(tr);
+}
+
+export function saveLocalHeadersFromModal() {
+  if (!elements.localHeadersTbody) return;
+  const rows = elements.localHeadersTbody.querySelectorAll('.local-header-row');
+  const headers = [];
+  rows.forEach(r => {
+    const enabledInput = r.querySelector('.header-row-enabled');
+    const nameInput = r.querySelector('.header-row-name');
+    const valInput = r.querySelector('.header-row-value');
+    const name = nameInput ? nameInput.value.trim() : '';
+    const val = valInput ? valInput.value : '';
+    const isEnabled = enabledInput ? enabledInput.checked : true;
+    if (name) {
+      headers.push({ name, value: val, enabled: isEnabled });
+    }
+  });
+  saveLocalHeaders(headers);
+  closeLocalHeadersModal();
+  renderLocalHeaderChips();
 }

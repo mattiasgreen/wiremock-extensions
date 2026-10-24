@@ -11,6 +11,7 @@ import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.
 import { handleStubCheckboxClick, updateBulkToolbar } from './bulk-actions.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
 import { matchesStub } from './filter.js';
+import { renderLocalHeaderChips } from './tester.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -519,6 +520,7 @@ export function sendStubToTester(stub, switchTab = true) {
   if (elements.testerUrl) elements.testerUrl.value = path;
   if (elements.testerHeaders) elements.testerHeaders.value = headerLines.join('\n');
   if (elements.testerBody) elements.testerBody.value = body;
+  renderLocalHeaderChips();
 
   state.contextStub = stub;
   if (elements.testerContextBanner) {

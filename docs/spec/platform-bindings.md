@@ -44,6 +44,17 @@
 | **Tester Send Action** | `#tester-send-btn` | `"tester-send-btn"` | Dispatches request asynchronously. |
 | **Tester Status Result** | `#tester-response-status`| `"tester-response-status"`| Displays HTTP response status and latency in ms. |
 | **Tester Response Body** | `#tester-response-body` | `"tester-response-body"` | Formatted response body viewer. |
+| **Tester Local Headers Container** | `#tester-local-headers-container` | `"tester-local-headers-container"` | Container for persistent corporate headers bar. |
+| **Tester Local Headers Toggle** | `#tester-local-headers-toggle` | `"tester-local-headers-toggle"` | Checkbox toggle to enable/disable persistent headers. |
+| **Tester Local Headers Count** | `#tester-local-headers-count` | `"tester-local-headers-count"` | Badge displaying active local headers count. |
+| **Manage Local Headers Action** | `#btn-manage-local-headers` | `"btn-manage-local-headers"` | Trigger opening the Manage Local Headers modal. |
+| **Tester Local Headers Chips** | `#tester-local-headers-chips` | `"tester-local-headers-chips"` | Container displaying preview chips for local headers. |
+| **Manage Local Headers Modal** | `#modal-local-headers` | `"modal-local-headers"` | Modal dialog for configuring browser persistent headers. |
+| **Add Local Header Row Action** | `#btn-add-local-header-row` | `"btn-add-local-header-row"` | Appends a new header row in the modal table. |
+| **Save Local Headers Action** | `#btn-save-local-headers` | `"btn-save-local-headers"` | Persists header table rows to browser `localStorage`. |
+| **Cancel Local Headers Action** | `#btn-cancel-local-headers` | `"btn-cancel-local-headers"` | Closes the modal without applying pending edits. |
+| **Close Local Headers Modal** | `#btn-close-local-headers-modal` | `"btn-close-local-headers-modal"` | Close button (✕) for the local headers modal. |
+| **Local Headers Table Body** | `#local-headers-tbody` | `"local-headers-tbody"` | Table body element rendering editable header rows. |
 | **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
 | **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
 | **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |

@@ -47,7 +47,16 @@ import {
   renderTesterResponse,
   initTesterHistoryCollapse,
   setTesterHistoryCollapsed,
-  toggleTesterHistory
+  toggleTesterHistory,
+  getEffectiveTesterHeaders,
+  renderLocalHeaderChips,
+  openLocalHeadersModal,
+  closeLocalHeadersModal,
+  saveLocalHeadersFromModal,
+  addLocalHeaderRow,
+  setLocalHeadersEnabled,
+  loadLocalHeaders,
+  saveLocalHeaders
 } from './modules/tester.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
@@ -120,7 +129,11 @@ export {
   exportStubs,
   renderTargetCapabilities,
   applyCapabilityVisibility,
-  getWireMockUri
+  getWireMockUri,
+  getEffectiveTesterHeaders,
+  renderLocalHeaderChips,
+  loadLocalHeaders,
+  saveLocalHeaders
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)
@@ -731,7 +744,44 @@ if (elements.btnTesterResetForm) {
     if (elements.testerUrl) elements.testerUrl.value = '/api/v1/users';
     if (elements.testerHeaders) elements.testerHeaders.value = '';
     if (elements.testerBody) elements.testerBody.value = '';
+    renderLocalHeaderChips();
     setRoute('tester', { m: null, p: null, h: null, b: null });
+  });
+}
+if (elements.testerHeaders) {
+  elements.testerHeaders.addEventListener('input', renderLocalHeaderChips);
+  elements.testerHeaders.addEventListener('change', renderLocalHeaderChips);
+}
+if (elements.testerLocalHeadersToggle) {
+  elements.testerLocalHeadersToggle.addEventListener('change', (e) => {
+    setLocalHeadersEnabled(e.target.checked);
+  });
+}
+if (elements.btnManageLocalHeaders) {
+  elements.btnManageLocalHeaders.addEventListener('click', openLocalHeadersModal);
+}
+if (elements.btnCloseLocalHeadersModal) {
+  elements.btnCloseLocalHeadersModal.addEventListener('click', closeLocalHeadersModal);
+}
+if (elements.btnCancelLocalHeaders) {
+  elements.btnCancelLocalHeaders.addEventListener('click', closeLocalHeadersModal);
+}
+if (elements.btnSaveLocalHeaders) {
+  elements.btnSaveLocalHeaders.addEventListener('click', saveLocalHeadersFromModal);
+}
+if (elements.btnAddLocalHeaderRow) {
+  elements.btnAddLocalHeaderRow.addEventListener('click', () => addLocalHeaderRow('', '', true));
+}
+if (elements.modalLocalHeaders) {
+  elements.modalLocalHeaders.addEventListener('click', (e) => {
+    if (e.target === elements.modalLocalHeaders) {
+      closeLocalHeadersModal();
+    }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !elements.modalLocalHeaders.classList.contains('hidden')) {
+      closeLocalHeadersModal();
+    }
   });
 }
 if (elements.btnTesterClearHistory) {
@@ -783,7 +833,8 @@ if (elements.btnTesterCopyCurl) {
   elements.btnTesterCopyCurl.addEventListener('click', () => {
     const method = (elements.testerMethod && elements.testerMethod.value) || 'GET';
     const path = (elements.testerUrl && elements.testerUrl.value) || '/';
-    const headers = parseHeadersInput((elements.testerHeaders && elements.testerHeaders.value) || '');
+    const headersText = (elements.testerHeaders && elements.testerHeaders.value) || '';
+    const { headers } = getEffectiveTesterHeaders(headersText, true);
     const body = (elements.testerBody && elements.testerBody.value) || '';
     const cmd = generateCurl(method, path, headers, body);
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -987,6 +1038,7 @@ function loadVersionInfo() {
 function boot() {
   updateTargetHostDisplay();
   setupTargetHostControls();
+  renderLocalHeaderChips();
   loadData();
   loadVersionInfo();
   initNetEmTab();
