@@ -241,4 +241,81 @@ class OpenApiAdminEndpointTest {
             upstreamServer.stop();
         }
     }
+
+    @Test
+    @DisplayName("Should analyze recorded stubs via POST /__admin/openapi/analyze-recorded-stubs and generalize them")
+    void shouldAnalyzeRecordedStubsAndOptionallyGeneralize() throws Exception {
+        // Pre-populate a recorded stub
+        wireMockServer.stubFor(
+                com.github.tomakehurst.wiremock.client.WireMock.get(
+                                com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo(
+                                        "/api/crm/customers/CUST-42/kyc?asOf=2026-10-25"))
+                        .withName("[RECORDED] getCustomerKyc")
+                        .willReturn(
+                                com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+                                        .withStatus(200)
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                """
+                                {
+                                  "customerId": "CUST-42",
+                                  "fullName": "Eleanor",
+                                  "kycStatus": "VERIFIED",
+                                  "asOfDate": "2026-10-25"
+                                }
+                                """)));
+
+        String spec =
+                """
+                openapi: 3.0.3
+                info:
+                  title: CRM API
+                  version: 1.0.0
+                paths:
+                  /api/crm/customers/{customerId}/kyc:
+                    get:
+                      operationId: getCustomerKyc
+                      parameters:
+                        - name: customerId
+                          in: path
+                          required: true
+                          schema:
+                            type: string
+                        - name: asOf
+                          in: query
+                          schema:
+                            type: string
+                            format: date
+                      responses:
+                        '200':
+                          description: OK
+                """;
+
+        String requestJson = com.github.tomakehurst.wiremock.common.Json.write(
+                java.util.Map.of("spec", spec, "generalizeAndRegister", true));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/openapi/analyze-recorded-stubs"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestJson))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"generalizeAndRegister\" : true");
+        assertThat(response.body()).contains("\"candidateStubsAnalyzed\" : 1");
+        assertThat(response.body()).contains("getCustomerKyc");
+
+        // Verify that generalized stub was registered into WireMock!
+        // Calling WireMock with unrecorded ID CUST-999 and future date 2030-01-01 succeeds!
+        HttpRequest clientReq = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/api/crm/customers/CUST-999/kyc?asOf=2030-01-01"))
+                .GET()
+                .build();
+
+        HttpResponse<String> clientResp = httpClient.send(clientReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(clientResp.statusCode()).isEqualTo(200);
+        assertThat(clientResp.body()).contains("\"customerId\":\"CUST-999\"");
+        assertThat(clientResp.body()).contains("\"asOfDate\":\"2030-01-01\"");
+    }
 }
