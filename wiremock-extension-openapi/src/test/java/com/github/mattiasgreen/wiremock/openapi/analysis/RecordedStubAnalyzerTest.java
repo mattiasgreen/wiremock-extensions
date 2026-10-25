@@ -489,4 +489,170 @@ class RecordedStubAnalyzerTest {
                 .extracting(TemporalFieldInfo::schemaFormat)
                 .containsExactly("date");
     }
+
+    @Test
+    @DisplayName("Should correlate Casual RPC recorded stubs with prefix normalization and header preservation")
+    void shouldCorrelateCasualRpcRecordedStubsWithPrefixNormalization() {
+        String casualSpec =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Casual Banking Gateway
+                  version: 1.0.0
+                paths:
+                  /CUSTOMER_KYC:
+                    post:
+                      operationId: customerKyc
+                      summary: Inquire customer KYC over Casual XATMI
+                      responses:
+                        '200':
+                          description: KYC response buffer
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  customerId:
+                                    type: string
+                                  fullName:
+                                    type: string
+                                  kycStatus:
+                                    type: string
+                """;
+
+        StubMapping casualStub = WireMock.post(WireMock.urlEqualTo("/__casual/services/CUSTOMER_KYC"))
+                .withHeader("X-Casual-Service", WireMock.equalTo("CUSTOMER_KYC"))
+                .withHeader("X-Casual-Buffer-Type", WireMock.equalTo("JSON"))
+                .withHeader("X-Casual-Execution", WireMock.equalTo("exec-uuid-999"))
+                .withHeader("Content-Type", WireMock.equalTo("application/json"))
+                .withRequestBody(
+                        WireMock.equalToJson(
+                                """
+                        {
+                          "customerId": "CUST-42",
+                          "requestedBy": "teller-1"
+                        }
+                        """))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withHeader("X-Casual-Service", "CUSTOMER_KYC")
+                                .withHeader("X-Casual-Buffer-Type", "JSON")
+                                .withHeader("X-Casual-Execution", "exec-uuid-999")
+                                .withBody(
+                                        """
+                                {
+                                  "customerId": "CUST-42",
+                                  "fullName": "Eleanor Vance",
+                                  "kycStatus": "VERIFIED"
+                                }
+                                """))
+                .build();
+        casualStub.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report = analyzer.analyze(casualSpec, List.of(casualStub));
+
+        assertThat(report.operations()).hasSize(1);
+        OperationStubAnalysis op = report.operations().getFirst();
+        assertThat(op.operationId()).isEqualTo("customerKyc");
+        assertThat(op.parameterEchoes())
+                .extracting(ParameterEcho::responseJsonPointer)
+                .contains("/customerId");
+        assertThat(op.parameterEchoes())
+                .extracting(ParameterEcho::parameterName)
+                .contains("$.customerId");
+
+        StubMapping generalized = analyzer.generalizeStub(casualStub, op);
+
+        // Generalized mapping retains the /__casual/services prefix so WireMock handles gateway traffic
+        assertThat(generalized.getRequest().getUrlPathTemplate()).isEqualTo("/__casual/services/CUSTOMER_KYC");
+
+        // Preserves protocol headers, strips ephemeral transaction execution IDs
+        assertThat(generalized.getRequest().getHeaders()).containsKey("X-Casual-Service");
+        assertThat(generalized.getRequest().getHeaders()).containsKey("X-Casual-Buffer-Type");
+        assertThat(generalized.getRequest().getHeaders()).containsKey("Content-Type");
+        assertThat(generalized.getRequest().getHeaders()).doesNotContainKey("X-Casual-Execution");
+
+        assertThat(generalized
+                        .getResponse()
+                        .getHeaders()
+                        .getHeader("X-Casual-Service")
+                        .firstValue())
+                .isEqualTo("CUSTOMER_KYC");
+        assertThat(generalized
+                        .getResponse()
+                        .getHeaders()
+                        .getHeader("X-Casual-Execution")
+                        .isPresent())
+                .isFalse();
+
+        // Response body echoes the request body customerId
+        assertThat(generalized.getResponse().getBody())
+                .contains("\"customerId\":\"{{jsonPath request.body '$.customerId'}}\"");
+    }
+
+    @Test
+    @DisplayName("Should detect Casual RPC read-your-own-writes mutations between POST operations")
+    void shouldDetectCasualRpcReadYourOwnWritesMutationAcrossTimeline() {
+        String casualSpec =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Casual Case Management
+                  version: 1.0.0
+                paths:
+                  /GET_CUSTOMER_KYC:
+                    post:
+                      operationId: getCustomerKyc
+                      responses:
+                        '200':
+                          description: Details
+                  /UPDATE_CUSTOMER_KYC:
+                    post:
+                      operationId: updateCustomerKyc
+                      responses:
+                        '200':
+                          description: Updated
+                """;
+
+        StubMapping initialGet = WireMock.post(WireMock.urlEqualTo("/__casual/services/GET_CUSTOMER_KYC"))
+                .withRequestBody(WireMock.equalToJson("{\"customerId\": \"CUST-42\"}"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"customerId\": \"CUST-42\", \"kycStatus\": \"PENDING\"}"))
+                .build();
+        initialGet.setId(UUID.randomUUID());
+
+        StubMapping updateStub = WireMock.post(WireMock.urlEqualTo("/__casual/services/UPDATE_CUSTOMER_KYC"))
+                .withRequestBody(WireMock.equalToJson("{\"customerId\": \"CUST-42\", \"kycStatus\": \"VERIFIED\"}"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\": \"SUCCESS\"}"))
+                .build();
+        updateStub.setId(UUID.randomUUID());
+
+        StubMapping afterUpdateGet = WireMock.post(WireMock.urlEqualTo("/__casual/services/GET_CUSTOMER_KYC"))
+                .withRequestBody(WireMock.equalToJson("{\"customerId\": \"CUST-42\"}"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"customerId\": \"CUST-42\", \"kycStatus\": \"VERIFIED\"}"))
+                .build();
+        afterUpdateGet.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report =
+                analyzer.analyze(casualSpec, List.of(initialGet, updateStub, afterUpdateGet));
+
+        assertThat(report.detectedMutations()).hasSize(1);
+        ResourceMutation mutation = report.detectedMutations().getFirst();
+        assertThat(mutation.resourcePathTemplate()).isEqualTo("/GET_CUSTOMER_KYC");
+        assertThat(mutation.mutatingMethod()).isEqualTo("updateCustomerKyc");
+        assertThat(mutation.mutatedFields()).contains("/kycStatus");
+        assertThat(mutation.readYourOwnWritesDetected()).isTrue();
+    }
 }

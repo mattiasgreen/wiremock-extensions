@@ -311,3 +311,32 @@ This verification ensures that any developer or agent adopting this protocol ach
 - **Instant Local Feedback**: Sub-second inner loops using In-JVM Mockito.
 - **Contract Fidelity**: High-confidence wire testing using WireMock HTTP.
 - **Zero Fixture Rot**: Clean, typed Object Mothers that adapt to schema evolution.
+
+---
+
+## 6. Bootstrapping SDKs from Casual XATMI RPC Stubs
+
+The bootstrapping pipeline seamlessly extends to non-HTTP protocols, specifically **Netty XATMI / Casual RPC** services:
+
+```mermaid
+flowchart LR
+    CasualClient["Casual Client (tpcall)"] -->|Netty TCP| Gateway["CasualWireMockGateway"]
+    Gateway -->|POST /__casual/services/SVC| WM["WireMock HTTP"]
+    WM -.->|Snapshot| RecordedStubs["Recorded Stubs (.json)"]
+    RecordedStubs --> Analyzer["RecordedStubAnalyzer<br/>(Prefix Normalization + RPC Mutation)"]
+    CasualOpenAPI["Casual OpenAPI Spec"] --> Analyzer
+    Analyzer --> GenStubs["Generalized Stubs<br/>(Retains /__casual/services/...)"]
+    Analyzer --> CasualMother["Casual Object Mother<br/>(Request/Reply DTOs)"]
+    CasualMother --> DualCasual["Dual-Mode Casual TestKit<br/>(In-JVM Mockito + Netty TCP Gateway)"]
+```
+
+### Key Casual Adaptations
+1. **L7 Protocol Normalization**: [`CasualWireMockGateway`](file:///C:/Users/mag/.gemini/antigravity/worktrees/wiremock-extensions/explore_recorded_stub_pitfalls/wiremock-extension-casual/src/main/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGateway.java) transparently normalizes binary TCP Casual frames into HTTP WireMock stubs mounted at `POST /__casual/services/{serviceName}`.
+2. **Route Prefix Normalization**: `RecordedStubAnalyzer` automatically strips known prefixes (`/__casual/services`, `/__casual`, `/services`, `/api`) when matching against an exported Casual OpenAPI spec (e.g. `POST /CUSTOMER_KYC`), while preserving the concrete `/__casual/services` prefix in the generated `urlPathTemplate` so WireMock handles gateway traffic.
+3. **Header Allow-Listing & Ephemeral Stripping**:
+   - **Preserved**: `X-Casual-Service`, `X-Casual-Buffer-Type`, `X-Casual-Error-State` (`TPESVCFAIL`), `X-Casual-User-Code` (`urcode`).
+   - **Stripped**: Ephemeral invocation and transaction IDs (`X-Casual-Execution`, `X-Casual-Xid`) are discarded so generalized stubs match all future test runs.
+4. **RPC-to-RPC Mutation Detection**: Unlike REST where HTTP verbs (`GET` vs `PATCH`) indicate state changes, Casual operations are 100% `POST`. The analyzer correlates read operations (`GET_*`, `FETCH_*`, `FIND_*`) with mutating operations (`UPDATE_*`, `SET_*`, `MODIFY_*`) operating on the same resource base name or sharing request body identity parameters.
+5. **Dual-Mode Simulation**:
+   - **Level 2 (In-JVM Mockito)**: Mocks the high-level Casual client interface (`tpcall("SVC", req)`).
+   - **Level 3 (Netty TCP Gateway)**: Boots `CasualWireMockGateway` to verify actual byte-level Casual network protocol frames, buffer serialization, and 2PC/XA transaction coordination.

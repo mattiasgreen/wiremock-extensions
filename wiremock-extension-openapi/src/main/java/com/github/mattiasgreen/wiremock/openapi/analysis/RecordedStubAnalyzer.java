@@ -48,23 +48,41 @@ public class RecordedStubAnalyzer {
     private static final Pattern PATH_PARAM_REGEX = Pattern.compile("\\{([^}]+)}");
     private static final Pattern ISO_DATE_REGEX = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}(T.*)?$");
 
-    public static final Set<String> DEFAULT_PRESERVED_HEADERS =
-            Set.of("content-type", "accept", "x-correlation-id", "x-tenant-id", "x-request-id", "x-api-version");
+    public static final Set<String> DEFAULT_PRESERVED_HEADERS = Set.of(
+            "content-type",
+            "accept",
+            "x-correlation-id",
+            "x-tenant-id",
+            "x-request-id",
+            "x-api-version",
+            "x-casual-service",
+            "x-casual-buffer-type",
+            "x-casual-error-state",
+            "x-casual-user-code");
+
+    public static final List<String> DEFAULT_ROUTE_PREFIXES =
+            List.of("/__casual/services", "/__casual", "/services", "/api");
 
     private final ObjectMapper objectMapper;
     private final Set<String> preservedHeaders;
+    private final List<String> routePrefixes;
 
     public RecordedStubAnalyzer() {
-        this(DEFAULT_PRESERVED_HEADERS);
+        this(DEFAULT_PRESERVED_HEADERS, DEFAULT_ROUTE_PREFIXES);
     }
 
     public RecordedStubAnalyzer(Set<String> preservedHeaders) {
+        this(preservedHeaders, DEFAULT_ROUTE_PREFIXES);
+    }
+
+    public RecordedStubAnalyzer(Set<String> preservedHeaders, List<String> routePrefixes) {
         this.objectMapper = new ObjectMapper();
         this.preservedHeaders = preservedHeaders != null
                 ? preservedHeaders.stream()
                         .map(h -> h.toLowerCase(Locale.ROOT))
                         .collect(java.util.stream.Collectors.toUnmodifiableSet())
                 : DEFAULT_PRESERVED_HEADERS;
+        this.routePrefixes = routePrefixes != null ? List.copyOf(routePrefixes) : DEFAULT_ROUTE_PREFIXES;
     }
 
     /**
@@ -173,12 +191,26 @@ public class RecordedStubAnalyzer {
         Objects.requireNonNull(rawStub, "rawStub must not be null");
         Objects.requireNonNull(analysis, "analysis must not be null");
 
+        String rawUrl = extractStubUrl(rawStub);
+        String concretePath = rawUrl;
+        int qIdx = concretePath.indexOf('?');
+        if (qIdx >= 0) {
+            concretePath = concretePath.substring(0, qIdx);
+        }
+
+        String effectivePathTemplate = analysis.openApiPathTemplate();
+        for (String prefix : routePrefixes) {
+            if (concretePath.startsWith(prefix + "/") && !effectivePathTemplate.startsWith(prefix)) {
+                effectivePathTemplate = prefix
+                        + (effectivePathTemplate.startsWith("/") ? effectivePathTemplate : "/" + effectivePathTemplate);
+                break;
+            }
+        }
+
         RequestPatternBuilder reqPattern = RequestPatternBuilder.newRequestPattern(
-                RequestMethod.fromString(analysis.httpMethod()),
-                WireMock.urlPathTemplate(analysis.openApiPathTemplate()));
+                RequestMethod.fromString(analysis.httpMethod()), WireMock.urlPathTemplate(effectivePathTemplate));
 
         // Relax query parameters in the template
-        String rawUrl = extractStubUrl(rawStub);
         Map<String, String> queryParams = extractQueryParams(rawUrl);
         for (String qName : queryParams.keySet()) {
             reqPattern.withQueryParam(qName, WireMock.matching(".+"));
@@ -326,21 +358,23 @@ public class RecordedStubAnalyzer {
             OperationKey key = entry.getKey();
             List<MatchedStubContext> contexts = entry.getValue();
 
-            // Detect identical GET requests returning different response payloads across the timeline
-            if ("GET".equalsIgnoreCase(key.method()) && contexts.size() >= 2) {
+            boolean isRead = isReadOperation(
+                    key.method(), key.pathTemplate(), contexts.getFirst().operationId());
+
+            if (isRead && contexts.size() >= 2) {
                 for (int i = 0; i < contexts.size() - 1; i++) {
                     MatchedStubContext ctxA = contexts.get(i);
                     for (int j = i + 1; j < contexts.size(); j++) {
                         MatchedStubContext ctxB = contexts.get(j);
-                        if (ctxA.rawUrl().equals(ctxB.rawUrl())) {
+                        if (isSameTargetResource(ctxA, ctxB)) {
                             List<String> changedPointers =
                                     diffResponsePointers(ctxA.parsedResponseFields(), ctxB.parsedResponseFields());
                             if (!changedPointers.isEmpty()) {
                                 // Find any mutating call on the same resource
-                                String mutatingMethod = findMutatingMethodForResource(groupedStubs, key.pathTemplate());
+                                String mutatingName = findMutatingOperationForResource(groupedStubs, ctxA);
                                 mutations.add(new ResourceMutation(
                                         key.pathTemplate(),
-                                        mutatingMethod != null ? mutatingMethod : "EXTERNAL_MUTATION",
+                                        mutatingName != null ? mutatingName : "EXTERNAL_MUTATION",
                                         changedPointers,
                                         true));
                             }
@@ -368,14 +402,88 @@ public class RecordedStubAnalyzer {
         return diffs;
     }
 
-    private String findMutatingMethodForResource(
-            Map<OperationKey, List<MatchedStubContext>> groupedStubs, String getPathTemplate) {
-        for (OperationKey key : groupedStubs.keySet()) {
-            if (!"GET".equalsIgnoreCase(key.method()) && isSameResourceHierarchy(getPathTemplate, key.pathTemplate())) {
-                return key.method();
+    private boolean isReadOperation(String method, String pathTemplate, String operationId) {
+        if ("GET".equalsIgnoreCase(method)) {
+            return true;
+        }
+        if ("POST".equalsIgnoreCase(method)) {
+            String combined = (pathTemplate + "_" + (operationId != null ? operationId : "")).toLowerCase(Locale.ROOT);
+            return combined.contains("get")
+                    || combined.contains("fetch")
+                    || combined.contains("find")
+                    || combined.contains("query")
+                    || combined.contains("read")
+                    || combined.contains("retrieve")
+                    || combined.contains("search")
+                    || combined.contains("lookup");
+        }
+        return false;
+    }
+
+    private boolean isSameTargetResource(MatchedStubContext a, MatchedStubContext b) {
+        if (a.rawUrl().equals(b.rawUrl())) {
+            String bodyA = extractRequestBody(a.stub());
+            String bodyB = extractRequestBody(b.stub());
+            if (bodyA == null && bodyB == null) {
+                return true;
+            }
+            if (bodyA != null && bodyB != null) {
+                return bodyA.equals(bodyB);
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private String findMutatingOperationForResource(
+            Map<OperationKey, List<MatchedStubContext>> groupedStubs, MatchedStubContext readContext) {
+        String readBase = extractResourceBaseName(readContext.openApiPathTemplate());
+        for (Map.Entry<OperationKey, List<MatchedStubContext>> entry : groupedStubs.entrySet()) {
+            OperationKey key = entry.getKey();
+            MatchedStubContext firstMut = entry.getValue().getFirst();
+            boolean isMut = isMutatingOperation(key.method(), key.pathTemplate(), firstMut.operationId());
+            if (isMut) {
+                if (isSameResourceHierarchy(readContext.openApiPathTemplate(), key.pathTemplate())) {
+                    return key.method();
+                }
+                String mutBase = extractResourceBaseName(key.pathTemplate());
+                if (!readBase.isBlank() && readBase.equalsIgnoreCase(mutBase)) {
+                    return firstMut.operationId() != null ? firstMut.operationId() : key.method();
+                }
             }
         }
         return null;
+    }
+
+    private boolean isMutatingOperation(String method, String pathTemplate, String operationId) {
+        if (!"GET".equalsIgnoreCase(method)
+                && !"HEAD".equalsIgnoreCase(method)
+                && !"OPTIONS".equalsIgnoreCase(method)) {
+            if (!"POST".equalsIgnoreCase(method)) {
+                return true;
+            }
+            String combined = (pathTemplate + "_" + (operationId != null ? operationId : "")).toLowerCase(Locale.ROOT);
+            return combined.contains("update")
+                    || combined.contains("set")
+                    || combined.contains("modify")
+                    || combined.contains("create")
+                    || combined.contains("patch")
+                    || combined.contains("delete")
+                    || combined.contains("put")
+                    || !isReadOperation(method, pathTemplate, operationId);
+        }
+        return false;
+    }
+
+    private String extractResourceBaseName(String pathOrOperation) {
+        String clean = pathOrOperation.replaceAll("/\\{[^}]+}", "");
+        int lastSlash = clean.lastIndexOf('/');
+        if (lastSlash >= 0) {
+            clean = clean.substring(lastSlash + 1);
+        }
+        return clean.replaceAll(
+                "(?i)^(get|fetch|find|query|read|retrieve|search|lookup|set|update|modify|create|post|patch|delete)[_\\-]?",
+                "");
     }
 
     private boolean isSameResourceHierarchy(String pathA, String pathB) {
@@ -420,6 +528,30 @@ public class RecordedStubAnalyzer {
 
             Map<String, String> pathParams = matchPathTemplate(pathTemplate, concretePath);
             if (pathParams == null) {
+                for (String prefix : routePrefixes) {
+                    if (concretePath.startsWith(prefix + "/") || concretePath.equalsIgnoreCase(prefix)) {
+                        String stripped = concretePath.substring(prefix.length());
+                        if (!stripped.startsWith("/")) {
+                            stripped = "/" + stripped;
+                        }
+                        pathParams = matchPathTemplate(pathTemplate, stripped);
+                        if (pathParams != null) {
+                            break;
+                        }
+                    }
+                    if (pathTemplate.startsWith(prefix + "/") || pathTemplate.equalsIgnoreCase(prefix)) {
+                        String strippedTemplate = pathTemplate.substring(prefix.length());
+                        if (!strippedTemplate.startsWith("/")) {
+                            strippedTemplate = "/" + strippedTemplate;
+                        }
+                        pathParams = matchPathTemplate(strippedTemplate, concretePath);
+                        if (pathParams != null) {
+                            break;
+                        }
+                    }
+                }
+            }
+            if (pathParams == null) {
                 continue;
             }
 
@@ -441,6 +573,7 @@ public class RecordedStubAnalyzer {
 
             String body = stub.getResponse().getBody();
             if (body != null && !body.isBlank()) {
+                Map<String, String> resolvedPathParams = pathParams;
                 try {
                     JsonNode node = objectMapper.readTree(body);
                     walkJsonLeaves("", node, (respPointer, leaf) -> {
@@ -449,7 +582,7 @@ public class RecordedStubAnalyzer {
 
                         // 1. Path param echo check
                         boolean isEcho = false;
-                        for (Map.Entry<String, String> pEntry : pathParams.entrySet()) {
+                        for (Map.Entry<String, String> pEntry : resolvedPathParams.entrySet()) {
                             if (pEntry.getValue().equals(strVal)) {
                                 echoes.add(new ParameterEcho("path", pEntry.getKey(), strVal, respPointer));
                                 isEcho = true;

@@ -27,12 +27,14 @@ RecordedStubAnalysisReport report = analyzer.analyze(openApiSpecYaml, recordedSt
 ```
 
 The analyzer deterministically yields:
-1. **OpenAPI Operation Mapping**: `(httpMethod, pathTemplate, operationId, responseSchemaName)`.
-2. **Request-to-Response Parameter Echoes** (`List<ParameterEcho>`): Detects where path or query parameters (e.g. `customerId`, `asOf`) are reflected back in the response body.
-3. **Temporal Field Detection** (`List<TemporalFieldInfo>`): Detects ISO-8601 dates and timestamps (`onboardedDate`, `asOfDate`).
+1. **OpenAPI Operation Mapping**: `(httpMethod, pathTemplate, operationId, responseSchemaName)` with automatic route prefix normalization (e.g. `/__casual/services`, `/services`, `/api`).
+2. **Request-to-Response Parameter Echoes** (`List<ParameterEcho>`): Detects where path, query, or request body parameters (`$.customerId`, `$.requestedBy`) are reflected back in the response body.
+3. **Temporal Field Detection** (`List<TemporalFieldInfo>`): Resolves ISO-8601 dates, date-times, and Unix epoch timestamps (`int64` epoch seconds).
 4. **Archetype Trait Diffing**: Automatically compares multiple recordings for the same operation, identifying:
    * `sharedBaselineFields`: Identical across all recordings (e.g. `processedBy`).
    * `distinguishingTraitFields`: Vary across recordings (e.g. `riskTier: [LOW, HIGH]`, `kycStatus: [VERIFIED, PENDING]`, `segment: [PREMIER, STANDARD]`).
+5. **Lifecycle Mutation & Read-Your-Own-Writes** (`List<ResourceMutation>`): Detects REST and RPC state mutations (`GET_*` vs `UPDATE_*`), identifying mutating operations and modified fields.
+6. **Casual XATMI RPC Support**: Preserves protocol headers (`X-Casual-Service`, `X-Casual-Buffer-Type`, `X-Casual-Error-State`), strips ephemeral transaction execution IDs, and retains gateway prefixes in generalized stubs.
 
 ---
 
