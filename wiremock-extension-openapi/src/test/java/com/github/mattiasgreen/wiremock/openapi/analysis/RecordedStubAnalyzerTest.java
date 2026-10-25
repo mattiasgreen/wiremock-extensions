@@ -393,4 +393,100 @@ class RecordedStubAnalyzerTest {
         assertThat(mutation.mutatedFields()).contains("/status");
         assertThat(mutation.readYourOwnWritesDetected()).isTrue();
     }
+
+    @Test
+    @DisplayName("Should detect deep nested temporal fields and unix epoch seconds using OpenAPI schema resolution")
+    void shouldDetectDeepNestedTemporalFieldsAndEpochTimestamps() {
+        String spec =
+                """
+                openapi: 3.0.3
+                info:
+                  title: Complex Spec
+                  version: 1.0.0
+                paths:
+                  /api/crm/customers/{customerId}/profile:
+                    get:
+                      operationId: getComplexProfile
+                      parameters:
+                        - name: customerId
+                          in: path
+                          required: true
+                          schema:
+                            type: string
+                      responses:
+                        '200':
+                          description: OK
+                          content:
+                            application/json:
+                              schema:
+                                $ref: '#/components/schemas/ComplexProfile'
+                components:
+                  schemas:
+                    ComplexProfile:
+                      type: object
+                      properties:
+                        customerId:
+                          type: string
+                        lastEvaluatedEpoch:
+                          type: integer
+                          format: int64
+                        paymentMethods:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/PaymentMethod'
+                    PaymentMethod:
+                      type: object
+                      properties:
+                        cardDetails:
+                          $ref: '#/components/schemas/CardDetails'
+                    CardDetails:
+                      type: object
+                      properties:
+                        expiryDate:
+                          type: string
+                          format: date
+                """;
+
+        StubMapping stub = WireMock.get(WireMock.urlEqualTo("/api/crm/customers/CUST-101/profile"))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "customerId": "CUST-101",
+                                  "lastEvaluatedEpoch": 1730000000,
+                                  "paymentMethods": [
+                                    {
+                                      "cardDetails": {
+                                        "expiryDate": "2029-12-31"
+                                      }
+                                    }
+                                  ]
+                                }
+                                """))
+                .build();
+        stub.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report = analyzer.analyze(spec, List.of(stub));
+
+        assertThat(report.operations()).hasSize(1);
+        OperationStubAnalysis op = report.operations().getFirst();
+
+        assertThat(op.temporalFields())
+                .extracting(TemporalFieldInfo::jsonPointer)
+                .contains("/lastEvaluatedEpoch", "/paymentMethods/0/cardDetails/expiryDate");
+
+        assertThat(op.temporalFields())
+                .filteredOn(t -> "/lastEvaluatedEpoch".equals(t.jsonPointer()))
+                .extracting(TemporalFieldInfo::schemaFormat)
+                .containsExactly("epoch-seconds");
+
+        assertThat(op.temporalFields())
+                .filteredOn(t -> "/paymentMethods/0/cardDetails/expiryDate".equals(t.jsonPointer()))
+                .extracting(TemporalFieldInfo::schemaFormat)
+                .containsExactly("date");
+    }
 }

@@ -14,6 +14,7 @@ import io.swagger.parser.OpenAPIParser;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.DateSchema;
 import io.swagger.v3.oas.models.media.DateTimeSchema;
 import io.swagger.v3.oas.models.media.MediaType;
@@ -480,14 +481,9 @@ public class RecordedStubAnalyzer {
                         }
 
                         // 4. Temporal check
-                        String lastToken =
-                                unescapePointerToken(respPointer.substring(respPointer.lastIndexOf('/') + 1));
-                        String schemaFormat = getSchemaFormatForProperty(operation, openAPI, lastToken);
-                        if (schemaFormat != null
-                                || ISO_DATE_REGEX.matcher(strVal).matches()) {
-                            String format =
-                                    schemaFormat != null ? schemaFormat : (strVal.contains("T") ? "date-time" : "date");
-                            temporal.add(new TemporalFieldInfo(respPointer, format, strVal, isEcho));
+                        String temporalFormat = resolveTemporalFormat(operation, openAPI, respPointer, strVal);
+                        if (temporalFormat != null) {
+                            temporal.add(new TemporalFieldInfo(respPointer, temporalFormat, strVal, isEcho));
                         }
                     });
                 } catch (JsonProcessingException ignored) {
@@ -665,36 +661,91 @@ public class RecordedStubAnalyzer {
     }
 
     @SuppressWarnings("rawtypes")
-    private String getSchemaFormatForProperty(Operation op, OpenAPI openAPI, String propName) {
-        if (op == null || op.getResponses() == null) {
+    private String resolveTemporalFormat(Operation op, OpenAPI openAPI, String respPointer, String strVal) {
+        Schema<?> schema = getSchemaForPointer(op, openAPI, respPointer);
+        if (schema != null) {
+            if (schema instanceof DateSchema || "date".equalsIgnoreCase(schema.getFormat())) {
+                return "date";
+            }
+            if (schema instanceof DateTimeSchema || "date-time".equalsIgnoreCase(schema.getFormat())) {
+                return "date-time";
+            }
+            if ("int64".equalsIgnoreCase(schema.getFormat()) || "integer".equalsIgnoreCase(schema.getType())) {
+                String tokenLower = unescapePointerToken(respPointer.substring(respPointer.lastIndexOf('/') + 1))
+                        .toLowerCase(Locale.ROOT);
+                if (tokenLower.contains("epoch") || tokenLower.contains("timestamp") || tokenLower.endsWith("at")) {
+                    return "epoch-seconds";
+                }
+            }
+        }
+        if (ISO_DATE_REGEX.matcher(strVal).matches()) {
+            return strVal.contains("T") ? "date-time" : "date";
+        }
+        return null;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private Schema<?> getSchemaForPointer(Operation op, OpenAPI openAPI, String jsonPointer) {
+        if (op == null || op.getResponses() == null || jsonPointer == null || !jsonPointer.startsWith("/")) {
             return null;
         }
         ApiResponse resp = op.getResponses().get("200");
         if (resp == null) {
             resp = op.getResponses().get("201");
         }
+        if (resp == null) {
+            resp = op.getResponses().get("default");
+        }
+        if (resp == null && !op.getResponses().isEmpty()) {
+            resp = op.getResponses().values().iterator().next();
+        }
         if (resp == null || resp.getContent() == null) {
             return null;
         }
         MediaType mt = resp.getContent().get("application/json");
+        if (mt == null) {
+            for (Map.Entry<String, MediaType> entry : resp.getContent().entrySet()) {
+                if (entry.getKey().toLowerCase(Locale.ROOT).contains("json")) {
+                    mt = entry.getValue();
+                    break;
+                }
+            }
+        }
         if (mt == null || mt.getSchema() == null) {
             return null;
         }
 
-        Schema<?> schema = resolveSchema(mt.getSchema(), openAPI);
-        if (schema.getProperties() != null) {
-            Schema<?> propSchema = schema.getProperties().get(propName);
-            if (propSchema != null) {
-                propSchema = resolveSchema(propSchema, openAPI);
-                if (propSchema instanceof DateSchema || "date".equalsIgnoreCase(propSchema.getFormat())) {
-                    return "date";
+        String[] tokens = jsonPointer.substring(1).split("/");
+        Schema<?> current = resolveSchema(mt.getSchema(), openAPI);
+
+        for (String t : tokens) {
+            String token = unescapePointerToken(t);
+            if (current == null) {
+                return null;
+            }
+            current = resolveSchema(current, openAPI);
+            if (current instanceof ArraySchema arraySchema) {
+                current = resolveSchema(arraySchema.getItems(), openAPI);
+            } else if (current.getProperties() != null
+                    && current.getProperties().containsKey(token)) {
+                current = resolveSchema(current.getProperties().get(token), openAPI);
+            } else if (current.getAllOf() != null) {
+                Schema<?> found = null;
+                for (Schema<?> sub : current.getAllOf()) {
+                    Schema<?> resolvedSub = resolveSchema(sub, openAPI);
+                    if (resolvedSub.getProperties() != null
+                            && resolvedSub.getProperties().containsKey(token)) {
+                        found = resolveSchema(resolvedSub.getProperties().get(token), openAPI);
+                        break;
+                    }
                 }
-                if (propSchema instanceof DateTimeSchema || "date-time".equalsIgnoreCase(propSchema.getFormat())) {
-                    return "date-time";
-                }
+                current = found;
+            } else {
+                return null;
             }
         }
-        return null;
+
+        return current != null ? resolveSchema(current, openAPI) : null;
     }
 
     @SuppressWarnings("rawtypes")
