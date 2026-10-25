@@ -15,8 +15,10 @@ import com.github.mattiasgreen.wiremock.openapi.analysis.OperationStubAnalysis;
 import com.github.mattiasgreen.wiremock.openapi.analysis.ParameterEcho;
 import com.github.mattiasgreen.wiremock.openapi.analysis.RecordedStubAnalysisReport;
 import com.github.mattiasgreen.wiremock.openapi.analysis.RecordedStubAnalyzer;
+import com.github.mattiasgreen.wiremock.openapi.analysis.ResourceMutation;
 import com.github.mattiasgreen.wiremock.openapi.analysis.TemporalFieldInfo;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.io.InputStream;
@@ -218,5 +220,225 @@ class RecordedStubsToTestKitEndToEndTest {
                 wireMockServer.stop();
             }
         }
+    }
+
+    @Test
+    @DisplayName(
+            "Act 5: Evaluate Lifecycle Mutations, Deep Schema Resolution, and Unix Epoch Timestamps against Expanded Banking CRM Spec")
+    void shouldEvaluateComplexEnterpriseScenariosOnExpandedOpenApiSpec() throws Exception {
+        String specYaml;
+        try (InputStream in =
+                RecordedStubsToTestKitEndToEndTest.class.getResourceAsStream("/openapi/banking-crm-openapi.yaml")) {
+            assertThat(in).isNotNull();
+            specYaml = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        // Stub 1: Initial GET /api/crm/customers/CUST-42/kyc showing PENDING kycStatus
+        StubMapping initialGet = WireMock.get(WireMock.urlEqualTo("/api/crm/customers/CUST-42/kyc"))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "customerId": "CUST-42",
+                                  "fullName": "Eleanor Vance",
+                                  "kycStatus": "PENDING",
+                                  "riskTier": "HIGH",
+                                  "segment": "STANDARD",
+                                  "onboardedDate": "2024-01-15",
+                                  "lastEvaluatedEpoch": 1705276800,
+                                  "processedBy": "upstream-server-B"
+                                }
+                                """))
+                .build();
+        initialGet.setId(UUID.randomUUID());
+
+        // Stub 2: PATCH /api/crm/customers/CUST-42/kyc (Mutation updating status to VERIFIED)
+        StubMapping patchKyc = WireMock.patch(WireMock.urlEqualTo("/api/crm/customers/CUST-42/kyc"))
+                .withRequestBody(
+                        WireMock.equalToJson(
+                                """
+                        {
+                          "kycStatus": "VERIFIED",
+                          "riskTier": "LOW",
+                          "reason": "Manual compliance override"
+                        }
+                        """))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "customerId": "CUST-42",
+                                  "fullName": "Eleanor Vance",
+                                  "kycStatus": "VERIFIED",
+                                  "riskTier": "LOW",
+                                  "segment": "PREMIER",
+                                  "onboardedDate": "2024-01-15",
+                                  "lastEvaluatedEpoch": 1730000000,
+                                  "processedBy": "upstream-server-B"
+                                }
+                                """))
+                .build();
+        patchKyc.setId(UUID.randomUUID());
+
+        // Stub 3: Subsequent GET /api/crm/customers/CUST-42/kyc (Read-Your-Own-Writes showing VERIFIED)
+        StubMapping subsequentGet = WireMock.get(WireMock.urlEqualTo("/api/crm/customers/CUST-42/kyc"))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "customerId": "CUST-42",
+                                  "fullName": "Eleanor Vance",
+                                  "kycStatus": "VERIFIED",
+                                  "riskTier": "LOW",
+                                  "segment": "PREMIER",
+                                  "onboardedDate": "2024-01-15",
+                                  "lastEvaluatedEpoch": 1730000000,
+                                  "processedBy": "upstream-server-B"
+                                }
+                                """))
+                .build();
+        subsequentGet.setId(UUID.randomUUID());
+
+        // Stub 4: POST /api/crm/customers/CUST-42/risk-assessments (Request Body Echoes + Unix Epoch Timestamps)
+        StubMapping postAssessment = WireMock.post(WireMock.urlEqualTo("/api/crm/customers/CUST-42/risk-assessments"))
+                .withRequestBody(
+                        WireMock.equalToJson(
+                                """
+                        {
+                          "requestedBy": "officer-alice",
+                          "assessmentType": "AUTOMATED",
+                          "creditScore": 790,
+                          "annualIncome": 125000.0,
+                          "declaredJurisdiction": "SE"
+                        }
+                        """))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(201)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "assessmentId": "ASSESS-9001",
+                                  "customerId": "CUST-42",
+                                  "requestedBy": "officer-alice",
+                                  "assessmentType": "AUTOMATED",
+                                  "calculatedScore": 790,
+                                  "recommendedTier": "LOW",
+                                  "assessedAt": "2026-10-25T08:30:00+01:00",
+                                  "expiresEpochSeconds": 1761553800
+                                }
+                                """))
+                .build();
+        postAssessment.setId(UUID.randomUUID());
+
+        // Stub 5: GET /api/crm/customers/CUST-42/audit-events?page=1&limit=20 (Nested Collections & Query Echoes)
+        StubMapping getAuditEvents = WireMock.get(
+                        WireMock.urlEqualTo("/api/crm/customers/CUST-42/audit-events?page=1&limit=20"))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "customerId": "CUST-42",
+                                  "page": 1,
+                                  "limit": 20,
+                                  "totalRecords": 1,
+                                  "events": [
+                                    {
+                                      "eventId": "EVT-001",
+                                      "timestamp": "2026-10-25T07:15:00Z",
+                                      "action": "KYC_STATUS_UPDATED",
+                                      "actor": {
+                                        "actorId": "officer-alice",
+                                        "role": "COMPLIANCE_OFFICER",
+                                        "ipAddress": "10.0.1.42"
+                                      },
+                                      "outcome": "SUCCESS",
+                                      "details": "Compliance status upgraded to VERIFIED"
+                                    }
+                                  ]
+                                }
+                                """))
+                .build();
+        getAuditEvents.setId(UUID.randomUUID());
+
+        // Run analysis on expanded spec
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report = analyzer.analyze(
+                specYaml, List.of(initialGet, patchKyc, subsequentGet, postAssessment, getAuditEvents));
+
+        // 1. Verify all 4 operations were matched against the expanded spec
+        assertThat(report.operations())
+                .extracting(OperationStubAnalysis::operationId)
+                .contains("getCustomerKyc", "updateCustomerKyc", "evaluateRiskAssessment", "listCustomerAuditEvents");
+
+        // 2. Verify lifecycle mutation & read-your-own-writes detection
+        assertThat(report.detectedMutations()).hasSize(1);
+        ResourceMutation mutation = report.detectedMutations().getFirst();
+        assertThat(mutation.resourcePathTemplate()).isEqualTo("/api/crm/customers/{customerId}/kyc");
+        assertThat(mutation.mutatingMethod()).isEqualTo("PATCH");
+        assertThat(mutation.mutatedFields()).contains("/kycStatus", "/riskTier", "/segment", "/lastEvaluatedEpoch");
+        assertThat(mutation.readYourOwnWritesDetected()).isTrue();
+
+        // 3. Verify POST assessment request-body parameter echoes and temporal fields
+        OperationStubAnalysis assessOp = report.operations().stream()
+                .filter(o -> "evaluateRiskAssessment".equals(o.operationId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(assessOp.parameterEchoes())
+                .extracting(ParameterEcho::responseJsonPointer)
+                .contains("/customerId", "/requestedBy", "/assessmentType");
+        assertThat(assessOp.parameterEchoes())
+                .filteredOn(e -> "body".equals(e.parameterLocation()))
+                .extracting(ParameterEcho::parameterName)
+                .contains("$.requestedBy", "$.assessmentType");
+
+        assertThat(assessOp.temporalFields())
+                .filteredOn(t -> "/expiresEpochSeconds".equals(t.jsonPointer()))
+                .extracting(TemporalFieldInfo::schemaFormat)
+                .containsExactly("epoch-seconds");
+
+        assertThat(assessOp.temporalFields())
+                .filteredOn(t -> "/assessedAt".equals(t.jsonPointer()))
+                .extracting(TemporalFieldInfo::schemaFormat)
+                .containsExactly("date-time");
+
+        // 4. Verify nested array event temporal fields & query parameter echoes
+        OperationStubAnalysis auditOp = report.operations().stream()
+                .filter(o -> "listCustomerAuditEvents".equals(o.operationId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(auditOp.temporalFields())
+                .extracting(TemporalFieldInfo::jsonPointer)
+                .contains("/events/0/timestamp");
+        assertThat(auditOp.temporalFields())
+                .filteredOn(t -> "/events/0/timestamp".equals(t.jsonPointer()))
+                .extracting(TemporalFieldInfo::schemaFormat)
+                .containsExactly("date-time");
+
+        assertThat(auditOp.parameterEchoes())
+                .extracting(ParameterEcho::parameterName)
+                .contains("customerId", "page", "limit");
+
+        // 5. Generalize the POST assessment stub and verify Handlebars synthesis
+        StubMapping generalizedPost = analyzer.generalizeStub(postAssessment, assessOp);
+        assertThat(generalizedPost.getResponse().getBody())
+                .contains("\"customerId\":\"{{request.path.customerId}}\"")
+                .contains("\"requestedBy\":\"{{jsonPath request.body '$.requestedBy'}}\"")
+                .contains("\"assessmentType\":\"{{jsonPath request.body '$.assessmentType'}}\"");
     }
 }
