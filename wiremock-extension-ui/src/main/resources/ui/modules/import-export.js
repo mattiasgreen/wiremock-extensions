@@ -5,7 +5,7 @@
 import { state } from './state.js';
 import { elements } from './dom.js';
 import { importMappings, loadData } from './api.js';
-import { getStubProject } from './projects.js';
+import { getStubProject, computeProjects } from './projects.js';
 
 export function exportStubs(scope = 'all') {
   let list = [];
@@ -168,18 +168,51 @@ export function closeImportModal() {
 export function switchImportTab(tabName) {
   const tabOpenApi = document.getElementById('import-tab-openapi');
   const tabBundle = document.getElementById('import-tab-bundle');
+  const tabAnalyze = document.getElementById('import-tab-analyze');
   const viewOpenApi = document.getElementById('import-view-openapi');
   const viewBundle = document.getElementById('import-view-bundle');
+  const viewAnalyze = document.getElementById('import-view-analyze');
 
   if (tabName === 'bundle') {
     if (tabBundle) tabBundle.classList.add('active');
     if (tabOpenApi) tabOpenApi.classList.remove('active');
+    if (tabAnalyze) tabAnalyze.classList.remove('active');
     if (viewBundle) viewBundle.classList.remove('hidden');
     if (viewOpenApi) viewOpenApi.classList.add('hidden');
+    if (viewAnalyze) viewAnalyze.classList.add('hidden');
+  } else if (tabName === 'analyze') {
+    if (tabAnalyze) tabAnalyze.classList.add('active');
+    if (tabOpenApi) tabOpenApi.classList.remove('active');
+    if (tabBundle) tabBundle.classList.remove('active');
+    if (viewAnalyze) viewAnalyze.classList.remove('hidden');
+    if (viewOpenApi) viewOpenApi.classList.add('hidden');
+    if (viewBundle) viewBundle.classList.add('hidden');
+
+    const openapiSpec = document.getElementById('openapi-spec-content');
+    const analyzeSpec = document.getElementById('analyze-spec-content');
+    if (analyzeSpec && !analyzeSpec.value.trim() && openapiSpec && openapiSpec.value.trim()) {
+      analyzeSpec.value = openapiSpec.value;
+    }
+
+    const analyzeTargetSelect = document.getElementById('analyze-target-project');
+    if (analyzeTargetSelect) {
+      const cur = analyzeTargetSelect.value || '';
+      analyzeTargetSelect.innerHTML = '<option value="">All Projects (Recorded Stubs Only)</option>';
+      const projs = computeProjects();
+      projs.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.name;
+        opt.textContent = `📁 ${p.name} (${p.total})`;
+        if (p.name === cur) opt.selected = true;
+        analyzeTargetSelect.appendChild(opt);
+      });
+    }
   } else {
     if (tabOpenApi) tabOpenApi.classList.add('active');
     if (tabBundle) tabBundle.classList.remove('active');
+    if (tabAnalyze) tabAnalyze.classList.remove('active');
     if (viewOpenApi) viewOpenApi.classList.remove('hidden');
     if (viewBundle) viewBundle.classList.add('hidden');
+    if (viewAnalyze) viewAnalyze.classList.add('hidden');
   }
 }

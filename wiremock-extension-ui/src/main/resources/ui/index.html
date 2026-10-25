@@ -111,6 +111,7 @@
             <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping or proxy route">➕ New</button>
             <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create an in-memory Stateful AST simulation model">🧠 Stateful</button>
             <button id="btn-open-openapi-modal" data-testid="btn-open-openapi-modal" class="btn btn-tiny btn-secondary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
+            <button id="btn-open-analyze-modal" data-testid="btn-open-analyze-modal" class="btn btn-tiny btn-secondary" title="Analyze and generalize recorded stubs with OpenAPI">🔬 Analyze</button>
             <button id="btn-export-stubs" data-testid="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
             <button id="btn-refresh-stubs" data-testid="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
           </div>
@@ -582,6 +583,7 @@
         <div class="modal-tabs">
           <button type="button" id="import-tab-openapi" class="modal-tab active">📄 OpenAPI Spec</button>
           <button type="button" id="import-tab-bundle" class="modal-tab">📦 WireMock JSON Bundle</button>
+          <button type="button" id="import-tab-analyze" class="modal-tab" data-testid="import-tab-analyze">🔬 Analyze & Generalize</button>
         </div>
         <div class="modal-body">
           <!-- OpenAPI Import Subview -->
@@ -686,6 +688,41 @@
             <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
               <button type="button" class="btn btn-secondary" onclick="document.getElementById('openapi-modal').classList.add('hidden')">Cancel</button>
               <button id="btn-submit-bundle-import" class="btn btn-primary">📥 Import Stubs</button>
+            </div>
+          </div>
+
+          <!-- Analyze & Generalize Subview -->
+          <div id="import-view-analyze" class="hidden" data-testid="import-view-analyze">
+            <p class="modal-description">Analyze brittle recorded stubs against an OpenAPI specification to identify parameter echoes, temporal request locks, and stateful mutations, then automatically generalize them into dynamic Handlebars simulation stubs.</p>
+
+            <div class="form-group" style="margin-top: 10px;">
+              <label for="analyze-spec-content">OpenAPI 3.0 / 3.1 Specification (YAML or JSON):</label>
+              <textarea id="analyze-spec-content" class="code-input" rows="7" placeholder="Paste OpenAPI YAML or JSON specification here..."></textarea>
+            </div>
+
+            <div class="form-row" style="display: flex; gap: 12px; margin-top: 8px; align-items: flex-end;">
+              <div class="form-group" style="flex: 1;">
+                <label for="analyze-target-project">Target Project / Group Filter:</label>
+                <select id="analyze-target-project" class="form-control">
+                  <option value="">All Projects (Recorded Stubs Only)</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <button type="button" id="btn-run-stub-analysis" data-testid="btn-run-stub-analysis" class="btn btn-primary" style="width: 100%;">🔍 Run Stub Analysis</button>
+              </div>
+            </div>
+
+            <div id="analyze-feedback" class="modal-feedback hidden" style="margin-top: 10px;"></div>
+
+            <!-- Analysis Report Container -->
+            <div id="analyze-report-container" class="analyze-report-container hidden" style="margin-top: 12px; max-height: 280px; overflow-y: auto;">
+              <div id="analyze-summary-banner" class="analyze-summary-banner"></div>
+              <div id="analyze-details" class="analyze-details" style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;"></div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <button id="btn-cancel-analyze" class="btn btn-secondary">Close</button>
+              <button id="btn-execute-generalize" data-testid="btn-execute-generalize" class="btn btn-success hidden">✨ Generalize & Register Stubs</button>
             </div>
           </div>
         </div>

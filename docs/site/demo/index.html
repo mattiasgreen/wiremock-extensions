@@ -111,6 +111,7 @@
             <button id="btn-create-stub" data-testid="btn-create-stub" class="btn btn-tiny btn-primary" title="Create a new stub mapping or proxy route">➕ New</button>
             <button id="btn-create-dynamic-stub" data-testid="btn-create-dynamic-stub" class="btn btn-tiny btn-secondary" title="Create an in-memory Stateful AST simulation model">🧠 Stateful</button>
             <button id="btn-open-openapi-modal" data-testid="btn-open-openapi-modal" class="btn btn-tiny btn-secondary" title="Import stubs from OpenAPI or WireMock bundle">📥 Import</button>
+            <button id="btn-open-analyze-modal" data-testid="btn-open-analyze-modal" class="btn btn-tiny btn-secondary" title="Analyze and generalize recorded stubs with OpenAPI">🔬 Analyze</button>
             <button id="btn-export-stubs" data-testid="btn-export-stubs" class="btn btn-tiny btn-secondary" title="Export stubs as JSON bundle">📤 Export</button>
             <button id="btn-refresh-stubs" data-testid="btn-refresh-stubs" class="btn btn-tiny btn-secondary" title="Refresh stubs from server">🔄 Refresh</button>
           </div>
@@ -538,7 +539,7 @@
           <span class="muted-text text-small">Pre-allocated lock-free circular ring buffer (O(1) memory)</span>
         </div>
         <div class="netem-journal-controls">
-          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by X-Correlation-Id..." style="flex: 2;">
+          <input type="text" id="netem-journal-filter-corr" class="form-control" placeholder="Filter by Scope / Target (ASCII/Hex)..." style="flex: 2;">
           <select id="netem-journal-filter-outcome" class="form-control" style="flex: 1;">
             <option value="">All Outcomes</option>
             <option value="impaired">⚠️ Impaired Only</option>
@@ -552,7 +553,7 @@
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Correlation ID</th>
+                <th>Scope / Target</th>
                 <th>Client</th>
                 <th>Duration</th>
                 <th>Bytes (Up / Down)</th>
@@ -582,6 +583,7 @@
         <div class="modal-tabs">
           <button type="button" id="import-tab-openapi" class="modal-tab active">📄 OpenAPI Spec</button>
           <button type="button" id="import-tab-bundle" class="modal-tab">📦 WireMock JSON Bundle</button>
+          <button type="button" id="import-tab-analyze" class="modal-tab" data-testid="import-tab-analyze">🔬 Analyze & Generalize</button>
         </div>
         <div class="modal-body">
           <!-- OpenAPI Import Subview -->
@@ -686,6 +688,41 @@
             <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
               <button type="button" class="btn btn-secondary" onclick="document.getElementById('openapi-modal').classList.add('hidden')">Cancel</button>
               <button id="btn-submit-bundle-import" class="btn btn-primary">📥 Import Stubs</button>
+            </div>
+          </div>
+
+          <!-- Analyze & Generalize Subview -->
+          <div id="import-view-analyze" class="hidden" data-testid="import-view-analyze">
+            <p class="modal-description">Analyze brittle recorded stubs against an OpenAPI specification to identify parameter echoes, temporal request locks, and stateful mutations, then automatically generalize them into dynamic Handlebars simulation stubs.</p>
+
+            <div class="form-group" style="margin-top: 10px;">
+              <label for="analyze-spec-content">OpenAPI 3.0 / 3.1 Specification (YAML or JSON):</label>
+              <textarea id="analyze-spec-content" class="code-input" rows="7" placeholder="Paste OpenAPI YAML or JSON specification here..."></textarea>
+            </div>
+
+            <div class="form-row" style="display: flex; gap: 12px; margin-top: 8px; align-items: flex-end;">
+              <div class="form-group" style="flex: 1;">
+                <label for="analyze-target-project">Target Project / Group Filter:</label>
+                <select id="analyze-target-project" class="form-control">
+                  <option value="">All Projects (Recorded Stubs Only)</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <button type="button" id="btn-run-stub-analysis" data-testid="btn-run-stub-analysis" class="btn btn-primary" style="width: 100%;">🔍 Run Stub Analysis</button>
+              </div>
+            </div>
+
+            <div id="analyze-feedback" class="modal-feedback hidden" style="margin-top: 10px;"></div>
+
+            <!-- Analysis Report Container -->
+            <div id="analyze-report-container" class="analyze-report-container hidden" style="margin-top: 12px; max-height: 280px; overflow-y: auto;">
+              <div id="analyze-summary-banner" class="analyze-summary-banner"></div>
+              <div id="analyze-details" class="analyze-details" style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;"></div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <button id="btn-cancel-analyze" class="btn btn-secondary">Close</button>
+              <button id="btn-execute-generalize" data-testid="btn-execute-generalize" class="btn btn-success hidden">✨ Generalize & Register Stubs</button>
             </div>
           </div>
         </div>
@@ -981,18 +1018,30 @@
             <input type="number" id="netem-toxic-toxicity" class="form-control" value="1.0" min="0.0" max="1.0" step="0.1">
           </div>
           <div class="form-group" style="flex: 1;">
-            <label for="netem-toxic-correlation-id">Correlation ID Filter (Optional):</label>
-            <input type="text" id="netem-toxic-correlation-id" class="form-control" placeholder="e.g. chaos-test-session">
+            <label for="netem-toxic-client-ip">Client IP / CIDR Subnet (Optional):</label>
+            <input type="text" id="netem-toxic-client-ip" class="form-control" placeholder="e.g. 127.0.0.1 or 10.0.0.0/8">
           </div>
+        </div>
+        <div class="form-group" style="margin-top: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="netem-toxic-pattern" id="lbl-toxic-pattern" style="margin-bottom: 0;">Stream Pattern Matcher (Optional):</label>
+            <div class="netem-mode-toggle" style="display: flex; gap: 2px;">
+              <button type="button" id="btn-pattern-ascii" class="btn btn-tiny active" style="padding: 2px 8px; font-size: 0.75rem;">ASCII</button>
+              <button type="button" id="btn-pattern-hex" class="btn btn-tiny" style="padding: 2px 8px; font-size: 0.75rem;">HEX</button>
+            </div>
+          </div>
+          <input type="text" id="netem-toxic-pattern" class="form-control" placeholder="e.g. chaos-test-session or order-service">
+          <small class="muted-text text-small" id="netem-pattern-hint">Matches unencoded UTF-8/ASCII substring in the stream.</small>
+          <input type="hidden" id="netem-toxic-correlation-id" value="">
         </div>
         <div class="editor-section-header" style="margin-top: 12px;">Impairment Attributes</div>
         <div id="netem-attribute-fields">
           <!-- Dynamically populated based on type -->
         </div>
-        <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 16px;">
-          <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
-          <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
-        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
+        <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
       </div>
     </div>
   </div>

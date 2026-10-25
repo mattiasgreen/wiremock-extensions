@@ -475,6 +475,17 @@ if (elements.importTabOpenApi) {
 if (elements.importTabBundle) {
   elements.importTabBundle.addEventListener('click', () => switchImportTab('bundle'));
 }
+if (elements.importTabAnalyze) {
+  elements.importTabAnalyze.addEventListener('click', () => switchImportTab('analyze'));
+}
+if (elements.btnOpenAnalyzeModal) {
+  elements.btnOpenAnalyzeModal.addEventListener('click', () => {
+    if (elements.openapiModal) {
+      elements.openapiModal.classList.remove('hidden');
+      switchImportTab('analyze');
+    }
+  });
+}
 if (elements.btnSubmitBundleImport) {
   elements.btnSubmitBundleImport.addEventListener('click', handleBundleImport);
 }
