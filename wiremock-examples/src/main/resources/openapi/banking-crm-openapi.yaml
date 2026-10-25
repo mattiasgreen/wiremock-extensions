@@ -1,0 +1,97 @@
+openapi: 3.0.3
+info:
+  title: Banking CRM Service
+  version: 1.0.0
+  description: Core CRM and KYC verification service for banking customers
+paths:
+  /api/crm/customers/{customerId}/kyc:
+    get:
+      operationId: getCustomerKyc
+      summary: Retrieve customer KYC and risk profile
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Customer KYC details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerKycProfile'
+  /api/crm/customers/{customerId}/eligibility:
+    get:
+      operationId: getCustomerEligibility
+      summary: Retrieve product eligibility for customer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Eligibility flags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerEligibility'
+components:
+  schemas:
+    CustomerKycProfile:
+      type: object
+      required:
+        - customerId
+        - fullName
+        - kycStatus
+        - riskTier
+        - segment
+        - onboardedDate
+      properties:
+        customerId:
+          type: string
+        fullName:
+          type: string
+        kycStatus:
+          type: string
+          enum: [VERIFIED, PENDING, REJECTED]
+        riskTier:
+          type: string
+          enum: [LOW, ELEVATED, HIGH]
+        segment:
+          type: string
+          enum: [PREMIER, STANDARD]
+        onboardedDate:
+          type: string
+          format: date
+        asOfDate:
+          type: string
+          format: date
+        processedBy:
+          type: string
+    CustomerEligibility:
+      type: object
+      required:
+        - customerId
+        - doNotSell
+        - eligibleForPurchase
+        - segment
+      properties:
+        customerId:
+          type: string
+        doNotSell:
+          type: boolean
+        eligibleForPurchase:
+          type: boolean
+        segment:
+          type: string
+        processedBy:
+          type: string

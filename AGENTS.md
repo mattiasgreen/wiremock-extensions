@@ -78,3 +78,4 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - **`pr-and-release-prep`**: Activate before committing, creating a PR, or checking `release-please` / Maven Central readiness.
   - **`demo-video-recording`**: Activate when recording animated GIFs, pitch deck screenshots, or Playwright WebM video tours.
   - **`casual-upstream-sync`**: Activate when modifying `se.laz.casual.*` protocol classes in `wiremock-extension-casual`.
+  - **`stubs-to-testkit`**: Activate when analyzing recorded WireMock stubs and OpenAPI specifications to bootstrap a fluent Java TestKit, Object Mother factories, and dual-mode simulation tests.

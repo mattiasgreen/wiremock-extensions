@@ -10,6 +10,9 @@ import com.github.mattiasgreen.wiremock.casual.CasualProxyTransformer;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.mattiasgreen.wiremock.ui.UiExtensionFactory;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.extension.responsetemplating.ResponseTemplateTransformer;
+import com.github.tomakehurst.wiremock.extension.responsetemplating.TemplateEngine;
+import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -43,7 +46,9 @@ public final class BankingSimulationHarness implements AutoCloseable {
         this.wireMockServer = new WireMockServer(wireMockConfig()
                 .dynamicPort()
                 .extensions(new UiExtensionFactory())
-                .extensions(casualProxyTransformer));
+                .extensions(casualProxyTransformer)
+                .extensions(new ResponseTemplateTransformer(
+                        TemplateEngine.defaultTemplateEngine(), true, null, Collections.emptyList())));
         this.wireMockServer.start();
 
         this.casualGateway = CasualWireMockGateway.builder()

@@ -3,6 +3,7 @@ dependencies {
     implementation libs.wiremock
     implementation libs.jackson.databind
     implementation libs.jackson.datatype.jsr310
+    implementation libs.mockito.core
 
     testImplementation libs.playwright
     testImplementation libs.resilience4j.circuitbreaker

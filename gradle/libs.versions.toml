@@ -17,6 +17,7 @@ spotbugs-plugin = "6.1.7"
 findsecbugs = "1.14.0"
 casual = "3.4.0"
 netty = "4.1.121.Final"
+mockito = "5.14.2"
 
 [libraries]
 casual-api = { module = "se.laz.casual:casual-api", version.ref = "casual" }
@@ -30,6 +31,7 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "jun
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }

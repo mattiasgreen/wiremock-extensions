@@ -248,38 +248,68 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
 
+            String customerId = "CUST-42";
+            String[] segments = path.split("/");
+            if (segments.length >= 5) {
+                customerId = segments[4];
+            }
+
+            String query = exchange.getRequestURI().getQuery();
+            String asOf = "2026-10-25";
+            if (query != null && query.contains("asOf=")) {
+                for (String param : query.split("&")) {
+                    if (param.startsWith("asOf=")) {
+                        asOf = param.substring("asOf=".length());
+                        break;
+                    }
+                }
+            }
+
             if ("GET".equalsIgnoreCase(method) && path.endsWith("/kyc")) {
-                sendJson(
-                        exchange,
-                        200,
-                        "{\"customerId\":\"CUST-42\",\"fullName\":\"Eleanor Vance\","
-                                + "\"kycStatus\":\"VERIFIED\",\"riskTier\":\"LOW\","
-                                + "\"processedBy\":\"upstream-server-B\"}");
+                if ("CUST-88".equalsIgnoreCase(customerId)) {
+                    sendJson(
+                            exchange,
+                            200,
+                            "{\"customerId\":\"CUST-88\",\"fullName\":\"Marcus Thorne\","
+                                    + "\"kycStatus\":\"PENDING\",\"riskTier\":\"HIGH\","
+                                    + "\"segment\":\"STANDARD\",\"onboardedDate\":\"2026-10-15\","
+                                    + "\"asOfDate\":\"" + asOf + "\","
+                                    + "\"processedBy\":\"upstream-server-B\"}");
+                } else {
+                    sendJson(
+                            exchange,
+                            200,
+                            "{\"customerId\":\"" + customerId + "\",\"fullName\":\"Eleanor Vance\","
+                                    + "\"kycStatus\":\"VERIFIED\",\"riskTier\":\"LOW\","
+                                    + "\"segment\":\"PREMIER\",\"onboardedDate\":\"2022-10-25\","
+                                    + "\"asOfDate\":\"" + asOf + "\","
+                                    + "\"processedBy\":\"upstream-server-B\"}");
+                }
             } else if ("GET".equalsIgnoreCase(method) && path.endsWith("/eligibility")) {
                 sendJson(
                         exchange,
                         200,
-                        "{\"customerId\":\"CUST-42\",\"doNotSell\":false,"
+                        "{\"customerId\":\"" + customerId + "\",\"doNotSell\":false,"
                                 + "\"eligibleForPurchase\":true,\"segment\":\"PREMIER\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/sales")) {
                 String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
                 String productCode = "PLATINUM-CREDIT";
-                String customerId = "CUST-42";
+                String salesCustomerId = "CUST-42";
                 try {
                     JsonNode n = objectMapper.readTree(body);
                     if (n.has("productCode")) {
                         productCode = n.path("productCode").asText("PLATINUM-CREDIT");
                     }
                     if (n.has("customerId")) {
-                        customerId = n.path("customerId").asText("CUST-42");
+                        salesCustomerId = n.path("customerId").asText("CUST-42");
                     }
                 } catch (JsonProcessingException ignored) {
                 }
                 sendJson(
                         exchange,
                         200,
-                        "{\"customerId\":\"" + customerId + "\",\"salesRecordId\":\"SALE-5001\","
+                        "{\"customerId\":\"" + salesCustomerId + "\",\"salesRecordId\":\"SALE-5001\","
                                 + "\"productCode\":\"" + productCode + "\",\"status\":\"RECORDED\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else {
