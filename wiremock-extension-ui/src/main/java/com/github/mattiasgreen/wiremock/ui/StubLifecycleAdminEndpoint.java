@@ -502,6 +502,20 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 event.getRequest().getMethod(),
                 WireMock.urlEqualTo(event.getRequest().getUrl()));
 
+        byte[] reqBodyBytes = event.getRequest().getBody();
+        if (reqBodyBytes != null && reqBodyBytes.length > 0) {
+            String reqBody = event.getRequest().getBodyAsString();
+            if (reqBody != null && !reqBody.isBlank()) {
+                String trimmed = reqBody.trim();
+                if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
+                        || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+                    reqPattern.withRequestBody(WireMock.equalToJson(reqBody, true, true));
+                } else {
+                    reqPattern.withRequestBody(WireMock.equalTo(reqBody));
+                }
+            }
+        }
+
         ResponseDefinitionBuilder respDef = ResponseDefinitionBuilder.responseDefinition()
                 .withStatus(event.getResponse().getStatus());
 

@@ -1,0 +1,98 @@
+openapi: 3.0.3
+info:
+  title: Casual Billing XATMI Service
+  version: 1.0.0
+  description: OpenAPI 3.0 contract modeling binary Casual XATMI billing services for code generation and SDK bootstrapping.
+paths:
+  /billing/charge:
+    post:
+      operationId: chargeCustomer
+      summary: Charge customer account via Casual XATMI tpcall
+      description: Issues a charge against a customer account within an optional 2PC XA transaction context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingChargeRequest'
+      responses:
+        '200':
+          description: Charge invoice confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingInvoiceReply'
+        '500':
+          description: Service failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingErrorReply'
+
+components:
+  schemas:
+    BillingChargeRequest:
+      type: object
+      required:
+        - customerId
+        - amount
+        - productCode
+      properties:
+        customerId:
+          type: string
+          example: CUST-42
+        amount:
+          type: number
+          format: double
+          example: 299.00
+        productCode:
+          type: string
+          example: PLATINUM-CREDIT
+
+    BillingInvoiceReply:
+      type: object
+      required:
+        - invoiceId
+        - customerId
+        - amount
+        - currency
+        - status
+        - productCode
+        - service
+      properties:
+        invoiceId:
+          type: string
+          example: INV-9001
+        customerId:
+          type: string
+          example: CUST-42
+        amount:
+          type: number
+          format: double
+          example: 299.00
+        currency:
+          type: string
+          example: EUR
+        status:
+          type: string
+          example: CHARGED
+        productCode:
+          type: string
+          example: PLATINUM-CREDIT
+        service:
+          type: string
+          example: billing/charge
+        processedBy:
+          type: string
+          example: upstream-server-B
+
+    BillingErrorReply:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+        code:
+          type: string
