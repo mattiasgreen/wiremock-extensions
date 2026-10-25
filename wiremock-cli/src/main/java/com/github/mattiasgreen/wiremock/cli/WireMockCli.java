@@ -55,6 +55,8 @@ public final class WireMockCli {
             return switch (command) {
                 case "info", "status" -> executeInfo(client, serverUrl, fmt, out, err);
                 case "stubs", "list", "ls" -> executeStubs(client, serverUrl, args, fmt, out, err);
+                case "analyze-stubs", "generalize-stubs", "generalize" -> executeAnalyzeStubs(
+                        client, serverUrl, command, args, fmt, out, err);
                 case "tail", "traffic", "journal" -> executeTail(client, serverUrl, args, fmt, out, err);
                 case "toxics", "chaos", "netem" -> executeToxics(client, serverUrl, args, fmt, out, err);
                 case "proxy", "ui" -> executeProxy(stripFirstArg(args), out, err);
@@ -106,6 +108,7 @@ public final class WireMockCli {
         probeExtension(client, serverUrl, "tcp-netem", "/__admin/tcp-netem/proxies", fmt, out);
         probeExtension(client, serverUrl, "stateful", "/__admin/stateful/models", fmt, out);
         probeExtension(client, serverUrl, "otel metrics", "/__admin/metrics/prometheus", fmt, out);
+        probeExtension(client, serverUrl, "openapi", "/__admin/openapi/inspect", fmt, out);
         probeExtension(client, serverUrl, "console ui", "/__admin/ui/", fmt, out);
         out.println();
 
@@ -243,6 +246,175 @@ public final class WireMockCli {
         if (req.get("urlPath") != null) return req.get("urlPath").toString();
         if (req.get("urlPathPattern") != null) return req.get("urlPathPattern").toString();
         return "/";
+    }
+
+    // =========================================================================
+    // Subcommand: analyze-stubs / generalize-stubs
+    // =========================================================================
+
+    @SuppressWarnings("unchecked")
+    private static int executeAnalyzeStubs(
+            HttpClient client,
+            String serverUrl,
+            String command,
+            String[] args,
+            ConsoleFormatter fmt,
+            PrintStream out,
+            PrintStream err)
+            throws Exception {
+        String specPath = parseStringOption(args, "-f", "--spec", null);
+        if (specPath == null || specPath.isBlank()) {
+            err.println(fmt.red("Error: --spec <file> is required to analyze stubs against an OpenAPI specification."));
+            return 1;
+        }
+
+        File file = new File(specPath);
+        if (!file.exists()) {
+            err.println(fmt.red("Error: Specification file not found: " + specPath));
+            return 1;
+        }
+
+        String specContent = java.nio.file.Files.readString(file.toPath(), StandardCharsets.UTF_8);
+        String project = parseStringOption(args, "-p", "--project", null);
+        boolean generalize = hasFlag(args, "-g", "--generalize")
+                || "generalize".equalsIgnoreCase(command)
+                || "generalize-stubs".equalsIgnoreCase(command);
+
+        Map<String, Object> reqMap = new LinkedHashMap<>();
+        reqMap.put("spec", specContent);
+        if (project != null && !project.isBlank()) {
+            reqMap.put("project", project);
+        }
+        reqMap.put("generalizeAndRegister", generalize);
+
+        String jsonPayload = MiniJson.toJson(reqMap);
+        String base = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(base + "/__admin/openapi/analyze-recorded-stubs"))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonPayload, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (resp.statusCode() != 200) {
+            err.println(fmt.red("Analysis failed (status: " + resp.statusCode() + "): " + resp.body()));
+            return 1;
+        }
+
+        Object parsed = MiniJson.parse(resp.body());
+        if (!(parsed instanceof Map<?, ?> rootMap)) {
+            out.println(resp.body());
+            return 0;
+        }
+
+        Map<String, Object> root = (Map<String, Object>) rootMap;
+        Map<String, Object> report = (Map<String, Object>) root.get("report");
+        if (report == null) {
+            out.println(resp.body());
+            return 0;
+        }
+
+        String title = (String) report.get("specTitle");
+        String version = (String) report.get("specVersion");
+        Object count = root.get("candidateStubsAnalyzed");
+
+        out.println(fmt.bold("OpenAPI Analysis Report: ")
+                + (title != null ? title : "OpenAPI Service")
+                + " "
+                + fmt.dim("(v" + (version != null ? version : "1.0.0") + ")"));
+        out.println("Analyzed " + fmt.bold(String.valueOf(count)) + " candidate recorded stubs against specification.");
+        out.println();
+
+        List<?> ops = (List<?>) report.get("operations");
+        if (ops != null && !ops.isEmpty()) {
+            out.println(fmt.bold("Operations Discovered:"));
+            for (Object opObj : ops) {
+                if (opObj instanceof Map<?, ?> op) {
+                    String method = (String) op.get("httpMethod");
+                    String pathTemplate = (String) op.get("openApiPathTemplate");
+                    String opId = (String) op.get("operationId");
+
+                    out.println("  " + fmt.methodBadge(method != null ? method : "GET") + " "
+                            + fmt.bold(pathTemplate != null ? pathTemplate : "/")
+                            + fmt.dim(" (operation: " + opId + ")"));
+
+                    List<?> echoes = (List<?>) op.get("parameterEchoes");
+                    if (echoes != null && !echoes.isEmpty()) {
+                        out.println("    " + fmt.cyan("🔄 Parameter Echoes:"));
+                        for (Object echoObj : echoes) {
+                            if (echoObj instanceof Map<?, ?> echo) {
+                                String loc = (String) echo.get("parameterLocation");
+                                String name = (String) echo.get("parameterName");
+                                String ptr = (String) echo.get("responseJsonPointer");
+                                out.println("       • " + fmt.bold(loc != null ? loc : "") + ": " + name + " -> "
+                                        + fmt.green(ptr != null ? ptr : ""));
+                            }
+                        }
+                    }
+
+                    List<?> temporal = (List<?>) op.get("temporalFields");
+                    if (temporal != null && !temporal.isEmpty()) {
+                        out.println("    " + fmt.yellow("⏳ Temporal Fields (Brittle-Lock Risk):"));
+                        for (Object tObj : temporal) {
+                            if (tObj instanceof Map<?, ?> t) {
+                                String ptr = (String) t.get("jsonPointer");
+                                String format = (String) t.get("schemaFormat");
+                                String recVal = (String) t.get("recordedValue");
+                                out.println("       • " + fmt.bold(ptr != null ? ptr : "") + " (format: " + format
+                                        + ", pinned to: \"" + recVal + "\")");
+                            }
+                        }
+                    }
+
+                    Map<?, ?> traits = (Map<?, ?>) op.get("distinguishingTraitFields");
+                    if (traits != null && !traits.isEmpty()) {
+                        out.println("    " + fmt.magenta("🧬 Distinguishing Archetype Traits:"));
+                        for (Map.Entry<?, ?> entry : traits.entrySet()) {
+                            out.println("       • " + fmt.bold(entry.getKey().toString()) + ": " + entry.getValue());
+                        }
+                    }
+
+                    Map<?, ?> baselines = (Map<?, ?>) op.get("sharedBaselineFields");
+                    if (baselines != null && !baselines.isEmpty()) {
+                        out.println("    " + fmt.dim("📋 Shared Baseline Defaults:"));
+                        for (Map.Entry<?, ?> entry : baselines.entrySet()) {
+                            out.println("       • " + entry.getKey() + ": " + entry.getValue());
+                        }
+                    }
+                    out.println();
+                }
+            }
+        }
+
+        List<?> mutations = (List<?>) report.get("detectedMutations");
+        if (mutations != null && !mutations.isEmpty()) {
+            out.println(fmt.bold("Lifecycle Mutations & Read-Your-Own-Writes:"));
+            for (Object mutObj : mutations) {
+                if (mutObj instanceof Map<?, ?> mut) {
+                    String resPath = (String) mut.get("resourcePathTemplate");
+                    String mutMethod = (String) mut.get("mutatingMethod");
+                    Object mutFields = mut.get("mutatedFields");
+                    out.println("  " + fmt.yellow("🔁") + " " + fmt.bold(resPath != null ? resPath : "")
+                            + " mutated via " + fmt.bold(mutMethod != null ? mutMethod : ""));
+                    out.println("     Affected properties: " + mutFields + " (Read-Your-Own-Writes: "
+                            + fmt.green("detected") + ")");
+                }
+            }
+            out.println();
+        }
+
+        List<?> regIds = (List<?>) root.get("registeredStubIds");
+        if (generalize) {
+            int regCount = regIds != null ? regIds.size() : 0;
+            out.println(fmt.green(fmt.bold("✨ Successfully generated and registered " + regCount
+                    + " generalized portable stubs into WireMock!")));
+        } else {
+            out.println(fmt.dim(
+                    "💡 Tip: Re-run with '--generalize' to parameterize stubs and register Handlebars templates."));
+        }
+
+        return 0;
     }
 
     // =========================================================================
@@ -963,6 +1135,15 @@ public final class WireMockCli {
         return defaultVal;
     }
 
+    private static String parseStringOption(String[] args, String shortFlag, String longFlag, String defaultVal) {
+        for (int i = 0; i < args.length; i++) {
+            if ((shortFlag.equals(args[i]) || longFlag.equals(args[i])) && i + 1 < args.length) {
+                return args[i + 1];
+            }
+        }
+        return defaultVal;
+    }
+
     private static String extractFilterExpression(String[] args, String... subcommands) {
         Set<String> subSet = Set.of(subcommands);
         StringBuilder sb = new StringBuilder();
@@ -1057,6 +1238,8 @@ public final class WireMockCli {
         out.println("Commands:");
         out.println("  info                Probe server version and detected extension capabilities");
         out.println("  stubs [filter]      List registered stubs (supports AND/OR expressions)");
+        out.println("  analyze-stubs       Analyze recorded stubs against an OpenAPI specification");
+        out.println("  generalize-stubs    Analyze and register generalized portable stubs");
         out.println("  tail [options]      Stream or view recent request journal");
         out.println("  toxics              Inspect active TCP network impairments (NetEm extension)");
         out.println("  proxy [url] [port]  Launch standalone Web UI Console Proxy");
@@ -1065,6 +1248,11 @@ public final class WireMockCli {
         out.println("  -s, --server <url>  Target WireMock URL (default: http://localhost:8080 or $WIREMOCK_URL)");
         out.println("  --no-color          Disable ANSI color styling");
         out.println("  -h, --help          Show this help message");
+        out.println();
+        out.println("Analyze Stubs Options:");
+        out.println("  --spec, -f <file>   Path to OpenAPI 3.0/3.1 YAML/JSON specification");
+        out.println("  -p, --project <id>  Target stub project identifier");
+        out.println("  -g, --generalize    Generalize matched stubs and register to WireMock");
         out.println();
         out.println("Stubs Query Examples:");
         out.println("  wm stubs \"GET and /cases\"");

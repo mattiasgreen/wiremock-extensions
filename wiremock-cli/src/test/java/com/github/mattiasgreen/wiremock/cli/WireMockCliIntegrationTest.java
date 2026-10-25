@@ -192,4 +192,95 @@ class WireMockCliIntegrationTest {
         assertThat(errOutput).contains("WIREMOCK_URL");
         assertThat(errOutput).doesNotContain("Unknown error");
     }
+
+    @Test
+    @DisplayName(
+            "wm analyze-stubs and generalize-stubs: analyzes recorded stubs against OpenAPI and parameterizes them")
+    void shouldAnalyzeRecordedStubsAndGeneralizeViaCli(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir)
+            throws Exception {
+        WireMockServer openApiServer = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint()));
+        openApiServer.start();
+
+        try {
+            // Register recorded stub
+            openApiServer.stubFor(get(urlEqualTo("/api/crm/customers/CUST-42/kyc?asOf=2026-10-25"))
+                    .withName("[RECORDED] getCustomerKyc")
+                    .willReturn(okJson(
+                            "{\"customerId\":\"CUST-42\",\"fullName\":\"Eleanor\",\"asOfDate\":\"2026-10-25\"}")));
+
+            java.nio.file.Path specFile = tempDir.resolve("crm-spec.yaml");
+            java.nio.file.Files.writeString(
+                    specFile,
+                    """
+                    openapi: 3.0.3
+                    info:
+                      title: CRM Service
+                      version: 1.0.0
+                    paths:
+                      /api/crm/customers/{customerId}/kyc:
+                        get:
+                          operationId: getCustomerKyc
+                          parameters:
+                            - name: customerId
+                              in: path
+                              required: true
+                              schema:
+                                type: string
+                            - name: asOf
+                              in: query
+                              schema:
+                                type: string
+                                format: date
+                          responses:
+                            '200':
+                              description: OK
+                    """,
+                    StandardCharsets.UTF_8);
+
+            // 1. Run analyze-stubs
+            int code = WireMockCli.run(
+                    new String[] {
+                        "analyze-stubs", "-s", openApiServer.baseUrl(), "--spec", specFile.toString(), "--no-color"
+                    },
+                    out,
+                    err);
+
+            assertThat(code).isEqualTo(0);
+            String output = outCapture.toString(StandardCharsets.UTF_8);
+            assertThat(output).contains("OpenAPI Analysis Report: CRM Service (v1.0.0)");
+            assertThat(output).contains("Parameter Echoes");
+            assertThat(output).contains("customerId -> /customerId");
+            assertThat(output).contains("Temporal Fields");
+            assertThat(output).contains("pinned to: \"2026-10-25\"");
+
+            // 2. Run generalize-stubs
+            outCapture.reset();
+            int genCode = WireMockCli.run(
+                    new String[] {
+                        "generalize-stubs", "-s", openApiServer.baseUrl(), "--spec", specFile.toString(), "--no-color"
+                    },
+                    out,
+                    err);
+
+            assertThat(genCode).isEqualTo(0);
+            String genOutput = outCapture.toString(StandardCharsets.UTF_8);
+            assertThat(genOutput)
+                    .contains("Successfully generated and registered 1 generalized portable stubs into WireMock!");
+
+            // 3. Verify WireMock server now accepts dynamic ID and future date!
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(openApiServer.baseUrl() + "/api/crm/customers/CUST-DYNAMIC/kyc?asOf=2035-01-01"))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            assertThat(resp.statusCode()).isEqualTo(200);
+            assertThat(resp.body()).contains("\"customerId\":\"CUST-DYNAMIC\"");
+            assertThat(resp.body()).contains("\"asOfDate\":\"2035-01-01\"");
+        } finally {
+            openApiServer.stop();
+        }
+    }
 }

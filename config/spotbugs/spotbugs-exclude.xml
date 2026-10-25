@@ -32,10 +32,10 @@
         <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
     </Match>
 
-    <!-- Exclude subprocess launcher for WireMockConsoleProxy in CLI runner -->
+    <!-- Exclude subprocess launcher and local specification reading in CLI runner -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.cli.WireMockCli"/>
-        <Bug pattern="COMMAND_INJECTION"/>
+        <Bug pattern="COMMAND_INJECTION,PATH_TRAVERSAL_IN"/>
     </Match>
 
     <!-- Exclude CRLF log injection warnings for raw protocol frames and hex dumps in casual extension -->
