@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Banking CRM Service
   version: 1.0.0
-  description: Core CRM and KYC verification service for banking customers
+  description: Core CRM, KYC verification, risk assessment, and audit service for banking customers
 paths:
   /api/crm/customers/{customerId}/kyc:
     get:
@@ -27,6 +27,124 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerKycProfile'
+        '404':
+          description: Customer not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    patch:
+      operationId: updateCustomerKyc
+      summary: Update customer KYC verification status and risk tier
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateKycRequest'
+      responses:
+        '200':
+          description: Updated KYC profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerKycProfile'
+        '400':
+          description: Invalid request payload or transition
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Customer not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Concurrent state modification conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/crm/customers/{customerId}/risk-assessments:
+    post:
+      operationId: evaluateRiskAssessment
+      summary: Submit a new risk evaluation and compute updated risk metrics
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RiskAssessmentRequest'
+      responses:
+        '201':
+          description: Risk assessment evaluated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessmentResult'
+        '400':
+          description: Invalid assessment parameters
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Customer not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/crm/customers/{customerId}/audit-events:
+    get:
+      operationId: listCustomerAuditEvents
+      summary: Retrieve paginated audit trail events for a customer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated audit event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventCollection'
+
   /api/crm/customers/{customerId}/eligibility:
     get:
       operationId: getCustomerEligibility
@@ -44,6 +162,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerEligibility'
+        '404':
+          description: Customer not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
 components:
   schemas:
     CustomerKycProfile:
@@ -75,8 +200,217 @@ components:
         asOfDate:
           type: string
           format: date
+        updatedAt:
+          type: string
+          format: date-time
+        lastEvaluatedEpoch:
+          type: integer
+          format: int64
+          description: Unix epoch seconds of last assessment
+        contactInfo:
+          $ref: '#/components/schemas/ContactInfo'
+        paymentMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
         processedBy:
           type: string
+
+    ContactInfo:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+        phoneNumber:
+          type: string
+        address:
+          $ref: '#/components/schemas/Address'
+
+    Address:
+      type: object
+      required:
+        - street
+        - city
+        - country
+      properties:
+        street:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        country:
+          type: string
+
+    PaymentMethod:
+      type: object
+      required:
+        - methodType
+      properties:
+        methodType:
+          type: string
+          enum: [CARD, IBAN]
+        cardDetails:
+          $ref: '#/components/schemas/CardDetails'
+        ibanDetails:
+          $ref: '#/components/schemas/IbanDetails'
+
+    CardDetails:
+      type: object
+      required:
+        - maskedPan
+        - scheme
+      properties:
+        maskedPan:
+          type: string
+        scheme:
+          type: string
+          enum: [VISA, MASTERCARD]
+        expiryDate:
+          type: string
+          format: date
+
+    IbanDetails:
+      type: object
+      required:
+        - iban
+        - bic
+      properties:
+        iban:
+          type: string
+        bic:
+          type: string
+        currency:
+          type: string
+
+    UpdateKycRequest:
+      type: object
+      required:
+        - kycStatus
+        - riskTier
+      properties:
+        kycStatus:
+          type: string
+          enum: [VERIFIED, PENDING, REJECTED]
+        riskTier:
+          type: string
+          enum: [LOW, ELEVATED, HIGH]
+        reason:
+          type: string
+
+    RiskAssessmentRequest:
+      type: object
+      required:
+        - requestedBy
+        - assessmentType
+        - annualIncome
+      properties:
+        requestedBy:
+          type: string
+        assessmentType:
+          type: string
+          enum: [AUTOMATED, MANUAL_REVIEW, ENHANCED_DUE_DILIGENCE]
+        creditScore:
+          type: integer
+        annualIncome:
+          type: number
+        declaredJurisdiction:
+          type: string
+
+    RiskAssessmentResult:
+      type: object
+      required:
+        - assessmentId
+        - customerId
+        - requestedBy
+        - assessmentType
+        - calculatedScore
+        - recommendedTier
+        - assessedAt
+        - expiresEpochSeconds
+      properties:
+        assessmentId:
+          type: string
+        customerId:
+          type: string
+        requestedBy:
+          type: string
+        assessmentType:
+          type: string
+          enum: [AUTOMATED, MANUAL_REVIEW, ENHANCED_DUE_DILIGENCE]
+        calculatedScore:
+          type: integer
+        recommendedTier:
+          type: string
+          enum: [LOW, ELEVATED, HIGH]
+        assessedAt:
+          type: string
+          format: date-time
+        expiresEpochSeconds:
+          type: integer
+          format: int64
+
+    AuditEventCollection:
+      type: object
+      required:
+        - customerId
+        - page
+        - limit
+        - totalRecords
+        - events
+      properties:
+        customerId:
+          type: string
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalRecords:
+          type: integer
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+
+    AuditEvent:
+      type: object
+      required:
+        - eventId
+        - timestamp
+        - action
+        - outcome
+      properties:
+        eventId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        action:
+          type: string
+        actor:
+          $ref: '#/components/schemas/ActorDetails'
+        outcome:
+          type: string
+          enum: [SUCCESS, FAILURE, WARNING]
+        details:
+          type: string
+
+    ActorDetails:
+      type: object
+      required:
+        - actorId
+        - role
+      properties:
+        actorId:
+          type: string
+        role:
+          type: string
+        ipAddress:
+          type: string
+
     CustomerEligibility:
       type: object
       required:
@@ -94,4 +428,39 @@ components:
         segment:
           type: string
         processedBy:
+          type: string
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+        invalidParams:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvalidParam'
+
+    InvalidParam:
+      type: object
+      required:
+        - name
+        - reason
+      properties:
+        name:
+          type: string
+        reason:
           type: string
