@@ -155,7 +155,9 @@ public class RecordedStubAnalyzer {
                     distinguishingTraits));
         }
 
-        return new RecordedStubAnalysisReport(specTitle, specVersion, analyses, unmatchedUrls);
+        List<ResourceMutation> detectedMutations = detectResourceMutations(groupedStubs);
+
+        return new RecordedStubAnalysisReport(specTitle, specVersion, analyses, detectedMutations, unmatchedUrls);
     }
 
     /**
@@ -224,23 +226,59 @@ public class RecordedStubAnalyzer {
     private String templatizeBody(String jsonBody, List<ParameterEcho> echoes) {
         try {
             JsonNode root = objectMapper.readTree(jsonBody);
-            if (!(root instanceof ObjectNode objNode)) {
-                return jsonBody;
-            }
-
             for (ParameterEcho echo : echoes) {
-                String pointer = echo.responseJsonPointer();
-                String fieldName = pointer.startsWith("/") ? pointer.substring(1) : pointer;
-                if (objNode.has(fieldName)) {
-                    String templateValue = "path".equalsIgnoreCase(echo.parameterLocation())
-                            ? String.format(Locale.ROOT, "{{request.path.%s}}", echo.parameterName())
-                            : String.format(Locale.ROOT, "{{request.query.%s.[0]}}", echo.parameterName());
-                    objNode.put(fieldName, templateValue);
+                String templateValue =
+                        switch (echo.parameterLocation().toLowerCase(Locale.ROOT)) {
+                            case "path" -> String.format(Locale.ROOT, "{{request.path.%s}}", echo.parameterName());
+                            case "query" -> String.format(
+                                    Locale.ROOT, "{{request.query.%s.[0]}}", echo.parameterName());
+                            case "body" -> String.format(
+                                    Locale.ROOT, "{{jsonPath request.body '%s'}}", echo.parameterName());
+                            default -> null;
+                        };
+                if (templateValue != null) {
+                    applyJsonPointerTemplate(root, echo.responseJsonPointer(), templateValue);
                 }
             }
-            return objectMapper.writeValueAsString(objNode);
+            return objectMapper.writeValueAsString(root);
         } catch (JsonProcessingException e) {
             return jsonBody;
+        }
+    }
+
+    private void applyJsonPointerTemplate(JsonNode root, String jsonPointer, String templateValue) {
+        if (jsonPointer == null || jsonPointer.isBlank() || !jsonPointer.startsWith("/")) {
+            return;
+        }
+        String[] tokens = jsonPointer.substring(1).split("/");
+        JsonNode current = root;
+        for (int i = 0; i < tokens.length - 1; i++) {
+            String token = unescapePointerToken(tokens[i]);
+            if (current.isObject()) {
+                current = current.get(token);
+            } else if (current.isArray()) {
+                try {
+                    int idx = Integer.parseInt(token);
+                    current = current.get(idx);
+                } catch (NumberFormatException e) {
+                    return;
+                }
+            } else {
+                return;
+            }
+            if (current == null) {
+                return;
+            }
+        }
+        String lastToken = unescapePointerToken(tokens[tokens.length - 1]);
+        if (current instanceof ObjectNode objNode) {
+            objNode.put(lastToken, templateValue);
+        } else if (current instanceof com.fasterxml.jackson.databind.node.ArrayNode arrNode) {
+            try {
+                int idx = Integer.parseInt(lastToken);
+                arrNode.set(idx, new com.fasterxml.jackson.databind.node.TextNode(templateValue));
+            } catch (NumberFormatException ignored) {
+            }
         }
     }
 
@@ -254,30 +292,95 @@ public class RecordedStubAnalyzer {
             return;
         }
 
-        Set<String> allKeys = new LinkedHashSet<>();
+        Set<String> allPointers = new LinkedHashSet<>();
         for (MatchedStubContext ctx : contexts) {
-            allKeys.addAll(ctx.parsedResponseFields().keySet());
+            allPointers.addAll(ctx.parsedResponseFields().keySet());
         }
 
-        for (String key : allKeys) {
-            String pointer = "/" + key;
+        for (String pointer : allPointers) {
             if (echoedPointers.contains(pointer)) {
                 continue;
             }
 
             Set<Object> distinctValues = new LinkedHashSet<>();
             for (MatchedStubContext ctx : contexts) {
-                if (ctx.parsedResponseFields().containsKey(key)) {
-                    distinctValues.add(ctx.parsedResponseFields().get(key));
+                if (ctx.parsedResponseFields().containsKey(pointer)) {
+                    distinctValues.add(ctx.parsedResponseFields().get(pointer));
                 }
             }
 
+            String fieldKey = pointer.startsWith("/") ? pointer.substring(1) : pointer;
             if (distinctValues.size() == 1) {
-                sharedBaselines.put(key, distinctValues.iterator().next());
+                sharedBaselines.put(fieldKey, distinctValues.iterator().next());
             } else if (distinctValues.size() > 1) {
-                distinguishingTraits.put(key, new ArrayList<>(distinctValues));
+                distinguishingTraits.put(fieldKey, new ArrayList<>(distinctValues));
             }
         }
+    }
+
+    private List<ResourceMutation> detectResourceMutations(Map<OperationKey, List<MatchedStubContext>> groupedStubs) {
+        List<ResourceMutation> mutations = new ArrayList<>();
+
+        for (Map.Entry<OperationKey, List<MatchedStubContext>> entry : groupedStubs.entrySet()) {
+            OperationKey key = entry.getKey();
+            List<MatchedStubContext> contexts = entry.getValue();
+
+            // Detect identical GET requests returning different response payloads across the timeline
+            if ("GET".equalsIgnoreCase(key.method()) && contexts.size() >= 2) {
+                for (int i = 0; i < contexts.size() - 1; i++) {
+                    MatchedStubContext ctxA = contexts.get(i);
+                    for (int j = i + 1; j < contexts.size(); j++) {
+                        MatchedStubContext ctxB = contexts.get(j);
+                        if (ctxA.rawUrl().equals(ctxB.rawUrl())) {
+                            List<String> changedPointers =
+                                    diffResponsePointers(ctxA.parsedResponseFields(), ctxB.parsedResponseFields());
+                            if (!changedPointers.isEmpty()) {
+                                // Find any mutating call on the same resource
+                                String mutatingMethod = findMutatingMethodForResource(groupedStubs, key.pathTemplate());
+                                mutations.add(new ResourceMutation(
+                                        key.pathTemplate(),
+                                        mutatingMethod != null ? mutatingMethod : "EXTERNAL_MUTATION",
+                                        changedPointers,
+                                        true));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return mutations;
+    }
+
+    private List<String> diffResponsePointers(Map<String, Object> a, Map<String, Object> b) {
+        List<String> diffs = new ArrayList<>();
+        Set<String> keys = new LinkedHashSet<>();
+        keys.addAll(a.keySet());
+        keys.addAll(b.keySet());
+        for (String k : keys) {
+            Object valA = a.get(k);
+            Object valB = b.get(k);
+            if (!Objects.equals(valA, valB)) {
+                diffs.add(k);
+            }
+        }
+        return diffs;
+    }
+
+    private String findMutatingMethodForResource(
+            Map<OperationKey, List<MatchedStubContext>> groupedStubs, String getPathTemplate) {
+        for (OperationKey key : groupedStubs.keySet()) {
+            if (!"GET".equalsIgnoreCase(key.method()) && isSameResourceHierarchy(getPathTemplate, key.pathTemplate())) {
+                return key.method();
+            }
+        }
+        return null;
+    }
+
+    private boolean isSameResourceHierarchy(String pathA, String pathB) {
+        String baseA = pathA.replaceAll("/\\{[^}]+}", "");
+        String baseB = pathB.replaceAll("/\\{[^}]+}", "");
+        return baseA.equalsIgnoreCase(baseB);
     }
 
     private MatchedStubContext matchStub(
@@ -296,6 +399,19 @@ public class RecordedStubAnalyzer {
             concretePath = "/" + concretePath;
         }
         Map<String, String> queryParams = extractQueryParams(rawUrl);
+
+        // Extract request body leaves if present
+        String reqBody = extractRequestBody(stub);
+        Map<String, String> requestBodyLeaves = new LinkedHashMap<>();
+        if (reqBody != null && !reqBody.isBlank()) {
+            try {
+                JsonNode reqNode = objectMapper.readTree(reqBody);
+                walkJsonLeaves("", reqNode, (pointer, leaf) -> {
+                    requestBodyLeaves.put(pointer, leaf.asText());
+                });
+            } catch (JsonProcessingException ignored) {
+            }
+        }
 
         for (Map.Entry<String, PathItem> entry : paths.entrySet()) {
             String pathTemplate = entry.getKey();
@@ -317,7 +433,7 @@ public class RecordedStubAnalyzer {
 
             String responseSchemaName = resolveResponseSchemaName(operation, openAPI);
 
-            // Parse response body and correlate parameters
+            // Parse response body and correlate parameters recursively
             Map<String, Object> responseFields = new LinkedHashMap<>();
             List<ParameterEcho> echoes = new ArrayList<>();
             List<TemporalFieldInfo> temporal = new ArrayList<>();
@@ -326,48 +442,54 @@ public class RecordedStubAnalyzer {
             if (body != null && !body.isBlank()) {
                 try {
                     JsonNode node = objectMapper.readTree(body);
-                    if (node instanceof ObjectNode objNode) {
-                        Iterator<Map.Entry<String, JsonNode>> fields = objNode.fields();
-                        while (fields.hasNext()) {
-                            Map.Entry<String, JsonNode> f = fields.next();
-                            String fName = f.getKey();
-                            JsonNode fVal = f.getValue();
-                            Object valObj = fVal.isValueNode() ? fVal.asText() : fVal.toString();
-                            responseFields.put(fName, valObj);
+                    walkJsonLeaves("", node, (respPointer, leaf) -> {
+                        String strVal = leaf.asText();
+                        responseFields.put(respPointer, leaf.isValueNode() ? strVal : leaf.toString());
 
-                            String strVal = fVal.asText();
+                        // 1. Path param echo check
+                        boolean isEcho = false;
+                        for (Map.Entry<String, String> pEntry : pathParams.entrySet()) {
+                            if (pEntry.getValue().equals(strVal)) {
+                                echoes.add(new ParameterEcho("path", pEntry.getKey(), strVal, respPointer));
+                                isEcho = true;
+                                break;
+                            }
+                        }
 
-                            // Path echo check
-                            boolean isEcho = false;
-                            for (Map.Entry<String, String> pEntry : pathParams.entrySet()) {
-                                if (pEntry.getValue().equals(strVal)) {
-                                    echoes.add(new ParameterEcho("path", pEntry.getKey(), strVal, "/" + fName));
+                        // 2. Query param echo check
+                        if (!isEcho) {
+                            for (Map.Entry<String, String> qEntry : queryParams.entrySet()) {
+                                if (qEntry.getValue().equals(strVal)) {
+                                    echoes.add(new ParameterEcho("query", qEntry.getKey(), strVal, respPointer));
                                     isEcho = true;
                                     break;
                                 }
                             }
-                            // Query echo check
-                            if (!isEcho) {
-                                for (Map.Entry<String, String> qEntry : queryParams.entrySet()) {
-                                    if (qEntry.getValue().equals(strVal)) {
-                                        echoes.add(new ParameterEcho("query", qEntry.getKey(), strVal, "/" + fName));
-                                        isEcho = true;
-                                        break;
-                                    }
+                        }
+
+                        // 3. Request body echo check
+                        if (!isEcho && !requestBodyLeaves.isEmpty()) {
+                            for (Map.Entry<String, String> reqEntry : requestBodyLeaves.entrySet()) {
+                                if (reqEntry.getValue().equals(strVal)) {
+                                    String jsonPath = pointerToJsonPath(reqEntry.getKey());
+                                    echoes.add(new ParameterEcho("body", jsonPath, strVal, respPointer));
+                                    isEcho = true;
+                                    break;
                                 }
                             }
-
-                            // Temporal check
-                            String schemaFormat = getSchemaFormatForProperty(operation, openAPI, fName);
-                            if (schemaFormat != null
-                                    || ISO_DATE_REGEX.matcher(strVal).matches()) {
-                                String format = schemaFormat != null
-                                        ? schemaFormat
-                                        : (strVal.contains("T") ? "date-time" : "date");
-                                temporal.add(new TemporalFieldInfo("/" + fName, format, strVal, isEcho));
-                            }
                         }
-                    }
+
+                        // 4. Temporal check
+                        String lastToken =
+                                unescapePointerToken(respPointer.substring(respPointer.lastIndexOf('/') + 1));
+                        String schemaFormat = getSchemaFormatForProperty(operation, openAPI, lastToken);
+                        if (schemaFormat != null
+                                || ISO_DATE_REGEX.matcher(strVal).matches()) {
+                            String format =
+                                    schemaFormat != null ? schemaFormat : (strVal.contains("T") ? "date-time" : "date");
+                            temporal.add(new TemporalFieldInfo(respPointer, format, strVal, isEcho));
+                        }
+                    });
                 } catch (JsonProcessingException ignored) {
                 }
             }
@@ -382,9 +504,75 @@ public class RecordedStubAnalyzer {
                     responseFields,
                     echoes,
                     temporal,
-                    stub);
+                    stub,
+                    rawUrl);
         }
 
+        return null;
+    }
+
+    private void walkJsonLeaves(
+            String currentPointer, JsonNode node, java.util.function.BiConsumer<String, JsonNode> leafConsumer) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                String childPointer = currentPointer + "/" + escapePointerToken(entry.getKey());
+                walkJsonLeaves(childPointer, entry.getValue(), leafConsumer);
+            }
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                String childPointer = currentPointer + "/" + i;
+                walkJsonLeaves(childPointer, node.get(i), leafConsumer);
+            }
+        } else if (node.isValueNode()) {
+            leafConsumer.accept(currentPointer, node);
+        }
+    }
+
+    private String escapePointerToken(String token) {
+        return token.replace("~", "~0").replace("/", "~1");
+    }
+
+    private String unescapePointerToken(String token) {
+        return token.replace("~1", "/").replace("~0", "~");
+    }
+
+    private String pointerToJsonPath(String jsonPointer) {
+        if (jsonPointer == null || jsonPointer.isBlank() || "/".equals(jsonPointer)) {
+            return "$";
+        }
+        StringBuilder sb = new StringBuilder("$");
+        String[] tokens = jsonPointer.substring(1).split("/");
+        for (String t : tokens) {
+            String unescaped = unescapePointerToken(t);
+            if (unescaped.matches("\\d+")) {
+                sb.append("[").append(unescaped).append("]");
+            } else {
+                sb.append(".").append(unescaped);
+            }
+        }
+        return sb.toString();
+    }
+
+    private String extractRequestBody(StubMapping stub) {
+        if (stub.getRequest().getBodyPatterns() != null) {
+            for (com.github.tomakehurst.wiremock.matching.ContentPattern<?> pattern :
+                    stub.getRequest().getBodyPatterns()) {
+                if (pattern instanceof com.github.tomakehurst.wiremock.matching.EqualToJsonPattern eqJson) {
+                    return eqJson.getExpected();
+                }
+                if (pattern.getValue() != null) {
+                    String val = pattern.getValue().toString();
+                    if (!val.isBlank()) {
+                        return val;
+                    }
+                }
+            }
+        }
         return null;
     }
 
@@ -568,5 +756,6 @@ public class RecordedStubAnalyzer {
             Map<String, Object> parsedResponseFields,
             List<ParameterEcho> parameterEchoes,
             List<TemporalFieldInfo> temporalFields,
-            StubMapping stub) {}
+            StubMapping stub,
+            String rawUrl) {}
 }

@@ -225,4 +225,172 @@ class RecordedStubAnalyzerTest {
                         .isPresent())
                 .isFalse();
     }
+
+    private static final String CASE_MGMT_OPENAPI_YAML =
+            """
+            openapi: 3.0.3
+            info:
+              title: Case Management Service
+              version: 1.0.0
+            paths:
+              /api/cases:
+                post:
+                  operationId: createCase
+                  responses:
+                    '201':
+                      description: Created
+              /api/cases/{caseId}:
+                get:
+                  operationId: getCase
+                  parameters:
+                    - name: caseId
+                      in: path
+                      required: true
+                      schema:
+                        type: string
+                  responses:
+                    '200':
+                      description: Details
+                patch:
+                  operationId: patchCase
+                  parameters:
+                    - name: caseId
+                      in: path
+                      required: true
+                      schema:
+                        type: string
+                  responses:
+                    '200':
+                      description: Updated
+            """;
+
+    @Test
+    @DisplayName("Should detect nested JSON echoes and templatize deep JSON pointers")
+    void shouldDetectNestedJsonEchoesAndTemplatizeDeepPointers() {
+        StubMapping stubDeep = WireMock.get(WireMock.urlEqualTo("/api/cases/CASE-99"))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "caseId": "CASE-99",
+                                  "details": {
+                                    "contact": {
+                                      "email": "eleanor@example.com",
+                                      "reporterId": "CASE-99"
+                                    }
+                                  }
+                                }
+                                """))
+                .build();
+        stubDeep.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report = analyzer.analyze(CASE_MGMT_OPENAPI_YAML, List.of(stubDeep));
+
+        assertThat(report.operations()).hasSize(1);
+        OperationStubAnalysis op = report.operations().getFirst();
+
+        assertThat(op.parameterEchoes())
+                .extracting(ParameterEcho::responseJsonPointer)
+                .contains("/caseId", "/details/contact/reporterId");
+
+        StubMapping generalized = analyzer.generalizeStub(stubDeep, op);
+        assertThat(generalized.getResponse().getBody())
+                .contains("\"caseId\":\"{{request.path.caseId}}\"")
+                .contains("\"reporterId\":\"{{request.path.caseId}}\"");
+    }
+
+    @Test
+    @DisplayName("Should detect request body parameter echoes on POST/PUT and synthesize jsonPath templates")
+    void shouldDetectRequestBodyParameterEchoesOnPost() {
+        StubMapping postStub = WireMock.post(WireMock.urlEqualTo("/api/cases"))
+                .withRequestBody(
+                        WireMock.equalToJson(
+                                """
+                        {
+                          "title": "Fraud Alert",
+                          "requester": {
+                            "department": "Risk"
+                          }
+                        }
+                        """))
+                .willReturn(
+                        WireMock.aResponse()
+                                .withStatus(201)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody(
+                                        """
+                                {
+                                  "id": "CASE-500",
+                                  "caseTitle": "Fraud Alert",
+                                  "assignedDept": "Risk",
+                                  "status": "OPEN"
+                                }
+                                """))
+                .build();
+        postStub.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report = analyzer.analyze(CASE_MGMT_OPENAPI_YAML, List.of(postStub));
+
+        assertThat(report.operations()).hasSize(1);
+        OperationStubAnalysis op = report.operations().getFirst();
+
+        assertThat(op.parameterEchoes())
+                .extracting(ParameterEcho::responseJsonPointer)
+                .contains("/caseTitle", "/assignedDept");
+        assertThat(op.parameterEchoes())
+                .extracting(ParameterEcho::parameterName)
+                .contains("$.title", "$.requester.department");
+        assertThat(op.parameterEchoes())
+                .extracting(ParameterEcho::parameterLocation)
+                .containsOnly("body");
+
+        StubMapping generalized = analyzer.generalizeStub(postStub, op);
+        assertThat(generalized.getResponse().getBody())
+                .contains("\"caseTitle\":\"{{jsonPath request.body '$.title'}}\"")
+                .contains("\"assignedDept\":\"{{jsonPath request.body '$.requester.department'}}\"");
+    }
+
+    @Test
+    @DisplayName("Should detect resource mutations and read-your-own-writes across recording timeline")
+    void shouldDetectResourceMutationsAndReadYourOwnWrites() {
+        StubMapping getInitial = WireMock.get(WireMock.urlEqualTo("/api/cases/CASE-1"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":\"CASE-1\",\"status\":\"OPEN\"}"))
+                .build();
+        getInitial.setId(UUID.randomUUID());
+
+        StubMapping patchStub = WireMock.patch(WireMock.urlEqualTo("/api/cases/CASE-1"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":\"CASE-1\",\"status\":\"RESOLVED\"}"))
+                .build();
+        patchStub.setId(UUID.randomUUID());
+
+        StubMapping getAfterPatch = WireMock.get(WireMock.urlEqualTo("/api/cases/CASE-1"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":\"CASE-1\",\"status\":\"RESOLVED\"}"))
+                .build();
+        getAfterPatch.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report =
+                analyzer.analyze(CASE_MGMT_OPENAPI_YAML, List.of(getInitial, patchStub, getAfterPatch));
+
+        assertThat(report.detectedMutations()).hasSize(1);
+        ResourceMutation mutation = report.detectedMutations().getFirst();
+        assertThat(mutation.resourcePathTemplate()).isEqualTo("/api/cases/{caseId}");
+        assertThat(mutation.mutatingMethod()).isEqualTo("PATCH");
+        assertThat(mutation.mutatedFields()).contains("/status");
+        assertThat(mutation.readYourOwnWritesDetected()).isTrue();
+    }
 }
