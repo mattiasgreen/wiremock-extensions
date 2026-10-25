@@ -206,7 +206,221 @@ Grounded in **Freeman & Pryce's** rule (*"Don't mock types you don't own"*) and 
 
 ---
 
-## 6. Anti-Patterns to Avoid: Literature & xUnit Smell Mapping
+## 6. Top-Down Producer SDK vs. Bottom-Up Recorded Stubs
+
+In enterprise ecosystems, consumers of an upstream service (e.g., CRM, Billing, Risk Scoring) generally enter Level 3 simulation through one of two paths—or a hybrid combination where some upstream services are mocked via SDKs and others are proxied/recorded:
+
+* **Path A: Top-Down Producer TestKit & Fluent SDK (Target State)**
+  The consumer utilizes a ready-made, producer-maintained TestKit featuring realistic domain data synthesizers (*Object Mothers* + *Test Data Builders*) and a typed simulation DSL:
+  ```java
+  Customer vip = CustomerMother.vip()
+      .onboardedDate(LocalDate.now().minusYears(2))
+      .build();
+
+  billingService.when(getBillingStatus(vip.id()))
+      .thenReturn(BillingStatusMother.complete().build());
+  ```
+* **Path B: Bottom-Up Recorded E2E Characterization Stubs (Pragmatic Bootstrap)**
+  When integrating with legacy backends, Casual/mainframe gateways, or teams that do not yet ship a TestKit, the consumer runs 1–2 integrated end-to-end scenarios in a shared test environment through WireMock's proxy recorder, exports the captured stubs, and uses them as the basis for a *"bottom-up, recording-based, consumer-driven SDK."*
+
+While Path B captures authentic wire-level behavior (Michael Feathers's *Characterization Testing*), raw exported stubs are **point-in-time snapshots of a single execution trace**, not a reusable simulation model.
+
+---
+
+### 6.1. Pitfalls of Out-of-the-Box Recorded Stubs
+
+Using raw recorded WireMock mappings directly in automated test suites introduces six systemic failure modes:
+
+#### 1. Temporal Brittle-Lock (Time Decay)
+* **Request-Side Clock Drift**: If the consumer queries `GET /billing/ledger?asOf=2026-10-25` or sends `"requestedAt": "2026-10-25T04:11:00Z"` based on the system clock, a strict `equalTo` request matcher fails the very next day (or millisecond).
+* **Response-Side Relative Date Time-Bombs**: Recorded responses contain frozen timestamps (`"onboardedDate": "2024-10-25"`, `"invoiceDueDate": "2026-11-01"`, `"tokenExpiresAt": ...`). Business rules asserting relative time (e.g., *"VIP discount requires $>2$ years tenure"* or *"Invoice is not yet overdue"*) pass on the day of recording and silently break months later.
+
+#### 2. Identity & Correlation Pinning
+* **Hardcoded Entity IDs**: The recorded stub only recognizes the specific test identities used during the E2E run (`CUST-88412`). Any parameterized test or new scenario using `CUST-99999` hits `404 Not Matched`.
+* **Client-Generated Nonces & UUIDs**: If the consumer generates an `idempotencyKey`, `transactionId`, or `requestId` in the URL or JSON body, strict `equalToJson` matchers fail on every subsequent replay.
+* **Broken Request-to-Response Echoing**: If the consumer sends a generated correlation or order ID and validates that the producer echoes the same ID back in the response payload, a static recorded response returns the *old* ID from the recording session.
+
+#### 3. Ephemeral Protocol & Header Noise
+* **Auth & Session Tokens**: Raw recordings frequently pin ephemeral `Authorization: Bearer eyJ...` JWTs, session cookies, or HMAC signatures that expire or change per test run.
+* **Telemetry & Transport Headers**: Capturing W3C `traceparent`, `x-request-id`, or dynamic `User-Agent` strings inside request matchers prevents deterministic replay.
+
+#### 4. Stateful Read-Your-Own-Writes Blindness
+* **The "Create-then-Get" Collision**: If a recorded E2E flow executes `POST /cases` $\to$ `GET /cases/500` (`OPEN`) $\to$ `PATCH /cases/500` $\to$ `GET /cases/500` (`CLOSED`), static stub export either overwrites the two identical `GET` requests or binds them to rigid sequential WireMock `Scenario` states (`Started` $\to$ `state-2`) that break if the consumer polls `GET` an extra time.
+
+#### 5. "Rotting Fixture" & Obscure Test Bloat (Meszaros)
+* **Opaque Multi-Kilobyte Payloads**: A recorded CRM response may contain 800 fields across 15 nested arrays. Readers cannot tell which 3 fields actually matter to the test scenario (*Obscure Test*), and static JSON files silently rot when the upstream schema evolves (*Rotting Fixture*).
+* **JSON Array Order Sensitivity**: Strict `equalToJson` request matchers break when consumers serialize set elements in a different order or include benign additional fields.
+
+#### 6. Parallel Execution Collision
+* Sharing global recorded `Scenario` state across concurrent tests causes **Inter-Test Contamination** (Test A advances or resets the state machine while Test B is mid-flight).
+
+---
+
+### 6.2. The Generalization Maturity Ladder
+
+Transforming raw recordings into a portable, maintainable simulation layer follows a four-stage maturity ladder:
+
+```
+RAW RECORDING ──► 1. SYNTACTIC ──► 2. TEMPLATED ──► 3. STATEFUL ──► 4. JAVA MODEL +
+(Hardcoded)       SANITIZATION     CORRELATION      PROMOTION       OBJECT MOTHER SDK
+```
+
+#### Stage 1: Automated Syntactic Sanitization (Request Relaxation)
+* **Path & Query Parameterization**: Rewrite concrete paths (`/customers/CUST-88412?asOf=2026-10-25`) into `urlPathTemplate` (`/customers/{customerId}`) with format matchers (`matching("[0-9]{4}-[0-9]{2}-[0-9]{2}")`).
+* **Header Allow-Listing**: Strip ephemeral headers (`Authorization`, `traceparent`, `Cookie`, `Host`, `Content-Length`), retaining only semantic routing headers (`Content-Type`, `Accept`, tenant/scenario discriminators).
+* **Lenient Body Matching**: Enable `ignoreArrayOrder: true` and `ignoreExtraElements: true` on `equalToJson`, and relax client-generated UUIDs/timestamps into regex matchers.
+
+#### Stage 2: Dynamic Response Templating (Mechanical Correlation)
+* **Identity Reflection (Echoing)**: Replace hardcoded IDs in the response payload that match inbound request parameters with WireMock Handlebars expressions (`"id": "{{request.path.customerId}}"` or `"{{jsonPath request.body '$.orderId'}}"`).
+* **Execution-Window Timestamp Shifting**: Shift ephemeral session timestamps (`createdAt`, `expiresAt`) relative to the test clock (`{{now offset='1 hours'}}`).
+
+#### Stage 3: Stateful Lifecycle Promotion
+* Collapse repeated fire-and-forget calls (`POST /audit`) into a single wildcard sink (`ANY /audit/** -> 202`).
+* Promote mutating CRUD sequences (`POST` $\to$ `GET` $\to$ `PATCH` $\to$ `GET`) into `wiremock-extension-stateful` resources partitioned by `X-Correlation-Id`.
+
+#### Stage 4: Spec-Generated Java Models + Object Mother SDK
+Rather than stopping at stringly-typed JSON templates, graduate the recorded baselines into a **typed Java TestKit** powered by OpenAPI/IDL code generation, **Object Mothers** (Martin Fowler), and **Test Data Builders** (Nat Pryce).
+
+---
+
+### 6.3. The Deterministic Ceiling vs. Domain Intent Inference
+
+When building automated tooling to generalize recorded stubs into an SDK, we must distinguish between **mechanical correlation** (which pure deterministic Java/JS code can perform with 100% accuracy) and **domain intent inference** (which requires human specification in builders or AI/LLM-assisted synthesis).
+
+#### What Deterministic Code (Java/JS + OpenAPI + Trace Journal) Can Do 100% Reliably
+1. **OpenAPI Route Reverse-Engineering**: Matching recorded URLs (`/api/v1/customers/CUST-88412`) against `openapi.yaml` (`/api/v1/customers/{customerId}`) to deterministically extract named path and query variables.
+2. **Exact Value Graph Propagation**: Scanning the request and response ASTs across a recorded trace to detect exact value handoffs:
+   * *Intra-request echoing*: `request.path.customerId ("CUST-88412") == response.body.id ("CUST-88412")`.
+   * *Cross-request foreign keys*: `Call_1.response.body.billingAccountId ("ACC-777") == Call_2.request.path.accountId ("ACC-777")`.
+3. **Session-Window Timestamp Detection**: Any timestamp falling within the recording execution window $[T_{\text{start}} - 5\text{m}, T_{\text{end}} + 24\text{h}]$ can be deterministically classified as an ephemeral session/protocol timestamp (`createdAt`, `updatedAt`, `asOf`, `expiresAt`).
+4. **CRUD Mutation Detection**: Grouping recorded calls by OpenAPI resource hierarchy and detecting when two identical `GET /cases/{id}` requests return different payloads around a `POST`/`PATCH`/`DELETE`.
+
+#### Where Deterministic Code Hits the Ceiling (Requires Domain Intent)
+1. **Sliding-Window Tenure vs. Fixed Calendar Cutoffs**:
+   If a recorded response on `2026-10-25` contains `"onboardedDate": "2024-10-25"`, deterministic code **cannot know** whether the consumer's business rule tests:
+   * *Relative sliding tenure*: *"Customer onboarded $>2$ years ago"* ($\to$ must shift dynamically via `LocalDate.now().minusYears(2)`), or
+   * *Fixed regulatory epoch*: *"Contract signed before Jan 1, 2025"* ($\to$ shifting relative to `now()` will break the test in 2027!).
+2. **Semantic Archetype Distillation ("What makes this customer VIP?")**:
+   Deterministic code sees 80 fields in `CUST-88412`; it cannot deduce which 3 fields define the business concept of a *"VIP Customer"* vs. incidental data noise.
+
+> **Architectural Rule**: Let deterministic code handle route matching, ID echoing, and schema validation, while expressing **domain intent and relative business dates explicitly in Java Builders and Object Mothers**.
+
+---
+
+### 6.4. Stringly-Typed JSON Manipulation vs. Spec-Generated Java Model Builders (Dual-Mode SDK)
+
+Combining **OpenAPI-generated Java models** with **Object Mothers** and **recorded baseline values** eliminates the weaknesses of both raw JSON files and empty generated DTOs:
+
+* **Why pure OpenAPI Codegen alone falls short**: Calling `new Customer()` produces a hollow object with 80 `null` fields; naive randomizers (`Instancio` / `Podam`) generate semantically invalid combinations (`status = ACTIVE` with `closedReason = FRAUD`).
+* **Why pure Recorded JSON alone falls short**: Managing tens of raw JSON files leads to fixture sprawl, zero compile-time safety, and lock-in to Level 3 wire tests.
+
+#### The Target Pattern: Pure Java Object Mothers + Dual-Mode Builders
+Instead of maintaining dozens of separate recording files, the TestKit defines semantic **Object Mothers** (`CustomerMother.vip()`, `CustomerMother.delinquent()`) in pure Java—seeded by realistic baseline defaults (either compiled into Java or loaded from a single canonical baseline fixture)—returning a fluent **Test Data Builder**:
+
+```java
+// 1. Express domain archetype + relative temporal intent in type-safe Java:
+Customer vipCustomer = CustomerMother.vip()
+    .id(customerId)
+    .onboardedDate(LocalDate.now().minusYears(2)) // Explicit sliding-window intent!
+    .riskTier(RiskTier.ELEVATED)
+    .build(); // Enforces producer domain invariants before test runs
+
+// 2A. LEVEL 2 EXECUTION (In-JVM Mockito — sub-millisecond, zero wire protocol):
+when(crmClient.getCustomer(customerId)).thenReturn(vipCustomer);
+
+// 2B. LEVEL 3 EXECUTION (WireMock Wire Boundary — real HTTP, Jackson & headers):
+crmWireMockSdk.stubFor(
+    CrmApi.getCustomer(customerId).willReturn(vipCustomer)
+);
+```
+
+#### Comparison Matrix: Stringly-Typed JSON Overrides vs. Java-Model Builders + Object Mothers
+
+| Dimension | Approach 1: Stringly-Typed JSON + JSONPath Overrides | Approach 2: Spec-Generated Java Models + Object Mothers |
+| :--- | :--- | :--- |
+| **Compile-Time Safety** | **None.** Typos in JSONPaths (`$.custmer.riskTeir`) or invalid enum strings only surface at runtime. | **100% Compile-Time Checked.** Field renames, type changes, and enum constants are enforced by `javac`. |
+| **Producer Invariants** | **Unenforced.** Overriding a single JSON leaf can easily create contradictory entity state. | **Enforced in `.build()`.** Domain invariants (e.g. `status == OVERDUE` requires `overdueAmount > 0`) fail fast in Java. |
+| **Cross-Pyramid Reuse** | **Level 3 (Wire) Only.** Cannot be passed directly to Level 1 functions or Level 2 Mockito mocks. | **Universal (Levels 1, 2, and 3).** The exact same built object drives unit tests, Mockito mocks, and WireMock stubs. |
+| **Fixture Maintainability** | **High Sprawl.** Devolves into tens of 1,000-line JSON recordings that rot when schemas evolve. | **Compact & Composable.** Semantic Java `Mother` methods (`vip()`, `highRisk()`) compose cleanly over a single canonical baseline. |
+| **Temporal & Dynamic Values** | Requires string-embedded Handlebars syntax (`{{now offset='-2 years'}}`). | Uses standard Java (`LocalDate.now().minusYears(2)`, `UUID.randomUUID()`) directly in test code. |
+| **Schemaless / Legacy Systems** | **Immediate.** Works on day one even when no OpenAPI/IDL spec exists. | **Requires Spec (or Schema Inference).** Requires an OpenAPI/IDL specification to generate the model classes. |
+| **Malformed / Tolerant Reader Tests** | **Trivial.** Easy to inject syntax errors, wrong types (`"amount": "NaN"`), or unknown fields. | **Requires Escape Hatch.** Typed builders must provide a `.withRawJsonOverride(...)` hook for negative wire tests. |
+
+---
+
+## 7. Lightweight Contract Drift Detection & Agentic SDK Bootstrapping
+
+### 7.1. The "Brokerless Pact" Contract Loop
+
+To prevent recorded baselines and Object Mothers from drifting out of sync with the real upstream service, contract verification should be automated without requiring heavy Pact Broker infrastructure:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                     PRODUCER REPOSITORY (CRM Service)                      │
+│                                                                            │
+│  1. Producer Deliverables:                                                 │
+│     • openapi.yaml (Canonical Wire Contract)                               │
+│     • crm-client-sdk.jar (Generated Java Models + Client)                  │
+│     • crm-testkit.jar (Object Mothers + Builders + WireMock Operation DSL) │
+│                                                                            │
+│  2. Bottom-Up Recording Graduation:                                        │
+│     • Consumer records a novel E2E edge case -> extracts trait into a PR   │
+│       adding a new Mother method or baseline fixture to `crm-testkit`.     │
+│                                                                            │
+│  3. Producer CI Parity Gates:                                              │
+│     • Gate A (Schema & Strict Deserialization Gate):                       │
+│       Every Object Mother and baseline JSON in `crm-testkit` is serialized │
+│       and re-parsed with Jackson (`FAIL_ON_UNKNOWN_PROPERTIES = true`)     │
+│       and validated against `openapi.yaml`.                                │
+│     • Gate B (Live Service Parity Gate):                                   │
+│       Producer CI runs the shared BDD contract suite against both the      │
+│       live service (Level 4) and `crm-testkit` (Level 3) to guarantee      │
+│       behavioral parity.                                                   │
+└────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                        Publishes versioned `crm-testkit:1.4.0`
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    CONSUMER REPOSITORY (Order Service)                     │
+│                                                                            │
+│  • Upgrades `crm-testkit` dependency.                                      │
+│  • Breaking contract changes surface immediately as Java compilation       │
+│    errors or builder invariant failures—never silent rotting JSON!         │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+* **Consumer-Owned Fallback (When Producer Does Not Yet Own a TestKit)**:
+  1. **CI OpenAPI Spec Validation**: Consumer CI validates its bottom-up TestKit outputs against every new version of the producer's `openapi.yaml` via `wiremock-extension-openapi`.
+  2. **Nightly Shadow Canary**: A scheduled pipeline runs the consumer's BDD suite in proxy/passthrough mode against the shared test environment and diffs live response schemas against the TestKit's expectations.
+
+---
+
+### 7.2. Agentic Skill & End-to-End TestKit Bootstrapping Harness
+
+While deterministic code handles syntactic scrubbing and OpenAPI route correlation, **AI Coding Agents** bridge the semantic gap—analyzing raw recorded stubs alongside an OpenAPI specification to bootstrap a complete, idiomatic Java TestKit.
+
+#### The Agentic "Stubs-to-TestKit" Bootstrap Workflow
+Given `{ openapi.yaml + recorded-mappings.json }`, a specialized Agent Skill executes a hybrid pipeline:
+1. **Deterministic Phase**:
+   * Generates Java DTOs and Builders from `openapi.yaml`.
+   * Matches recorded WireMock `ServeEvent` / stub mappings to OpenAPI `operationId`s, strips ephemeral headers, and identifies path/query parameter correlations and CRUD mutations.
+2. **Agentic Semantic Synthesis Phase**:
+   * Inspects the recorded payloads and test context to synthesize meaningful **Object Mother** factories (`CustomerMother.vipCustomer()`, `BillingMother.overdueAccount()`) rather than dumping numbered JSON files (`stub_1.json`, `stub_2.json`).
+   * Identifies likely domain dates vs. session timestamps and exposes fluent relative-date builder methods.
+   * Generates a **Dual-Mode Service TestKit DSL** supporting both Level 2 (in-memory Mockito stubbing) and Level 3 (WireMock HTTP/Casual stubbing via Jackson serialization).
+
+#### End-to-End Verification Harness Architecture
+To test and validate this workflow end-to-end inside `wiremock-extensions`:
+1. **Reference Upstream Service**: An OpenAPI 3.1 service specification paired with a reference mock backend.
+2. **Traffic Capture & Export**: Execute 1–2 E2E flows through `wiremock-extensions` in proxy mode and export the raw recorded stubs.
+3. **SDK Bootstrap**: Run the Stubs-to-TestKit generator/skill against the exported stubs and OpenAPI spec to produce the typed Java TestKit (`Models` + `Object Mothers` + `WireMock/Mockito DSL`).
+4. **Dual-Mode BDD Verification**: Execute the consumer's pure-Java BDD test scenarios across two execution profiles using the *exact same TestKit builders*:
+   * **Profile A (Level 2 In-Memory)**: Wires the synthesized objects into Mockito client mocks (`0ms` network overhead).
+   * **Profile B (Level 3 Wire Boundary)**: Serializes the synthesized objects on-the-fly into WireMock via the generated operation DSL (`stubFor(api.operation.uri, JacksonMapper.toJson(...))`), verifying real HTTP transport, headers, and serialization contracts.
+
+---
+
+## 8. Anti-Patterns to Avoid: Literature & xUnit Smell Mapping
 
 The failure modes of integration testing are well-cataloged in foundational literature. Understanding their root causes prevents recurring architectural traps:
 
@@ -270,7 +484,7 @@ The failure modes of integration testing are well-cataloged in foundational lite
 
 ---
 
-## 7. Theoretical Grounding & Industry De Facto Standards
+## 9. Theoretical Grounding & Industry De Facto Standards
 
 The strategies and execution boundaries defined in this guide are not ad-hoc heuristics; they are directly anchored in foundational software engineering literature and de facto industry standards:
 
@@ -303,7 +517,7 @@ The strategies and execution boundaries defined in this guide are not ad-hoc heu
 └─────────────────────────┴────────────────────────┴─────────────────────┘
 ```
 
-### 7.1. Martin Fowler: Test Double Taxonomy, Test Pyramids, and Contracts
+### 9.1. Martin Fowler: Test Double Taxonomy, Test Pyramids, and Contracts
 * **[Mocks Aren't Stubs (2007)](https://martinfowler.com/articles/mocksArentStubs.html)**:
   - Fowler, following Gerard Meszaros, categorizes test doubles into **Dummies, Fakes, Stubs, Spies, and Mocks**.
   - Our execution spectrum maps directly to this taxonomy:
@@ -317,7 +531,7 @@ The strategies and execution boundaries defined in this guide are not ad-hoc heu
 * **[Tolerant Reader Pattern (2011)](https://martinfowler.com/bliki/TolerantReader.html)**:
   - WireMock enables testing consumer resilience against schema evolution (e.g. ignoring unknown fields, surviving reordered JSON keys) which in-JVM method mocking completely obscures.
 
-### 7.2. Kent Beck: Fast Feedback Loops and Test Desiderata
+### 9.2. Kent Beck: Fast Feedback Loops and Test Desiderata
 * **[Test-Driven Development: By Example (2002)](https://www.oreilly.com/library/view/test-driven-development/0321146530/)**:
   - Beck's foundational premise is the **rapid feedback loop**: developers write a failing test, write code to pass, and refactor in seconds.
   - If integration testing requires spinning up multi-container Docker environments (Level 4), boot times (15–30s) shatter this rhythm, leading developers to abandon TDD. WireMock (Level 3) restores the sub-second cycle (<20ms boot, in-process execution).
@@ -325,32 +539,32 @@ The strategies and execution boundaries defined in this guide are not ad-hoc heu
   - Beck outlines the core properties of healthy tests: **Fast, Isolated, Deterministic, and Inspiring Confidence**.
   - Driving async workflows from the BDD test runner rather than relying on autonomous simulator clocks preserves Beck's *Determinism* and *Isolation* criteria.
 
-### 7.3. Nat Pryce & Steve Freeman: "Don't Mock What You Don't Own"
+### 9.3. Nat Pryce & Steve Freeman: "Don't Mock What You Don't Own"
 * **[Growing Object-Oriented Software, Guided by Tests (GOOS, 2009)](http://www.growing-object-oriented-software.com/)**:
   - Freeman and Pryce formulated the seminal rule: **"Don't mock types you don't own."**
   - When consumers write Mockito mocks for third-party or upstream APIs, they mock their *assumptions* of how the external API behaves—not its reality. When the upstream API changes, consumer unit tests remain green while production fails.
   - **The Architectural Consequence**: This principle directly justifies why the **Producer must deliver the TestKit and Stub Pack**. If the producer provides the stubbing companion, the consumer tests against types and behaviors maintained and verified by the system's actual owner.
 
-### 7.4. Gerard Meszaros: xUnit Test Patterns
+### 9.4. Gerard Meszaros: xUnit Test Patterns
 * **[xUnit Test Patterns: Refactoring Test Code (2007)](http://xunitpatterns.com/)**:
   - **Configurable Test Double**: WireMock acts as an out-of-process Configurable Test Double capable of simulating various response scenarios.
   - **Self-Shunting & Callback Sensing**: When testing async workflows (Archetype 3), the BDD driver acts as the stimulus agent, matching Meszaros's self-shunting pattern where the test actively orchestrates the collaborators.
   - **Fresh Fixtures vs. Shared Fixtures**: Meszaros warns against shared mutable state causing test leakage. WireMock Extensions addresses this via **Session Isolation (`X-Correlation-Id`)**, partitioning stateful AST models so parallel tests run against fresh, isolated state within the same process.
 
-### 7.5. Michael Feathers: The Wire Seam & Characterization Tests
+### 9.5. Michael Feathers: The Wire Seam & Characterization Tests
 * **[Working Effectively with Legacy Code (2004)](https://www.oreilly.com/library/view/working-effectively-with/0131177052/)**:
   - Feathers defines a **Seam** as *"a place where you can alter behavior in a program without editing in that place."*
   - WireMock operates as an **External Network Seam (Wire Seam)**: by changing the upstream URL or DNS/proxy routing, the System Under Test can be redirected from live backends to recorded simulation stubs without modifying a single line of production code.
   - **Characterization Testing**: When integrating against legacy systems that lack documentation, Feathers advocates capturing existing behavior before refactoring. WireMock's **Live Proxy $\to$ 1-Click Snapshot** workflow is the exact implementation of automated characterization testing over the wire.
 
-### 7.6. Gojko Adzic & Dan North: Specification by Example and BDD
+### 9.6. Gojko Adzic & Dan North: Specification by Example and BDD
 * **[Specification by Example (2011)](https://www.manning.com/books/specification-by-example)** & **Dan North (BDD)**:
   - Tests should express business intent and orchestrate scenarios from a domain perspective.
   - In our **Test-Driven Async Archetype**, Cucumber feature files describe the customer journey explicitly. The test runner drives the timeline, triggering the producer's callback when the scenario dictates, rather than delegating timing to an autonomous mock clock.
 
 ---
 
-## 8. Further Reading & Canonical References
+## 10. Further Reading & Canonical References
 
 1. **Fowler, Martin.** *"Mocks Aren't Stubs."* (2007). [martinfowler.com/articles/mocksArentStubs.html](https://martinfowler.com/articles/mocksArentStubs.html)
 2. **Vocke, Ham, & Fowler, Martin.** *"The Practical Test Pyramid."* (2018). [martinfowler.com/articles/practical-test-pyramid.html](https://martinfowler.com/articles/practical-test-pyramid.html)
