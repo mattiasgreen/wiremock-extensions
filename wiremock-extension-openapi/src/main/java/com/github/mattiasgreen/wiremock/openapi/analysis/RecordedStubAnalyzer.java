@@ -21,7 +21,6 @@ import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
-import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -48,10 +47,23 @@ public class RecordedStubAnalyzer {
     private static final Pattern PATH_PARAM_REGEX = Pattern.compile("\\{([^}]+)}");
     private static final Pattern ISO_DATE_REGEX = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}(T.*)?$");
 
+    public static final Set<String> DEFAULT_PRESERVED_HEADERS =
+            Set.of("content-type", "accept", "x-correlation-id", "x-tenant-id", "x-request-id", "x-api-version");
+
     private final ObjectMapper objectMapper;
+    private final Set<String> preservedHeaders;
 
     public RecordedStubAnalyzer() {
+        this(DEFAULT_PRESERVED_HEADERS);
+    }
+
+    public RecordedStubAnalyzer(Set<String> preservedHeaders) {
         this.objectMapper = new ObjectMapper();
+        this.preservedHeaders = preservedHeaders != null
+                ? preservedHeaders.stream()
+                        .map(h -> h.toLowerCase(Locale.ROOT))
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet())
+                : DEFAULT_PRESERVED_HEADERS;
     }
 
     /**
@@ -169,14 +181,12 @@ public class RecordedStubAnalyzer {
             reqPattern.withQueryParam(qName, WireMock.matching(".+"));
         }
 
-        // Header allow-listing: keep Content-Type, Accept, X-Correlation-Id
+        // Header allow-listing
         if (rawStub.getRequest().getHeaders() != null) {
             for (Map.Entry<String, com.github.tomakehurst.wiremock.matching.MultiValuePattern> entry :
                     rawStub.getRequest().getHeaders().entrySet()) {
                 String headerName = entry.getKey();
-                if (headerName.equalsIgnoreCase("Content-Type")
-                        || headerName.equalsIgnoreCase("Accept")
-                        || headerName.equalsIgnoreCase("X-Correlation-Id")) {
+                if (preservedHeaders.contains(headerName.toLowerCase(Locale.ROOT))) {
                     reqPattern.withHeader(headerName, entry.getValue());
                 }
             }
@@ -195,7 +205,7 @@ public class RecordedStubAnalyzer {
         if (rawStub.getResponse().getHeaders() != null) {
             for (HttpHeader header : rawStub.getResponse().getHeaders().all()) {
                 String name = header.key();
-                if (name.equalsIgnoreCase("Content-Type") || name.equalsIgnoreCase("X-Correlation-Id")) {
+                if (preservedHeaders.contains(name.toLowerCase(Locale.ROOT))) {
                     respDef.withHeader(name, header.firstValue());
                 }
             }
@@ -204,7 +214,8 @@ public class RecordedStubAnalyzer {
         respDef.withTransformers("response-template");
 
         StubMapping generalized = new StubMapping(reqPattern.build(), respDef.build());
-        generalized.setId(rawStub.getId() != null ? rawStub.getId() : UUID.randomUUID());
+        generalized.setId(UUID.randomUUID());
+        generalized.setPriority(1);
         generalized.setName(String.format(
                 Locale.ROOT, "[GENERALIZED %s] %s", analysis.httpMethod(), analysis.openApiPathTemplate()));
         return generalized;
@@ -272,8 +283,18 @@ public class RecordedStubAnalyzer {
     private MatchedStubContext matchStub(
             String method, String rawUrl, Map<String, PathItem> paths, StubMapping stub, OpenAPI openAPI) {
 
-        URI uri = URI.create(rawUrl.startsWith("/") ? rawUrl : "/" + rawUrl);
-        String concretePath = uri.getPath();
+        String concretePath = rawUrl;
+        int qIdx = concretePath.indexOf('?');
+        if (qIdx >= 0) {
+            concretePath = concretePath.substring(0, qIdx);
+        }
+        int hashIdx = concretePath.indexOf('#');
+        if (hashIdx >= 0) {
+            concretePath = concretePath.substring(0, hashIdx);
+        }
+        if (!concretePath.startsWith("/")) {
+            concretePath = "/" + concretePath;
+        }
         Map<String, String> queryParams = extractQueryParams(rawUrl);
 
         for (Map.Entry<String, PathItem> entry : paths.entrySet()) {

@@ -9,7 +9,6 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
-import java.time.LocalDate;
 import java.util.Objects;
 import org.mockito.Mockito;
 
@@ -74,8 +73,6 @@ public final class CrmSimulationTestKit {
         Objects.requireNonNull(profile, "profile must not be null");
 
         if (mode == Mode.MOCKITO) {
-            Mockito.when(mockitoClient.getCustomerKyc(eq(profile.customerId()), any(LocalDate.class)))
-                    .thenReturn(profile);
             Mockito.when(mockitoClient.getCustomerKyc(eq(profile.customerId()), any()))
                     .thenReturn(profile);
         } else {
@@ -83,7 +80,6 @@ public final class CrmSimulationTestKit {
                 String json = objectMapper.writeValueAsString(profile);
                 wireMockServer.stubFor(WireMock.get(WireMock.urlPathTemplate("/api/crm/customers/{customerId}/kyc"))
                         .withPathParam("customerId", WireMock.equalTo(profile.customerId()))
-                        .withQueryParam("asOf", WireMock.matching(".+"))
                         .atPriority(1)
                         .willReturn(WireMock.aResponse()
                                 .withStatus(200)

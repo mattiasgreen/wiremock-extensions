@@ -170,4 +170,59 @@ class RecordedStubAnalyzerTest {
                 .contains("\"asOfDate\":\"{{request.query.asOf.[0]}}\"");
         assertThat(generalized.getResponse().getTransformers()).contains("response-template");
     }
+
+    @Test
+    @DisplayName("Should track unmatched stubs and handle unencoded special characters in URLs gracefully")
+    void shouldTrackUnmatchedStubsAndHandleSpecialCharactersInUrls() {
+        StubMapping unmatchedStub = WireMock.get(WireMock.urlEqualTo("/api/unknown/service?query=[test]|raw"))
+                .willReturn(WireMock.aResponse().withStatus(404))
+                .build();
+        unmatchedStub.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer();
+        RecordedStubAnalysisReport report = analyzer.analyze(CRM_OPENAPI_YAML, List.of(unmatchedStub));
+
+        assertThat(report.operations()).isEmpty();
+        assertThat(report.unmatchedStubUrls()).containsExactly("GET /api/unknown/service?query=[test]|raw");
+    }
+
+    @Test
+    @DisplayName("Should preserve custom corporate routing headers during stub generalization")
+    void shouldPreserveConfiguredCustomHeaders() {
+        StubMapping stubWithHeaders = WireMock.get(WireMock.urlEqualTo("/api/crm/customers/CUST-42/kyc"))
+                .withHeader("X-Tenant-Id", WireMock.equalTo("tenant-nordic"))
+                .withHeader("X-Custom-Auth", WireMock.equalTo("ephemeral-token"))
+                .willReturn(WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withHeader("X-Tenant-Id", "tenant-nordic")
+                        .withHeader("X-Ephemeral-Session", "sess-123")
+                        .withBody("{\"customerId\":\"CUST-42\",\"fullName\":\"Eleanor\"}"))
+                .build();
+        stubWithHeaders.setId(UUID.randomUUID());
+
+        RecordedStubAnalyzer analyzer = new RecordedStubAnalyzer(java.util.Set.of("content-type", "x-tenant-id"));
+        RecordedStubAnalysisReport report = analyzer.analyze(CRM_OPENAPI_YAML, List.of(stubWithHeaders));
+        assertThat(report.operations()).hasSize(1);
+
+        StubMapping generalized =
+                analyzer.generalizeStub(stubWithHeaders, report.operations().getFirst());
+
+        // Keeps X-Tenant-Id and Content-Type, strips ephemeral headers
+        assertThat(generalized.getRequest().getHeaders()).containsKey("X-Tenant-Id");
+        assertThat(generalized.getRequest().getHeaders()).doesNotContainKey("X-Custom-Auth");
+
+        assertThat(generalized
+                        .getResponse()
+                        .getHeaders()
+                        .getHeader("X-Tenant-Id")
+                        .firstValue())
+                .isEqualTo("tenant-nordic");
+        assertThat(generalized
+                        .getResponse()
+                        .getHeaders()
+                        .getHeader("X-Ephemeral-Session")
+                        .isPresent())
+                .isFalse();
+    }
 }

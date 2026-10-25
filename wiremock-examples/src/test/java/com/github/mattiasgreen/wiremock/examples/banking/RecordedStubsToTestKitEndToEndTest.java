@@ -136,19 +136,10 @@ class RecordedStubsToTestKitEndToEndTest {
             assertThat(opAnalysis.distinguishingTraitFields()).containsKey("kycStatus");
             assertThat(opAnalysis.distinguishingTraitFields()).containsKey("segment");
 
-            // Generalize the stub and register it at top priority (1)
+            // Generalize the stub and register it directly on WireMock
             StubMapping generalized = analyzer.generalizeStub(snapshottedStubs.getFirst(), opAnalysis);
             generalized.setPriority(1);
-            wireMock.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
-                            com.github.tomakehurst.wiremock.client.WireMock.urlPathTemplate(
-                                    "/api/crm/customers/{customerId}/kyc"))
-                    .atPriority(1)
-                    .withQueryParam("asOf", com.github.tomakehurst.wiremock.client.WireMock.matching(".+"))
-                    .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
-                            .withStatus(200)
-                            .withHeader("Content-Type", "application/json")
-                            .withBody(generalized.getResponse().getBody())
-                            .withTransformers("response-template")));
+            wireMock.addStubMapping(generalized);
 
             // PROVE: Now unrecorded ID (CUST-777) AND future date (2030-01-01) succeed and echo properly!
             CustomerKycProfile generalizedProfile =
