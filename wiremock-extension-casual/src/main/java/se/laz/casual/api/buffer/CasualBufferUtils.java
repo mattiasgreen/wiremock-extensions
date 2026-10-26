@@ -39,33 +39,35 @@ public final class CasualBufferUtils {
      * points to does not exist.
      */
     public static boolean isFieldTableAvailable() {
-        String envFile = ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE);
-        if (envFile == null || envFile.isBlank()) {
-            envFile = System.getenv("CASUAL_FIELD_TABLE");
-        }
+        String envFile = System.getenv("CASUAL_FIELD_TABLE");
         if (envFile == null || envFile.isBlank()) {
             envFile = System.getProperty("CASUAL_FIELD_TABLE");
         }
         if (envFile != null && !envFile.isBlank()) {
             try {
-                return Files.exists(Path.of(envFile.trim()));
-            } catch (Exception ignored) {
+                if (Files.exists(Path.of(envFile.trim()))) {
+                    ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE, envFile.trim());
+                    return true;
+                }
+                return false;
+            } catch (java.nio.file.InvalidPathException | SecurityException ignored) {
                 return false;
             }
         }
-        try {
-            ClassLoader cl = CasualBufferUtils.class.getClassLoader();
-            if (cl != null && cl.getResource("casual-fields.json") != null) {
-                return true;
+        String conf = ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE);
+        if (conf != null && !conf.isBlank()) {
+            try {
+                return Files.exists(Path.of(conf.trim()));
+            } catch (java.nio.file.InvalidPathException | SecurityException ignored) {
+                return false;
             }
-            ClassLoader ccl = Thread.currentThread().getContextClassLoader();
-            if (ccl != null && ccl.getResource("casual-fields.json") != null) {
-                return true;
-            }
-        } catch (Exception ignored) {
-            return false;
         }
-        return false;
+        ClassLoader cl = CasualBufferUtils.class.getClassLoader();
+        if (cl != null && cl.getResource("casual-fields.json") != null) {
+            return true;
+        }
+        ClassLoader ccl = Thread.currentThread().getContextClassLoader();
+        return ccl != null && ccl.getResource("casual-fields.json") != null;
     }
 
     /**

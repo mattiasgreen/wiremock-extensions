@@ -11,6 +11,13 @@ import se.laz.casual.api.buffer.type.ServiceBuffer;
 
 class CasualBufferUtilsTest {
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        System.clearProperty("CASUAL_FIELD_TABLE");
+        se.laz.casual.config.ConfigurationService.setConfiguration(
+                se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+    }
+
     @Test
     @DisplayName("Should accurately identify JSON buffer types")
     void shouldIdentifyJsonBufferTypes() {
@@ -127,6 +134,7 @@ class CasualBufferUtilsTest {
     @DisplayName("Should detect field table availability accurately for existing vs non-existent files")
     void shouldDetectFieldTableAvailabilityAccurately() throws Exception {
         java.nio.file.Path temp = java.nio.file.Files.createTempFile("test-fields", ".json");
+        temp.toFile().deleteOnExit();
         try {
             System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
             assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
@@ -135,7 +143,79 @@ class CasualBufferUtilsTest {
             assertThat(CasualBufferUtils.isFieldTableAvailable()).isFalse();
         } finally {
             System.clearProperty("CASUAL_FIELD_TABLE");
-            java.nio.file.Files.deleteIfExists(temp);
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should load JsonProvider SPI implementation from casual-json-provider-gson")
+    void shouldLoadJsonProviderSpi() {
+        se.laz.casual.api.external.json.JsonProvider provider =
+                se.laz.casual.api.external.json.JsonProviderFactory.getJsonProvider();
+        assertThat(provider).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should encode and decode fielded calls with structured JSON when field table is configured")
+    void shouldEncodeAndDecodeFieldedCallsWithConfiguredTable() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                {
+                  "name": "FLD_USER_ID",
+                  "id": 1,
+                  "type": "long"
+                },
+                {
+                  "name": "FLD_USER_NAME",
+                  "id": 2,
+                  "type": "string"
+                }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            // Create and encode a real fielded buffer using FieldedTypeBuffer
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer fml =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create();
+            fml.write("FLD_USER_NAME", "Alice");
+            fml.write("FLD_USER_ID", 1001L);
+
+            List<byte[]> encodedBytes = fml.encode();
+            ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", encodedBytes);
+
+            // Extract to human-readable JSON
+            String jsonPayload = CasualBufferUtils.extractPayload(buffer);
+            assertThat(jsonPayload).isNotNull();
+            assertThat(jsonPayload).contains("\"FLD_USER_NAME\":\"Alice\"");
+            assertThat(jsonPayload).contains("\"FLD_USER_ID\":1001");
+
+            // Wrap JSON back into .FIELDED buffer
+            ServiceBuffer wrappedBuffer = CasualBufferUtils.wrapPayload(".FIELDED", jsonPayload);
+            assertThat(wrappedBuffer.getType()).isEqualTo("CFIELD/");
+
+            // Decode wrapped buffer again to verify roundtrip fidelity
+            String reExtracted = CasualBufferUtils.extractPayload(wrappedBuffer);
+            assertThat(reExtracted).contains("\"FLD_USER_NAME\":\"Alice\"");
+            assertThat(reExtracted).contains("\"FLD_USER_ID\":1001");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
         }
     }
 }

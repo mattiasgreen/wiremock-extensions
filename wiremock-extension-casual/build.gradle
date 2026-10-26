@@ -16,6 +16,7 @@ dependencies {
     api libs.casual.api
     api libs.casual.network
     api libs.casual.network.protocol
+    api libs.casual.json.provider.gson
     implementation libs.netty.all
     implementation libs.jackson.databind
     testImplementation 'jakarta.enterprise.concurrent:jakarta.enterprise.concurrent-api:3.0.3'
