@@ -101,6 +101,7 @@ export const elements = {
   importViewBundle: document.getElementById('import-view-bundle'),
   importViewAnalyze: document.getElementById('import-view-analyze'),
   analyzeSpecContent: document.getElementById('analyze-spec-content'),
+  btnLoadSampleSpec: document.getElementById('btn-load-sample-spec'),
   analyzeTargetProject: document.getElementById('analyze-target-project'),
   btnRunStubAnalysis: document.getElementById('btn-run-stub-analysis'),
   analyzeFeedback: document.getElementById('analyze-feedback'),

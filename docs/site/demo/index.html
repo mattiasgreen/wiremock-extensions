@@ -696,7 +696,10 @@
             <p class="modal-description">Analyze brittle recorded stubs against an OpenAPI specification to identify parameter echoes, temporal request locks, and stateful mutations, then automatically generalize them into dynamic Handlebars simulation stubs.</p>
 
             <div class="form-group" style="margin-top: 10px;">
-              <label for="analyze-spec-content">OpenAPI 3.0 / 3.1 Specification (YAML or JSON):</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label for="analyze-spec-content">OpenAPI 3.0 / 3.1 Specification (YAML or JSON):</label>
+                <button type="button" id="btn-load-sample-spec" data-testid="btn-load-sample-spec" class="btn btn-tiny btn-secondary" title="Load sample Banking CRM OpenAPI spec">📋 Load Sample Spec</button>
+              </div>
               <textarea id="analyze-spec-content" class="code-input" rows="7" placeholder="Paste OpenAPI YAML or JSON specification here..."></textarea>
             </div>
 

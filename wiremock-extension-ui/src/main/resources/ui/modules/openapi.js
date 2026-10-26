@@ -261,6 +261,102 @@ export function setupOpenApiModal() {
     elements.btnCancelAnalyze.addEventListener('click', closeModal);
   }
 
+  const SAMPLE_BANKING_SPEC = `openapi: 3.0.3
+info:
+  title: Banking CRM Service
+  version: 1.0.0
+  description: Core CRM, KYC verification, and risk assessment service
+paths:
+  /api/crm/customers/{customerId}/kyc:
+    get:
+      operationId: getCustomerKyc
+      summary: Retrieve customer KYC and risk profile
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Customer KYC details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerKycProfile'
+    patch:
+      operationId: updateCustomerKyc
+      summary: Update customer KYC verification status and risk tier
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kycStatus:
+                  type: string
+                riskTier:
+                  type: string
+      responses:
+        '200':
+          description: Updated KYC profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerKycProfile'
+
+components:
+  schemas:
+    CustomerKycProfile:
+      type: object
+      required:
+        - customerId
+        - fullName
+        - kycStatus
+        - riskTier
+      properties:
+        customerId:
+          type: string
+        fullName:
+          type: string
+        kycStatus:
+          type: string
+        riskTier:
+          type: string
+        segment:
+          type: string
+        onboardedDate:
+          type: string
+          format: date
+        asOfDate:
+          type: string
+          format: date
+        processedBy:
+          type: string
+`;
+
+  if (elements.btnLoadSampleSpec) {
+    elements.btnLoadSampleSpec.addEventListener('click', () => {
+      if (elements.analyzeSpecContent) {
+        elements.analyzeSpecContent.value = SAMPLE_BANKING_SPEC;
+        clearAnalyzeFeedback();
+      }
+    });
+  }
+
   // Analyze & Generalize Stubs Logic
   if (elements.btnRunStubAnalysis) {
     elements.btnRunStubAnalysis.addEventListener('click', async () => {
