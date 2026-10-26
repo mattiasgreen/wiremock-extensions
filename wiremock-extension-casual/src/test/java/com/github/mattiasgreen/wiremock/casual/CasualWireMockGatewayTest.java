@@ -1434,4 +1434,82 @@ class CasualWireMockGatewayTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("Should stub fielded service call with offline mock returning valid binary CFIELD buffer")
+    void shouldStubFieldedServiceCallWithOfflineMockReturningValidCfieldBuffer() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_USER_NAME", "id": 2, "type": "string" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-gateway-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            String binaryPayloadB64 =
+                    Base64.getEncoder().encodeToString("{\"caseId\":\"12356\"}".getBytes(StandardCharsets.UTF_8));
+            String responseJson = String.format(
+                    java.util.Locale.ROOT,
+                    """
+                    {
+                      "FLD_USER_ID": 1001,
+                      "FLD_USER_NAME": "Alice",
+                      "FLD_ARCHIVE_DATA": "%s"
+                    }
+                    """,
+                    binaryPayloadB64);
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/crmArchiveService"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withHeader("X-Casual-Buffer-Type", "CFIELD/")
+                            .withBody(responseJson)));
+
+            ServiceBuffer requestBuffer = ServiceBuffer.of(".FIELDED", List.of(new byte[] {
+                0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x03, (byte) 0xE9, // FLD_USER_ID
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, (byte) 0xE9
+            }));
+
+            CasualServiceCallReplyMessage reply = client.tpcall("crmArchiveService", requestBuffer);
+
+            assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+            assertThat(reply.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+
+            // Verify the response bytes are valid binary FML, NOT raw JSON ASCII
+            byte[] rawBytes = CasualBufferUtils.toByteArray(reply.getServiceBuffer());
+            String asciiPrefix = new String(rawBytes, StandardCharsets.UTF_8);
+            assertThat(asciiPrefix).doesNotStartWith("{");
+
+            // Verify decoding via FieldedTypeBuffer succeeds without throwing CasualFieldedLookupException
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer decoded =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create(
+                            reply.getServiceBuffer().getBytes());
+            assertThat(decoded.read("FLD_USER_ID").getData()).isEqualTo(1001L);
+            assertThat(decoded.read("FLD_USER_NAME").getData()).isEqualTo("Alice");
+
+            byte[] decodedBinary = (byte[]) decoded.read("FLD_ARCHIVE_DATA").getData();
+            assertThat(new String(decodedBinary, StandardCharsets.UTF_8)).isEqualTo("{\"caseId\":\"12356\"}");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
 }

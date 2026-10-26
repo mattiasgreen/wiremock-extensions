@@ -405,11 +405,11 @@ public class UiModuleUnitTest {
 
                 // 4. Nested object matching enterprise Casual/Tuxedo FML payload
                 const enterpriseFml = {
-                    ACME_CORP_HEADER_SOURCE_MACHINE: "SOME_MACHINE",
-                    ACME_CORP_HEADER_SOURCE_USERNAME: "98877",
-                    ACME_CORP_HEADER_SOURCE_FLAG: 1,
-                    FML_ARCHIVE_JSON: "eyJjYXNlSWQiOiIxMjM1NiJ9",
-                    FML_ARCHIVE_TYPE: 5
+                    CRM_HEADER_SOURCE_MACHINE: "GATEWAY_SRV_01",
+                    CRM_HEADER_SOURCE_USERNAME: "crm_agent_12",
+                    CRM_HEADER_SOURCE_FLAG: 1,
+                    CRM_ARCHIVE_PAYLOAD: "eyJjYXNlSWQiOiIxMjM1NiJ9",
+                    CRM_ARCHIVE_TYPE: 5
                 };
                 const deepResult = deepDecodeBase64InObject(enterpriseFml);
 
@@ -428,10 +428,10 @@ public class UiModuleUnitTest {
                     nonJsonDecodedIsNull: nonJsonDecoded === null,
                     invalidB64IsNull: invalidB64 === null,
                     deepModified: deepResult.modified,
-                    deepArchiveCaseId: deepResult.decoded.FML_ARCHIVE_JSON ? deepResult.decoded.FML_ARCHIVE_JSON.caseId : null,
-                    deepMachineUnchanged: deepResult.decoded.ACME_CORP_HEADER_SOURCE_MACHINE,
+                    deepArchiveCaseId: deepResult.decoded.CRM_ARCHIVE_PAYLOAD ? deepResult.decoded.CRM_ARCHIVE_PAYLOAD.caseId : null,
+                    deepMachineUnchanged: deepResult.decoded.CRM_HEADER_SOURCE_MACHINE,
                     payloadHasBase64: payloadResult.hasBase64,
-                    payloadDecodedCaseId: payloadResult.decoded.FML_ARCHIVE_JSON ? payloadResult.decoded.FML_ARCHIVE_JSON.caseId : null,
+                    payloadDecodedCaseId: payloadResult.decoded.CRM_ARCHIVE_PAYLOAD ? payloadResult.decoded.CRM_ARCHIVE_PAYLOAD.caseId : null,
                     directPayloadHasBase64: directPayloadResult.hasBase64,
                     directPayloadCaseId: directPayloadResult.decoded ? directPayloadResult.decoded.caseId : null,
                     plainHasBase64: plainPayloadResult.hasBase64
@@ -448,7 +448,7 @@ public class UiModuleUnitTest {
         assertThat(result.get("invalidB64IsNull")).isEqualTo(true);
         assertThat(result.get("deepModified")).isEqualTo(true);
         assertThat(result.get("deepArchiveCaseId")).isEqualTo("12356");
-        assertThat(result.get("deepMachineUnchanged")).isEqualTo("SOME_MACHINE");
+        assertThat(result.get("deepMachineUnchanged")).isEqualTo("GATEWAY_SRV_01");
         assertThat(result.get("payloadHasBase64")).isEqualTo(true);
         assertThat(result.get("payloadDecodedCaseId")).isEqualTo("12356");
         assertThat(result.get("directPayloadHasBase64")).isEqualTo(true);
@@ -467,11 +467,11 @@ public class UiModuleUnitTest {
 
                 // Set up a mock journal entry with Casual FML payload containing Base64 JSON
                 const fmlPayload = JSON.stringify({
-                    ACME_CORP_HEADER_SOURCE_MACHINE: "SOME_MACHINE",
-                    ACME_CORP_HEADER_SOURCE_USERNAME: "98877",
-                    ACME_CORP_HEADER_SOURCE_FLAG: 1,
-                    FML_ARCHIVE_JSON: "eyJjYXNlSWQiOiIxMjM1NiJ9",
-                    FML_ARCHIVE_TYPE: 5
+                    CRM_HEADER_SOURCE_MACHINE: "GATEWAY_SRV_01",
+                    CRM_HEADER_SOURCE_USERNAME: "crm_agent_12",
+                    CRM_HEADER_SOURCE_FLAG: 1,
+                    CRM_ARCHIVE_PAYLOAD: "eyJjYXNlSWQiOiIxMjM1NiJ9",
+                    CRM_ARCHIVE_TYPE: 5
                 }, null, 2);
 
                 state.currentRequests = [{
@@ -479,10 +479,10 @@ public class UiModuleUnitTest {
                     wasMatched: true,
                     request: {
                         method: "POST",
-                        url: "/__casual/services/ACME_ARCHIVE_SVC",
+                        url: "/__casual/services/crm_archive_service",
                         headers: {
                             "Content-Type": "application/json",
-                            "x-casual-service": "ACME_ARCHIVE_SVC"
+                            "x-casual-service": "crm_archive_service"
                         },
                         body: fmlPayload,
                         loggedDate: Date.now()
@@ -491,7 +491,7 @@ public class UiModuleUnitTest {
                         status: 200,
                         headers: {
                             "Content-Type": "application/json",
-                            "x-casual-service": "ACME_ARCHIVE_SVC"
+                            "x-casual-service": "crm_archive_service"
                         },
                         body: fmlPayload
                     }

@@ -166,16 +166,15 @@ class CasualBufferUtilsTest {
             {
               "base": 1000,
               "fields": [
-                {
-                  "name": "FLD_USER_ID",
-                  "id": 1,
-                  "type": "long"
-                },
-                {
-                  "name": "FLD_USER_NAME",
-                  "id": 2,
-                  "type": "string"
-                }
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_USER_NAME", "id": 2, "type": "string" },
+                { "name": "FLD_CRM_CUSTOMER_ID", "id": 3, "type": "long" },
+                { "name": "FLD_CRM_CUSTOMER_NAME", "id": 4, "type": "string" },
+                { "name": "FLD_CRM_STATUS_FLAG", "id": 5, "type": "short" },
+                { "name": "FLD_BILLING_AMOUNT", "id": 6, "type": "double" },
+                { "name": "FLD_BILLING_DISCOUNT", "id": 7, "type": "float" },
+                { "name": "FLD_BILLING_CURRENCY_CODE", "id": 8, "type": "char" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
               ]
             }
           ]
@@ -212,6 +211,90 @@ class CasualBufferUtilsTest {
             String reExtracted = CasualBufferUtils.extractPayload(wrappedBuffer);
             assertThat(reExtracted).contains("\"FLD_USER_NAME\":\"Alice\"");
             assertThat(reExtracted).contains("\"FLD_USER_ID\":1001");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should encode fielded buffer with binary, numeric, and string fields from generic JSON")
+    void shouldEncodeFieldedBufferWithBinaryAndNumericFieldsFromGenericJson() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_USER_NAME", "id": 2, "type": "string" },
+                { "name": "FLD_CRM_CUSTOMER_ID", "id": 3, "type": "long" },
+                { "name": "FLD_CRM_CUSTOMER_NAME", "id": 4, "type": "string" },
+                { "name": "FLD_CRM_STATUS_FLAG", "id": 5, "type": "short" },
+                { "name": "FLD_BILLING_AMOUNT", "id": 6, "type": "double" },
+                { "name": "FLD_BILLING_DISCOUNT", "id": 7, "type": "float" },
+                { "name": "FLD_BILLING_CURRENCY_CODE", "id": 8, "type": "char" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-crm-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            String binaryPayloadB64 = Base64.getEncoder()
+                    .encodeToString("{\"caseId\":\"12356\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String jsonInput = String.format(
+                    java.util.Locale.ROOT,
+                    """
+                    {
+                      "FLD_CRM_CUSTOMER_ID": 54321,
+                      "FLD_CRM_CUSTOMER_NAME": "Acme Partner",
+                      "FLD_CRM_STATUS_FLAG": 1,
+                      "FLD_BILLING_AMOUNT": 199.95,
+                      "FLD_BILLING_DISCOUNT": 0.15,
+                      "FLD_BILLING_CURRENCY_CODE": "E",
+                      "FLD_ARCHIVE_DATA": "%s",
+                      "UNKNOWN_EXTRA_FIELD": "ignored_gracefully"
+                    }
+                    """,
+                    binaryPayloadB64);
+
+            ServiceBuffer wrappedBuffer = CasualBufferUtils.wrapPayload(".FIELDED", jsonInput);
+            assertThat(wrappedBuffer.getType()).isEqualTo("CFIELD/");
+
+            // Must NOT return raw JSON string bytes in a CFIELD buffer
+            byte[] rawBufferBytes = CasualBufferUtils.toByteArray(wrappedBuffer);
+            String asAscii = new String(rawBufferBytes, java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(asAscii).doesNotStartWith("{");
+
+            // Must decode cleanly via Casual's FieldedTypeBufferDecoder without throwing "field with real id does not
+            // exist"
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer decoded =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create(wrappedBuffer.getBytes());
+            assertThat(decoded.read("FLD_CRM_CUSTOMER_ID").getData()).isEqualTo(54321L);
+            assertThat(decoded.read("FLD_CRM_CUSTOMER_NAME").getData()).isEqualTo("Acme Partner");
+            assertThat(decoded.read("FLD_CRM_STATUS_FLAG").getData()).isEqualTo((short) 1);
+            assertThat(decoded.read("FLD_BILLING_CURRENCY_CODE").getData()).isEqualTo('E');
+
+            byte[] decodedBinary = (byte[]) decoded.read("FLD_ARCHIVE_DATA").getData();
+            assertThat(new String(decodedBinary, java.nio.charset.StandardCharsets.UTF_8))
+                    .isEqualTo("{\"caseId\":\"12356\"}");
+
+            // Extract back to JSON and verify round-trip
+            String reExtracted = CasualBufferUtils.extractPayload(wrappedBuffer);
+            assertThat(reExtracted).contains("\"FLD_CRM_CUSTOMER_ID\":54321");
+            assertThat(reExtracted).contains("\"FLD_CRM_CUSTOMER_NAME\":\"Acme Partner\"");
+            assertThat(reExtracted).contains("\"FLD_CRM_STATUS_FLAG\":1");
+            assertThat(reExtracted).contains("\"FLD_ARCHIVE_DATA\":\"" + binaryPayloadB64 + "\"");
         } finally {
             System.clearProperty("CASUAL_FIELD_TABLE");
             se.laz.casual.config.ConfigurationService.setConfiguration(

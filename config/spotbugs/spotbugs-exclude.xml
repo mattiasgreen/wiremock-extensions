@@ -47,4 +47,10 @@
         <Class name="com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway"/>
         <Bug pattern="CRLF_INJECTION_LOGS"/>
     </Match>
+
+    <!-- Exclude reflection setAccessible for dynamic field table reloading in casual extension -->
+    <Match>
+        <Class name="se.laz.casual.api.buffer.CasualBufferUtils"/>
+        <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED"/>
+    </Match>
 </FindBugsFilter>
