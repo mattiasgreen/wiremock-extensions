@@ -36,10 +36,10 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 ![OpenAPI Spec Import & End-to-End Workflow Demo](../docs/images/demo-openapi-import.gif)
 
-- **Stub Explorer, Lifecycle & Ad-Hoc Creation**:
+- **Stub Explorer, Dual-Mode Editor & Lifecycle**:
   - Filter stubs instantly by HTTP method, URL pattern, stub name, project, or lifecycle state.
   - Create brand new stubs from scratch via `➕ New` without needing an OpenAPI spec or bundle.
-  - Interactive editor modal to edit, duplicate, or inspect stub definitions with JSON formatting.
+  - **Dual-Mode Stub Editor**: Seamlessly toggle between **Form Mode** and full-fidelity **Raw JSON Mode** (`#btn-editor-mode-json`) with live roundtrip synchronization, syntax error diagnostics, and formatted indentation.
   - Seamless lifecycle management: edit both active and disabled stubs safely with zero 404 errors.
   - View full JSON mapping definitions with syntax highlighting (keys, strings, numbers, booleans, null, punctuation).
   - One-click copy for JSON stubs and generated `curl` commands.
@@ -53,9 +53,11 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 ![Stubs and HTTP Tester Demo](../docs/images/demo-stubs-and-tester.gif)
 
-- **Request Journal Viewer**:
-  - Search and filter recorded requests by method, URL, or matching status.
+- **Request Journal Viewer & Snapshot Recording**:
+  - Search and filter recorded requests by method, URL, or matching status (`PROXIED`, `STUB`, `STATEFUL`, `UNMATCHED`).
   - Expandable inline inspector showing request headers/body and corresponding response definition.
+  - **Inline Base64-Decoded JSON Inspection**: Automatically detects Base64-encoded JSON in request and response payloads, providing interactive `[Raw]` / `[Decoded]` view toggle pills.
+  - **1-Click Exact-Match Snapshotting**: Save proxied requests as static offline stubs (`📸 Snapshot Stub`) with exact request body matching (`equalToJson`, `equalTo`, `binaryEqualTo`), preventing collision when multiple requests target the same endpoint.
   - Highlights matched vs. unmatched status with visual badges.
   - Dedicated localized toolbar actions to refresh or clear the journal log.
 
@@ -91,7 +93,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.6.0'
 ```
 
 **Maven**:
@@ -99,7 +101,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-ui</artifactId>
-    <version>1.2.0</version>
+    <version>1.6.0</version>
 </dependency>
 ```
 
@@ -108,7 +110,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.2.0'
 Add the JAR to the classpath:
 
 ```bash
-java -cp "wiremock-extension-ui-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-ui-1.6.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080
 ```

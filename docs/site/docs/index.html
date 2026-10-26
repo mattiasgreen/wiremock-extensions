@@ -184,9 +184,10 @@ testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-
             An embedded, zero-dependency web dashboard served natively under <code>http://localhost:8080/__admin/ui/</code>.
           </p>
           <ul style="margin: 0.75rem 0 1rem 1.25rem;">
-            <li><strong>Stubs Explorer</strong>: Fuzzy search by URL path, HTTP method, stub name, or tag. Filter by Active, Disabled, and Dynamic stubs.</li>
+            <li><strong>Stubs Explorer &amp; Dual-Mode Editor</strong>: Fuzzy search by URL path, HTTP method, stub name, or tag. Create and edit stubs using either the structured <strong>Form Mode</strong> or the full-featured <strong>Raw JSON Mode</strong> with live roundtrip synchronization, syntax validation, and formatted JSON indentation.</li>
             <li><strong>Scenario DAG Visualizer</strong>: Renders complex multi-step scenario transitions as interactive directed acyclic graphs with reset controls.</li>
-            <li><strong>Request Journal</strong>: Inspect captured requests with payload diffs, match explanations, and one-click cURL export.</li>
+            <li><strong>Request Journal</strong>: Inspect captured requests with payload diffs, match explanations, inline Base64 JSON decoding (<code>[Raw]</code> / <code>[Decoded]</code> toggles), and one-click cURL export.</li>
+            <li><strong>Snapshot Recording</strong>: Snapshot authentic proxied requests directly into offline static stubs with exact request body matching (<code>equalToJson</code>, <code>equalTo</code>, <code>binaryEqualTo</code>) to prevent collisions.</li>
             <li><strong>HTTP Tester</strong>: Execute test requests against stubs with real-time response rendering and execution timers.</li>
           </ul>
           <p>
