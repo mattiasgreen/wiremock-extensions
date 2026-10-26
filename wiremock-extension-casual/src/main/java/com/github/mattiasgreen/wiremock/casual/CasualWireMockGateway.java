@@ -180,6 +180,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
     }
 
     public synchronized void start() throws InterruptedException {
+        CasualBufferUtils.ensureCasualFieldTableInitialized();
         server = CasualServer.builder()
                 .port(port)
                 .domainId(domainId)

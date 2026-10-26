@@ -98,4 +98,22 @@ class CasualBufferUtilsTest {
 
         assertThat(dump).contains("01 02 AA BB");
     }
+
+    @Test
+    @DisplayName("Should gracefully handle fielded buffer extraction without ExceptionInInitializerError")
+    void shouldGracefullyHandleFieldedBufferExtractionWithoutError() {
+        // Construct a realistic 16-byte buffer with 8 bytes field id and 8 bytes length
+        byte[] realisticFielded = new byte[] {
+            0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x01, // 8-byte field ID
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, // 8-byte size
+            0x10, 0x20, 0x30, 0x40 // payload data
+        };
+        ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", List.of(realisticFielded));
+
+        // Must not throw ExceptionInInitializerError: NullPointerException: Could not find resource: casual-fields.json
+        String extracted = CasualBufferUtils.extractPayload(buffer);
+        assertThat(extracted).isNotNull();
+        // Since the field ID is unmapped in the default empty table, it cleanly falls back to Base64
+        assertThat(extracted).isEqualTo(Base64.getEncoder().encodeToString(realisticFielded));
+    }
 }

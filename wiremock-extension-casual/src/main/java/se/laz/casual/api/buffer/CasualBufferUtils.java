@@ -3,6 +3,8 @@ package se.laz.casual.api.buffer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -13,6 +15,8 @@ import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.buffer.type.fielded.FieldedData;
 import se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer;
+import se.laz.casual.config.ConfigurationOptions;
+import se.laz.casual.config.ConfigurationService;
 
 /**
  * Utility functions for Casual buffers, including text/JSON extraction, human-readable
@@ -25,7 +29,56 @@ public final class CasualBufferUtils {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    static {
+        ensureCasualFieldTableInitialized();
+    }
+
     private CasualBufferUtils() {}
+
+    /**
+     * Ensures that a valid Casual fielded definition table is configured in
+     * {@link ConfigurationService} so that {@code CasualFieldedLookup} does not fail
+     * with {@link ExceptionInInitializerError} if no external JSON table was provided.
+     */
+    public static synchronized void ensureCasualFieldTableInitialized() {
+        try {
+            if (ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE) != null) {
+                return;
+            }
+            String envVal = System.getenv("CASUAL_FIELD_TABLE");
+            if (envVal != null && !envVal.isBlank() && Files.exists(Path.of(envVal.trim()))) {
+                ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE, envVal.trim());
+                return;
+            }
+            String sysProp = System.getProperty("CASUAL_FIELD_TABLE");
+            if (sysProp != null && !sysProp.isBlank() && Files.exists(Path.of(sysProp.trim()))) {
+                ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE, sysProp.trim());
+                return;
+            }
+            Path localFile = Path.of("casual-fields.json");
+            if (Files.exists(localFile)) {
+                ConfigurationService.setConfiguration(
+                        ConfigurationOptions.CASUAL_FIELD_TABLE,
+                        localFile.toAbsolutePath().toString());
+                return;
+            }
+            Path configDirFile = Path.of("config", "casual-fields.json");
+            if (Files.exists(configDirFile)) {
+                ConfigurationService.setConfiguration(
+                        ConfigurationOptions.CASUAL_FIELD_TABLE,
+                        configDirFile.toAbsolutePath().toString());
+                return;
+            }
+            Path tempFile = Files.createTempFile("casual-fields-default", ".json");
+            tempFile.toFile().deleteOnExit();
+            Files.writeString(tempFile, "{\"groups\":[]}", StandardCharsets.UTF_8);
+            ConfigurationService.setConfiguration(
+                    ConfigurationOptions.CASUAL_FIELD_TABLE,
+                    tempFile.toAbsolutePath().toString());
+        } catch (Throwable ignored) {
+            // Best effort; extractPayload and wrapPayload safely catch any remaining LinkageError/Throwable
+        }
+    }
 
     /**
      * Determines whether the specified buffer type represents JSON.
@@ -139,8 +192,8 @@ public final class CasualBufferUtils {
                     }
                     return OBJECT_MAPPER.writeValueAsString(jsonMap);
                 }
-            } catch (com.fasterxml.jackson.core.JsonProcessingException | RuntimeException ignored) {
-                // Fall back to Base64 if not in CasualFieldedLookup or raw FML decode fails
+            } catch (Throwable ignored) {
+                // Fall back to Base64 if not in CasualFieldedLookup, missing field table, or raw FML decode fails
             }
         }
         return Base64.getEncoder().encodeToString(toByteArray(buffer));
@@ -181,7 +234,7 @@ public final class CasualBufferUtils {
                         }
                     }
                     return ServiceBuffer.of("CFIELD/", fielded.encode());
-                } catch (com.fasterxml.jackson.core.JsonProcessingException | RuntimeException ignored) {
+                } catch (Throwable ignored) {
                     // Fall back to Base64 decode below if JSON mapping or field write fails
                 }
             }
