@@ -382,4 +382,181 @@ public class UiModuleUnitTest {
         assertThat(dynamicCurl).contains("\"pathPattern\": \"/api/cases\"");
         assertThat(dynamicCurl).endsWith("\nEOF");
     }
+
+    @Test
+    @DisplayName("base64: Decoding Base64 strings to UTF-8 and JSON detection")
+    void testBase64DecodingUtilities() {
+        String script =
+                """
+            async () => {
+                const { decodeBase64ToUtf8, tryDecodeBase64Json, deepDecodeBase64InObject, decodeBase64Payload } = await import('./modules/base64.js');
+
+                // 1. Direct Base64 UTF-8 string
+                const simpleJsonB64 = btoa('{"caseId":"12356"}');
+                const decodedUtf8 = decodeBase64ToUtf8(simpleJsonB64);
+                const decodedJson = tryDecodeBase64Json(simpleJsonB64);
+
+                // 2. Non-JSON string
+                const nonJsonB64 = btoa("Hello World!");
+                const nonJsonDecoded = tryDecodeBase64Json(nonJsonB64);
+
+                // 3. Invalid Base64
+                const invalidB64 = decodeBase64ToUtf8("not_base64_???");
+
+                // 4. Nested object matching enterprise Casual/Tuxedo FML payload
+                const enterpriseFml = {
+                    ACME_CORP_HEADER_SOURCE_MACHINE: "SOME_MACHINE",
+                    ACME_CORP_HEADER_SOURCE_USERNAME: "98877",
+                    ACME_CORP_HEADER_SOURCE_FLAG: 1,
+                    FML_ARCHIVE_JSON: "eyJjYXNlSWQiOiIxMjM1NiJ9",
+                    FML_ARCHIVE_TYPE: 5
+                };
+                const deepResult = deepDecodeBase64InObject(enterpriseFml);
+
+                // 5. decodeBase64Payload with JSON string
+                const payloadResult = decodeBase64Payload(JSON.stringify(enterpriseFml));
+
+                // 6. decodeBase64Payload with direct Base64 string
+                const directPayloadResult = decodeBase64Payload(simpleJsonB64);
+
+                // 7. Plain JSON without Base64
+                const plainPayloadResult = decodeBase64Payload('{"foo": "bar", "num": 42}');
+
+                return {
+                    decodedUtf8,
+                    decodedJsonCaseId: decodedJson ? decodedJson.caseId : null,
+                    nonJsonDecodedIsNull: nonJsonDecoded === null,
+                    invalidB64IsNull: invalidB64 === null,
+                    deepModified: deepResult.modified,
+                    deepArchiveCaseId: deepResult.decoded.FML_ARCHIVE_JSON ? deepResult.decoded.FML_ARCHIVE_JSON.caseId : null,
+                    deepMachineUnchanged: deepResult.decoded.ACME_CORP_HEADER_SOURCE_MACHINE,
+                    payloadHasBase64: payloadResult.hasBase64,
+                    payloadDecodedCaseId: payloadResult.decoded.FML_ARCHIVE_JSON ? payloadResult.decoded.FML_ARCHIVE_JSON.caseId : null,
+                    directPayloadHasBase64: directPayloadResult.hasBase64,
+                    directPayloadCaseId: directPayloadResult.decoded ? directPayloadResult.decoded.caseId : null,
+                    plainHasBase64: plainPayloadResult.hasBase64
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("decodedUtf8")).isEqualTo("{\"caseId\":\"12356\"}");
+        assertThat(result.get("decodedJsonCaseId")).isEqualTo("12356");
+        assertThat(result.get("nonJsonDecodedIsNull")).isEqualTo(true);
+        assertThat(result.get("invalidB64IsNull")).isEqualTo(true);
+        assertThat(result.get("deepModified")).isEqualTo(true);
+        assertThat(result.get("deepArchiveCaseId")).isEqualTo("12356");
+        assertThat(result.get("deepMachineUnchanged")).isEqualTo("SOME_MACHINE");
+        assertThat(result.get("payloadHasBase64")).isEqualTo(true);
+        assertThat(result.get("payloadDecodedCaseId")).isEqualTo("12356");
+        assertThat(result.get("directPayloadHasBase64")).isEqualTo(true);
+        assertThat(result.get("directPayloadCaseId")).isEqualTo("12356");
+        assertThat(result.get("plainHasBase64")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("journal: Base64 JSON toggle and dual raw/decoded view in journal row")
+    void testJournalBase64DecodedView() {
+        String script =
+                """
+            async () => {
+                const { state } = await import('./modules/state.js');
+                const { renderJournal } = await import('./modules/journal.js');
+
+                // Set up a mock journal entry with Casual FML payload containing Base64 JSON
+                const fmlPayload = JSON.stringify({
+                    ACME_CORP_HEADER_SOURCE_MACHINE: "SOME_MACHINE",
+                    ACME_CORP_HEADER_SOURCE_USERNAME: "98877",
+                    ACME_CORP_HEADER_SOURCE_FLAG: 1,
+                    FML_ARCHIVE_JSON: "eyJjYXNlSWQiOiIxMjM1NiJ9",
+                    FML_ARCHIVE_TYPE: 5
+                }, null, 2);
+
+                state.currentRequests = [{
+                    id: "req-casual-b64-1",
+                    wasMatched: true,
+                    request: {
+                        method: "POST",
+                        url: "/__casual/services/ACME_ARCHIVE_SVC",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "x-casual-service": "ACME_ARCHIVE_SVC"
+                        },
+                        body: fmlPayload,
+                        loggedDate: Date.now()
+                    },
+                    response: {
+                        status: 200,
+                        headers: {
+                            "Content-Type": "application/json",
+                            "x-casual-service": "ACME_ARCHIVE_SVC"
+                        },
+                        body: fmlPayload
+                    }
+                }];
+                state.expandedRequestId = "req-casual-b64-1";
+
+                renderJournal();
+
+                const detailRow = document.querySelector('[data-request-id="req-casual-b64-1"].journal-detail-row');
+                if (!detailRow) return { error: "Detail row not rendered" };
+
+                const b64Badges = detailRow.querySelectorAll('[data-testid="b64-badge"]');
+                const rawButtons = detailRow.querySelectorAll('[data-testid="btn-b64-raw"]');
+                const decodedButtons = detailRow.querySelectorAll('[data-testid="btn-b64-decoded"]');
+                const decodedBlocks = detailRow.querySelectorAll('[data-testid="journal-body-decoded"]');
+                const rawBlocks = detailRow.querySelectorAll('[data-testid="journal-body-raw"]');
+
+                const decodedText = decodedBlocks.length > 0 ? decodedBlocks[0].textContent : "";
+                const rawText = rawBlocks.length > 0 ? rawBlocks[0].textContent : "";
+
+                // Click 'Raw' button to test toggle
+                if (rawButtons.length > 0) {
+                    rawButtons[0].click();
+                }
+                const rawHiddenAfterClick = rawBlocks.length > 0 ? rawBlocks[0].classList.contains('hidden') : null;
+                const decodedHiddenAfterClick = decodedBlocks.length > 0 ? decodedBlocks[0].classList.contains('hidden') : null;
+
+                // Click 'Decoded' button to test toggle back
+                if (decodedButtons.length > 0) {
+                    decodedButtons[0].click();
+                }
+                const rawHiddenAfterSecondClick = rawBlocks.length > 0 ? rawBlocks[0].classList.contains('hidden') : null;
+                const decodedHiddenAfterSecondClick = decodedBlocks.length > 0 ? decodedBlocks[0].classList.contains('hidden') : null;
+
+                return {
+                    badgeCount: b64Badges.length,
+                    rawButtonCount: rawButtons.length,
+                    decodedButtonCount: decodedButtons.length,
+                    decodedTextContainsCaseId: decodedText.includes("12356"),
+                    rawTextContainsBase64: rawText.includes("eyJjYXNlSWQiOiIxMjM1NiJ9"),
+                    rawHiddenAfterClick,
+                    decodedHiddenAfterClick,
+                    rawHiddenAfterSecondClick,
+                    decodedHiddenAfterSecondClick
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("error")).isNull();
+        // Both request and response cards have Base64 JSON detected -> 2 badges, 2 button pairs
+        assertThat(result.get("badgeCount")).isEqualTo(2);
+        assertThat(result.get("rawButtonCount")).isEqualTo(2);
+        assertThat(result.get("decodedButtonCount")).isEqualTo(2);
+        assertThat(result.get("decodedTextContainsCaseId")).isEqualTo(true);
+        assertThat(result.get("rawTextContainsBase64")).isEqualTo(true);
+
+        // After clicking Raw: raw is visible (not hidden), decoded is hidden
+        assertThat(result.get("rawHiddenAfterClick")).isEqualTo(false);
+        assertThat(result.get("decodedHiddenAfterClick")).isEqualTo(true);
+
+        // After clicking Decoded: raw is hidden, decoded is visible
+        assertThat(result.get("rawHiddenAfterSecondClick")).isEqualTo(true);
+        assertThat(result.get("decodedHiddenAfterSecondClick")).isEqualTo(false);
+    }
 }

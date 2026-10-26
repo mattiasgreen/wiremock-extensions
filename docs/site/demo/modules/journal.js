@@ -5,6 +5,7 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
+import { decodeBase64Payload } from './base64.js';
 import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
@@ -157,12 +158,17 @@ function buildRowHtml(req) {
 
   if (isExpanded) {
     const reqHeadersHtml = highlightJson(reqHeaders);
-    const reqBodyRaw = (req.request && req.request.body) || '';
+    const reqBodyRaw = (req.request && (req.request.body || req.request.bodyAsBase64)) || '';
+    const reqB64 = decodeBase64Payload(reqBodyRaw);
     const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
+    const reqBodyDecodedHtml = reqB64.hasBase64 ? highlightJson(reqB64.decodedFormatted) : '';
 
     const resHeadersHtml = highlightJson(resHeaders);
-    const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+    const resBodyRaw = (req.response && (req.response.body || req.response.base64Body))
+      || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '';
+    const resB64 = decodeBase64Payload(resBodyRaw);
     const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
+    const resBodyDecodedHtml = resB64.hasBase64 ? highlightJson(resB64.decodedFormatted) : '';
     const stubId = req.stubMapping && req.stubMapping.id;
     const stubName = verdict.stubDetail;
 
@@ -205,8 +211,27 @@ function buildRowHtml(req) {
                 </div>
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini">${reqHeadersHtml}</pre>
-                <div class="journal-section-title">Body</div>
-                <pre class="code-block-mini">${reqBodyHtml}</pre>
+                <div class="journal-section-header">
+                  <div class="journal-section-title">Body</div>
+                  ${reqB64.hasBase64 ? `
+                    <div class="journal-b64-controls">
+                      <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in request body">🔓 Base64 JSON</span>
+                      <div class="btn-group-toggle">
+                        <button type="button" class="btn btn-tiny btn-b64-toggle" data-view="raw" data-target="req-body-${req.id}" data-testid="btn-b64-raw" title="Show raw transmitted payload">Raw</button>
+                        <button type="button" class="btn btn-tiny btn-b64-toggle active" data-view="decoded" data-target="req-body-${req.id}" data-testid="btn-b64-decoded" title="Show Base64 decoded JSON">Decoded</button>
+                      </div>
+                      <button type="button" class="btn btn-tiny btn-copy-body" data-target="req-body-${req.id}" data-testid="btn-copy-body" title="Copy visible body content">📋 Copy Body</button>
+                    </div>
+                  ` : ''}
+                </div>
+                ${reqB64.hasBase64 ? `
+                  <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${reqBodyHtml}</pre>
+                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
+                  </div>
+                ` : `
+                  <pre class="code-block-mini">${reqBodyHtml}</pre>
+                `}
               </div>
               <div class="journal-detail-card">
                 <div class="journal-card-header">
@@ -226,8 +251,27 @@ function buildRowHtml(req) {
                 </div>
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini">${resHeadersHtml}</pre>
-                <div class="journal-section-title">Body</div>
-                <pre class="code-block-mini">${resBodyHtml}</pre>
+                <div class="journal-section-header">
+                  <div class="journal-section-title">Body</div>
+                  ${resB64.hasBase64 ? `
+                    <div class="journal-b64-controls">
+                      <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in response body">🔓 Base64 JSON</span>
+                      <div class="btn-group-toggle">
+                        <button type="button" class="btn btn-tiny btn-b64-toggle" data-view="raw" data-target="res-body-${req.id}" data-testid="btn-b64-raw" title="Show raw transmitted payload">Raw</button>
+                        <button type="button" class="btn btn-tiny btn-b64-toggle active" data-view="decoded" data-target="res-body-${req.id}" data-testid="btn-b64-decoded" title="Show Base64 decoded JSON">Decoded</button>
+                      </div>
+                      <button type="button" class="btn btn-tiny btn-copy-body" data-target="res-body-${req.id}" data-testid="btn-copy-body" title="Copy visible body content">📋 Copy Body</button>
+                    </div>
+                  ` : ''}
+                </div>
+                ${resB64.hasBase64 ? `
+                  <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${resBodyHtml}</pre>
+                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
+                  </div>
+                ` : `
+                  <pre class="code-block-mini">${resBodyHtml}</pre>
+                `}
               </div>
             </div>
           </div>
@@ -427,6 +471,55 @@ function setupEventDelegation() {
         }
         copyRespBtn.textContent = '✅ Copied!';
         setTimeout(() => copyRespBtn.textContent = '📋 Copy Response', 1500);
+      }
+      return;
+    }
+
+    const b64ToggleBtn = e.target.closest('.btn-b64-toggle');
+    if (b64ToggleBtn) {
+      e.stopPropagation();
+      const view = b64ToggleBtn.getAttribute('data-view');
+      const targetId = b64ToggleBtn.getAttribute('data-target');
+      const container = document.getElementById(targetId);
+      if (!container) return;
+
+      const parentControls = b64ToggleBtn.closest('.journal-b64-controls');
+      if (parentControls) {
+        parentControls.querySelectorAll('.btn-b64-toggle').forEach(btn => {
+          btn.classList.toggle('active', btn === b64ToggleBtn);
+        });
+      }
+
+      container.setAttribute('data-active-view', view);
+      const rawEl = container.querySelector('.journal-body-raw');
+      const decodedEl = container.querySelector('.journal-body-decoded');
+
+      if (view === 'raw') {
+        if (rawEl) rawEl.classList.remove('hidden');
+        if (decodedEl) decodedEl.classList.add('hidden');
+      } else {
+        if (rawEl) rawEl.classList.add('hidden');
+        if (decodedEl) decodedEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    const copyBodyBtn = e.target.closest('.btn-copy-body');
+    if (copyBodyBtn) {
+      e.stopPropagation();
+      const targetId = copyBodyBtn.getAttribute('data-target');
+      const container = document.getElementById(targetId);
+      if (container) {
+        const activeView = container.getAttribute('data-active-view') || 'decoded';
+        const activeEl = container.querySelector(activeView === 'raw' ? '.journal-body-raw' : '.journal-body-decoded');
+        const textToCopy = activeEl ? (activeEl.textContent || '') : '';
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(textToCopy).catch(() => {});
+        }
+        copyBodyBtn.textContent = '✅ Copied!';
+        setTimeout(() => {
+          copyBodyBtn.textContent = '📋 Copy Body';
+        }, 1500);
       }
       return;
     }
