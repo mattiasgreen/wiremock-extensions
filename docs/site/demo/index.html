@@ -703,6 +703,14 @@
           <button id="btn-close-editor-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
         </div>
         <div class="modal-body">
+          <!-- Mode Switcher: Form vs Raw JSON -->
+          <div class="status-filter-pills editor-mode-pills" style="margin-bottom: 14px;" data-testid="editor-mode-pills">
+            <button type="button" class="filter-pill active" id="btn-editor-mode-form" data-testid="btn-editor-mode-form">📝 Form Mode</button>
+            <button type="button" class="filter-pill" id="btn-editor-mode-json" data-testid="btn-editor-mode-json">{ } Raw JSON</button>
+          </div>
+
+          <!-- Panel 1: Form Mode -->
+          <div id="editor-form-panel">
           <!-- OpenAPI Bootstrap Banner (Primary way to bootstrap) -->
           <div id="editor-openapi-banner" class="editor-openapi-banner" data-testid="editor-openapi-banner">
             <div class="editor-openapi-banner-text">
@@ -816,6 +824,19 @@
               <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
             </div>
             <textarea id="editor-body" class="code-input" rows="7" placeholder="{ &quot;key&quot;: &quot;value&quot; }"></textarea>
+          </div>
+          </div><!-- end #editor-form-panel -->
+
+          <!-- Panel 2: Raw JSON Mode -->
+          <div id="editor-json-panel" class="hidden" data-testid="editor-json-panel">
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label for="editor-raw-json"><strong>Raw WireMock Stub JSON:</strong> <span class="muted-text">Directly edit full stub mapping JSON</span></label>
+                <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny" data-testid="btn-editor-raw-format-json">Format JSON</button>
+              </div>
+              <textarea id="editor-raw-json" class="code-input" rows="20" style="font-family: monospace; font-size: 0.85rem; width: 100%; min-height: 380px;" placeholder="{ &quot;request&quot;: { ... }, &quot;response&quot;: { ... } }" data-testid="editor-raw-json"></textarea>
+              <div id="editor-raw-json-error" class="text-error hidden" style="margin-top: 6px; font-size: 0.82rem;" data-testid="editor-raw-json-error"></div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">

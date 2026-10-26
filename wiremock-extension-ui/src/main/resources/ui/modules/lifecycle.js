@@ -16,6 +16,11 @@ import { renderProjectSelector } from './projects.js';
 
 let activeEditingStub = null;
 let isCloneMode = false;
+let activeEditorMode = 'form';
+
+export function getEditorMode() {
+  return activeEditorMode;
+}
 
 export function handleToggleStub(stubId) {
   if (!stubId) return;
@@ -257,128 +262,7 @@ export function openStubEditorFromRequest(reqObj) {
   }
 }
 
-export function openStubEditor(stub, clone = false) {
-  const modal = document.getElementById('stub-editor-modal');
-  if (!modal) return;
-
-  activeEditingStub = stub;
-  isCloneMode = clone;
-
-  const titleEl = document.getElementById('editor-modal-title');
-  if (titleEl) {
-    titleEl.textContent = clone ? 'Duplicate Stub Mapping' : (stub ? 'Edit Stub Mapping' : 'Create New Stub');
-  }
-
-  const openApiBanner = document.getElementById('editor-openapi-banner');
-  const templateGroup = document.getElementById('editor-template-group');
-  const templateSelect = document.getElementById('editor-template-select');
-  const bodyMatchTypeSelect = document.getElementById('editor-body-match-type');
-  const bodyMatchPatternInput = document.getElementById('editor-body-match-pattern');
-  const bodyMatchContainer = document.getElementById('editor-body-match-container');
-
-  const nameInput = document.getElementById('editor-name');
-  const methodSelect = document.getElementById('editor-method');
-  const urlInput = document.getElementById('editor-url');
-  const statusInput = document.getElementById('editor-status');
-  const priorityInput = document.getElementById('editor-priority');
-  const projectInput = document.getElementById('editor-project');
-  const tagsInput = document.getElementById('editor-tags');
-  const proxyUrlInput = document.getElementById('editor-proxy-url');
-  const headersText = document.getElementById('editor-headers');
-  const bodyText = document.getElementById('editor-body');
-
-  const req = stub ? stub.request : {};
-  const res = stub ? stub.response : {};
-  const meta = stub ? (stub.metadata || {}) : {};
-  const activeProj = (state.activeProjectFilter && state.activeProjectFilter !== '*' && state.activeProjectFilter !== '_all')
-    ? state.activeProjectFilter
-    : '';
-
-  if (!stub) {
-    // New stub creation: show OpenAPI guidance & template presets
-    if (openApiBanner) openApiBanner.classList.remove('hidden');
-    if (templateGroup) templateGroup.classList.remove('hidden');
-    if (templateSelect) templateSelect.value = 'uri-get';
-
-    // Populate with uri-get template
-    applyStubTemplate('uri-get');
-    if (projectInput) projectInput.value = activeProj;
-  } else {
-    // Editing or duplicating existing stub: hide OpenAPI banner and template presets
-    if (openApiBanner) openApiBanner.classList.add('hidden');
-    if (templateGroup) templateGroup.classList.add('hidden');
-    if (templateSelect) templateSelect.value = 'custom';
-
-    if (nameInput) nameInput.value = clone ? `${stub.name || 'Stub'} (Copy)` : (stub.name || '');
-    if (methodSelect) methodSelect.value = (req.method || 'GET').toUpperCase();
-    if (urlInput) urlInput.value = stub ? (req.url || req.urlPath || req.urlPathTemplate || req.urlPattern || '/') : '/';
-    if (statusInput) statusInput.value = (res.status != null) ? res.status : 200;
-    if (priorityInput) priorityInput.value = (stub && stub.priority) ? stub.priority : 5;
-    if (projectInput) projectInput.value = meta.project || activeProj;
-    if (tagsInput) tagsInput.value = Array.isArray(meta.tags) ? meta.tags.join(', ') : (meta.tags || '');
-    if (proxyUrlInput) proxyUrlInput.value = res.proxyBaseUrl || meta.proxyBaseUrl || '';
-
-    // Extract request body patterns
-    let matchType = 'none';
-    let matchPattern = '';
-    if (req.bodyPatterns && req.bodyPatterns.length > 0) {
-      const bp = req.bodyPatterns[0];
-      if (bp.contains) {
-        matchType = 'contains';
-        matchPattern = bp.contains;
-      } else if (bp.equalToJson) {
-        matchType = 'equalToJson';
-        matchPattern = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2);
-      } else if (bp.equalTo) {
-        matchType = 'equalTo';
-        matchPattern = bp.equalTo;
-      } else if (bp.matchesJsonPath) {
-        matchType = 'matchesJsonPath';
-        matchPattern = bp.matchesJsonPath;
-      }
-    }
-
-    if (bodyMatchTypeSelect) bodyMatchTypeSelect.value = matchType;
-    if (bodyMatchPatternInput) bodyMatchPatternInput.value = matchPattern;
-    if (bodyMatchContainer) {
-      if (matchType === 'none') {
-        bodyMatchContainer.classList.add('hidden');
-      } else {
-        bodyMatchContainer.classList.remove('hidden');
-      }
-    }
-    updateBodyMatchLabel(matchType);
-
-    // Extract response headers
-    const headerLines = [];
-    if (res.headers) {
-      for (const [k, v] of Object.entries(res.headers)) {
-        headerLines.push(`${k}: ${v}`);
-      }
-    }
-    if (headersText) headersText.value = headerLines.join('\n');
-
-    // Response body
-    let bodyContent = '';
-    if (res.body != null) {
-      bodyContent = res.body;
-    } else if (res.jsonBody != null) {
-      bodyContent = JSON.stringify(res.jsonBody, null, 2);
-    }
-    if (bodyText) bodyText.value = bodyContent;
-  }
-
-  modal.classList.remove('hidden');
-}
-
-export function closeStubEditor() {
-  const modal = document.getElementById('stub-editor-modal');
-  if (modal) modal.classList.add('hidden');
-  activeEditingStub = null;
-  isCloneMode = false;
-}
-
-export function saveStubEditor() {
+export function buildStubFromForm() {
   const nameInput = document.getElementById('editor-name');
   const methodSelect = document.getElementById('editor-method');
   const urlInput = document.getElementById('editor-url');
@@ -496,9 +380,253 @@ export function saveStubEditor() {
     if (activeEditingStub.newScenarioState) stubPayload.newScenarioState = activeEditingStub.newScenarioState;
   }
 
-  const savePromise = (isCloneMode || !activeEditingStub || !activeEditingStub.id)
+  return stubPayload;
+}
+
+export function populateFormFromStub(stub) {
+  if (!stub) return;
+  const nameInput = document.getElementById('editor-name');
+  const methodSelect = document.getElementById('editor-method');
+  const urlInput = document.getElementById('editor-url');
+  const statusInput = document.getElementById('editor-status');
+  const priorityInput = document.getElementById('editor-priority');
+  const projectInput = document.getElementById('editor-project');
+  const tagsInput = document.getElementById('editor-tags');
+  const proxyUrlInput = document.getElementById('editor-proxy-url');
+  const headersText = document.getElementById('editor-headers');
+  const bodyText = document.getElementById('editor-body');
+  const bodyMatchTypeSelect = document.getElementById('editor-body-match-type');
+  const bodyMatchPatternInput = document.getElementById('editor-body-match-pattern');
+  const bodyMatchContainer = document.getElementById('editor-body-match-container');
+
+  const req = stub.request || {};
+  const res = stub.response || {};
+  const meta = stub.metadata || {};
+
+  if (nameInput) nameInput.value = stub.name || '';
+  if (methodSelect) methodSelect.value = (req.method || 'GET').toUpperCase();
+  if (urlInput) urlInput.value = req.url || req.urlPath || req.urlPathTemplate || req.urlPattern || '/';
+  if (statusInput) statusInput.value = (res.status != null) ? res.status : 200;
+  if (priorityInput) priorityInput.value = stub.priority || 5;
+  if (projectInput) projectInput.value = meta.project || '';
+  if (tagsInput) tagsInput.value = Array.isArray(meta.tags) ? meta.tags.join(', ') : (meta.tags || '');
+  if (proxyUrlInput) proxyUrlInput.value = res.proxyBaseUrl || meta.proxyBaseUrl || '';
+
+  let matchType = 'none';
+  let matchPattern = '';
+  if (req.bodyPatterns && req.bodyPatterns.length > 0) {
+    const bp = req.bodyPatterns[0];
+    if (bp.contains) {
+      matchType = 'contains';
+      matchPattern = bp.contains;
+    } else if (bp.equalToJson) {
+      matchType = 'equalToJson';
+      matchPattern = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2);
+    } else if (bp.equalTo) {
+      matchType = 'equalTo';
+      matchPattern = bp.equalTo;
+    } else if (bp.matchesJsonPath) {
+      matchType = 'matchesJsonPath';
+      matchPattern = bp.matchesJsonPath;
+    }
+  }
+
+  if (bodyMatchTypeSelect) bodyMatchTypeSelect.value = matchType;
+  if (bodyMatchPatternInput) bodyMatchPatternInput.value = matchPattern;
+  if (bodyMatchContainer) {
+    if (matchType === 'none') {
+      bodyMatchContainer.classList.add('hidden');
+    } else {
+      bodyMatchContainer.classList.remove('hidden');
+    }
+  }
+  updateBodyMatchLabel(matchType);
+
+  const headerLines = [];
+  if (res.headers) {
+    for (const [k, v] of Object.entries(res.headers)) {
+      headerLines.push(`${k}: ${v}`);
+    }
+  }
+  if (headersText) headersText.value = headerLines.join('\n');
+
+  let bodyContent = '';
+  if (res.body != null) {
+    bodyContent = res.body;
+  } else if (res.jsonBody != null) {
+    bodyContent = JSON.stringify(res.jsonBody, null, 2);
+  }
+  if (bodyText) bodyText.value = bodyContent;
+}
+
+export function setEditorMode(mode) {
+  const formPanel = document.getElementById('editor-form-panel');
+  const jsonPanel = document.getElementById('editor-json-panel');
+  const btnForm = document.getElementById('btn-editor-mode-form');
+  const btnJson = document.getElementById('btn-editor-mode-json');
+  const rawTextarea = document.getElementById('editor-raw-json');
+  const errorEl = document.getElementById('editor-raw-json-error');
+
+  if (mode === 'json') {
+    const stubObj = buildStubFromForm();
+    if (rawTextarea) {
+      rawTextarea.value = JSON.stringify(stubObj, null, 2);
+    }
+    if (errorEl) {
+      errorEl.classList.add('hidden');
+      errorEl.textContent = '';
+    }
+    if (formPanel) formPanel.classList.add('hidden');
+    if (jsonPanel) jsonPanel.classList.remove('hidden');
+    if (btnForm) btnForm.classList.remove('active');
+    if (btnJson) btnJson.classList.add('active');
+    activeEditorMode = 'json';
+    return true;
+  } else {
+    if (rawTextarea && rawTextarea.value.trim()) {
+      try {
+        const parsed = JSON.parse(rawTextarea.value);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error('Stub mapping root must be a JSON object');
+        }
+        populateFormFromStub(parsed);
+      } catch (err) {
+        if (errorEl) {
+          errorEl.textContent = 'Invalid JSON: ' + err.message;
+          errorEl.classList.remove('hidden');
+        }
+        return false;
+      }
+    }
+    if (errorEl) {
+      errorEl.classList.add('hidden');
+      errorEl.textContent = '';
+    }
+    if (formPanel) formPanel.classList.remove('hidden');
+    if (jsonPanel) jsonPanel.classList.add('hidden');
+    if (btnForm) btnForm.classList.add('active');
+    if (btnJson) btnJson.classList.remove('active');
+    activeEditorMode = 'form';
+    return true;
+  }
+}
+
+export function formatRawEditorJson() {
+  const rawTextarea = document.getElementById('editor-raw-json');
+  const errorEl = document.getElementById('editor-raw-json-error');
+  if (!rawTextarea || !rawTextarea.value.trim()) return;
+  try {
+    const parsed = JSON.parse(rawTextarea.value);
+    rawTextarea.value = JSON.stringify(parsed, null, 2);
+    if (errorEl) {
+      errorEl.classList.add('hidden');
+      errorEl.textContent = '';
+    }
+  } catch (err) {
+    if (errorEl) {
+      errorEl.textContent = 'Invalid JSON: ' + err.message;
+      errorEl.classList.remove('hidden');
+    }
+    alert('Invalid JSON: ' + err.message);
+  }
+}
+
+export function openStubEditor(stub, clone = false) {
+  const modal = document.getElementById('stub-editor-modal');
+  if (!modal) return;
+
+  activeEditingStub = stub;
+  isCloneMode = clone;
+
+  const titleEl = document.getElementById('editor-modal-title');
+  if (titleEl) {
+    titleEl.textContent = clone ? 'Duplicate Stub Mapping' : (stub ? 'Edit Stub Mapping' : 'Create New Stub');
+  }
+
+  const openApiBanner = document.getElementById('editor-openapi-banner');
+  const templateGroup = document.getElementById('editor-template-group');
+  const templateSelect = document.getElementById('editor-template-select');
+  const projectInput = document.getElementById('editor-project');
+
+  const activeProj = (state.activeProjectFilter && state.activeProjectFilter !== '*' && state.activeProjectFilter !== '_all')
+    ? state.activeProjectFilter
+    : '';
+
+  if (!stub) {
+    if (openApiBanner) openApiBanner.classList.remove('hidden');
+    if (templateGroup) templateGroup.classList.remove('hidden');
+    if (templateSelect) templateSelect.value = 'uri-get';
+
+    applyStubTemplate('uri-get');
+    if (projectInput) projectInput.value = activeProj;
+  } else {
+    if (openApiBanner) openApiBanner.classList.add('hidden');
+    if (templateGroup) templateGroup.classList.add('hidden');
+    if (templateSelect) templateSelect.value = 'custom';
+
+    populateFormFromStub(stub);
+    if (clone) {
+      const nameInput = document.getElementById('editor-name');
+      if (nameInput) nameInput.value = `${stub.name || 'Stub'} (Copy)`;
+    }
+  }
+
+  // Reset to form mode on open
+  setEditorMode('form');
+
+  const rawTextarea = document.getElementById('editor-raw-json');
+  if (rawTextarea) {
+    const initialStub = clone
+      ? { ...stub, id: undefined, name: `${stub.name || 'Stub'} (Copy)` }
+      : (stub || buildStubFromForm());
+    rawTextarea.value = JSON.stringify(initialStub, null, 2);
+  }
+
+  modal.classList.remove('hidden');
+}
+
+export function closeStubEditor() {
+  const modal = document.getElementById('stub-editor-modal');
+  if (modal) modal.classList.add('hidden');
+  activeEditingStub = null;
+  isCloneMode = false;
+  activeEditorMode = 'form';
+}
+
+export function saveStubEditor() {
+  let stubPayload;
+
+  if (activeEditorMode === 'json') {
+    const rawTextarea = document.getElementById('editor-raw-json');
+    const errorEl = document.getElementById('editor-raw-json-error');
+    if (!rawTextarea || !rawTextarea.value.trim()) {
+      alert('Raw JSON cannot be empty');
+      return;
+    }
+    try {
+      stubPayload = JSON.parse(rawTextarea.value);
+      if (typeof stubPayload !== 'object' || stubPayload === null || Array.isArray(stubPayload)) {
+        throw new Error('Stub mapping root must be a JSON object');
+      }
+    } catch (err) {
+      if (errorEl) {
+        errorEl.textContent = 'Invalid JSON: ' + err.message;
+        errorEl.classList.remove('hidden');
+      }
+      alert('Cannot save: Invalid JSON: ' + err.message);
+      return;
+    }
+  } else {
+    stubPayload = buildStubFromForm();
+  }
+
+  const targetId = (!isCloneMode && activeEditingStub && activeEditingStub.id)
+    ? activeEditingStub.id
+    : (stubPayload.id && !isCloneMode ? stubPayload.id : null);
+
+  const savePromise = (isCloneMode || !targetId)
     ? createStubMapping(stubPayload)
-    : saveStubMapping(activeEditingStub.id, { ...stubPayload, id: activeEditingStub.id });
+    : saveStubMapping(targetId, { ...stubPayload, id: targetId });
 
   return savePromise
     .then(saved => {

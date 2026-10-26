@@ -559,4 +559,224 @@ public class UiModuleUnitTest {
         assertThat(result.get("rawHiddenAfterSecondClick")).isEqualTo(true);
         assertThat(result.get("decodedHiddenAfterSecondClick")).isEqualTo(false);
     }
+
+    @Test
+    @DisplayName("buildSnapshotStubMapping: Builds distinct non-colliding stubs matching exact request body")
+    void testBuildSnapshotStubMappingExactBodyMatching() {
+        String script =
+                """
+            async () => {
+                const { buildSnapshotStubMapping } = await import('./modules/journal.js');
+
+                // Customer call in CRM Risk Control
+                const customerReq = {
+                    id: "req-cust",
+                    request: {
+                        method: "POST",
+                        url: "/__casual/services/crmRiskControlService",
+                        body: '{"customerId": "CUST-001", "role": "customer"}'
+                    },
+                    response: {
+                        status: 200,
+                        body: '{"customerId": "CUST-001", "riskStatus": "LOW"}'
+                    }
+                };
+
+                // Spouse call in CRM Risk Control
+                const spouseReq = {
+                    id: "req-spouse",
+                    request: {
+                        method: "POST",
+                        url: "/__casual/services/crmRiskControlService",
+                        body: '{"customerId": "CUST-002", "role": "spouse"}'
+                    },
+                    response: {
+                        status: 200,
+                        body: '{"customerId": "CUST-002", "riskStatus": "MEDIUM"}'
+                    }
+                };
+
+                // Plain text call
+                const textReq = {
+                    id: "req-text",
+                    request: {
+                        method: "POST",
+                        url: "/api/plain",
+                        body: "Hello Plain Text"
+                    },
+                    response: { status: 200, body: "OK" }
+                };
+
+                // Binary Base64 call
+                const binReq = {
+                    id: "req-bin",
+                    request: {
+                        method: "POST",
+                        url: "/api/binary",
+                        bodyAsBase64: "AQIDBA=="
+                    },
+                    response: { status: 200, body: "OK" }
+                };
+
+                const customerStub = buildSnapshotStubMapping(customerReq);
+                const spouseStub = buildSnapshotStubMapping(spouseReq);
+                const textStub = buildSnapshotStubMapping(textReq);
+                const binStub = buildSnapshotStubMapping(binReq);
+
+                return {
+                    custName: customerStub.name,
+                    custHasBodyPatterns: !!customerStub.request.bodyPatterns,
+                    custEqualJson: customerStub.request.bodyPatterns[0].equalToJson,
+                    custIgnoreArrayOrder: customerStub.request.bodyPatterns[0].ignoreArrayOrder,
+                    custIgnoreExtraElements: customerStub.request.bodyPatterns[0].ignoreExtraElements,
+
+                    spouseName: spouseStub.name,
+                    spouseEqualJson: spouseStub.request.bodyPatterns[0].equalToJson,
+
+                    textEqualTo: textStub.request.bodyPatterns[0].equalTo,
+                    binBinaryEqualTo: binStub.request.bodyPatterns[0].binaryEqualTo
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("custName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/crmRiskControlService");
+        assertThat(result.get("custHasBodyPatterns")).isEqualTo(true);
+        assertThat(result.get("custEqualJson")).isEqualTo("{\"customerId\": \"CUST-001\", \"role\": \"customer\"}");
+        assertThat(result.get("custIgnoreArrayOrder")).isEqualTo(true);
+        assertThat(result.get("custIgnoreExtraElements")).isEqualTo(false);
+
+        // Spouse has distinct body pattern preventing stub collision
+        assertThat(result.get("spouseName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/crmRiskControlService");
+        assertThat(result.get("spouseEqualJson")).isEqualTo("{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}");
+        assertThat(result.get("custEqualJson")).isNotEqualTo(result.get("spouseEqualJson"));
+
+        // Plain text and binary matchers
+        assertThat(result.get("textEqualTo")).isEqualTo("Hello Plain Text");
+        assertThat(result.get("binBinaryEqualTo")).isEqualTo("AQIDBA==");
+    }
+
+    @Test
+    @DisplayName("Stub Editor: Toggle between Form Mode and Raw JSON Mode with live roundtrip synchronization")
+    void testStubEditorRawJsonModeSwitchingAndValidation() {
+        String script =
+                """
+            async () => {
+                const {
+                    openStubEditor,
+                    closeStubEditor,
+                    setEditorMode,
+                    getEditorMode,
+                    formatRawEditorJson
+                } = await import('./modules/lifecycle.js');
+
+                const initialStub = {
+                    id: "test-stub-101",
+                    name: "Get Risk Profile",
+                    priority: 3,
+                    request: {
+                        method: "POST",
+                        url: "/api/risk-profile",
+                        bodyPatterns: [{ equalToJson: '{"tier": "gold"}', ignoreArrayOrder: true, ignoreExtraElements: true }]
+                    },
+                    response: {
+                        status: 200,
+                        body: '{"approved": true}'
+                    },
+                    metadata: {
+                        project: "Risk Control",
+                        tags: ["credit", "crm"]
+                    }
+                };
+
+                // 1. Open editor in Form Mode
+                openStubEditor(initialStub, false);
+                const initialMode = getEditorMode();
+
+                const formPanel = document.getElementById('editor-form-panel');
+                const jsonPanel = document.getElementById('editor-json-panel');
+                const rawTextarea = document.getElementById('editor-raw-json');
+                const errorEl = document.getElementById('editor-raw-json-error');
+
+                const formVisibleInitial = !formPanel.classList.contains('hidden');
+                const jsonVisibleInitial = !jsonPanel.classList.contains('hidden');
+
+                // 2. Switch to Raw JSON Mode
+                const switchToJsonSuccess = setEditorMode('json');
+                const modeAfterJsonSwitch = getEditorMode();
+                const formHiddenAfterSwitch = formPanel.classList.contains('hidden');
+                const jsonVisibleAfterSwitch = !jsonPanel.classList.contains('hidden');
+                const rawJsonContent = rawTextarea.value;
+                const rawContainsGold = rawJsonContent.includes('gold');
+
+                // 3. Edit raw JSON in textarea
+                const editedJson = JSON.parse(rawTextarea.value);
+                editedJson.priority = 1;
+                editedJson.metadata.project = "CRM Global Risk";
+                rawTextarea.value = JSON.stringify(editedJson);
+
+                // 4. Switch back to Form Mode -> should sync changes into form fields
+                const switchToFormSuccess = setEditorMode('form');
+                const modeAfterFormSwitch = getEditorMode();
+                const priorityInputValue = document.getElementById('editor-priority').value;
+                const projectInputValue = document.getElementById('editor-project').value;
+
+                // 5. Switch to JSON Mode, write malformed JSON, and attempt switch back
+                setEditorMode('json');
+                rawTextarea.value = '{"unclosedJson": ';
+                const invalidSwitchSuccess = setEditorMode('form');
+                const modeAfterFailedSwitch = getEditorMode();
+                const errorVisible = !errorEl.classList.contains('hidden');
+                const errorMsg = errorEl.textContent;
+
+                // Close editor
+                closeStubEditor();
+
+                return {
+                    initialMode,
+                    formVisibleInitial,
+                    jsonVisibleInitial,
+                    switchToJsonSuccess,
+                    modeAfterJsonSwitch,
+                    formHiddenAfterSwitch,
+                    jsonVisibleAfterSwitch,
+                    rawContainsGold,
+                    rawJsonContent,
+                    switchToFormSuccess,
+                    modeAfterFormSwitch,
+                    priorityInputValue,
+                    projectInputValue,
+                    invalidSwitchSuccess,
+                    modeAfterFailedSwitch,
+                    errorVisible,
+                    errorMsgContainsInvalid: errorMsg.includes("Invalid JSON")
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("initialMode")).isEqualTo("form");
+        assertThat(result.get("formVisibleInitial")).isEqualTo(true);
+        assertThat(result.get("jsonVisibleInitial")).isEqualTo(false);
+
+        assertThat(result.get("switchToJsonSuccess")).isEqualTo(true);
+        assertThat(result.get("modeAfterJsonSwitch")).isEqualTo("json");
+        assertThat(result.get("formHiddenAfterSwitch")).isEqualTo(true);
+        assertThat(result.get("jsonVisibleAfterSwitch")).isEqualTo(true);
+        assertThat(result.get("rawContainsGold")).isEqualTo(true);
+
+        assertThat(result.get("switchToFormSuccess")).isEqualTo(true);
+        assertThat(result.get("modeAfterFormSwitch")).isEqualTo("form");
+        assertThat(result.get("priorityInputValue")).isEqualTo("1");
+        assertThat(result.get("projectInputValue")).isEqualTo("CRM Global Risk");
+
+        assertThat(result.get("invalidSwitchSuccess")).isEqualTo(false);
+        assertThat(result.get("modeAfterFailedSwitch")).isEqualTo("json");
+        assertThat(result.get("errorVisible")).isEqualTo(true);
+        assertThat(result.get("errorMsgContainsInvalid")).isEqualTo(true);
+    }
 }

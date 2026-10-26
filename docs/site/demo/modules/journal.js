@@ -88,7 +88,7 @@ export function getRequestVerdict(req) {
       cssClass: 'pill-matched pill-proxied',
       proxyUrl: proxyUrl || 'upstream',
       stubDetail: detail,
-      tooltip: `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Freeze into an offline stub`
+      tooltip: `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Snapshot into an offline stub`
     };
   }
   const transformers = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.transformers)
@@ -238,7 +238,7 @@ function buildRowHtml(req) {
                   <span>${isCasual ? `Casual Response: ${escapeHtml(String(displayStatus))} (${escapeHtml(stubName)})` : `Response: Status ${status} (${escapeHtml(stubName)})`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     ${verdict.key !== 'unmatched' && !isStateful ? `
-                      <button class="btn btn-small btn-freeze-req ${!state.capabilities.lifecycle ? 'cap-disabled' : ''}" data-id="${req.id}" ${!state.capabilities.lifecycle ? 'disabled title="Freezing into offline stubs requires wiremock-extension-ui lifecycle endpoint"' : `title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}"`}>📸 Freeze Stub</button>
+                      <button class="btn btn-small btn-snapshot-req ${!state.capabilities.lifecycle ? 'cap-disabled' : ''}" data-id="${req.id}" ${!state.capabilities.lifecycle ? 'disabled title="Snapshotting into offline stubs requires wiremock-extension-ui lifecycle endpoint"' : `title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}"`}>📸 Snapshot Stub</button>
                     ` : ''}
                     ${verdict.key !== 'unmatched' ? `
                       <button class="btn btn-small btn-journal-copy-java" data-id="${req.id}" data-testid="btn-journal-copy-java" title="Copy WireMock Java stubFor() snippet for this request/response pair">☕ Copy Java</button>
@@ -322,6 +322,59 @@ function setupLazyScroll() {
       appendMoreRows();
     }
   });
+}
+
+export function buildSnapshotStubMapping(req) {
+  const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
+  const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+  const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+  const headers = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+
+  const method = req.request ? req.request.method : 'POST';
+  const url = req.request ? req.request.url : '/';
+
+  const requestMatch = {
+    method: method,
+    url: url
+  };
+
+  if (req.request && req.request.body) {
+    const raw = req.request.body;
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        JSON.parse(trimmed);
+        requestMatch.bodyPatterns = [{
+          equalToJson: raw,
+          ignoreArrayOrder: true,
+          ignoreExtraElements: false
+        }];
+      } catch (ignored) {
+        requestMatch.bodyPatterns = [{ equalTo: raw }];
+      }
+    } else if (raw) {
+      requestMatch.bodyPatterns = [{ equalTo: raw }];
+    }
+  } else if (req.request && req.request.bodyAsBase64) {
+    requestMatch.bodyPatterns = [{ binaryEqualTo: req.request.bodyAsBase64 }];
+  }
+
+  return {
+    name: `[SNAPSHOT ${method} ${status}] ${url}`,
+    priority: 5,
+    request: requestMatch,
+    response: {
+      status: status,
+      headers: headers,
+      body: typeof resBody === 'string' ? resBody : JSON.stringify(resBody)
+    },
+    metadata: {
+      source: 'recorded-proxy',
+      project: project,
+      mode: 'static',
+      recordedAt: new Date().toISOString()
+    }
+  };
 }
 
 function setupEventDelegation() {
@@ -524,54 +577,31 @@ function setupEventDelegation() {
       return;
     }
 
-    const freezeBtn = e.target.closest('.btn-freeze-req');
-    if (freezeBtn) {
+    const snapshotBtn = e.target.closest('.btn-snapshot-req');
+    if (snapshotBtn) {
       e.stopPropagation();
-      const targetId = freezeBtn.getAttribute('data-id') || (freezeBtn.dataset && freezeBtn.dataset.id);
+      const targetId = snapshotBtn.getAttribute('data-id') || (snapshotBtn.dataset && snapshotBtn.dataset.id);
       const req = state.currentRequests.find(r => r.id === targetId);
       if (!req) return;
 
-      const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
-      const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
-      const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
-      const headers = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
-
-      const stubData = {
-        name: `[RECORDED ${req.request.method} ${status}] ${req.request.url}`,
-        priority: 5,
-        request: {
-          method: req.request.method,
-          url: req.request.url
-        },
-        response: {
-          status: status,
-          headers: headers,
-          body: typeof resBody === 'string' ? resBody : JSON.stringify(resBody)
-        },
-        metadata: {
-          source: 'recorded-proxy',
-          project: project,
-          mode: 'static',
-          recordedAt: new Date().toISOString()
-        }
-      };
+      const stubData = buildSnapshotStubMapping(req);
 
       try {
-        freezeBtn.disabled = true;
-        freezeBtn.textContent = 'Saving...';
+        snapshotBtn.disabled = true;
+        snapshotBtn.textContent = 'Saving...';
         const { createStubMapping, toggleStubState, loadData } = await import('./api.js');
         const created = await createStubMapping(stubData);
         if (created && created.id) {
           await toggleStubState(created.id);
         }
         await loadData();
-        freezeBtn.textContent = '✅ Frozen!';
-        setTimeout(() => freezeBtn.textContent = '📸 Freeze Stub', 1500);
+        snapshotBtn.textContent = '✅ Snapshotted!';
+        setTimeout(() => snapshotBtn.textContent = '📸 Snapshot Stub', 1500);
       } catch (err) {
-        alert('Failed to freeze stub: ' + err.message);
-        freezeBtn.textContent = '📸 Freeze Stub';
+        alert('Failed to snapshot stub: ' + err.message);
+        snapshotBtn.textContent = '📸 Snapshot Stub';
       } finally {
-        freezeBtn.disabled = false;
+        snapshotBtn.disabled = false;
       }
       return;
     }

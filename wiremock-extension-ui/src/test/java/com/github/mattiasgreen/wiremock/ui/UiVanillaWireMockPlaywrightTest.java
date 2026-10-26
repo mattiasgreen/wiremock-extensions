@@ -159,14 +159,14 @@ class UiVanillaWireMockPlaywrightTest {
         assertThat(journalRows.count()).isGreaterThanOrEqualTo(1);
         assertThat(journalRows.first().textContent()).contains("/api/hello");
 
-        // Expand journal row and verify freeze button is disabled with tooltip
+        // Expand journal row and verify snapshot button is disabled with tooltip
         journalRows.first().click();
         page.waitForSelector(".journal-detail-row");
 
-        Locator freezeBtn = page.locator(".btn-freeze-req");
-        assertThat(freezeBtn.isDisabled()).isTrue();
-        assertThat(freezeBtn.getAttribute("class")).contains("cap-disabled");
-        assertThat(freezeBtn.getAttribute("title")).contains("requires wiremock-extension-ui lifecycle endpoint");
+        Locator snapshotBtn = page.locator(".btn-snapshot-req");
+        assertThat(snapshotBtn.isDisabled()).isTrue();
+        assertThat(snapshotBtn.getAttribute("class")).contains("cap-disabled");
+        assertThat(snapshotBtn.getAttribute("title")).contains("requires wiremock-extension-ui lifecycle endpoint");
 
         // 7. Verify zero unhandled JavaScript errors occurred throughout the entire flow
         assertThat(pageErrors).isEmpty();

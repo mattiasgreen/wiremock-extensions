@@ -213,7 +213,8 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
-    @DisplayName("Should forward call to upstream and snapshot record for subsequent offline replay")
+    @DisplayName(
+            "Should forward customer and spouse calls to upstream CRM risk control and snapshot record with exact body matching for offline replay")
     void shouldForwardAndRecordUnmatchedServiceWhenRecordStubsEnabled() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
@@ -224,11 +225,21 @@ class CasualWireMockGatewayTest {
         upstreamGateway.start();
 
         try {
-            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/recordedInventoryService"))
+            // Upstream CRM Risk Control: Customer has LOW risk, Spouse has MEDIUM risk
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/crmRiskControlService"))
+                    .withRequestBody(equalToJson("{\"customerId\": \"CUST-001\", \"role\": \"customer\"}"))
                     .willReturn(aResponse()
                             .withStatus(200)
                             .withHeader("Content-Type", "application/json")
-                            .withBody("{\"sku\": \"SKU-555\", \"inStock\": true}")));
+                            .withBody("{\"customerId\": \"CUST-001\", \"riskStatus\": \"LOW\", \"approved\": true}")));
+
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/crmRiskControlService"))
+                    .withRequestBody(equalToJson("{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody(
+                                    "{\"customerId\": \"CUST-002\", \"riskStatus\": \"MEDIUM\", \"approved\": true}")));
 
             wireMockServer.stubFor(post(urlMatching("/__casual/services/.*"))
                     .atPriority(10)
@@ -245,50 +256,79 @@ class CasualWireMockGatewayTest {
             try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
-                // 1st Call: Forwarded to upstream and recorded in Request Journal
-                CasualServiceCallReplyMessage firstReply =
-                        proxyClient.tpcall("recordedInventoryService", "{\"sku\": \"SKU-555\"}");
+                // 1. Call Customer -> Forwarded to upstream and recorded in Request Journal
+                CasualServiceCallReplyMessage customerReply = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-001\", \"role\": \"customer\"}");
+                assertThat(customerReply).isNotNull();
+                assertThat(customerReply.getError()).isEqualTo(ErrorState.OK);
+                String customerBody =
+                        new String(customerReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(customerBody).contains("CUST-001").contains("LOW");
 
-                assertThat(firstReply).isNotNull();
-                assertThat(firstReply.getError()).isEqualTo(ErrorState.OK);
-                String firstBody =
-                        new String(firstReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
-                assertThat(firstBody).contains("SKU-555").contains("true");
+                // 2. Call Spouse -> Forwarded to upstream and recorded in Request Journal
+                CasualServiceCallReplyMessage spouseReply = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}");
+                assertThat(spouseReply).isNotNull();
+                assertThat(spouseReply.getError()).isEqualTo(ErrorState.OK);
+                String spouseBody =
+                        new String(spouseReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(spouseBody).contains("CUST-002").contains("MEDIUM");
 
-                // Upstream received exactly 1 request
-                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService")));
+                // Upstream received exactly 1 request for customer and 1 for spouse
+                upstreamWireMock.verify(
+                        1,
+                        postRequestedFor(urlEqualTo("/__casual/services/crmRiskControlService"))
+                                .withRequestBody(
+                                        equalToJson("{\"customerId\": \"CUST-001\", \"role\": \"customer\"}")));
+                upstreamWireMock.verify(
+                        1,
+                        postRequestedFor(urlEqualTo("/__casual/services/crmRiskControlService"))
+                                .withRequestBody(equalToJson("{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}")));
 
-                // Snapshot record journal entries into offline stub mappings
+                // 3. Snapshot record journal entries into offline stub mappings
                 wireMockServer.snapshotRecord(recordSpec()
                         .makeStubsPersistent(false)
                         .extractTextBodiesOver(Long.MAX_VALUE)
                         .extractBinaryBodiesOver(Long.MAX_VALUE));
 
-                // 2nd Call: Must match the newly recorded stub in wireMockServer directly!
-                CasualServiceCallReplyMessage secondReply =
-                        proxyClient.tpcall("recordedInventoryService", "{\"sku\": \"SKU-555\"}");
+                // 4. Terminate upstream server completely to guarantee 100% offline replay
+                upstreamGateway.close();
+                upstreamWireMock.stop();
 
-                assertThat(secondReply).isNotNull();
-                assertThat(secondReply.getError()).isEqualTo(ErrorState.OK);
-                String secondBody =
-                        new String(secondReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
-                assertThat(secondBody).contains("SKU-555").contains("true");
+                // 5. Replay Customer call offline -> Must match recorded customer stub directly!
+                CasualServiceCallReplyMessage replayCustomer = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-001\", \"role\": \"customer\"}");
+                assertThat(replayCustomer).isNotNull();
+                assertThat(replayCustomer.getError()).isEqualTo(ErrorState.OK);
+                String replayCustBody =
+                        new String(replayCustomer.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(replayCustBody).contains("CUST-001").contains("LOW");
 
-                // Upstream must STILL have only been called once! The second call was served from recorded WireMock
-                // stub
-                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService")));
+                // 6. Replay Spouse call offline -> Must match recorded spouse stub directly without collision!
+                CasualServiceCallReplyMessage replaySpouse = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}");
+                assertThat(replaySpouse).isNotNull();
+                assertThat(replaySpouse.getError()).isEqualTo(ErrorState.OK);
+                String replaySpouseBody =
+                        new String(replaySpouse.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(replaySpouseBody).contains("CUST-002").contains("MEDIUM");
 
-                // Verify wireMockServer now has recorded requests in journal
-                wireMockServer.verify(
-                        2,
-                        postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService"))
-                                .withRequestBody(equalToJson("{\"sku\": \"SKU-555\"}")));
+                // 7. Unknown payload does NOT match customer or spouse stubs; falls through to proxy route
+                // and fails because upstream is shut down
+                CasualServiceCallReplyMessage unknownReply = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-999\", \"role\": \"unknown\"}");
+                assertThat(unknownReply).isNotNull();
+                assertThat(unknownReply.getError()).isEqualTo(ErrorState.TPESVCERR);
             } finally {
                 proxyGateway.close();
             }
         } finally {
-            upstreamGateway.close();
-            upstreamWireMock.stop();
+            if (upstreamGateway.isRunning()) {
+                upstreamGateway.close();
+            }
+            if (upstreamWireMock.isRunning()) {
+                upstreamWireMock.stop();
+            }
         }
     }
 

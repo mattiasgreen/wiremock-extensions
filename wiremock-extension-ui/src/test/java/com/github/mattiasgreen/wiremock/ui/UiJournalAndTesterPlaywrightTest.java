@@ -466,8 +466,8 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             unmatchedRow.click();
             page.waitForSelector("tr[data-testid='journal-detail-row']");
 
-            // Ensure Freeze Stub is NOT offered on an unmatched 404 request, and Create Stub IS offered
-            assertThat(page.locator("tr[data-testid='journal-detail-row'] .btn-freeze-req")
+            // Ensure Snapshot Stub is NOT offered on an unmatched 404 request, and Create Stub IS offered
+            assertThat(page.locator("tr[data-testid='journal-detail-row'] .btn-snapshot-req")
                             .count())
                     .isEqualTo(0);
             Locator createStubBtn =

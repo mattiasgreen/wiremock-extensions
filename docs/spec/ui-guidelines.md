@@ -80,15 +80,15 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 1. **Bootstrap Proxy**: User imports an OpenAPI spec in **Live Proxy Mode** *or* creates a quick catch-all/prefix **Proxy Route** (`➕ New` $\rightarrow$ Proxy Template, e.g., `/erp/api/.*` $\rightarrow$ `https://erp-test.internal`) for a remote service when no OpenAPI spec exists.
 2. **Observe Live Traffic**: User runs manual click-testing or a BDD test. Calls appear in the Request Journal badged as **`🌐 PROXIED`** with the target upstream origin visible.
 3. **Harvest**:
-   * *Single Call*: User clicks **`📸 Freeze as Stub`** on a `PROXIED` journal entry to save that authentic response as a `DISABLED` stub under that service.
+   * *Single Call*: User clicks **`📸 Snapshot Stub`** on a `PROXIED` journal entry to save that authentic response as a `DISABLED` stub under that service.
    * *Whole Service*: User selects the service in the Stubs sidebar and clicks **`📸 Snapshot`** in the Service Lifecycle Bar to capture all deduplicated `PROXIED` calls into `DISABLED` stubs.
 4. **Go Offline**: User clicks **`🟣 Switch to Stubs`**. Proxy routes for that service are disabled, harvested static stubs are enabled, and subsequent test runs execute offline (`📌 STUB`).
 
 ### Workflow B: Unmatched Request Triage (`UNMATCHED 404` $\rightarrow$ Working Stub)
 1. **Identify**: User filters Request Journal by **`⚠️ Unmatched`** (or spots the amber/red `UNMATCHED` pill).
 2. **Diagnose**: Expanding the row displays the incoming request alongside **Near-Miss Diagnostic Feedback** (closest stub candidate and which matcher failed: URL, Method, Header, or Body).
-3. **Synthesize Stub (Never "Freeze" a 404!)**:
-   * On an `UNMATCHED` row, `📸 Freeze Stub` must **not** blindly save the 404 error as a stub.
+3. **Synthesize Stub (Never "Snapshot" a 404!)**:
+   * On an `UNMATCHED` row, `📸 Snapshot Stub` must **not** blindly save the 404 error as a stub.
    * Instead, clicking **`➕ Create Stub from Request`** opens the **Stub Editor Modal** pre-populated with the captured request's `method`, `url`, `headers`, and `bodyPatterns`, with the response defaulted to `200 OK` for immediate editing and activation.
 4. **Verify**: Clicking **`🚀 Replay in Tester`** loads the exact captured request into the HTTP Tester to confirm the new stub responds with `200 OK`.
 
