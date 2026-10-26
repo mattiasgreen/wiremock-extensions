@@ -100,8 +100,8 @@ class CasualBufferUtilsTest {
     }
 
     @Test
-    @DisplayName("Should gracefully handle fielded buffer extraction without ExceptionInInitializerError")
-    void shouldGracefullyHandleFieldedBufferExtractionWithoutError() {
+    @DisplayName("Should early exit to Base64 when field table is not available")
+    void shouldEarlyExitToBase64WhenFieldTableNotAvailable() {
         // Construct a realistic 16-byte buffer with 8 bytes field id and 8 bytes length
         byte[] realisticFielded = new byte[] {
             0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x01, // 8-byte field ID
@@ -110,10 +110,32 @@ class CasualBufferUtilsTest {
         };
         ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", List.of(realisticFielded));
 
-        // Must not throw ExceptionInInitializerError: NullPointerException: Could not find resource: casual-fields.json
+        // When casual-fields.json is not in classpath and env is not set/not found
+        assertThat(CasualBufferUtils.isFieldTableAvailable()).isFalse();
+
+        // Must early exit to Base64 and not throw ExceptionInInitializerError
         String extracted = CasualBufferUtils.extractPayload(buffer);
         assertThat(extracted).isNotNull();
-        // Since the field ID is unmapped in the default empty table, it cleanly falls back to Base64
         assertThat(extracted).isEqualTo(Base64.getEncoder().encodeToString(realisticFielded));
+
+        // And wrapPayload must early exit to Base64 decoding
+        ServiceBuffer wrapped = CasualBufferUtils.wrapPayload(".FIELDED", extracted);
+        assertThat(CasualBufferUtils.toByteArray(wrapped)).isEqualTo(realisticFielded);
+    }
+
+    @Test
+    @DisplayName("Should detect field table availability accurately for existing vs non-existent files")
+    void shouldDetectFieldTableAvailabilityAccurately() throws Exception {
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("test-fields", ".json");
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            System.setProperty("CASUAL_FIELD_TABLE", "/non/existent/path/casual-fields.json");
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isFalse();
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            java.nio.file.Files.deleteIfExists(temp);
+        }
     }
 }

@@ -29,55 +29,43 @@ public final class CasualBufferUtils {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    static {
-        ensureCasualFieldTableInitialized();
-    }
-
     private CasualBufferUtils() {}
 
     /**
-     * Ensures that a valid Casual fielded definition table is configured in
-     * {@link ConfigurationService} so that {@code CasualFieldedLookup} does not fail
-     * with {@link ExceptionInInitializerError} if no external JSON table was provided.
+     * Determines whether Casual fielded definitions (FML) are available.
+     * <p>
+     * Early exits to {@code false} if {@code casual-fields.json} cannot be found on the classpath,
+     * or if {@code CASUAL_FIELD_TABLE} is unset, or if the file that {@code CASUAL_FIELD_TABLE}
+     * points to does not exist.
      */
-    public static synchronized void ensureCasualFieldTableInitialized() {
-        try {
-            if (ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE) != null) {
-                return;
-            }
-            String envVal = System.getenv("CASUAL_FIELD_TABLE");
-            if (envVal != null && !envVal.isBlank() && Files.exists(Path.of(envVal.trim()))) {
-                ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE, envVal.trim());
-                return;
-            }
-            String sysProp = System.getProperty("CASUAL_FIELD_TABLE");
-            if (sysProp != null && !sysProp.isBlank() && Files.exists(Path.of(sysProp.trim()))) {
-                ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE, sysProp.trim());
-                return;
-            }
-            Path localFile = Path.of("casual-fields.json");
-            if (Files.exists(localFile)) {
-                ConfigurationService.setConfiguration(
-                        ConfigurationOptions.CASUAL_FIELD_TABLE,
-                        localFile.toAbsolutePath().toString());
-                return;
-            }
-            Path configDirFile = Path.of("config", "casual-fields.json");
-            if (Files.exists(configDirFile)) {
-                ConfigurationService.setConfiguration(
-                        ConfigurationOptions.CASUAL_FIELD_TABLE,
-                        configDirFile.toAbsolutePath().toString());
-                return;
-            }
-            Path tempFile = Files.createTempFile("casual-fields-default", ".json");
-            tempFile.toFile().deleteOnExit();
-            Files.writeString(tempFile, "{\"groups\":[]}", StandardCharsets.UTF_8);
-            ConfigurationService.setConfiguration(
-                    ConfigurationOptions.CASUAL_FIELD_TABLE,
-                    tempFile.toAbsolutePath().toString());
-        } catch (Throwable ignored) {
-            // Best effort; extractPayload and wrapPayload safely catch any remaining LinkageError/Throwable
+    public static boolean isFieldTableAvailable() {
+        String envFile = ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE);
+        if (envFile == null || envFile.isBlank()) {
+            envFile = System.getenv("CASUAL_FIELD_TABLE");
         }
+        if (envFile == null || envFile.isBlank()) {
+            envFile = System.getProperty("CASUAL_FIELD_TABLE");
+        }
+        if (envFile != null && !envFile.isBlank()) {
+            try {
+                return Files.exists(Path.of(envFile.trim()));
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        try {
+            ClassLoader cl = CasualBufferUtils.class.getClassLoader();
+            if (cl != null && cl.getResource("casual-fields.json") != null) {
+                return true;
+            }
+            ClassLoader ccl = Thread.currentThread().getContextClassLoader();
+            if (ccl != null && ccl.getResource("casual-fields.json") != null) {
+                return true;
+            }
+        } catch (Exception ignored) {
+            return false;
+        }
+        return false;
     }
 
     /**
@@ -167,6 +155,9 @@ public final class CasualBufferUtils {
             return text;
         }
         if (isFieldedType(type)) {
+            if (!isFieldTableAvailable()) {
+                return Base64.getEncoder().encodeToString(toByteArray(buffer));
+            }
             try {
                 FieldedTypeBuffer fielded = FieldedTypeBuffer.create(buffer.getBytes());
                 Map<String, List<FieldedData<?>>> rawMap = fielded.extract();
@@ -217,6 +208,14 @@ public final class CasualBufferUtils {
             return ServiceBuffer.of("CSTRING/", List.of(text.getBytes(StandardCharsets.UTF_8)));
         }
         if (isFieldedType(type)) {
+            if (!isFieldTableAvailable()) {
+                try {
+                    byte[] decoded = Base64.getDecoder().decode(payload.trim());
+                    return ServiceBuffer.of("CFIELD/", List.of(decoded));
+                } catch (IllegalArgumentException e) {
+                    return ServiceBuffer.of("CFIELD/", List.of(payload.getBytes(StandardCharsets.UTF_8)));
+                }
+            }
             String trimmed = payload.trim();
             if (trimmed.startsWith("{")) {
                 try {
