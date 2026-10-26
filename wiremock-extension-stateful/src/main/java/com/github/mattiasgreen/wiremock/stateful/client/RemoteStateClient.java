@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.stateful.client;
 
+import com.github.mattiasgreen.wiremock.stateful.Experimental;
 import com.github.mattiasgreen.wiremock.stateful.ast.AstJson;
 import com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition;
 import java.io.IOException;
@@ -10,6 +11,12 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Objects;
 
+/**
+ * HTTP client for pushing and inspecting stateful AST models on a remote WireMock server.
+ *
+ * <p><b>Status: Alpha Incubation Prototype.</b>
+ */
+@Experimental("Alpha incubation prototype")
 public final class RemoteStateClient {
 
     private static final HttpClient HTTP_CLIENT =

@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.stateful.dsl;
 
+import com.github.mattiasgreen.wiremock.stateful.Experimental;
 import com.github.mattiasgreen.wiremock.stateful.ast.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,6 +9,14 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Fluent builder for compiling stateful REST simulation models into declarative ASTs.
+ *
+ * <p><b>Status: Alpha Incubation Prototype.</b>
+ * For standard finite state machines, prefer native WireMock Scenarios with ID scoping.
+ * For complex relational models with cascading invariants, consider provider-supplied Testcontainers.
+ */
+@Experimental("Alpha incubation prototype: evaluate against native WireMock scenarios and provider Testcontainers")
 public final class SimulatorModel {
 
     private SimulatorModel() {}
