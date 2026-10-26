@@ -213,7 +213,8 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
-    @DisplayName("Should forward call to upstream and snapshot record for subsequent offline replay")
+    @DisplayName(
+            "Should forward customer and spouse calls to upstream CRM risk control and snapshot record with exact body matching for offline replay")
     void shouldForwardAndRecordUnmatchedServiceWhenRecordStubsEnabled() throws Exception {
         WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
         upstreamWireMock.start();
@@ -224,11 +225,21 @@ class CasualWireMockGatewayTest {
         upstreamGateway.start();
 
         try {
-            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/recordedInventoryService"))
+            // Upstream CRM Risk Control: Customer has LOW risk, Spouse has MEDIUM risk
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/crmRiskControlService"))
+                    .withRequestBody(equalToJson("{\"customerId\": \"CUST-001\", \"role\": \"customer\"}"))
                     .willReturn(aResponse()
                             .withStatus(200)
                             .withHeader("Content-Type", "application/json")
-                            .withBody("{\"sku\": \"SKU-555\", \"inStock\": true}")));
+                            .withBody("{\"customerId\": \"CUST-001\", \"riskStatus\": \"LOW\", \"approved\": true}")));
+
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/crmRiskControlService"))
+                    .withRequestBody(equalToJson("{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody(
+                                    "{\"customerId\": \"CUST-002\", \"riskStatus\": \"MEDIUM\", \"approved\": true}")));
 
             wireMockServer.stubFor(post(urlMatching("/__casual/services/.*"))
                     .atPriority(10)
@@ -245,50 +256,79 @@ class CasualWireMockGatewayTest {
             try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
-                // 1st Call: Forwarded to upstream and recorded in Request Journal
-                CasualServiceCallReplyMessage firstReply =
-                        proxyClient.tpcall("recordedInventoryService", "{\"sku\": \"SKU-555\"}");
+                // 1. Call Customer -> Forwarded to upstream and recorded in Request Journal
+                CasualServiceCallReplyMessage customerReply = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-001\", \"role\": \"customer\"}");
+                assertThat(customerReply).isNotNull();
+                assertThat(customerReply.getError()).isEqualTo(ErrorState.OK);
+                String customerBody =
+                        new String(customerReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(customerBody).contains("CUST-001").contains("LOW");
 
-                assertThat(firstReply).isNotNull();
-                assertThat(firstReply.getError()).isEqualTo(ErrorState.OK);
-                String firstBody =
-                        new String(firstReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
-                assertThat(firstBody).contains("SKU-555").contains("true");
+                // 2. Call Spouse -> Forwarded to upstream and recorded in Request Journal
+                CasualServiceCallReplyMessage spouseReply = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}");
+                assertThat(spouseReply).isNotNull();
+                assertThat(spouseReply.getError()).isEqualTo(ErrorState.OK);
+                String spouseBody =
+                        new String(spouseReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(spouseBody).contains("CUST-002").contains("MEDIUM");
 
-                // Upstream received exactly 1 request
-                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService")));
+                // Upstream received exactly 1 request for customer and 1 for spouse
+                upstreamWireMock.verify(
+                        1,
+                        postRequestedFor(urlEqualTo("/__casual/services/crmRiskControlService"))
+                                .withRequestBody(
+                                        equalToJson("{\"customerId\": \"CUST-001\", \"role\": \"customer\"}")));
+                upstreamWireMock.verify(
+                        1,
+                        postRequestedFor(urlEqualTo("/__casual/services/crmRiskControlService"))
+                                .withRequestBody(equalToJson("{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}")));
 
-                // Snapshot record journal entries into offline stub mappings
+                // 3. Snapshot record journal entries into offline stub mappings
                 wireMockServer.snapshotRecord(recordSpec()
                         .makeStubsPersistent(false)
                         .extractTextBodiesOver(Long.MAX_VALUE)
                         .extractBinaryBodiesOver(Long.MAX_VALUE));
 
-                // 2nd Call: Must match the newly recorded stub in wireMockServer directly!
-                CasualServiceCallReplyMessage secondReply =
-                        proxyClient.tpcall("recordedInventoryService", "{\"sku\": \"SKU-555\"}");
+                // 4. Terminate upstream server completely to guarantee 100% offline replay
+                upstreamGateway.close();
+                upstreamWireMock.stop();
 
-                assertThat(secondReply).isNotNull();
-                assertThat(secondReply.getError()).isEqualTo(ErrorState.OK);
-                String secondBody =
-                        new String(secondReply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
-                assertThat(secondBody).contains("SKU-555").contains("true");
+                // 5. Replay Customer call offline -> Must match recorded customer stub directly!
+                CasualServiceCallReplyMessage replayCustomer = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-001\", \"role\": \"customer\"}");
+                assertThat(replayCustomer).isNotNull();
+                assertThat(replayCustomer.getError()).isEqualTo(ErrorState.OK);
+                String replayCustBody =
+                        new String(replayCustomer.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(replayCustBody).contains("CUST-001").contains("LOW");
 
-                // Upstream must STILL have only been called once! The second call was served from recorded WireMock
-                // stub
-                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService")));
+                // 6. Replay Spouse call offline -> Must match recorded spouse stub directly without collision!
+                CasualServiceCallReplyMessage replaySpouse = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}");
+                assertThat(replaySpouse).isNotNull();
+                assertThat(replaySpouse.getError()).isEqualTo(ErrorState.OK);
+                String replaySpouseBody =
+                        new String(replaySpouse.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+                assertThat(replaySpouseBody).contains("CUST-002").contains("MEDIUM");
 
-                // Verify wireMockServer now has recorded requests in journal
-                wireMockServer.verify(
-                        2,
-                        postRequestedFor(urlEqualTo("/__casual/services/recordedInventoryService"))
-                                .withRequestBody(equalToJson("{\"sku\": \"SKU-555\"}")));
+                // 7. Unknown payload does NOT match customer or spouse stubs; falls through to proxy route
+                // and fails because upstream is shut down
+                CasualServiceCallReplyMessage unknownReply = proxyClient.tpcall(
+                        "crmRiskControlService", "{\"customerId\": \"CUST-999\", \"role\": \"unknown\"}");
+                assertThat(unknownReply).isNotNull();
+                assertThat(unknownReply.getError()).isEqualTo(ErrorState.TPESVCERR);
             } finally {
                 proxyGateway.close();
             }
         } finally {
-            upstreamGateway.close();
-            upstreamWireMock.stop();
+            if (upstreamGateway.isRunning()) {
+                upstreamGateway.close();
+            }
+            if (upstreamWireMock.isRunning()) {
+                upstreamWireMock.stop();
+            }
         }
     }
 
@@ -926,6 +966,194 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
+    @DisplayName("Should translate inbound fielded buffer call to JSON stub and return fielded reply")
+    void shouldHandleFieldedBufferCallWithConfiguredTableAndMatchWireMockStub() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                {
+                  "name": "FLD_USER_ID",
+                  "id": 1,
+                  "type": "long"
+                },
+                {
+                  "name": "FLD_USER_NAME",
+                  "id": 2,
+                  "type": "string"
+                }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-gateway-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE,
+                    temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/fmlUserService"))
+                    .withRequestBody(equalToJson("{\"FLD_USER_NAME\": \"Alice\", \"FLD_USER_ID\": 1001}"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withHeader("X-Casual-Buffer-Type", "CFIELD/")
+                            .withBody("{\"FLD_USER_NAME\": \"Alice\", \"FLD_USER_ID\": 9999}")));
+
+            // Create and encode a real fielded buffer using FieldedTypeBuffer
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer fml =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create();
+            fml.write("FLD_USER_NAME", "Alice");
+            fml.write("FLD_USER_ID", 1001L);
+
+            ServiceBuffer requestBuffer = ServiceBuffer.of(".FIELDED", fml.encode());
+
+            CasualServiceCallReplyMessage reply = client.tpcall("fmlUserService", requestBuffer);
+
+            assertThat(reply).isNotNull();
+            assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+            assertThat(reply.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+
+            // Verify WireMock captured JSON in Request Journal
+            wireMockServer.verify(postRequestedFor(urlEqualTo("/__casual/services/fmlUserService"))
+                    .withRequestBody(equalToJson("{\"FLD_USER_NAME\": \"Alice\", \"FLD_USER_ID\": 1001}")));
+
+            // Verify reply decoded back to JSON contains the stub values
+            String replyJson = CasualBufferUtils.extractPayload(reply.getServiceBuffer());
+            assertThat(replyJson).contains("\"FLD_USER_NAME\":\"Alice\"");
+            assertThat(replyJson).contains("\"FLD_USER_ID\":9999");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should proxy and record fielded buffer with configured field table and replay offline")
+    void shouldProxyAndRecordFieldedBufferWithConfiguredTableAndReplayOffline() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                {
+                  "name": "FLD_USER_ID",
+                  "id": 1,
+                  "type": "long"
+                },
+                {
+                  "name": "FLD_USER_NAME",
+                  "id": 2,
+                  "type": "string"
+                }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-proxy-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
+        upstreamGateway.start();
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE,
+                    temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/proxiedFmlService"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withHeader("X-Casual-Buffer-Type", "CFIELD/")
+                            .withBody("{\"FLD_USER_NAME\": \"Alice_Proxied\", \"FLD_USER_ID\": 8888}")));
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/proxiedFmlService"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(wireMockServer)
+                    .build();
+            proxyGateway.start();
+
+            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer fml =
+                        se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create();
+                fml.write("FLD_USER_NAME", "Alice");
+                fml.write("FLD_USER_ID", 1001L);
+
+                ServiceBuffer requestBuffer = ServiceBuffer.of(".FIELDED", fml.encode());
+
+                // 1. Call via proxy gateway -> forwarded to upstreamGateway and recorded in wireMockServer
+                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("proxiedFmlService", requestBuffer);
+                assertThat(reply1.getError()).isEqualTo(ErrorState.OK);
+                assertThat(reply1.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+                String reply1Json = CasualBufferUtils.extractPayload(reply1.getServiceBuffer());
+                assertThat(reply1Json).contains("\"FLD_USER_NAME\":\"Alice_Proxied\"");
+                assertThat(reply1Json).contains("\"FLD_USER_ID\":8888");
+
+                // Snapshot record journal entries into offline stub mappings
+                wireMockServer.snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
+
+                // Terminate upstream completely to test offline replay
+                upstreamGateway.close();
+                upstreamWireMock.stop();
+
+                // 2. Call again with upstream offline -> must be served from WireMock's recorded stub!
+                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("proxiedFmlService", requestBuffer);
+                assertThat(reply2.getError()).isEqualTo(ErrorState.OK);
+                assertThat(reply2.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+                String reply2Json = CasualBufferUtils.extractPayload(reply2.getServiceBuffer());
+                assertThat(reply2Json).contains("\"FLD_USER_NAME\":\"Alice_Proxied\"");
+                assertThat(reply2Json).contains("\"FLD_USER_ID\":8888");
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+            if (upstreamGateway.isRunning()) {
+                upstreamGateway.close();
+            }
+            if (upstreamWireMock.isRunning()) {
+                upstreamWireMock.stop();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("Should include config property hint in timeout error message when upstream call times out")
     void shouldIncludeConfigPropertyHintOnUpstreamTimeout() throws Exception {
         wireMockServer.stubFor(post(urlEqualTo("/__casual/services/timeoutTestService"))
@@ -1244,6 +1472,84 @@ class CasualWireMockGatewayTest {
             if (upstreamWireMock.isRunning()) {
                 upstreamWireMock.stop();
             }
+        }
+    }
+
+    @Test
+    @DisplayName("Should stub fielded service call with offline mock returning valid binary CFIELD buffer")
+    void shouldStubFieldedServiceCallWithOfflineMockReturningValidCfieldBuffer() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_USER_NAME", "id": 2, "type": "string" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-gateway-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            String binaryPayloadB64 =
+                    Base64.getEncoder().encodeToString("{\"caseId\":\"12356\"}".getBytes(StandardCharsets.UTF_8));
+            String responseJson = String.format(
+                    java.util.Locale.ROOT,
+                    """
+                    {
+                      "FLD_USER_ID": 1001,
+                      "FLD_USER_NAME": "Alice",
+                      "FLD_ARCHIVE_DATA": "%s"
+                    }
+                    """,
+                    binaryPayloadB64);
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/crmArchiveService"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withHeader("X-Casual-Buffer-Type", "CFIELD/")
+                            .withBody(responseJson)));
+
+            ServiceBuffer requestBuffer = ServiceBuffer.of(".FIELDED", List.of(new byte[] {
+                0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x03, (byte) 0xE9, // FLD_USER_ID
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, (byte) 0xE9
+            }));
+
+            CasualServiceCallReplyMessage reply = client.tpcall("crmArchiveService", requestBuffer);
+
+            assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+            assertThat(reply.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+
+            // Verify the response bytes are valid binary FML, NOT raw JSON ASCII
+            byte[] rawBytes = CasualBufferUtils.toByteArray(reply.getServiceBuffer());
+            String asciiPrefix = new String(rawBytes, StandardCharsets.UTF_8);
+            assertThat(asciiPrefix).doesNotStartWith("{");
+
+            // Verify decoding via FieldedTypeBuffer succeeds without throwing CasualFieldedLookupException
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer decoded =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create(
+                            reply.getServiceBuffer().getBytes());
+            assertThat(decoded.read("FLD_USER_ID").getData()).isEqualTo(1001L);
+            assertThat(decoded.read("FLD_USER_NAME").getData()).isEqualTo("Alice");
+
+            byte[] decodedBinary = (byte[]) decoded.read("FLD_ARCHIVE_DATA").getData();
+            assertThat(new String(decodedBinary, StandardCharsets.UTF_8)).isEqualTo("{\"caseId\":\"12356\"}");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
         }
     }
 }

@@ -271,6 +271,108 @@ wireMock.snapshotRecord(recordSpec()
 
 Once snapshot, upstream servers can be shut down entirely. WireMock serves recorded stubs offline while the gateway acts as a **Synthetic XA Resource Manager**, voting `XA_OK` to complete client 2PC commit loops.
 
+### D. Ready-Made JSON Proxy Stub for `StandaloneDevServer` & CLI
+
+When running `StandaloneDevServer` locally:
+```bash
+./gradlew :wiremock-extension-bundle:runStandalone
+```
+WireMock runs on HTTP port `8080`, and the Casual TCP Gateway listens on `casual://127.0.0.1:7772`.
+
+You can immediately configure Casual proxying by importing the ready-made stub mapping [`wiremock-examples/casual-proxy-stub.json`](../wiremock-examples/casual-proxy-stub.json):
+
+```json
+{
+  "id": "10000000-0000-0000-0000-000000000005",
+  "name": "Casual Upstream Dynamic Proxy",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPattern": "/__casual/services/.*"
+  },
+  "response": {
+    "status": 200
+  },
+  "metadata": {
+    "project": "Billing Platform",
+    "mode": "proxy",
+    "protocol": "casual",
+    "targetBaseUrl": "casual://127.0.0.1:7771"
+  }
+}
+```
+
+#### Key Properties:
+* **`urlPattern: "/__casual/services/.*"`**: Matches any inbound Casual `tpcall` or `tpacall` arriving at the TCP gateway.
+* **`priority: 10`**: Functions as a low-priority proxy fallback. Any specific mocks configured with higher priority (e.g. Priority 1–5) will intercept their service calls locally, while unmocked services forward to upstream.
+* **`metadata.targetBaseUrl: "casual://<upstream-host>:<port>"`**: Instructs `CasualWireMockGateway` to proxy directly over native TCP to the designated Casual domain.
+* **`metadata.mode: "proxy"`**: Flags the stub in the WireMock Console UI (`http://localhost:8080/__admin/ui`) as a live proxy route with the **LIVE PROXY** badge and enables the 1-click **Harvest & Flip to Stubs** workflow.
+
+#### Loading into StandaloneDevServer:
+```bash
+# Option 1: Load individual Casual proxy stub via WireMock Admin API
+curl -X POST http://localhost:8080/__admin/mappings \
+  -H "Content-Type: application/json" \
+  -d @wiremock-examples/casual-proxy-stub.json
+
+# Option 2: Import complete examples bundle (HTTP mocks + Casual dynamic proxy)
+curl -X POST http://localhost:8080/__admin/mappings/import \
+  -H "Content-Type: application/json" \
+  -d @wiremock-examples/example-stubs.json
+
+# Option 3: Import via WireMock Console UI
+# Open http://localhost:8080/__admin/ui, click 'Import Spec / Bundle', and paste the JSON
+```
+
+### E. End-to-End Live Recording & Offline Replay Recipe
+
+Here is the complete inner loop for proxying live Casual interactions, recording them into persistent JSON stubs, and transitioning to 100% offline simulation:
+
+1. **Start `StandaloneDevServer`**:
+   ```bash
+   ./gradlew :wiremock-extension-bundle:runStandalone
+   ```
+   WireMock is listening on `http://localhost:8080` and the Casual TCP Gateway is on port `7772`.
+
+2. **Register the Proxy Stub**:
+   Post [`wiremock-examples/casual-proxy-stub.json`](../wiremock-examples/casual-proxy-stub.json) to `http://localhost:8080/__admin/mappings`. Update `targetBaseUrl` to point to your live upstream Casual server (e.g. `casual://127.0.0.1:7771` or `casual://billing-upstream.internal:7771`).
+
+3. **Execute Client Traffic**:
+   Configure your Casual client / application (e.g. `casual-java`, WildFly, Tuxedo gateway, C++ client, Quarkus app) to connect to WireMock's Casual Gateway at `127.0.0.1:7772`.
+   When the client issues `tpcall("billing.charge", ...)`, WireMock:
+   - Evaluates in-memory stubs and matches the proxy mapping.
+   - Forwards the raw XATMI frame socket-to-socket over TCP to `127.0.0.1:7771`.
+   - Returns the upstream reply to the client.
+   - Logs the full request/response exchange into the WireMock Request Journal.
+
+4. **Snapshot Record to Generate Persistent Stubs**:
+   Capture all recorded live proxy calls from the journal into permanent offline stubs via the Admin API:
+   ```bash
+   curl -X POST http://localhost:8080/__admin/recordings/snapshot \
+     -H "Content-Type: application/json" \
+     -d '{
+       "outputFormat": "FULL",
+       "persist": true,
+       "extractBodyCriteria": {
+         "textSizeThreshold": "0",
+         "binarySizeThreshold": "0"
+       }
+     }'
+   ```
+   *UI Alternative*: In the WireMock Console Web UI at [http://localhost:8080/__admin/ui](http://localhost:8080/__admin/ui), open the **Request Journal** tab and click **Snapshot / Harvest**, or click the project mode pill to switch from **LIVE PROXY** to **STUBS**.
+
+5. **Verify Recorded Offline Stubs**:
+   WireMock automatically synthesizes offline stubs:
+   - JSON payloads are recorded as human-readable JSON strings with `Content-Type: application/json`.
+   - Fielded buffers (`.FIELDED` / `CFIELD/`) are mapped to structured JSON or Base64 with `X-Casual-Buffer-Type`.
+   - Null-terminated C-strings (`CSTRING/`) are recorded as clean UTF-8 text.
+
+6. **100% Offline Decoupling & Synthetic XA Execution**:
+   Stop or disconnect the upstream server (`127.0.0.1:7771`).
+   Subsequent client calls to the recorded services succeed 100% offline:
+   - WireMock serves responses directly from the recorded stubs.
+   - If the client executes a Two-Phase Commit transaction (JTA / Narayana), `CasualWireMockGateway` acts as a **Synthetic XA Resource Manager**, automatically replying `XA_OK` to `PREPARE_REQUEST` and `COMMIT_REQUEST`.
+
 ---
 
 ## 9. Configuration & Admin API Control Plane
@@ -342,7 +444,7 @@ wireMock.stubFor(post(urlEqualTo("/__casual/services/transferFunds"))
                 .withBody("{\"error\": \"Insufficient funds\", \"balance\": 4.50}")));
 ```
 
-### D. Configuring Dynamic Stub-Driven Casual Proxy
+### D. Configuring Dynamic Stub-Driven Casual Proxy (Java)
 ```java
 // Routes all /__casual/services/* calls to an upstream Casual server
 wireMock.stubFor(post(urlMatching("/__casual/services/.*"))
@@ -353,7 +455,98 @@ wireMock.stubFor(post(urlMatching("/__casual/services/.*"))
                 "targetBaseUrl", "casual://upstream.billing.internal:7771"))
         .willReturn(aResponse().withStatus(200)));
 ```
-proxyGateway.start();
+
+### E. Ready-Made JSON-Based Stub Definitions (cURL & Admin API)
+
+#### 1. Dynamic Proxy Stub (`casual-proxy-stub.json`)
+```json
+{
+  "name": "Casual Proxy Route (Billing Platform)",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPattern": "/__casual/services/.*"
+  },
+  "response": {
+    "status": 200
+  },
+  "metadata": {
+    "project": "Billing Platform",
+    "mode": "proxy",
+    "protocol": "casual",
+    "targetBaseUrl": "casual://127.0.0.1:7771"
+  }
+}
+```
+Register via cURL:
+```bash
+curl -X POST http://localhost:8080/__admin/mappings \
+  -H "Content-Type: application/json" \
+  -d @wiremock-examples/casual-proxy-stub.json
+```
+
+#### 2. Specific Local Mock Stub (Overrides Proxy Fallback)
+```json
+{
+  "name": "Billing Charge Mock (Local Override)",
+  "priority": 5,
+  "request": {
+    "method": "POST",
+    "url": "/__casual/services/billing.charge"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Casual-Error-State": "OK"
+    },
+    "body": "{\"txId\":\"tx-9012\",\"amount\":99.0,\"status\":\"COMMITTED\"}"
+  },
+  "metadata": {
+    "project": "Billing Platform",
+    "protocol": "casual"
+  }
+}
+```
+Register via cURL:
+```bash
+curl -X POST http://localhost:8080/__admin/mappings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Billing Charge Mock (Local Override)",
+    "priority": 5,
+    "request": {
+      "method": "POST",
+      "url": "/__casual/services/billing.charge"
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "X-Casual-Error-State": "OK"
+      },
+      "body": "{\"txId\":\"tx-9012\",\"amount\":99.0,\"status\":\"COMMITTED\"}"
+    },
+    "metadata": {
+      "project": "Billing Platform",
+      "protocol": "casual"
+    }
+  }'
+```
+
+#### 3. Trigger Snapshot Recording
+Snapshot all proxied requests into offline stubs:
+```bash
+curl -X POST http://localhost:8080/__admin/recordings/snapshot \
+  -H "Content-Type: application/json" \
+  -d '{
+    "outputFormat": "FULL",
+    "persist": true,
+    "extractBodyCriteria": {
+      "textSizeThreshold": "0",
+      "binarySizeThreshold": "0"
+    }
+  }'
 ```
 
 ---

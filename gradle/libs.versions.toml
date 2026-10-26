@@ -22,6 +22,7 @@ netty = "4.1.121.Final"
 casual-api = { module = "se.laz.casual:casual-api", version.ref = "casual" }
 casual-network = { module = "se.laz.casual:casual-network", version.ref = "casual" }
 casual-network-protocol = { module = "se.laz.casual:casual-network-protocol", version.ref = "casual" }
+casual-json-provider-gson = { module = "se.laz.casual:casual-json-provider-gson", version.ref = "casual" }
 netty-all = { module = "io.netty:netty-all", version.ref = "netty" }
 resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
 resilience4j-retry = { module = "io.github.resilience4j:resilience4j-retry", version.ref = "resilience4j" }

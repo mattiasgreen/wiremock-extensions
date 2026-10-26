@@ -11,6 +11,13 @@ import se.laz.casual.api.buffer.type.ServiceBuffer;
 
 class CasualBufferUtilsTest {
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        System.clearProperty("CASUAL_FIELD_TABLE");
+        se.laz.casual.config.ConfigurationService.setConfiguration(
+                se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+    }
+
     @Test
     @DisplayName("Should accurately identify JSON buffer types")
     void shouldIdentifyJsonBufferTypes() {
@@ -97,5 +104,201 @@ class CasualBufferUtilsTest {
         String dump = CasualBufferUtils.toHexDump(bytes, 16);
 
         assertThat(dump).contains("01 02 AA BB");
+    }
+
+    @Test
+    @DisplayName("Should early exit to Base64 when field table is not available")
+    void shouldEarlyExitToBase64WhenFieldTableNotAvailable() {
+        // Construct a realistic 16-byte buffer with 8 bytes field id and 8 bytes length
+        byte[] realisticFielded = new byte[] {
+            0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x01, // 8-byte field ID
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, // 8-byte size
+            0x10, 0x20, 0x30, 0x40 // payload data
+        };
+        ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", List.of(realisticFielded));
+
+        // When casual-fields.json is not in classpath and env is not set/not found
+        assertThat(CasualBufferUtils.isFieldTableAvailable()).isFalse();
+
+        // Must early exit to Base64 and not throw ExceptionInInitializerError
+        String extracted = CasualBufferUtils.extractPayload(buffer);
+        assertThat(extracted).isNotNull();
+        assertThat(extracted).isEqualTo(Base64.getEncoder().encodeToString(realisticFielded));
+
+        // And wrapPayload must early exit to Base64 decoding
+        ServiceBuffer wrapped = CasualBufferUtils.wrapPayload(".FIELDED", extracted);
+        assertThat(CasualBufferUtils.toByteArray(wrapped)).isEqualTo(realisticFielded);
+    }
+
+    @Test
+    @DisplayName("Should detect field table availability accurately for existing vs non-existent files")
+    void shouldDetectFieldTableAvailabilityAccurately() throws Exception {
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("test-fields", ".json");
+        temp.toFile().deleteOnExit();
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            System.setProperty("CASUAL_FIELD_TABLE", "/non/existent/path/casual-fields.json");
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isFalse();
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should load JsonProvider SPI implementation from casual-json-provider-gson")
+    void shouldLoadJsonProviderSpi() {
+        se.laz.casual.api.external.json.JsonProvider provider =
+                se.laz.casual.api.external.json.JsonProviderFactory.getJsonProvider();
+        assertThat(provider).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should encode and decode fielded calls with structured JSON when field table is configured")
+    void shouldEncodeAndDecodeFieldedCallsWithConfiguredTable() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_USER_NAME", "id": 2, "type": "string" },
+                { "name": "FLD_CRM_CUSTOMER_ID", "id": 3, "type": "long" },
+                { "name": "FLD_CRM_CUSTOMER_NAME", "id": 4, "type": "string" },
+                { "name": "FLD_CRM_STATUS_FLAG", "id": 5, "type": "short" },
+                { "name": "FLD_BILLING_AMOUNT", "id": 6, "type": "double" },
+                { "name": "FLD_BILLING_DISCOUNT", "id": 7, "type": "float" },
+                { "name": "FLD_BILLING_CURRENCY_CODE", "id": 8, "type": "char" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            // Create and encode a real fielded buffer using FieldedTypeBuffer
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer fml =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create();
+            fml.write("FLD_USER_NAME", "Alice");
+            fml.write("FLD_USER_ID", 1001L);
+
+            List<byte[]> encodedBytes = fml.encode();
+            ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", encodedBytes);
+
+            // Extract to human-readable JSON
+            String jsonPayload = CasualBufferUtils.extractPayload(buffer);
+            assertThat(jsonPayload).isNotNull();
+            assertThat(jsonPayload).contains("\"FLD_USER_NAME\":\"Alice\"");
+            assertThat(jsonPayload).contains("\"FLD_USER_ID\":1001");
+
+            // Wrap JSON back into .FIELDED buffer
+            ServiceBuffer wrappedBuffer = CasualBufferUtils.wrapPayload(".FIELDED", jsonPayload);
+            assertThat(wrappedBuffer.getType()).isEqualTo("CFIELD/");
+
+            // Decode wrapped buffer again to verify roundtrip fidelity
+            String reExtracted = CasualBufferUtils.extractPayload(wrappedBuffer);
+            assertThat(reExtracted).contains("\"FLD_USER_NAME\":\"Alice\"");
+            assertThat(reExtracted).contains("\"FLD_USER_ID\":1001");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should encode fielded buffer with binary, numeric, and string fields from generic JSON")
+    void shouldEncodeFieldedBufferWithBinaryAndNumericFieldsFromGenericJson() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_USER_NAME", "id": 2, "type": "string" },
+                { "name": "FLD_CRM_CUSTOMER_ID", "id": 3, "type": "long" },
+                { "name": "FLD_CRM_CUSTOMER_NAME", "id": 4, "type": "string" },
+                { "name": "FLD_CRM_STATUS_FLAG", "id": 5, "type": "short" },
+                { "name": "FLD_BILLING_AMOUNT", "id": 6, "type": "double" },
+                { "name": "FLD_BILLING_DISCOUNT", "id": 7, "type": "float" },
+                { "name": "FLD_BILLING_CURRENCY_CODE", "id": 8, "type": "char" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-crm-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+            assertThat(CasualBufferUtils.isFieldTableAvailable()).isTrue();
+
+            String binaryPayloadB64 = Base64.getEncoder()
+                    .encodeToString("{\"caseId\":\"12356\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String jsonInput = String.format(
+                    java.util.Locale.ROOT,
+                    """
+                    {
+                      "FLD_CRM_CUSTOMER_ID": 54321,
+                      "FLD_CRM_CUSTOMER_NAME": "Acme Partner",
+                      "FLD_CRM_STATUS_FLAG": 1,
+                      "FLD_BILLING_AMOUNT": 199.95,
+                      "FLD_BILLING_DISCOUNT": 0.15,
+                      "FLD_BILLING_CURRENCY_CODE": "E",
+                      "FLD_ARCHIVE_DATA": "%s",
+                      "UNKNOWN_EXTRA_FIELD": "ignored_gracefully"
+                    }
+                    """,
+                    binaryPayloadB64);
+
+            ServiceBuffer wrappedBuffer = CasualBufferUtils.wrapPayload(".FIELDED", jsonInput);
+            assertThat(wrappedBuffer.getType()).isEqualTo("CFIELD/");
+
+            // Must NOT return raw JSON string bytes in a CFIELD buffer
+            byte[] rawBufferBytes = CasualBufferUtils.toByteArray(wrappedBuffer);
+            String asAscii = new String(rawBufferBytes, java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(asAscii).doesNotStartWith("{");
+
+            // Must decode cleanly via Casual's FieldedTypeBufferDecoder without throwing "field with real id does not
+            // exist"
+            se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer decoded =
+                    se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer.create(wrappedBuffer.getBytes());
+            assertThat(decoded.read("FLD_CRM_CUSTOMER_ID").getData()).isEqualTo(54321L);
+            assertThat(decoded.read("FLD_CRM_CUSTOMER_NAME").getData()).isEqualTo("Acme Partner");
+            assertThat(decoded.read("FLD_CRM_STATUS_FLAG").getData()).isEqualTo((short) 1);
+            assertThat(decoded.read("FLD_BILLING_CURRENCY_CODE").getData()).isEqualTo('E');
+
+            byte[] decodedBinary = (byte[]) decoded.read("FLD_ARCHIVE_DATA").getData();
+            assertThat(new String(decodedBinary, java.nio.charset.StandardCharsets.UTF_8))
+                    .isEqualTo("{\"caseId\":\"12356\"}");
+
+            // Extract back to JSON and verify round-trip
+            String reExtracted = CasualBufferUtils.extractPayload(wrappedBuffer);
+            assertThat(reExtracted).contains("\"FLD_CRM_CUSTOMER_ID\":54321");
+            assertThat(reExtracted).contains("\"FLD_CRM_CUSTOMER_NAME\":\"Acme Partner\"");
+            assertThat(reExtracted).contains("\"FLD_CRM_STATUS_FLAG\":1");
+            assertThat(reExtracted).contains("\"FLD_ARCHIVE_DATA\":\"" + binaryPayloadB64 + "\"");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
     }
 }

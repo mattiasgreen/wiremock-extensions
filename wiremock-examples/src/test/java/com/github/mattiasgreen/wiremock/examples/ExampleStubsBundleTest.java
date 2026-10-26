@@ -92,5 +92,37 @@ class ExampleStubsBundleTest {
                 HttpResponse.BodyHandlers.ofString());
         assertThat(errorResponse.statusCode()).isEqualTo(500);
         assertThat(errorResponse.body()).contains("Internal Server Error");
+
+        // 5. Verify Casual proxy stub mapping is present in bundle
+        assertThat(server.listAllStubMappings().getMappings()).anySatisfy(stub -> {
+            assertThat(stub.getName()).isEqualTo("Casual Upstream Dynamic Proxy");
+            assertThat(stub.getMetadata().getString("targetBaseUrl")).isEqualTo("casual://127.0.0.1:7771");
+        });
+    }
+
+    @Test
+    void testCasualProxyStubCanBeImportedIndividually() throws Exception {
+        Path stubPath = Files.exists(Path.of("casual-proxy-stub.json"))
+                ? Path.of("casual-proxy-stub.json")
+                : Path.of("wiremock-examples", "casual-proxy-stub.json");
+
+        assertThat(Files.exists(stubPath)).isTrue();
+        String stubJson = Files.readString(stubPath);
+
+        HttpRequest importRequest = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/mappings"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(stubJson))
+                .build();
+
+        HttpResponse<String> importResponse = httpClient.send(importRequest, HttpResponse.BodyHandlers.ofString());
+        assertThat(importResponse.statusCode()).isEqualTo(201);
+
+        assertThat(server.listAllStubMappings().getMappings()).anySatisfy(stub -> {
+            assertThat(stub.getName()).isEqualTo("Casual Upstream Dynamic Proxy");
+            assertThat(stub.getMetadata().getString("targetBaseUrl")).isEqualTo("casual://127.0.0.1:7771");
+            assertThat(stub.getMetadata().getString("mode")).isEqualTo("proxy");
+            assertThat(stub.getMetadata().getString("protocol")).isEqualTo("casual");
+        });
     }
 }

@@ -69,15 +69,21 @@ The `wiremock-examples` module includes an end-to-end 3-node banking reference h
 
 ## Example Stubs Bundle
 
-A standalone copy-pasteable WireMock stubs bundle is provided in [`example-stubs.json`](example-stubs.json). It defines clean baseline sample stubs (`GET /api/v1/users`, `POST /api/v1/orders`, `GET /api/v1/slow`, and `GET /api/v1/error`) without pre-populating servers by default.
+A standalone copy-pasteable WireMock stubs bundle is provided in [`example-stubs.json`](example-stubs.json), alongside an individual ready-made Casual proxy stub in [`casual-proxy-stub.json`](casual-proxy-stub.json). It defines clean baseline sample stubs (`GET /api/v1/users`, `POST /api/v1/orders`, `GET /api/v1/slow`, `GET /api/v1/error`, and a dynamic Casual upstream proxy mapping `POST /__casual/services/.*`) without pre-populating servers by default.
 
 ### Importing Example Stubs
 
 #### Option A: Via cURL (WireMock Admin API)
 ```bash
+# Import the full bundle
 curl -X POST http://localhost:8080/__admin/mappings/import \
   -H "Content-Type: application/json" \
   -d @wiremock-examples/example-stubs.json
+
+# Or import only the Casual dynamic proxy stub
+curl -X POST http://localhost:8080/__admin/mappings \
+  -H "Content-Type: application/json" \
+  -d @wiremock-examples/casual-proxy-stub.json
 ```
 
 #### Option B: Via WireMock Console Web UI
@@ -164,6 +170,24 @@ curl -X POST http://localhost:8080/__admin/mappings/import \
           "Content-Type": "application/json"
         },
         "body": "{\"error\":\"Internal Server Error\",\"code\":500}"
+      }
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000005",
+      "name": "Casual Upstream Dynamic Proxy",
+      "priority": 10,
+      "request": {
+        "method": "POST",
+        "urlPattern": "/__casual/services/.*"
+      },
+      "response": {
+        "status": 200
+      },
+      "metadata": {
+        "project": "Billing Platform",
+        "mode": "proxy",
+        "protocol": "casual",
+        "targetBaseUrl": "casual://127.0.0.1:7771"
       }
     }
   ],

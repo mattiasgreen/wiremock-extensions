@@ -5,6 +5,7 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
+import { decodeBase64Payload } from './base64.js';
 import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
@@ -87,7 +88,7 @@ export function getRequestVerdict(req) {
       cssClass: 'pill-matched pill-proxied',
       proxyUrl: proxyUrl || 'upstream',
       stubDetail: detail,
-      tooltip: `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Freeze into an offline stub`
+      tooltip: `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Snapshot into an offline stub`
     };
   }
   const transformers = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.transformers)
@@ -157,12 +158,17 @@ function buildRowHtml(req) {
 
   if (isExpanded) {
     const reqHeadersHtml = highlightJson(reqHeaders);
-    const reqBodyRaw = (req.request && req.request.body) || '';
+    const reqBodyRaw = (req.request && (req.request.body || req.request.bodyAsBase64)) || '';
+    const reqB64 = decodeBase64Payload(reqBodyRaw);
     const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
+    const reqBodyDecodedHtml = reqB64.hasBase64 ? highlightJson(reqB64.decodedFormatted) : '';
 
     const resHeadersHtml = highlightJson(resHeaders);
-    const resBodyRaw = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+    const resBodyRaw = (req.response && (req.response.body || req.response.base64Body))
+      || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '';
+    const resB64 = decodeBase64Payload(resBodyRaw);
     const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
+    const resBodyDecodedHtml = resB64.hasBase64 ? highlightJson(resB64.decodedFormatted) : '';
     const stubId = req.stubMapping && req.stubMapping.id;
     const stubName = verdict.stubDetail;
 
@@ -205,15 +211,34 @@ function buildRowHtml(req) {
                 </div>
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini">${reqHeadersHtml}</pre>
-                <div class="journal-section-title">Body</div>
-                <pre class="code-block-mini">${reqBodyHtml}</pre>
+                <div class="journal-section-header">
+                  <div class="journal-section-title">Body</div>
+                  ${reqB64.hasBase64 ? `
+                    <div class="journal-b64-controls">
+                      <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in request body">🔓 Base64 JSON</span>
+                      <div class="btn-group-toggle">
+                        <button type="button" class="btn btn-tiny btn-b64-toggle" data-view="raw" data-target="req-body-${req.id}" data-testid="btn-b64-raw" title="Show raw transmitted payload">Raw</button>
+                        <button type="button" class="btn btn-tiny btn-b64-toggle active" data-view="decoded" data-target="req-body-${req.id}" data-testid="btn-b64-decoded" title="Show Base64 decoded JSON">Decoded</button>
+                      </div>
+                      <button type="button" class="btn btn-tiny btn-copy-body" data-target="req-body-${req.id}" data-testid="btn-copy-body" title="Copy visible body content">📋 Copy Body</button>
+                    </div>
+                  ` : ''}
+                </div>
+                ${reqB64.hasBase64 ? `
+                  <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${reqBodyHtml}</pre>
+                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
+                  </div>
+                ` : `
+                  <pre class="code-block-mini">${reqBodyHtml}</pre>
+                `}
               </div>
               <div class="journal-detail-card">
                 <div class="journal-card-header">
                   <span>${isCasual ? `Casual Response: ${escapeHtml(String(displayStatus))} (${escapeHtml(stubName)})` : `Response: Status ${status} (${escapeHtml(stubName)})`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     ${verdict.key !== 'unmatched' && !isStateful ? `
-                      <button class="btn btn-small btn-freeze-req ${!state.capabilities.lifecycle ? 'cap-disabled' : ''}" data-id="${req.id}" ${!state.capabilities.lifecycle ? 'disabled title="Freezing into offline stubs requires wiremock-extension-ui lifecycle endpoint"' : `title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}"`}>📸 Freeze Stub</button>
+                      <button class="btn btn-small btn-snapshot-req ${!state.capabilities.lifecycle ? 'cap-disabled' : ''}" data-id="${req.id}" ${!state.capabilities.lifecycle ? 'disabled title="Snapshotting into offline stubs requires wiremock-extension-ui lifecycle endpoint"' : `title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}"`}>📸 Snapshot Stub</button>
                     ` : ''}
                     ${verdict.key !== 'unmatched' ? `
                       <button class="btn btn-small btn-journal-copy-java" data-id="${req.id}" data-testid="btn-journal-copy-java" title="Copy WireMock Java stubFor() snippet for this request/response pair">☕ Copy Java</button>
@@ -226,8 +251,27 @@ function buildRowHtml(req) {
                 </div>
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini">${resHeadersHtml}</pre>
-                <div class="journal-section-title">Body</div>
-                <pre class="code-block-mini">${resBodyHtml}</pre>
+                <div class="journal-section-header">
+                  <div class="journal-section-title">Body</div>
+                  ${resB64.hasBase64 ? `
+                    <div class="journal-b64-controls">
+                      <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in response body">🔓 Base64 JSON</span>
+                      <div class="btn-group-toggle">
+                        <button type="button" class="btn btn-tiny btn-b64-toggle" data-view="raw" data-target="res-body-${req.id}" data-testid="btn-b64-raw" title="Show raw transmitted payload">Raw</button>
+                        <button type="button" class="btn btn-tiny btn-b64-toggle active" data-view="decoded" data-target="res-body-${req.id}" data-testid="btn-b64-decoded" title="Show Base64 decoded JSON">Decoded</button>
+                      </div>
+                      <button type="button" class="btn btn-tiny btn-copy-body" data-target="res-body-${req.id}" data-testid="btn-copy-body" title="Copy visible body content">📋 Copy Body</button>
+                    </div>
+                  ` : ''}
+                </div>
+                ${resB64.hasBase64 ? `
+                  <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${resBodyHtml}</pre>
+                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
+                  </div>
+                ` : `
+                  <pre class="code-block-mini">${resBodyHtml}</pre>
+                `}
               </div>
             </div>
           </div>
@@ -278,6 +322,59 @@ function setupLazyScroll() {
       appendMoreRows();
     }
   });
+}
+
+export function buildSnapshotStubMapping(req) {
+  const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
+  const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+  const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+  const headers = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+
+  const method = req.request ? req.request.method : 'POST';
+  const url = req.request ? req.request.url : '/';
+
+  const requestMatch = {
+    method: method,
+    url: url
+  };
+
+  if (req.request && req.request.body) {
+    const raw = req.request.body;
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        JSON.parse(trimmed);
+        requestMatch.bodyPatterns = [{
+          equalToJson: raw,
+          ignoreArrayOrder: true,
+          ignoreExtraElements: false
+        }];
+      } catch (ignored) {
+        requestMatch.bodyPatterns = [{ equalTo: raw }];
+      }
+    } else if (raw) {
+      requestMatch.bodyPatterns = [{ equalTo: raw }];
+    }
+  } else if (req.request && req.request.bodyAsBase64) {
+    requestMatch.bodyPatterns = [{ binaryEqualTo: req.request.bodyAsBase64 }];
+  }
+
+  return {
+    name: `[SNAPSHOT ${method} ${status}] ${url}`,
+    priority: 5,
+    request: requestMatch,
+    response: {
+      status: status,
+      headers: headers,
+      body: typeof resBody === 'string' ? resBody : JSON.stringify(resBody)
+    },
+    metadata: {
+      source: 'recorded-proxy',
+      project: project,
+      mode: 'static',
+      recordedAt: new Date().toISOString()
+    }
+  };
 }
 
 function setupEventDelegation() {
@@ -431,54 +528,80 @@ function setupEventDelegation() {
       return;
     }
 
-    const freezeBtn = e.target.closest('.btn-freeze-req');
-    if (freezeBtn) {
+    const b64ToggleBtn = e.target.closest('.btn-b64-toggle');
+    if (b64ToggleBtn) {
       e.stopPropagation();
-      const targetId = freezeBtn.getAttribute('data-id') || (freezeBtn.dataset && freezeBtn.dataset.id);
+      const view = b64ToggleBtn.getAttribute('data-view');
+      const targetId = b64ToggleBtn.getAttribute('data-target');
+      const container = document.getElementById(targetId);
+      if (!container) return;
+
+      const parentControls = b64ToggleBtn.closest('.journal-b64-controls');
+      if (parentControls) {
+        parentControls.querySelectorAll('.btn-b64-toggle').forEach(btn => {
+          btn.classList.toggle('active', btn === b64ToggleBtn);
+        });
+      }
+
+      container.setAttribute('data-active-view', view);
+      const rawEl = container.querySelector('.journal-body-raw');
+      const decodedEl = container.querySelector('.journal-body-decoded');
+
+      if (view === 'raw') {
+        if (rawEl) rawEl.classList.remove('hidden');
+        if (decodedEl) decodedEl.classList.add('hidden');
+      } else {
+        if (rawEl) rawEl.classList.add('hidden');
+        if (decodedEl) decodedEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    const copyBodyBtn = e.target.closest('.btn-copy-body');
+    if (copyBodyBtn) {
+      e.stopPropagation();
+      const targetId = copyBodyBtn.getAttribute('data-target');
+      const container = document.getElementById(targetId);
+      if (container) {
+        const activeView = container.getAttribute('data-active-view') || 'decoded';
+        const activeEl = container.querySelector(activeView === 'raw' ? '.journal-body-raw' : '.journal-body-decoded');
+        const textToCopy = activeEl ? (activeEl.textContent || '') : '';
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(textToCopy).catch(() => {});
+        }
+        copyBodyBtn.textContent = '✅ Copied!';
+        setTimeout(() => {
+          copyBodyBtn.textContent = '📋 Copy Body';
+        }, 1500);
+      }
+      return;
+    }
+
+    const snapshotBtn = e.target.closest('.btn-snapshot-req');
+    if (snapshotBtn) {
+      e.stopPropagation();
+      const targetId = snapshotBtn.getAttribute('data-id') || (snapshotBtn.dataset && snapshotBtn.dataset.id);
       const req = state.currentRequests.find(r => r.id === targetId);
       if (!req) return;
 
-      const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
-      const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
-      const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
-      const headers = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
-
-      const stubData = {
-        name: `[RECORDED ${req.request.method} ${status}] ${req.request.url}`,
-        priority: 5,
-        request: {
-          method: req.request.method,
-          url: req.request.url
-        },
-        response: {
-          status: status,
-          headers: headers,
-          body: typeof resBody === 'string' ? resBody : JSON.stringify(resBody)
-        },
-        metadata: {
-          source: 'recorded-proxy',
-          project: project,
-          mode: 'static',
-          recordedAt: new Date().toISOString()
-        }
-      };
+      const stubData = buildSnapshotStubMapping(req);
 
       try {
-        freezeBtn.disabled = true;
-        freezeBtn.textContent = 'Saving...';
+        snapshotBtn.disabled = true;
+        snapshotBtn.textContent = 'Saving...';
         const { createStubMapping, toggleStubState, loadData } = await import('./api.js');
         const created = await createStubMapping(stubData);
         if (created && created.id) {
           await toggleStubState(created.id);
         }
         await loadData();
-        freezeBtn.textContent = '✅ Frozen!';
-        setTimeout(() => freezeBtn.textContent = '📸 Freeze Stub', 1500);
+        snapshotBtn.textContent = '✅ Snapshotted!';
+        setTimeout(() => snapshotBtn.textContent = '📸 Snapshot Stub', 1500);
       } catch (err) {
-        alert('Failed to freeze stub: ' + err.message);
-        freezeBtn.textContent = '📸 Freeze Stub';
+        alert('Failed to snapshot stub: ' + err.message);
+        snapshotBtn.textContent = '📸 Snapshot Stub';
       } finally {
-        freezeBtn.disabled = false;
+        snapshotBtn.disabled = false;
       }
       return;
     }

@@ -2,17 +2,33 @@ package se.laz.casual.api.buffer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
+import se.laz.casual.api.buffer.type.fielded.FieldType;
 import se.laz.casual.api.buffer.type.fielded.FieldedData;
 import se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer;
+import se.laz.casual.api.buffer.type.fielded.json.CasualField;
+import se.laz.casual.api.buffer.type.fielded.json.CasualFielded;
+import se.laz.casual.api.buffer.type.fielded.json.CasualFieldedLookup;
+import se.laz.casual.config.ConfigurationOptions;
+import se.laz.casual.config.ConfigurationService;
 
 /**
  * Utility functions for Casual buffers, including text/JSON extraction, human-readable
@@ -23,9 +39,129 @@ import se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer;
  */
 public final class CasualBufferUtils {
 
+    private static final Logger LOG = LoggerFactory.getLogger(CasualBufferUtils.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static volatile String lastLoadedTablePath = null;
 
     private CasualBufferUtils() {}
+
+    /**
+     * Determines whether Casual fielded definitions (FML) are available.
+     * <p>
+     * Early exits to {@code false} if {@code casual-fields.json} cannot be found on the classpath,
+     * or if {@code CASUAL_FIELD_TABLE} is unset, or if the file that {@code CASUAL_FIELD_TABLE}
+     * points to does not exist.
+     */
+    public static boolean isFieldTableAvailable() {
+        String envFile = System.getenv("CASUAL_FIELD_TABLE");
+        if (envFile == null || envFile.isBlank()) {
+            envFile = System.getProperty("CASUAL_FIELD_TABLE");
+        }
+        if (envFile != null && !envFile.isBlank()) {
+            try {
+                Path path = Path.of(envFile.trim());
+                if (Files.exists(path)) {
+                    String canonical = path.toAbsolutePath().normalize().toString();
+                    ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE, canonical);
+                    if (!canonical.equals(lastLoadedTablePath)
+                            || CasualFieldedLookup.getNames().isEmpty()) {
+                        reloadFieldTable();
+                    }
+                    return true;
+                }
+                lastLoadedTablePath = null;
+                return false;
+            } catch (java.nio.file.InvalidPathException | SecurityException ignored) {
+                lastLoadedTablePath = null;
+                return false;
+            }
+        }
+        String conf = ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE);
+        if (conf != null && !conf.isBlank()) {
+            try {
+                Path path = Path.of(conf.trim());
+                if (Files.exists(path)) {
+                    String canonical = path.toAbsolutePath().normalize().toString();
+                    if (!canonical.equals(lastLoadedTablePath)
+                            || CasualFieldedLookup.getNames().isEmpty()) {
+                        reloadFieldTable();
+                    }
+                    return true;
+                }
+                lastLoadedTablePath = null;
+                return false;
+            } catch (java.nio.file.InvalidPathException | SecurityException ignored) {
+                lastLoadedTablePath = null;
+                return false;
+            }
+        }
+        ClassLoader cl = CasualBufferUtils.class.getClassLoader();
+        if (cl != null && cl.getResource("casual-fields.json") != null) {
+            return true;
+        }
+        ClassLoader ccl = Thread.currentThread().getContextClassLoader();
+        return ccl != null && ccl.getResource("casual-fields.json") != null;
+    }
+
+    /**
+     * Dynamically reloads Casual fielded definitions from the file pointed to by {@code CASUAL_FIELD_TABLE}.
+     */
+    public static synchronized void reloadFieldTable() {
+        String envFile = System.getenv("CASUAL_FIELD_TABLE");
+        if (envFile == null || envFile.isBlank()) {
+            envFile = System.getProperty("CASUAL_FIELD_TABLE");
+        }
+        if (envFile == null || envFile.isBlank()) {
+            envFile = ConfigurationService.getConfiguration(ConfigurationOptions.CASUAL_FIELD_TABLE);
+        }
+        if (envFile == null || envFile.isBlank()) {
+            lastLoadedTablePath = null;
+            return;
+        }
+        try {
+            Path path = Path.of(envFile.trim());
+            if (!Files.exists(path)) {
+                lastLoadedTablePath = null;
+                return;
+            }
+            URL url = path.toUri().toURL();
+
+            Field stringToFieldField = CasualFieldedLookup.class.getDeclaredField("stringToField");
+            stringToFieldField.setAccessible(true);
+            Field realIdToFieldField = CasualFieldedLookup.class.getDeclaredField("realIdToField");
+            realIdToFieldField.setAccessible(true);
+            Field jsonURLField = CasualFieldedLookup.class.getDeclaredField("jsonURL");
+            jsonURLField.setAccessible(true);
+
+            jsonURLField.set(null, url);
+
+            Method slurpMethod = CasualFieldedLookup.class.getDeclaredMethod("slurpJSON", URL.class);
+            slurpMethod.setAccessible(true);
+            Object casualFielded = slurpMethod.invoke(null, url);
+
+            Map<String, CasualField> newStringToField = new HashMap<>();
+            Map<Long, CasualField> newRealIdToField = new HashMap<>();
+            stringToFieldField.set(null, newStringToField);
+            realIdToFieldField.set(null, newRealIdToField);
+
+            Method initMethod = CasualFieldedLookup.class.getDeclaredMethod("initializeData", CasualFielded.class);
+            initMethod.setAccessible(true);
+            initMethod.invoke(null, casualFielded);
+
+            stringToFieldField.set(null, Collections.unmodifiableMap(newStringToField));
+            realIdToFieldField.set(null, Collections.unmodifiableMap(newRealIdToField));
+
+            lastLoadedTablePath = path.toAbsolutePath().normalize().toString();
+            LOG.info(
+                    "[CASUAL-FIELDED-RELOADED] Successfully loaded {} field definitions from {}",
+                    newStringToField.size(),
+                    lastLoadedTablePath.replace('\r', '_').replace('\n', '_'));
+        } catch (Exception | LinkageError t) {
+            LOG.warn(
+                    "[CASUAL-FIELDED-RELOAD-FAIL] Failed to reload field table: {}",
+                    t.getMessage() != null ? t.getMessage().replace('\r', '_').replace('\n', '_') : "null");
+        }
+    }
 
     /**
      * Determines whether the specified buffer type represents JSON.
@@ -114,6 +250,9 @@ public final class CasualBufferUtils {
             return text;
         }
         if (isFieldedType(type)) {
+            if (!isFieldTableAvailable()) {
+                return Base64.getEncoder().encodeToString(toByteArray(buffer));
+            }
             try {
                 FieldedTypeBuffer fielded = FieldedTypeBuffer.create(buffer.getBytes());
                 Map<String, List<FieldedData<?>>> rawMap = fielded.extract();
@@ -139,8 +278,8 @@ public final class CasualBufferUtils {
                     }
                     return OBJECT_MAPPER.writeValueAsString(jsonMap);
                 }
-            } catch (com.fasterxml.jackson.core.JsonProcessingException | RuntimeException ignored) {
-                // Fall back to Base64 if not in CasualFieldedLookup or raw FML decode fails
+            } catch (Throwable ignored) {
+                // Fall back to Base64 if not in CasualFieldedLookup, missing field table, or raw FML decode fails
             }
         }
         return Base64.getEncoder().encodeToString(toByteArray(buffer));
@@ -166,30 +305,41 @@ public final class CasualBufferUtils {
         if (isFieldedType(type)) {
             String trimmed = payload.trim();
             if (trimmed.startsWith("{")) {
-                try {
-                    Map<?, ?> jsonMap = OBJECT_MAPPER.readValue(trimmed, Map.class);
-                    FieldedTypeBuffer fielded = FieldedTypeBuffer.create();
-                    for (Map.Entry<?, ?> entry : jsonMap.entrySet()) {
-                        String key = String.valueOf(entry.getKey());
-                        Object val = entry.getValue();
-                        if (val instanceof List<?> list) {
-                            for (Object item : list) {
-                                writeFieldedValue(fielded, key, item);
+                if (isFieldTableAvailable()) {
+                    try {
+                        Map<?, ?> jsonMap = OBJECT_MAPPER.readValue(trimmed, Map.class);
+                        FieldedTypeBuffer fielded = FieldedTypeBuffer.create();
+                        for (Map.Entry<?, ?> entry : jsonMap.entrySet()) {
+                            String key = String.valueOf(entry.getKey());
+                            Object val = entry.getValue();
+                            if (val instanceof List<?> list) {
+                                for (Object item : list) {
+                                    writeFieldedValue(fielded, key, item);
+                                }
+                            } else {
+                                writeFieldedValue(fielded, key, val);
                             }
-                        } else {
-                            writeFieldedValue(fielded, key, val);
                         }
+                        return ServiceBuffer.of("CFIELD/", fielded.encode());
+                    } catch (Throwable t) {
+                        LOG.error(
+                                "[CASUAL-FIELDED-ENCODE-FAIL] Failed to encode JSON payload into .FIELDED (FML) buffer: {}",
+                                t.getMessage(),
+                                t);
                     }
-                    return ServiceBuffer.of("CFIELD/", fielded.encode());
-                } catch (com.fasterxml.jackson.core.JsonProcessingException | RuntimeException ignored) {
-                    // Fall back to Base64 decode below if JSON mapping or field write fails
+                } else {
+                    LOG.error(
+                            "[CASUAL-FIELDED-NO-TABLE] Cannot encode JSON object into binary CFIELD/ buffer because casual field table is not configured. Returning empty buffer.");
+                    return ServiceBuffer.of("CFIELD/", List.of(new byte[0]));
                 }
             }
             try {
                 byte[] decoded = Base64.getDecoder().decode(trimmed);
                 return ServiceBuffer.of("CFIELD/", List.of(decoded));
             } catch (IllegalArgumentException e) {
-                return ServiceBuffer.of("CFIELD/", List.of(payload.getBytes(StandardCharsets.UTF_8)));
+                LOG.error(
+                        "[CASUAL-FIELDED-INVALID-PAYLOAD] Payload for CFIELD/ is neither valid JSON nor valid Base64 binary buffer. Returning empty buffer.");
+                return ServiceBuffer.of("CFIELD/", List.of(new byte[0]));
             }
         }
         try {
@@ -205,24 +355,104 @@ public final class CasualBufferUtils {
         if (val == null) {
             return;
         }
-        if (val instanceof String s) {
-            fielded.write(key, s);
-        } else if (val instanceof Integer i) {
-            fielded.write(key, i);
-        } else if (val instanceof Long l) {
-            fielded.write(key, l);
-        } else if (val instanceof Short s) {
-            fielded.write(key, s);
-        } else if (val instanceof Float f) {
-            fielded.write(key, f);
-        } else if (val instanceof Double d) {
-            fielded.write(key, d);
-        } else if (val instanceof Character c) {
-            fielded.write(key, c);
-        } else if (val instanceof byte[] b) {
-            fielded.write(key, b);
-        } else {
-            fielded.write(key, String.valueOf(val));
+        Optional<CasualField> fieldOpt = CasualFieldedLookup.forName(key);
+        if (fieldOpt.isEmpty()) {
+            String sanitizedKey = key.replace('\r', '_').replace('\n', '_');
+            LOG.warn(
+                    "[CASUAL-FIELDED-UNKNOWN] Field [{}] not found in casual-fields definition table. Skipping.",
+                    sanitizedKey);
+            return;
+        }
+        FieldType fieldType = fieldOpt.get().getType();
+        try {
+            switch (fieldType) {
+                case CASUAL_FIELD_BINARY -> {
+                    byte[] bytes;
+                    if (val instanceof byte[] b) {
+                        bytes = b;
+                    } else if (val instanceof String s) {
+                        try {
+                            bytes = Base64.getDecoder().decode(s.trim());
+                        } catch (IllegalArgumentException ignored) {
+                            bytes = s.getBytes(StandardCharsets.UTF_8);
+                        }
+                    } else if (val instanceof Map || val instanceof List) {
+                        bytes = OBJECT_MAPPER.writeValueAsBytes(val);
+                    } else {
+                        bytes = String.valueOf(val).getBytes(StandardCharsets.UTF_8);
+                    }
+                    fielded.write(key, bytes);
+                }
+                case CASUAL_FIELD_LONG -> {
+                    long l;
+                    if (val instanceof Number n) {
+                        l = n.longValue();
+                    } else {
+                        l = Long.parseLong(String.valueOf(val).trim());
+                    }
+                    fielded.write(key, l);
+                }
+                case CASUAL_FIELD_SHORT -> {
+                    short s;
+                    if (val instanceof Number n) {
+                        s = n.shortValue();
+                    } else {
+                        s = Short.parseShort(String.valueOf(val).trim());
+                    }
+                    fielded.write(key, s);
+                }
+                case CASUAL_FIELD_FLOAT -> {
+                    float f;
+                    if (val instanceof Number n) {
+                        f = n.floatValue();
+                    } else {
+                        f = Float.parseFloat(String.valueOf(val).trim());
+                    }
+                    fielded.write(key, f);
+                }
+                case CASUAL_FIELD_DOUBLE -> {
+                    double d;
+                    if (val instanceof Number n) {
+                        d = n.doubleValue();
+                    } else {
+                        d = Double.parseDouble(String.valueOf(val).trim());
+                    }
+                    fielded.write(key, d);
+                }
+                case CASUAL_FIELD_CHAR -> {
+                    char c;
+                    if (val instanceof Character ch) {
+                        c = ch;
+                    } else if (val instanceof Number n) {
+                        c = (char) n.intValue();
+                    } else {
+                        String str = String.valueOf(val);
+                        c = str.isEmpty() ? ' ' : str.charAt(0);
+                    }
+                    fielded.write(key, c);
+                }
+                case CASUAL_FIELD_STRING -> {
+                    String s;
+                    if (val instanceof String str) {
+                        s = str;
+                    } else if (val instanceof Map || val instanceof List) {
+                        s = OBJECT_MAPPER.writeValueAsString(val);
+                    } else {
+                        s = String.valueOf(val);
+                    }
+                    fielded.write(key, s);
+                }
+            }
+        } catch (IllegalArgumentException
+                | IndexOutOfBoundsException
+                | com.fasterxml.jackson.core.JsonProcessingException
+                | se.laz.casual.api.buffer.type.fielded.json.CasualFieldedLookupException e) {
+            String sanitizedKey = key.replace('\r', '_').replace('\n', '_');
+            LOG.warn(
+                    "[CASUAL-FIELDED-WRITE-FAIL] Failed to write field [{}] as type [{}]: {}",
+                    sanitizedKey,
+                    fieldType,
+                    e.getMessage());
         }
     }
 

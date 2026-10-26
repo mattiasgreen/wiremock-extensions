@@ -735,6 +735,48 @@ body {
   margin-bottom: 4px;
 }
 
+.journal-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.journal-section-header .journal-section-title {
+  margin-bottom: 0;
+}
+
+.journal-b64-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-b64-detected {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.btn-b64-toggle.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+}
+
+.journal-body-container {
+  display: flex;
+  flex-direction: column;
+}
+
 .code-block-mini {
   background-color: var(--bg-primary);
   border: 1px solid var(--border-color);
@@ -2760,6 +2802,12 @@ a[disabled].cap-disabled,
 .badge-corr {
   background-color: rgba(236, 72, 153, 0.15);
   color: #f472b6;
+  font-family: monospace;
+}
+
+.badge-ip {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
   font-family: monospace;
 }
 

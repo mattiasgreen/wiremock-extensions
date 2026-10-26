@@ -62,7 +62,9 @@ import {
   closeStubEditor,
   saveStubEditor,
   applyStubTemplate,
-  updateBodyMatchLabel
+  updateBodyMatchLabel,
+  setEditorMode,
+  formatRawEditorJson
 } from './modules/lifecycle.js';
 import {
   exportStubs,
@@ -406,6 +408,15 @@ if (elements.btnCancelEditor) {
 }
 if (elements.btnSaveEditor) {
   elements.btnSaveEditor.addEventListener('click', saveStubEditor);
+}
+if (elements.btnEditorModeForm) {
+  elements.btnEditorModeForm.addEventListener('click', () => setEditorMode('form'));
+}
+if (elements.btnEditorModeJson) {
+  elements.btnEditorModeJson.addEventListener('click', () => setEditorMode('json'));
+}
+if (elements.btnEditorRawFormatJson) {
+  elements.btnEditorRawFormatJson.addEventListener('click', formatRawEditorJson);
 }
 if (elements.btnEditorFormatJson) {
   elements.btnEditorFormatJson.addEventListener('click', () => {

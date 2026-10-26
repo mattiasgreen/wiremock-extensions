@@ -1,0 +1,18 @@
+{
+  "id": "10000000-0000-0000-0000-000000000005",
+  "name": "Casual Upstream Dynamic Proxy",
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPattern": "/__casual/services/.*"
+  },
+  "response": {
+    "status": 200
+  },
+  "metadata": {
+    "project": "Billing Platform",
+    "mode": "proxy",
+    "protocol": "casual",
+    "targetBaseUrl": "casual://127.0.0.1:7771"
+  }
+}
