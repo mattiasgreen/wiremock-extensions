@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.7.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.6.0...v1.7.0) (2026-10-26)
+
+
+### Features
+
+* **stateful:** mark extension as experimental alpha and document crossing line guidance ([#53](https://github.com/mattiasgreen/wiremock-extensions/issues/53)) ([d2f5316](https://github.com/mattiasgreen/wiremock-extensions/commit/d2f53163225b673be1d0f0ee4d361c46313c2508))
+* **ui, casual:** snapshot stubs exact body matching, raw JSON editor, and fielded buffer mediation ([#55](https://github.com/mattiasgreen/wiremock-extensions/issues/55)) ([3fd0de9](https://github.com/mattiasgreen/wiremock-extensions/commit/3fd0de935be040abfea0289ddcf6976e1441d709))
+
 ## [1.6.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.5.1...v1.6.0) (2026-10-24)
 
 
