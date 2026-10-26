@@ -246,7 +246,7 @@ To launch WireMock with all extensions and active Web UI for local testing (star
 ./gradlew :wiremock-extension-bundle:runStandalone
 ```
 
-The server starts on port `8080` with filesystem hot-reloading for UI development. Baseline sample stubs can be imported from [`wiremock-examples/example-stubs.json`](wiremock-examples/example-stubs.json).
+The server starts on port `8080` with filesystem hot-reloading for UI development. Baseline sample stubs (including HTTP endpoints and Casual dynamic proxying) can be imported from [`wiremock-examples/example-stubs.json`](wiremock-examples/example-stubs.json), or import the standalone Casual proxy stub from [`wiremock-examples/casual-proxy-stub.json`](wiremock-examples/casual-proxy-stub.json).
 
 ### 5. Live Proxy & Traffic Recording Testing (Dual-Server Setup)
 

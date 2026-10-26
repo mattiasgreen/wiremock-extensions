@@ -255,14 +255,28 @@ StateModel model = StateModel.named(<span class="str">"CaseManagement"</span>)
             <li><strong>Human-Readable Buffer Mediation</strong>: Automatically converts Fielded buffers (<code>.FIELDED</code> / <code>CFIELD/</code>) to/from structured JSON via <code>FieldedTypeBuffer</code>, strips/restores <code>CSTRING/</code> null terminators, and records JSON text directly in the Request Journal.</li>
             <li><strong>Synthetic XA Participant</strong>: When decoupled from upstream servers or running offline, acts as a synthetic XA Resource Manager, automatically voting <code>XA_OK</code> (or simulating chaos via <code>XAER_RMERR</code>) to complete client commit loops.</li>
           </ul>
-          <pre class="code-block"><code><span class="comment">// Configure dynamic Casual proxy route in WireMock:</span>
+          <pre class="code-block"><code><span class="comment">// 1. Configure dynamic Casual proxy route in Java:</span>
 wireMock.stubFor(post(urlMatching(<span class="str">"/__casual/services/.*"</span>))
     .withName(<span class="str">"Billing Service Proxy"</span>)
     .atPriority(10)
     .withMetadata(Map.of(
         <span class="str">"mode"</span>, <span class="str">"proxy"</span>,
         <span class="str">"targetBaseUrl"</span>, <span class="str">"casual://billing-upstream.corp:7771"</span>))
-    .willReturn(aResponse().withStatus(200)));</code></pre>
+    .willReturn(aResponse().withStatus(200)));
+
+<span class="comment">// 2. Or import via JSON Admin API (e.g. StandaloneDevServer):</span>
+POST http://localhost:8080/__admin/mappings
+{
+  <span class="str">"name"</span>: <span class="str">"Billing Service Proxy"</span>,
+  <span class="str">"priority"</span>: 10,
+  <span class="str">"request"</span>: { <span class="str">"method"</span>: <span class="str">"POST"</span>, <span class="str">"urlPattern"</span>: <span class="str">"/__casual/services/.*"</span> },
+  <span class="str">"response"</span>: { <span class="str">"status"</span>: 200 },
+  <span class="str">"metadata"</span>: {
+    <span class="str">"mode"</span>: <span class="str">"proxy"</span>,
+    <span class="str">"protocol"</span>: <span class="str">"casual"</span>,
+    <span class="str">"targetBaseUrl"</span>: <span class="str">"casual://billing-upstream.corp:7771"</span>
+  }
+}</code></pre>
         </div>
 
         <!-- OTEL Extension -->
