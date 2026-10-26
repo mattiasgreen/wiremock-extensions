@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.stateful.extension;
 
+import com.github.mattiasgreen.wiremock.stateful.Experimental;
 import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.extension.ResponseDefinitionTransformerV2;
@@ -11,6 +12,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Global {@link ResponseDefinitionTransformerV2} executing state transitions and response substitutions.
+ *
+ * <p><b>Status:</b> Experimental / Alpha prototype.
+ */
+@Experimental
 public class StatefulResponseTransformer implements ResponseDefinitionTransformerV2 {
 
     public static final String EXTENSION_NAME = "stateful-transformer";

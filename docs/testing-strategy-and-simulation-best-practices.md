@@ -193,6 +193,63 @@ The simulator remains 100% passive: it records the outbound request into the Req
 
 ---
 
+### Deep Dive: Archetype 4 — The Stateful Enterprise Entity & The Crossing Line
+
+Systems that manage stateful business entities (e.g. Case Management, Loan Applications, Order Fulfillment) present a classic dilemma: subsequent operations depend on prior mutations and invariant guards (e.g., *"Cannot complete task if case is closed"*, *"Cannot close case while child tasks are pending"*).
+
+#### The Anti-Pattern: Greenspun's Tenth Rule in Mocks (Meszaros: *Mock Database Anti-Pattern*)
+When standard static stubs feel insufficient, teams often attempt to make WireMock act like a full-featured in-memory database by parsing JSON request bodies, updating internal collections, evaluating expressions, and validating relational integrity.
+
+This triggers **Greenspun's Tenth Rule** applied to test infrastructure:
+> *"Any sufficiently complicated C or Fortran program contains an ad hoc, informally-specified, bug-ridden, slow implementation of half of Common Lisp."*
+
+In mock servers, this creates an ad-hoc, informally specified, bug-ridden relational database inside mock configuration:
+- **Accidental Meta-Programming Complexity**: Test authors must write and maintain complex Abstract Syntax Trees or scripting expressions (`Expr.field(...)`, `Action.updateListItem(...)`), obscuring test readability.
+- **Loss of Debuggability**: When an invariant check fails or state corrupts, diagnosing the root cause requires debugging serialized AST rules in JSON over HTTP headers rather than stepping through real code.
+- **High Maintenance Drag**: As the real domain service evolves its database constraints and business rules, the mock database implementation inevitably diverges, leading to false-positive or false-negative test runs.
+
+#### The Three Best-Practice Alternatives Across the Boundary Spectrum
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│               STATEFUL ENTITY SIMULATION DECISION MATRIX               │
+├─────────────────────────┬────────────────────────┬─────────────────────┤
+│ Strategy                │ When to Choose         │ Grounding Pattern   │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **1. WireMock Native    │ Linear & branching     │ WireMock Standard   │
+│    Scenarios (with ID   │ state transitions      │ Scenario FSM +      │
+│    Scoping)**           │ (85% of workflows)     │ ID Prefix Scoping   │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **2. Handlebars         │ Dynamic attribute      │ Stateless Response  │
+│    Templating**         │ echoing & UUIDs        │ Transformation      │
+├─────────────────────────┼────────────────────────┼─────────────────────┤
+│ **3. Level 4 Container  │ Deep relational trees, │ Fowler's "Crossing  │
+│    or In-Memory Fake**  │ ledger calculations &  │ Line" & Meszaros's  │
+│    *(The Crossing Line)*│ complex invariants     │ Authentic Fake      │
+└─────────────────────────┴────────────────────────┴─────────────────────┘
+```
+
+1. **WireMock Native Scenarios with ID / Correlation Scoping (Recommended for 85% of FSMs)**:
+   - WireMock's built-in Scenario engine (`requiredScenarioState`, `newScenarioState`) natively models finite state machines.
+   - **Best Practice for Parallel Safety**: As demonstrated in `wiremock-examples`, avoid global shared scenario names. Scope scenario names using entity IDs or correlation tokens (e.g., `"case-lifecycle-" + caseId`) to ensure 100% deterministic, collision-free execution across parallel threads.
+   - **Observability**: Scenarios are fully visible in the WireMock Console UI DAG visualizer (`/__admin/ui/#scenarios`), giving instant visibility into current state.
+
+2. **Handlebars Response Templating**:
+   - Ideal for stateless dynamic responses, such as echoing an identifier from the URL into the JSON body (`{{{request.pathSegments.[3]}}}`) or generating timestamps without state persistence.
+
+3. **The Level 4 "Crossing Line" (Testcontainers or In-Memory Fakes)**:
+   - **The Rule**: *Do not build an in-memory database inside WireMock.*
+   - If a test scenario genuinely depends on relational cascading deletes, complex invariant verification across multiple tables, or arithmetic ledger balancing, **cross the line to Level 4**.
+   - The **producer team must provide either**:
+     - An authentic **in-memory fake double** (`FakeCaseManagementService.java`) included in the producer's companion TestKit.
+     - A lightweight, fast-booting **Testcontainer** (e.g., Quarkus, Micronaut, or native Go binary) configured with pre-seeded test fixtures.
+   - Use WireMock at Level 3 for what it does best: injecting wire-level faults (latency, timeouts, HTTP 503s, TCP reset) and verifying corporate header propagation (`x-correlation-id`, `x-tenant-id`), while delegating complex domain logic to the authentic double.
+
+> [!NOTE]
+> **Status of `wiremock-extension-stateful`**: The AST-driven stateful engine in this repository is maintained as an **experimental alpha prototype** for exploring zero-overhead distributed test setups where Docker containers are prohibited. Teams should favor native WireMock Scenarios or provider Testcontainers for production integration test suites.
+
+---
+
 ## 5. Responsibility & Ownership Matrix
 
 Grounded in **Freeman & Pryce's** rule (*"Don't mock types you don't own"*) and **Robinson & Fowler's** *Consumer-Driven Contracts*, clear boundaries between producers, consumers, test frameworks, and the simulation stack prevent duplication and contract drift:

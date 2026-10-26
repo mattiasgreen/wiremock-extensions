@@ -2,6 +2,7 @@ package com.github.mattiasgreen.wiremock.stateful.extension;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.mattiasgreen.wiremock.stateful.Experimental;
 import com.github.mattiasgreen.wiremock.stateful.ast.AstJson;
 import com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition;
 import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
@@ -14,6 +15,12 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * WireMock {@link AdminApiExtension} providing REST endpoints for stateful model rules and state inspection.
+ *
+ * <p><b>Status:</b> Experimental / Alpha prototype.
+ */
+@Experimental
 public class StatefulAdminEndpoint implements AdminApiExtension {
 
     public static final String EXTENSION_NAME = "stateful-admin-endpoint";

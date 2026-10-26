@@ -1,6 +1,6 @@
 # WireMock Extensions Bundle
 
-An umbrella module that packages all extensions (`json-logging`, `otel`, `openapi`, `stateful`, `tcp-netem`, `casual`, and `ui`) into a single artifact with zero-touch auto-discovery.
+An umbrella module that packages all extensions (`json-logging`, `otel`, `openapi`, `stateful` (experimental), `tcp-netem`, `casual`, and `ui`) into a single artifact with zero-touch auto-discovery.
 
 ## Problem Statement
 
@@ -12,7 +12,7 @@ The bundle module aggregates:
 - `wiremock-extension-json-logging`
 - `wiremock-extension-otel`
 - `wiremock-extension-openapi`
-- `wiremock-extension-stateful`
+- `wiremock-extension-stateful` (Experimental / Alpha Prototype)
 - `wiremock-extension-tcp-netem`
 - `wiremock-extension-casual`
 - `wiremock-extension-ui`

@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.stateful.extension;
 
+import com.github.mattiasgreen.wiremock.stateful.Experimental;
 import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
 import com.github.tomakehurst.wiremock.extension.Extension;
 import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
@@ -7,6 +8,13 @@ import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * WireMock SPI extension factory for registering experimental stateful admin endpoints
+ * and response transformers.
+ *
+ * <p><b>Status: Alpha Incubation Prototype.</b>
+ */
+@Experimental("Alpha incubation prototype")
 public class StatefulExtensionFactory implements ExtensionFactory {
 
     private final StateEngine sharedEngine;

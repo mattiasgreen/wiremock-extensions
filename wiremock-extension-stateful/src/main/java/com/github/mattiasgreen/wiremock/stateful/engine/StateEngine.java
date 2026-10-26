@@ -3,11 +3,19 @@ package com.github.mattiasgreen.wiremock.stateful.engine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.mattiasgreen.wiremock.stateful.Experimental;
 import com.github.mattiasgreen.wiremock.stateful.ast.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * In-memory AST evaluation engine for dynamic stateful entity modeling.
+ *
+ * <p><b>Status:</b> Experimental / Alpha prototype. Consider native WireMock scenarios or
+ * testcontainers before introducing AST-based dynamic state.
+ */
+@Experimental
 public final class StateEngine {
 
     public record ExecutionResult(
