@@ -62,6 +62,7 @@
           <span class="target-host-dot" id="target-host-dot"></span>
           <span id="target-host-label">Target: (same-origin)</span>
         </button>
+        <button id="btn-open-settings" class="btn btn-secondary" data-testid="btn-open-settings" title="Configure browser-persistent headers and JSON path exclusions">⚙️ Preferences</button>
         <a href="https://mattiasgreen.github.io/wiremock-extensions/docs/" target="_blank" class="btn btn-link" id="link-docs" title="Open WireMock Extensions Documentation">📚 Docs</a>
         <!-- WireMock Standalone bundles Swagger UI at /__admin/swagger-ui/ out of the box. When targeting a remote WireMock host, updateTargetHostDisplay() in app.js rewrites this href to <wiremock-base-uri>/__admin/swagger-ui/. -->
         <a href="../swagger-ui/" target="_blank" class="btn btn-link" id="link-swagger-ui" title="Open Swagger UI API Documentation">📖 Swagger UI</a>
@@ -381,6 +382,27 @@
                         <span class="preset-badge" id="btn-preset-accept" title="Add Accept: application/json">+ Accept</span>
                       </div>
                     </div>
+
+                    <!-- Local Storage Persistent Corporate Headers -->
+                    <div id="tester-local-headers-container" class="tester-local-headers-container" data-testid="tester-local-headers-container">
+                      <div class="tester-local-headers-bar">
+                        <div class="local-headers-title-group">
+                          <label class="checkbox-label" title="Enable or disable persistent headers across all requests">
+                            <input type="checkbox" id="tester-local-headers-toggle" data-testid="tester-local-headers-toggle" checked>
+                            <span class="local-headers-title">
+                              <span class="local-headers-icon" title="Stored in browser local storage only">🔒</span>
+                              <strong>Persistent Headers</strong>
+                              <span id="tester-local-headers-count" class="badge-count" data-testid="tester-local-headers-count" title="Active persistent headers">0</span>
+                            </span>
+                          </label>
+                        </div>
+                        <button id="btn-manage-local-headers" type="button" class="btn btn-tiny" data-testid="btn-manage-local-headers" title="Configure persistent corporate headers stored in your browser">⚙️ Manage</button>
+                      </div>
+                      <div id="tester-local-headers-chips" class="tester-local-headers-chips" data-testid="tester-local-headers-chips">
+                        <span class="muted-text text-small">No persistent headers configured (click ⚙️ Manage to add).</span>
+                      </div>
+                    </div>
+
                     <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
                   </div>
 
@@ -1037,6 +1059,88 @@
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
         <button id="btn-netem-cancel-toxic" class="btn btn-secondary">Cancel</button>
         <button id="btn-netem-submit-toxic" class="btn btn-primary">➕ Inject Impairment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Browser Preferences (Headers & JSON Path Exclusions) Modal -->
+  <div id="modal-local-headers" class="modal-backdrop hidden" data-testid="modal-local-headers">
+    <div class="modal-dialog" style="max-width: 720px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">⚙️</span>
+          <h3 id="settings-modal-title">Browser Preferences &amp; Exclusions</h3>
+        </div>
+        <button id="btn-close-local-headers-modal" class="btn btn-tiny modal-close-btn" data-testid="btn-close-local-headers-modal" title="Close modal">✕</button>
+      </div>
+      <div class="modal-tabs">
+        <button type="button" id="settings-tab-headers" class="modal-tab active">🔒 Persistent Headers</button>
+        <button type="button" id="settings-tab-exclusions" class="modal-tab">🚫 JSON Path Exclusions</button>
+        <button type="button" id="settings-tab-sync" class="modal-tab">📋 Copy / Paste Config</button>
+      </div>
+      <div class="modal-body">
+        <!-- Tab 1: Headers -->
+        <div id="settings-panel-headers" class="settings-tab-panel">
+          <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+            Headers stored exclusively in your browser's local storage. Applied automatically to HTTP Tester requests.
+          </p>
+          <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
+            💡 <strong>Dynamic macros supported:</strong> <code>{{uuid}}</code> (fresh UUIDv4), <code>{{now}}</code> (ISO timestamp), <code>{{timestamp}}</code> (epoch ms).
+          </div>
+          <div style="max-height: 240px; overflow-y: auto; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 4px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+              <thead>
+                <tr style="background: var(--bg-tertiary); text-align: left; color: var(--text-muted);">
+                  <th style="width: 36px; padding: 6px 8px; text-align: center;">On</th>
+                  <th style="padding: 6px 8px; width: 38%;">Header Name</th>
+                  <th style="padding: 6px 8px;">Value / Macro</th>
+                  <th style="width: 40px; padding: 6px 8px; text-align: center;"></th>
+                </tr>
+              </thead>
+              <tbody id="local-headers-tbody" data-testid="local-headers-tbody">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+          <button id="btn-add-local-header-row" type="button" class="btn btn-small" data-testid="btn-add-local-header-row">➕ Add Header</button>
+        </div>
+
+        <!-- Tab 2: Exclusions -->
+        <div id="settings-panel-exclusions" class="settings-tab-panel hidden">
+          <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+            JSON paths and property keys omitted when snapshotting stubs from journal traffic.
+          </p>
+          <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
+            💡 Enter one JSONPath or property name per line (e.g. <code>$.CORRELATION_ID</code>, <code>$.REQUEST_TIMESTAMP</code>, <code>timestamp</code>, <code>xid</code>).
+          </div>
+          <textarea id="settings-excluded-paths" class="code-input" rows="8" placeholder="$.CORRELATION_ID&#10;$.REQUEST_TIMESTAMP&#10;timestamp&#10;transactionId&#10;executionId&#10;xid" spellcheck="false" style="font-family: monospace; font-size: 0.85rem;"></textarea>
+        </div>
+
+        <!-- Tab 3: Copy / Paste Sync -->
+        <div id="settings-panel-sync" class="settings-tab-panel hidden">
+          <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+            Share your persistent headers and JSON exclusion rules via clipboard copy-paste (zero file download or upload required).
+          </p>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
+            <button type="button" id="btn-settings-copy-config" class="btn btn-small btn-primary" title="Copy full configuration to clipboard as JSON">📋 Copy Config to Clipboard</button>
+            <span id="settings-copy-feedback" class="text-success text-small hidden">✅ Copied to clipboard!</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <label style="font-size: 0.82rem; color: var(--text-muted);">Or paste configuration JSON below to import:</label>
+            <textarea id="settings-import-json" class="code-input" rows="7" placeholder='{"headers": [...], "excludedJsonPaths": [...]}' spellcheck="false" style="font-family: monospace; font-size: 0.82rem;"></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+              <button type="button" id="btn-settings-apply-import" class="btn btn-small" title="Apply pasted JSON configuration">📥 Apply Pasted Config</button>
+            </div>
+            <div id="settings-import-feedback" class="modal-feedback hidden"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" id="btn-reset-default-settings" class="btn btn-tiny btn-secondary" title="Reset headers and exclusions to defaults">↺ Reset Defaults</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-cancel-local-headers" class="btn btn-secondary" data-testid="btn-cancel-local-headers">Cancel</button>
+          <button id="btn-save-local-headers" class="btn btn-primary" data-testid="btn-save-local-headers">💾 Save to Browser</button>
+        </div>
       </div>
     </div>
   </div>

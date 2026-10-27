@@ -220,7 +220,34 @@ export const elements = {
   targetCapabilitiesStatus: document.getElementById('target-capabilities-status'),
   linkSwaggerUi: document.getElementById('link-swagger-ui'),
   linkMetrics: document.getElementById('link-metrics'),
-  navTabNetem: document.getElementById('nav-tab-netem')
+  navTabNetem: document.getElementById('nav-tab-netem'),
+
+  // Browser Preferences & Persistent Local Headers
+  btnOpenSettings: document.getElementById('btn-open-settings'),
+  modalLocalHeaders: document.getElementById('modal-local-headers'),
+  btnCloseLocalHeadersModal: document.getElementById('btn-close-local-headers-modal'),
+  btnCancelLocalHeaders: document.getElementById('btn-cancel-local-headers'),
+  btnSaveLocalHeaders: document.getElementById('btn-save-local-headers'),
+  btnAddLocalHeaderRow: document.getElementById('btn-add-local-header-row'),
+  localHeadersTbody: document.getElementById('local-headers-tbody'),
+  testerLocalHeadersContainer: document.getElementById('tester-local-headers-container'),
+  testerLocalHeadersToggle: document.getElementById('tester-local-headers-toggle'),
+  testerLocalHeadersChips: document.getElementById('tester-local-headers-chips'),
+  testerLocalHeadersCount: document.getElementById('tester-local-headers-count'),
+  btnManageLocalHeaders: document.getElementById('btn-manage-local-headers'),
+  settingsTabHeaders: document.getElementById('settings-tab-headers'),
+  settingsTabExclusions: document.getElementById('settings-tab-exclusions'),
+  settingsTabSync: document.getElementById('settings-tab-sync'),
+  settingsPanelHeaders: document.getElementById('settings-panel-headers'),
+  settingsPanelExclusions: document.getElementById('settings-panel-exclusions'),
+  settingsPanelSync: document.getElementById('settings-panel-sync'),
+  settingsExcludedPaths: document.getElementById('settings-excluded-paths'),
+  btnSettingsCopyConfig: document.getElementById('btn-settings-copy-config'),
+  settingsCopyFeedback: document.getElementById('settings-copy-feedback'),
+  settingsImportJson: document.getElementById('settings-import-json'),
+  btnSettingsApplyImport: document.getElementById('btn-settings-apply-import'),
+  settingsImportFeedback: document.getElementById('settings-import-feedback'),
+  btnResetDefaultSettings: document.getElementById('btn-reset-default-settings')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */

@@ -47,8 +47,20 @@ import {
   renderTesterResponse,
   initTesterHistoryCollapse,
   setTesterHistoryCollapsed,
-  toggleTesterHistory
+  toggleTesterHistory,
+  renderLocalHeaderChips
 } from './modules/tester.js';
+import {
+  openLocalHeadersModal,
+  closeLocalHeadersModal,
+  switchSettingsTab,
+  addLocalHeaderRow,
+  saveSettingsFromModal,
+  copySettingsConfigToClipboard,
+  applyPastedSettingsFromModal,
+  resetDefaultSettingsInModal,
+  setLocalHeadersEnabled
+} from './modules/settings.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
   renderProjectSelector,
@@ -810,6 +822,55 @@ if (elements.btnTesterShareLink) {
     setTimeout(() => elements.btnTesterShareLink.textContent = '🔗 Copy Share Link', 1500);
   });
 }
+
+// Browser Preferences & Persistent Local Headers
+if (elements.btnOpenSettings) {
+  elements.btnOpenSettings.addEventListener('click', () => openLocalHeadersModal('headers'));
+}
+if (elements.btnManageLocalHeaders) {
+  elements.btnManageLocalHeaders.addEventListener('click', () => openLocalHeadersModal('headers'));
+}
+if (elements.btnCloseLocalHeadersModal) {
+  elements.btnCloseLocalHeadersModal.addEventListener('click', closeLocalHeadersModal);
+}
+if (elements.btnCancelLocalHeaders) {
+  elements.btnCancelLocalHeaders.addEventListener('click', closeLocalHeadersModal);
+}
+if (elements.btnAddLocalHeaderRow) {
+  elements.btnAddLocalHeaderRow.addEventListener('click', () => addLocalHeaderRow('', '', true));
+}
+if (elements.btnSaveLocalHeaders) {
+  elements.btnSaveLocalHeaders.addEventListener('click', () => saveSettingsFromModal(() => renderLocalHeaderChips()));
+}
+if (elements.settingsTabHeaders) {
+  elements.settingsTabHeaders.addEventListener('click', () => switchSettingsTab('headers'));
+}
+if (elements.settingsTabExclusions) {
+  elements.settingsTabExclusions.addEventListener('click', () => switchSettingsTab('exclusions'));
+}
+if (elements.settingsTabSync) {
+  elements.settingsTabSync.addEventListener('click', () => switchSettingsTab('sync'));
+}
+if (elements.btnSettingsCopyConfig) {
+  elements.btnSettingsCopyConfig.addEventListener('click', copySettingsConfigToClipboard);
+}
+if (elements.btnSettingsApplyImport) {
+  elements.btnSettingsApplyImport.addEventListener('click', () => applyPastedSettingsFromModal(() => renderLocalHeaderChips()));
+}
+if (elements.btnResetDefaultSettings) {
+  elements.btnResetDefaultSettings.addEventListener('click', () => resetDefaultSettingsInModal(() => renderLocalHeaderChips()));
+}
+if (elements.testerLocalHeadersToggle) {
+  elements.testerLocalHeadersToggle.addEventListener('change', (e) => {
+    setLocalHeadersEnabled(e.target.checked);
+    renderLocalHeaderChips();
+  });
+}
+if (elements.testerHeaders) {
+  elements.testerHeaders.addEventListener('input', () => {
+    renderLocalHeaderChips();
+  });
+}
 if (elements.btnViewHighlighted) {
   elements.btnViewHighlighted.addEventListener('click', () => {
     state.testerViewMode = 'highlighted';
@@ -994,6 +1055,7 @@ function loadVersionInfo() {
 function boot() {
   updateTargetHostDisplay();
   setupTargetHostControls();
+  renderLocalHeaderChips();
   loadData();
   loadVersionInfo();
   initNetEmTab();

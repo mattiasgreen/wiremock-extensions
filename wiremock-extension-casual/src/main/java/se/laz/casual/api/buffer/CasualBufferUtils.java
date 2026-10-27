@@ -485,46 +485,35 @@ public final class CasualBufferUtils {
         if (data == null) {
             return null;
         }
+        String str = null;
         if (data instanceof byte[] bytes) {
-            if (bytes.length == 0) {
-                return null;
+            if (bytes.length > 0) {
+                str = new String(bytes, StandardCharsets.UTF_8).trim();
             }
-            String str = new String(bytes, StandardCharsets.UTF_8).trim();
-            if ((str.startsWith("{") && str.endsWith("}")) || (str.startsWith("[") && str.endsWith("]"))) {
-                try {
-                    return OBJECT_MAPPER.readValue(str, Object.class);
-                } catch (IOException ignored) {
-                }
-            }
-            try {
-                byte[] decoded = Base64.getDecoder().decode(str);
-                String decodedStr = new String(decoded, StandardCharsets.UTF_8).trim();
-                if ((decodedStr.startsWith("{") && decodedStr.endsWith("}"))
-                        || (decodedStr.startsWith("[") && decodedStr.endsWith("]"))) {
-                    return OBJECT_MAPPER.readValue(decodedStr, Object.class);
-                }
-            } catch (IOException | IllegalArgumentException ignored) {
-            }
+        } else if (data instanceof String s) {
+            str = s.trim();
+        }
+        if (str == null || str.isEmpty()) {
             return null;
-        } else if (data instanceof String str) {
-            String trimmed = str.trim();
-            if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
-                    || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-                try {
-                    return OBJECT_MAPPER.readValue(trimmed, Object.class);
-                } catch (IOException ignored) {
-                }
-            }
+        }
+
+        // 1. Direct JSON object or array
+        if ((str.startsWith("{") && str.endsWith("}")) || (str.startsWith("[") && str.endsWith("]"))) {
             try {
-                byte[] decoded = Base64.getDecoder().decode(trimmed);
-                String decodedStr = new String(decoded, StandardCharsets.UTF_8).trim();
-                if ((decodedStr.startsWith("{") && decodedStr.endsWith("}"))
-                        || (decodedStr.startsWith("[") && decodedStr.endsWith("]"))) {
-                    return OBJECT_MAPPER.readValue(decodedStr, Object.class);
-                }
-            } catch (IOException | IllegalArgumentException ignored) {
+                return OBJECT_MAPPER.readValue(str, Object.class);
+            } catch (IOException ignored) {
             }
-            return null;
+        }
+
+        // 2. Base64-encoded JSON payload
+        try {
+            byte[] decoded = Base64.getDecoder().decode(str);
+            String decodedStr = new String(decoded, StandardCharsets.UTF_8).trim();
+            if ((decodedStr.startsWith("{") && decodedStr.endsWith("}"))
+                    || (decodedStr.startsWith("[") && decodedStr.endsWith("]"))) {
+                return OBJECT_MAPPER.readValue(decodedStr, Object.class);
+            }
+        } catch (IOException | IllegalArgumentException ignored) {
         }
         return null;
     }

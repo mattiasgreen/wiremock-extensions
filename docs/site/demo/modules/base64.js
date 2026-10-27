@@ -214,40 +214,29 @@ export function normalizeJsonPayload(input) {
   return null;
 }
 
+import {
+  isJsonPathExcluded,
+  loadExcludedJsonPaths,
+  DEFAULT_EXCLUDED_JSON_PATHS
+} from './settings.js';
+
 /**
  * Common volatile / transient header & envelope JSON properties that should be omitted
  * when generating request matchers from snapshot traffic.
  */
-export const DEFAULT_IGNORED_JSON_PROPERTIES = [
-  'correlation_id',
-  'correlationid',
-  'x-correlation-id',
-  'request_timestamp',
-  'requesttimestamp',
-  'timestamp',
-  'transaction_id',
-  'transactionid',
-  'xid',
-  'execution_id',
-  'executionid',
-  'trace_id',
-  'traceid',
-  'span_id',
-  'spanid',
-  'request_id',
-  'requestid'
-];
+export const DEFAULT_IGNORED_JSON_PROPERTIES = DEFAULT_EXCLUDED_JSON_PATHS;
 
 /**
- * Checks if a property key matches any ignored transient property name (case-insensitive, ignoring - and _).
+ * Checks if a property key matches any ignored transient property name.
  *
  * @param {string} key
+ * @param {string[]} [excludedPaths]
  * @returns {boolean}
  */
-export function isIgnoredJsonProperty(key) {
+export function isIgnoredJsonProperty(key, excludedPaths = null) {
   if (!key || typeof key !== 'string') return false;
-  const normalized = key.toLowerCase().replace(/[-_]/g, '');
-  return DEFAULT_IGNORED_JSON_PROPERTIES.some(p => p.replace(/[-_]/g, '') === normalized);
+  const list = excludedPaths || loadExcludedJsonPaths();
+  return isJsonPathExcluded(`$.${key}`, key, list);
 }
 
 /**
@@ -255,42 +244,44 @@ export function isIgnoredJsonProperty(key) {
  * from an object or array.
  *
  * @param {any} input
+ * @param {string[]} [excludedPaths]
  * @returns {any}
  */
-export function stripIgnoredProperties(input) {
+export function stripIgnoredProperties(input, excludedPaths = null) {
   if (input === null || typeof input !== 'object') {
     return input;
   }
+  const list = excludedPaths || loadExcludedJsonPaths();
   if (Array.isArray(input)) {
-    return input.map(stripIgnoredProperties);
+    return input.map(item => stripIgnoredProperties(item, list));
   }
   const result = {};
   for (const [key, value] of Object.entries(input)) {
-    if (isIgnoredJsonProperty(key)) {
+    if (isIgnoredJsonProperty(key, list)) {
       continue;
     }
-    result[key] = stripIgnoredProperties(value);
+    result[key] = stripIgnoredProperties(value, list);
   }
   return result;
 }
 
 /**
- * Flattens a JSON object into a list of leaf property paths and their values.
- * e.g. { customerId: "CUST-001", FML_ARCHIVE_JSON: { caseId: "12356" } }
- * -> [
- *   { path: "$.customerId", value: "CUST-001" },
- *   { path: "$.FML_ARCHIVE_JSON.caseId", value: "12356" }
- * ]
+ * Flattens a JSON object into a list of leaf property paths and their values in a single pass,
+ * automatically pruning any paths or keys that match the exclusion rules.
  *
  * @param {any} obj
- * @param {string} prefix
+ * @param {string[]} [excludedPaths]
+ * @param {string} [prefix]
  * @returns {Array<{ path: string, value: any }>}
  */
-export function extractJsonPaths(obj, prefix = '$') {
+export function extractJsonPaths(obj, excludedPaths = [], prefix = '$') {
   if (obj === null || typeof obj !== 'object') return [];
   const paths = [];
 
-  function walk(current, path) {
+  function walk(current, path, key = '') {
+    if (key && isJsonPathExcluded(path, key, excludedPaths)) {
+      return; // Prune excluded branch immediately
+    }
     if (current === null || current === undefined) {
       paths.push({ path, value: null });
       return;
@@ -304,7 +295,7 @@ export function extractJsonPaths(obj, prefix = '$') {
         paths.push({ path, value: [] });
       } else {
         current.forEach((item, idx) => {
-          walk(item, `${path}[${idx}]`);
+          walk(item, `${path}[${idx}]`, String(idx));
         });
       }
       return;
@@ -313,27 +304,28 @@ export function extractJsonPaths(obj, prefix = '$') {
     if (entries.length === 0) {
       paths.push({ path, value: {} });
     } else {
-      for (const [key, val] of entries) {
-        const keyProp = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key) ? `.${key}` : `['${key}']`;
-        walk(val, `${path}${keyProp}`);
+      for (const [k, val] of entries) {
+        const keyProp = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k) ? `.${k}` : `['${k}']`;
+        walk(val, `${path}${keyProp}`, k);
       }
     }
   }
 
-  walk(obj, prefix);
+  walk(obj, prefix, '');
   return paths;
 }
 
 /**
  * Builds a list of WireMock matchesJsonPath bodyPattern objects from a normalized JSON object,
- * filtering out transient properties.
+ * pruning transient properties and configured JSON exclusion paths in a single pass.
  *
  * @param {any} normalizedJson
+ * @param {string[]} [excludedPaths]
  * @returns {Array<{ matchesJsonPath: string, equalTo: string }>}
  */
-export function buildJsonPathBodyPatterns(normalizedJson) {
-  const clean = stripIgnoredProperties(normalizedJson);
-  const paths = extractJsonPaths(clean);
+export function buildJsonPathBodyPatterns(normalizedJson, excludedPaths = null) {
+  const list = excludedPaths !== null ? excludedPaths : loadExcludedJsonPaths();
+  const paths = extractJsonPaths(normalizedJson, list);
   if (paths.length === 0) {
     return [];
   }

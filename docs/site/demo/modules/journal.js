@@ -344,38 +344,22 @@ export function buildSnapshotStubMapping(req, options = {}) {
     url: url
   };
 
-  if (req.request && req.request.body) {
-    const raw = req.request.body;
-    const normalizedJson = normalizeJsonPayload(raw);
+  const rawBody = req.request && (req.request.body || req.request.bodyAsBase64);
+  if (rawBody) {
+    const normalizedJson = normalizeJsonPayload(rawBody);
     if (normalizedJson !== null) {
-      const cleanJson = stripIgnoredProperties(normalizedJson);
-      const jsonPathPatterns = buildJsonPathBodyPatterns(cleanJson);
+      const jsonPathPatterns = buildJsonPathBodyPatterns(normalizedJson);
       if (options.useEqualToJson || jsonPathPatterns.length === 0) {
         requestMatch.bodyPatterns = [{
-          equalToJson: cleanJson,
+          equalToJson: stripIgnoredProperties(normalizedJson),
           ignoreArrayOrder: true,
           ignoreExtraElements: true
         }];
       } else {
         requestMatch.bodyPatterns = jsonPathPatterns;
       }
-    } else {
-      requestMatch.bodyPatterns = [{ equalTo: raw }];
-    }
-  } else if (req.request && req.request.bodyAsBase64) {
-    const normalizedJson = normalizeJsonPayload(req.request.bodyAsBase64);
-    if (normalizedJson !== null) {
-      const cleanJson = stripIgnoredProperties(normalizedJson);
-      const jsonPathPatterns = buildJsonPathBodyPatterns(cleanJson);
-      if (options.useEqualToJson || jsonPathPatterns.length === 0) {
-        requestMatch.bodyPatterns = [{
-          equalToJson: cleanJson,
-          ignoreArrayOrder: true,
-          ignoreExtraElements: true
-        }];
-      } else {
-        requestMatch.bodyPatterns = jsonPathPatterns;
-      }
+    } else if (req.request.body) {
+      requestMatch.bodyPatterns = [{ equalTo: req.request.body }];
     } else {
       requestMatch.bodyPatterns = [{ binaryEqualTo: req.request.bodyAsBase64 }];
     }

@@ -964,4 +964,218 @@ public class UiModuleUnitTest {
         assertThat(result.get("rawJsonPathMatches")).isEqualTo(true);
         assertThat(result.get("builtPayloadHasJsonPath")).isEqualTo(true);
     }
+
+    @Test
+    @DisplayName("testerLocalHeaders: Macro resolution, storage persistence, and precedence override")
+    void testTesterLocalHeaders() {
+        String script =
+                """
+            async () => {
+                const {
+                    resolveMacro,
+                    loadLocalHeaders,
+                    saveLocalHeaders,
+                    isLocalHeadersEnabled,
+                    setLocalHeadersEnabled,
+                    getEffectiveTesterHeaders,
+                    LOCAL_HEADERS_KEY,
+                    LOCAL_HEADERS_ENABLED_KEY
+                } = await import('./modules/tester.js');
+
+                // 1. Test Macro resolution
+                const resolvedUuid = resolveMacro("Bearer {{uuid}}");
+                const resolvedNow = resolveMacro("{{now}}");
+                const resolvedTs = resolveMacro("{{timestamp}}");
+
+                // 2. Storage save and load
+                const sampleHeaders = [
+                    { name: "X-Tenant-Id", value: "corp-internal", enabled: true },
+                    { name: "X-User-Id", value: "user-123", enabled: true },
+                    { name: "X-Disabled-Header", value: "should-not-apply", enabled: false }
+                ];
+                saveLocalHeaders(sampleHeaders);
+                const loaded = loadLocalHeaders();
+
+                // 3. Effective headers calculation without overrides
+                setLocalHeadersEnabled(true);
+                const effectiveNoOverride = getEffectiveTesterHeaders("Accept: application/json", true);
+
+                // 4. Effective headers calculation with case-insensitive override
+                const effectiveWithOverride = getEffectiveTesterHeaders("x-tenant-id: tenant-override\\nAccept: application/json", true);
+
+                // 5. Disabled state
+                setLocalHeadersEnabled(false);
+                const effectiveDisabled = getEffectiveTesterHeaders("Accept: application/json", true);
+
+                // Reset storage
+                localStorage.removeItem(LOCAL_HEADERS_KEY);
+                localStorage.removeItem(LOCAL_HEADERS_ENABLED_KEY);
+
+                return {
+                    uuidMatchesPattern: /^Bearer [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(resolvedUuid),
+                    nowIsIso: !isNaN(Date.parse(resolvedNow)),
+                    tsIsNumeric: !isNaN(Number(resolvedTs)),
+                    loadedCount: loaded.length,
+                    noOverrideTenant: effectiveNoOverride.headers["X-Tenant-Id"],
+                    noOverrideUser: effectiveNoOverride.headers["X-User-Id"],
+                    noOverrideAccept: effectiveNoOverride.headers["Accept"],
+                    hasDisabledHeader: Boolean(effectiveNoOverride.headers["X-Disabled-Header"]),
+                    withOverrideTenant: effectiveWithOverride.headers["x-tenant-id"],
+                    withOverrideOverriddenKeysCount: effectiveWithOverride.overriddenKeys.size,
+                    withOverrideHasTenantOverridden: effectiveWithOverride.overriddenKeys.has("x-tenant-id"),
+                    disabledHasTenant: Boolean(effectiveDisabled.headers["X-Tenant-Id"]),
+                    disabledAccept: effectiveDisabled.headers["Accept"]
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("uuidMatchesPattern")).isEqualTo(true);
+        assertThat(result.get("nowIsIso")).isEqualTo(true);
+        assertThat(result.get("tsIsNumeric")).isEqualTo(true);
+        assertThat(result.get("loadedCount")).isEqualTo(3);
+        assertThat(result.get("noOverrideTenant")).isEqualTo("corp-internal");
+        assertThat(result.get("noOverrideUser")).isEqualTo("user-123");
+        assertThat(result.get("noOverrideAccept")).isEqualTo("application/json");
+        assertThat(result.get("hasDisabledHeader")).isEqualTo(false);
+        assertThat(result.get("withOverrideTenant")).isEqualTo("tenant-override");
+        assertThat(result.get("withOverrideOverriddenKeysCount")).isEqualTo(1);
+        assertThat(result.get("withOverrideHasTenantOverridden")).isEqualTo(true);
+        assertThat(result.get("disabledHasTenant")).isEqualTo(false);
+        assertThat(result.get("disabledAccept")).isEqualTo("application/json");
+    }
+
+    @Test
+    @DisplayName("preferences: JSON path exclusions in localStorage, copy-paste import/export, and stub matching")
+    void testBrowserPreferencesAndExclusionSync() {
+        String script =
+                """
+            async () => {
+                const {
+                    loadPreferences,
+                    savePreferences,
+                    exportPreferencesJson,
+                    importPreferencesJson,
+                    isJsonPathExcluded,
+                    LOCAL_SETTINGS_KEY
+                } = await import('./modules/settings.js');
+                const { buildSnapshotStubMapping } = await import('./modules/journal.js');
+
+                // 1. Initial defaults
+                localStorage.removeItem(LOCAL_SETTINGS_KEY);
+                const defaultPrefs = loadPreferences();
+                const defaultHeaderNames = defaultPrefs.headers.map(h => h.name);
+                const defaultPaths = defaultPrefs.excludedJsonPaths;
+
+                // 2. Custom preferences with specific exclusion paths
+                const customPrefs = {
+                    headers: [
+                        { name: "X-Custom-Env", value: "staging-01", enabled: true }
+                    ],
+                    excludedJsonPaths: [
+                        "$.CORRELATION_ID",
+                        "$.FML_ARCHIVE_JSON.sessionToken",
+                        "timestamp",
+                        "traceId"
+                    ]
+                };
+                savePreferences(customPrefs);
+                const reloaded = loadPreferences();
+
+                // 3. Path exclusion rule evaluation
+                const matchesCorrelation = isJsonPathExcluded("$.CORRELATION_ID", "CORRELATION_ID", reloaded.excludedJsonPaths);
+                const matchesSession = isJsonPathExcluded("$.FML_ARCHIVE_JSON.sessionToken", "sessionToken", reloaded.excludedJsonPaths);
+                const matchesKeyOnly = isJsonPathExcluded("$.nested.payload.timestamp", "timestamp", reloaded.excludedJsonPaths);
+                const doesNotMatchBusinessField = isJsonPathExcluded("$.FML_ARCHIVE_JSON.caseId", "caseId", reloaded.excludedJsonPaths);
+
+                // 4. Export configuration to JSON string
+                const exportedJson = exportPreferencesJson();
+                const parsedExport = JSON.parse(exportedJson);
+
+                // 5. Import modified configuration via text paste
+                const modifiedImport = JSON.stringify({
+                    headers: [
+                        { name: "X-Imported-Auth", value: "Bearer {{uuid}}", enabled: true }
+                    ],
+                    excludedJsonPaths: [
+                        "$.CORRELATION_ID",
+                        "$.REQUEST_TIMESTAMP",
+                        "ephemeralToken"
+                    ]
+                });
+                const importRes = importPreferencesJson(modifiedImport);
+                const importedPrefs = loadPreferences();
+
+                // 6. Snapshot stub creation respects newly imported exclusion paths
+                const req = {
+                    id: "req-pref-test",
+                    request: {
+                        method: "POST",
+                        url: "/api/orders",
+                        body: JSON.stringify({
+                            orderId: "ORD-999",
+                            CORRELATION_ID: "corr-111",
+                            REQUEST_TIMESTAMP: "2026-10-27T00:00:00Z",
+                            ephemeralToken: "temp-987",
+                            customerId: "CUST-42"
+                        })
+                    },
+                    response: {
+                        status: 201,
+                        body: '{"status": "CREATED"}'
+                    }
+                };
+                const snapshotStub = buildSnapshotStubMapping(req);
+                const bodyPatterns = snapshotStub.request.bodyPatterns || [];
+
+                // Cleanup storage
+                localStorage.removeItem(LOCAL_SETTINGS_KEY);
+
+                return {
+                    defaultHasCorrHeader: defaultHeaderNames.includes("X-Correlation-Id"),
+                    defaultHasCorrPath: defaultPaths.includes("$.CORRELATION_ID"),
+                    reloadedHeader: reloaded.headers[0].name,
+                    matchesCorrelation,
+                    matchesSession,
+                    matchesKeyOnly,
+                    doesNotMatchBusinessField,
+                    exportHasHeaders: Array.isArray(parsedExport.headers),
+                    exportHasPaths: Array.isArray(parsedExport.excludedJsonPaths),
+                    importSuccess: importRes.success,
+                    importedHeader: importedPrefs.headers[0].name,
+                    importedPathsCount: importedPrefs.excludedJsonPaths.length,
+                    bodyPatternsCount: bodyPatterns.length,
+                    hasOrderIdMatcher: bodyPatterns.some(p => p.matchesJsonPath === "$.orderId" && p.equalTo === "ORD-999"),
+                    hasCustomerIdMatcher: bodyPatterns.some(p => p.matchesJsonPath === "$.customerId" && p.equalTo === "CUST-42"),
+                    omittedCorrelationId: !bodyPatterns.some(p => (p.matchesJsonPath || "").includes("CORRELATION_ID")),
+                    omittedRequestTimestamp: !bodyPatterns.some(p => (p.matchesJsonPath || "").includes("REQUEST_TIMESTAMP")),
+                    omittedEphemeralToken: !bodyPatterns.some(p => (p.matchesJsonPath || "").includes("ephemeralToken"))
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("defaultHasCorrHeader")).isEqualTo(true);
+        assertThat(result.get("defaultHasCorrPath")).isEqualTo(true);
+        assertThat(result.get("reloadedHeader")).isEqualTo("X-Custom-Env");
+        assertThat(result.get("matchesCorrelation")).isEqualTo(true);
+        assertThat(result.get("matchesSession")).isEqualTo(true);
+        assertThat(result.get("matchesKeyOnly")).isEqualTo(true);
+        assertThat(result.get("doesNotMatchBusinessField")).isEqualTo(false);
+        assertThat(result.get("exportHasHeaders")).isEqualTo(true);
+        assertThat(result.get("exportHasPaths")).isEqualTo(true);
+        assertThat(result.get("importSuccess")).isEqualTo(true);
+        assertThat(result.get("importedHeader")).isEqualTo("X-Imported-Auth");
+        assertThat(result.get("importedPathsCount")).isEqualTo(3);
+        assertThat(result.get("bodyPatternsCount")).isEqualTo(2);
+        assertThat(result.get("hasOrderIdMatcher")).isEqualTo(true);
+        assertThat(result.get("hasCustomerIdMatcher")).isEqualTo(true);
+        assertThat(result.get("omittedCorrelationId")).isEqualTo(true);
+        assertThat(result.get("omittedRequestTimestamp")).isEqualTo(true);
+        assertThat(result.get("omittedEphemeralToken")).isEqualTo(true);
+    }
 }
