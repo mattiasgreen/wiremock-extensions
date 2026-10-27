@@ -164,6 +164,9 @@ export function updateBodyMatchLabel(type) {
   if (type === 'equalToJson') {
     if (formatBtn) formatBtn.classList.remove('hidden');
     if (optionsDiv) optionsDiv.classList.remove('hidden');
+  } else if (type === 'matchesJsonPath') {
+    if (formatBtn) formatBtn.classList.remove('hidden');
+    if (optionsDiv) optionsDiv.classList.add('hidden');
   } else {
     if (formatBtn) formatBtn.classList.add('hidden');
     if (optionsDiv) optionsDiv.classList.add('hidden');
@@ -185,8 +188,8 @@ export function updateBodyMatchLabel(type) {
       input.placeholder = 'exact string content';
       break;
     case 'matchesJsonPath':
-      label.textContent = 'JSONPath Expression ("matchesJsonPath"):';
-      input.placeholder = '$.item';
+      label.textContent = 'JSONPath Matcher(s) ("matchesJsonPath"):';
+      input.placeholder = '[\n  {\n    "matchesJsonPath": "$.customerId",\n    "equalTo": "CUST-001"\n  }\n]';
       break;
     default:
       label.textContent = 'Expected Request Body Pattern:';
@@ -390,7 +393,17 @@ export function buildStubFromForm() {
         ignoreExtraElements: ignoreExtraEl ? ignoreExtraEl.checked : false
       }];
     } else if (bodyMatchType === 'matchesJsonPath') {
-      requestPattern.bodyPatterns = [{ matchesJsonPath: bodyMatchPattern.trim() }];
+      const trimmed = bodyMatchPattern.trim();
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          requestPattern.bodyPatterns = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (_) {
+          requestPattern.bodyPatterns = [{ matchesJsonPath: trimmed }];
+        }
+      } else {
+        requestPattern.bodyPatterns = [{ matchesJsonPath: trimmed }];
+      }
     }
   }
 
@@ -497,12 +510,19 @@ export function populateFormFromStub(stub) {
       if (bp.ignoreArrayOrder !== undefined) {
         ignoreOrder = bp.ignoreArrayOrder;
       }
+    } else if (bp.matchesJsonPath) {
+      matchType = 'matchesJsonPath';
+      const allJsonPath = req.bodyPatterns.every(p => p.matchesJsonPath);
+      if (allJsonPath && req.bodyPatterns.length > 1) {
+        matchPattern = JSON.stringify(req.bodyPatterns, null, 2);
+      } else if (bp.equalTo || bp.contains) {
+        matchPattern = JSON.stringify(req.bodyPatterns.length === 1 ? req.bodyPatterns[0] : req.bodyPatterns, null, 2);
+      } else {
+        matchPattern = typeof bp.matchesJsonPath === 'string' ? bp.matchesJsonPath : JSON.stringify(bp.matchesJsonPath, null, 2);
+      }
     } else if (bp.equalTo) {
       matchType = 'equalTo';
       matchPattern = bp.equalTo;
-    } else if (bp.matchesJsonPath) {
-      matchType = 'matchesJsonPath';
-      matchPattern = bp.matchesJsonPath;
     }
   }
 

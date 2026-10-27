@@ -3,6 +3,7 @@ package com.github.mattiasgreen.wiremock.casual;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.recordSpec;
@@ -116,6 +117,132 @@ class CasualWireMockGatewayTest {
 
         String responsePayload = new String(buffer.getBytes().get(0), StandardCharsets.UTF_8);
         assertThat(responsePayload).contains("ORD-9988").contains("CONFIRMED");
+    }
+
+    @Test
+    @DisplayName("Should match Casual call using matchingJsonPath on subset of properties ignoring transient fields")
+    void shouldMatchCasualCallWithMatchingJsonPath() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/creditCheckService"))
+                .withRequestBody(matchingJsonPath("$.customerId", equalTo("CUST-001")))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\": \"APPROVED\", \"limit\": 50000}")));
+
+        // Client sends full JSON payload containing transient correlation ID and timestamp
+        String requestPayload =
+                """
+            {
+              "CORRELATION_ID": "b469694c-38eb-4f30-8ca4-10e23b49e00f",
+              "REQUEST_TIMESTAMP": 1729999999,
+              "customerId": "CUST-001",
+              "role": "customer"
+            }
+            """;
+
+        CasualServiceCallReplyMessage reply = client.tpcall("creditCheckService", requestPayload);
+
+        assertThat(reply).isNotNull();
+        assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+        String responsePayload = new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+        assertThat(responsePayload).contains("APPROVED").contains("50000");
+    }
+
+    @Test
+    @DisplayName("Should match Casual Fielded call with matchingJsonPath on nested JSON payload")
+    void shouldMatchCasualFieldedCallWithMatchingJsonPath() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_STATUS", "id": 2, "type": "string" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-match-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/fmlRiskService"))
+                    .withRequestBody(matchingJsonPath("$.FLD_ARCHIVE_DATA.caseId", equalTo("12356")))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"FLD_STATUS\": \"APPROVED\"}")));
+
+            String rawJsonData = "{\"caseId\":\"12356\",\"timestamp\":1729000000}";
+            ServiceBuffer fieldedBuffer = CasualBufferUtils.wrapPayload(
+                    ".FIELDED",
+                    String.format(
+                            java.util.Locale.ROOT,
+                            """
+                    {
+                      "FLD_USER_ID": 9999,
+                      "FLD_ARCHIVE_DATA": "%s"
+                    }
+                    """,
+                            Base64.getEncoder()
+                                    .encodeToString(rawJsonData.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+
+            CasualServiceCallReplyMessage reply = client.tpcall("fmlRiskService", fieldedBuffer);
+
+            assertThat(reply).isNotNull();
+            assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+            String responsePayload =
+                    new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+            assertThat(responsePayload).contains("APPROVED");
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should match Casual call using equalToJson ignoring transient extra elements")
+    void shouldMatchCasualCallWithEqualToJsonIgnoringExtraElements() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/creditCheckService"))
+                .withRequestBody(equalToJson(
+                        """
+                    {
+                      "customerId": "CUST-001",
+                      "role": "customer"
+                    }
+                    """,
+                        true,
+                        true))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\": \"APPROVED\", \"limit\": 50000}")));
+
+        // Client sends request containing transient fields CORRELATION_ID and REQUEST_TIMESTAMP
+        String requestPayload =
+                """
+            {
+              "CORRELATION_ID": "random-uuid-9999",
+              "REQUEST_TIMESTAMP": 1730000000,
+              "customerId": "CUST-001",
+              "role": "customer"
+            }
+            """;
+
+        CasualServiceCallReplyMessage reply = client.tpcall("creditCheckService", requestPayload);
+
+        assertThat(reply).isNotNull();
+        assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+        String responsePayload = new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
+        assertThat(responsePayload).contains("APPROVED").contains("50000");
     }
 
     @Test

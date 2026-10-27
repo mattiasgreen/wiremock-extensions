@@ -568,13 +568,18 @@ public class UiModuleUnitTest {
             async () => {
                 const { buildSnapshotStubMapping } = await import('./modules/journal.js');
 
-                // Customer call in CRM Risk Control
+                // Customer call in CRM Risk Control with volatile correlation ID and timestamp
                 const customerReq = {
                     id: "req-cust",
                     request: {
                         method: "POST",
                         url: "/__casual/services/crmRiskControlService",
-                        body: '{"customerId": "CUST-001", "role": "customer"}'
+                        body: JSON.stringify({
+                            CORRELATION_ID: "b469694c-38eb-4f30-8ca4-10e23b49e00f",
+                            REQUEST_TIMESTAMP: 1729999999,
+                            customerId: "CUST-001",
+                            role: "customer"
+                        })
                     },
                     response: {
                         status: 200,
@@ -588,7 +593,12 @@ public class UiModuleUnitTest {
                     request: {
                         method: "POST",
                         url: "/__casual/services/crmRiskControlService",
-                        body: '{"customerId": "CUST-002", "role": "spouse"}'
+                        body: JSON.stringify({
+                            CORRELATION_ID: "different-corr-id-777",
+                            REQUEST_TIMESTAMP: 1730000000,
+                            customerId: "CUST-002",
+                            role: "spouse"
+                        })
                     },
                     response: {
                         status: 200,
@@ -625,6 +635,7 @@ public class UiModuleUnitTest {
                         method: "POST",
                         url: "/__casual/services/plaVLtlogg",
                         body: JSON.stringify({
+                            CORRELATION_ID: "vol-9999",
                             ACME_CORP_HEADER_SOURCE_MACHINE: "SOME_MACHINE",
                             FML_ARCHIVE_JSON: "eyJjYXNlSWQiOiIxMjM1NiJ9",
                             FML_ARCHIVE_TYPE: 5
@@ -640,6 +651,7 @@ public class UiModuleUnitTest {
                 };
 
                 const customerStub = buildSnapshotStubMapping(customerReq);
+                const customerEqualToJsonStub = buildSnapshotStubMapping(customerReq, { useEqualToJson: true });
                 const spouseStub = buildSnapshotStubMapping(spouseReq);
                 const fmlStub = buildSnapshotStubMapping(fmlReq);
                 const textStub = buildSnapshotStubMapping(textReq);
@@ -648,15 +660,16 @@ public class UiModuleUnitTest {
                 return {
                     custName: customerStub.name,
                     custHasBodyPatterns: !!customerStub.request.bodyPatterns,
-                    custEqualJson: customerStub.request.bodyPatterns[0].equalToJson,
-                    custIgnoreArrayOrder: customerStub.request.bodyPatterns[0].ignoreArrayOrder,
-                    custIgnoreExtraElements: customerStub.request.bodyPatterns[0].ignoreExtraElements,
+                    custBodyPatterns: customerStub.request.bodyPatterns,
+                    custEqualJson: customerEqualToJsonStub.request.bodyPatterns[0].equalToJson,
+                    custIgnoreArrayOrder: customerEqualToJsonStub.request.bodyPatterns[0].ignoreArrayOrder,
+                    custIgnoreExtraElements: customerEqualToJsonStub.request.bodyPatterns[0].ignoreExtraElements,
 
                     spouseName: spouseStub.name,
-                    spouseEqualJson: spouseStub.request.bodyPatterns[0].equalToJson,
+                    spouseBodyPatterns: spouseStub.request.bodyPatterns,
 
                     fmlName: fmlStub.name,
-                    fmlEqualJson: fmlStub.request.bodyPatterns[0].equalToJson,
+                    fmlBodyPatterns: fmlStub.request.bodyPatterns,
                     fmlResponseBody: fmlStub.response.body,
 
                     textEqualTo: textStub.request.bodyPatterns[0].equalTo,
@@ -671,29 +684,60 @@ public class UiModuleUnitTest {
         assertThat(result.get("custName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/crmRiskControlService");
         assertThat(result.get("custHasBodyPatterns")).isEqualTo(true);
 
+        // Path matching is default: matchesJsonPath patterns generated for identifying business fields
+        @SuppressWarnings("unchecked")
+        java.util.List<java.util.Map<String, Object>> custPatterns =
+                (java.util.List<java.util.Map<String, Object>>) result.get("custBodyPatterns");
+        assertThat(custPatterns).hasSize(2);
+        assertThat(custPatterns).anySatisfy(p -> {
+            assertThat(p.get("matchesJsonPath")).isEqualTo("$.customerId");
+            assertThat(p.get("equalTo")).isEqualTo("CUST-001");
+        });
+        assertThat(custPatterns).anySatisfy(p -> {
+            assertThat(p.get("matchesJsonPath")).isEqualTo("$.role");
+            assertThat(p.get("equalTo")).isEqualTo("customer");
+        });
+        // Volatile CORRELATION_ID and REQUEST_TIMESTAMP must NOT be in path patterns
+        assertThat(custPatterns).noneSatisfy(p -> assertThat(String.valueOf(p.get("matchesJsonPath")))
+                .containsIgnoringCase("CORRELATION"));
+        assertThat(custPatterns).noneSatisfy(p -> assertThat(String.valueOf(p.get("matchesJsonPath")))
+                .containsIgnoringCase("TIMESTAMP"));
+
+        // equalToJson also filters out volatile properties and sets ignoreExtraElements: true
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> custMap = (java.util.Map<String, Object>) result.get("custEqualJson");
         assertThat(custMap.get("customerId")).isEqualTo("CUST-001");
         assertThat(custMap.get("role")).isEqualTo("customer");
+        assertThat(custMap).doesNotContainKey("CORRELATION_ID");
+        assertThat(custMap).doesNotContainKey("REQUEST_TIMESTAMP");
         assertThat(result.get("custIgnoreArrayOrder")).isEqualTo(true);
-        assertThat(result.get("custIgnoreExtraElements")).isEqualTo(false);
+        assertThat(result.get("custIgnoreExtraElements")).isEqualTo(true);
 
         // Spouse has distinct body pattern preventing stub collision
         assertThat(result.get("spouseName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/crmRiskControlService");
         @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> spouseMap = (java.util.Map<String, Object>) result.get("spouseEqualJson");
-        assertThat(spouseMap.get("customerId")).isEqualTo("CUST-002");
-        assertThat(spouseMap.get("role")).isEqualTo("spouse");
-        assertThat(custMap).isNotEqualTo(spouseMap);
+        java.util.List<java.util.Map<String, Object>> spousePatterns =
+                (java.util.List<java.util.Map<String, Object>>) result.get("spouseBodyPatterns");
+        assertThat(spousePatterns).anySatisfy(p -> {
+            assertThat(p.get("matchesJsonPath")).isEqualTo("$.customerId");
+            assertThat(p.get("equalTo")).isEqualTo("CUST-002");
+        });
+        assertThat(spousePatterns).anySatisfy(p -> {
+            assertThat(p.get("matchesJsonPath")).isEqualTo("$.role");
+            assertThat(p.get("equalTo")).isEqualTo("spouse");
+        });
 
-        // FML Base64 JSON is decoded into nested object in both equalToJson matcher and response body
+        // FML Base64 JSON is decoded into nested path matcher and response body
         assertThat(result.get("fmlName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/plaVLtlogg");
         @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> fmlMap = (java.util.Map<String, Object>) result.get("fmlEqualJson");
-        assertThat(fmlMap.get("ACME_CORP_HEADER_SOURCE_MACHINE")).isEqualTo("SOME_MACHINE");
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> fmlArchiveReq = (java.util.Map<String, Object>) fmlMap.get("FML_ARCHIVE_JSON");
-        assertThat(fmlArchiveReq.get("caseId")).isEqualTo("12356");
+        java.util.List<java.util.Map<String, Object>> fmlPatterns =
+                (java.util.List<java.util.Map<String, Object>>) result.get("fmlBodyPatterns");
+        assertThat(fmlPatterns).anySatisfy(p -> {
+            assertThat(p.get("matchesJsonPath")).isEqualTo("$.FML_ARCHIVE_JSON.caseId");
+            assertThat(p.get("equalTo")).isEqualTo("12356");
+        });
+        assertThat(fmlPatterns).noneSatisfy(p -> assertThat(String.valueOf(p.get("matchesJsonPath")))
+                .containsIgnoringCase("CORRELATION"));
 
         String fmlResBody = (String) result.get("fmlResponseBody");
         assertThat(fmlResBody).contains("\"status\": \"OK\"");
@@ -878,10 +922,7 @@ public class UiModuleUnitTest {
                 const patternValue = matchPatternInput.value;
                 const responseBodyValue = responseBodyInput.value;
 
-                // Relax the matcher: check ignore extra elements
-                ignoreExtraChk.checked = true;
-
-                // Switch to raw JSON mode to inspect serialized representation
+                // Test switching to raw JSON mode to inspect serialized representation
                 setEditorMode('json');
                 const rawTextarea = document.getElementById('editor-raw-json');
                 const rawJson = JSON.parse(rawTextarea.value);
@@ -896,15 +937,14 @@ public class UiModuleUnitTest {
                     isModalVisible,
                     modalTitle,
                     matchType,
-                    patternContainsScore: patternValue.includes('"score": 750'),
+                    patternContainsScore: patternValue.includes('750'),
+                    patternContainsJsonPath: patternValue.includes('$.FML_ARCHIVE_JSON.score'),
                     patternContainsNoB64: !patternValue.includes('eyJzY29yZSI6NzUwfQ=='),
                     responseContainsLimit: responseBodyValue.includes('"limit": 50000'),
                     responseContainsNoB64: !responseBodyValue.includes('eyJsaW1pdCI6NTAwMDB9'),
                     formatReqBtnVisible: !formatReqBtn.classList.contains('hidden'),
-                    rawEqualJsonIsObject: typeof rawJson.request.bodyPatterns[0].equalToJson === 'object',
-                    rawEqualJsonScore: rawJson.request.bodyPatterns[0].equalToJson.FML_ARCHIVE_JSON.score,
-                    builtPayloadEqualJsonIsObject: typeof builtPayload.request.bodyPatterns[0].equalToJson === 'object',
-                    builtPayloadIgnoreExtra: builtPayload.request.bodyPatterns[0].ignoreExtraElements
+                    rawJsonPathMatches: Array.isArray(rawJson.request.bodyPatterns) && rawJson.request.bodyPatterns.some(p => p.matchesJsonPath === '$.FML_ARCHIVE_JSON.score'),
+                    builtPayloadHasJsonPath: Array.isArray(builtPayload.request.bodyPatterns) && builtPayload.request.bodyPatterns.some(p => p.matchesJsonPath === '$.FML_ARCHIVE_JSON.score')
                 };
             }
         """;
@@ -914,15 +954,14 @@ public class UiModuleUnitTest {
 
         assertThat(result.get("isModalVisible")).isEqualTo(true);
         assertThat(result.get("modalTitle")).isEqualTo("Snapshot Stub from Journal");
-        assertThat(result.get("matchType")).isEqualTo("equalToJson");
+        assertThat(result.get("matchType")).isEqualTo("matchesJsonPath");
         assertThat(result.get("patternContainsScore")).isEqualTo(true);
+        assertThat(result.get("patternContainsJsonPath")).isEqualTo(true);
         assertThat(result.get("patternContainsNoB64")).isEqualTo(true);
         assertThat(result.get("responseContainsLimit")).isEqualTo(true);
         assertThat(result.get("responseContainsNoB64")).isEqualTo(true);
         assertThat(result.get("formatReqBtnVisible")).isEqualTo(true);
-        assertThat(result.get("rawEqualJsonIsObject")).isEqualTo(true);
-        assertThat(result.get("rawEqualJsonScore")).isEqualTo(750);
-        assertThat(result.get("builtPayloadEqualJsonIsObject")).isEqualTo(true);
-        assertThat(result.get("builtPayloadIgnoreExtra")).isEqualTo(true);
+        assertThat(result.get("rawJsonPathMatches")).isEqualTo(true);
+        assertThat(result.get("builtPayloadHasJsonPath")).isEqualTo(true);
     }
 }

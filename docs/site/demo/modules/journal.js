@@ -5,7 +5,12 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
-import { decodeBase64Payload, normalizeJsonPayload } from './base64.js';
+import {
+  decodeBase64Payload,
+  normalizeJsonPayload,
+  stripIgnoredProperties,
+  buildJsonPathBodyPatterns
+} from './base64.js';
 import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
@@ -324,7 +329,7 @@ function setupLazyScroll() {
   });
 }
 
-export function buildSnapshotStubMapping(req) {
+export function buildSnapshotStubMapping(req, options = {}) {
   const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
   const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
   const rawResBody = (req.response && (req.response.body || req.response.base64Body))
@@ -343,22 +348,34 @@ export function buildSnapshotStubMapping(req) {
     const raw = req.request.body;
     const normalizedJson = normalizeJsonPayload(raw);
     if (normalizedJson !== null) {
-      requestMatch.bodyPatterns = [{
-        equalToJson: normalizedJson,
-        ignoreArrayOrder: true,
-        ignoreExtraElements: false
-      }];
+      const cleanJson = stripIgnoredProperties(normalizedJson);
+      const jsonPathPatterns = buildJsonPathBodyPatterns(cleanJson);
+      if (options.useEqualToJson || jsonPathPatterns.length === 0) {
+        requestMatch.bodyPatterns = [{
+          equalToJson: cleanJson,
+          ignoreArrayOrder: true,
+          ignoreExtraElements: true
+        }];
+      } else {
+        requestMatch.bodyPatterns = jsonPathPatterns;
+      }
     } else {
       requestMatch.bodyPatterns = [{ equalTo: raw }];
     }
   } else if (req.request && req.request.bodyAsBase64) {
     const normalizedJson = normalizeJsonPayload(req.request.bodyAsBase64);
     if (normalizedJson !== null) {
-      requestMatch.bodyPatterns = [{
-        equalToJson: normalizedJson,
-        ignoreArrayOrder: true,
-        ignoreExtraElements: false
-      }];
+      const cleanJson = stripIgnoredProperties(normalizedJson);
+      const jsonPathPatterns = buildJsonPathBodyPatterns(cleanJson);
+      if (options.useEqualToJson || jsonPathPatterns.length === 0) {
+        requestMatch.bodyPatterns = [{
+          equalToJson: cleanJson,
+          ignoreArrayOrder: true,
+          ignoreExtraElements: true
+        }];
+      } else {
+        requestMatch.bodyPatterns = jsonPathPatterns;
+      }
     } else {
       requestMatch.bodyPatterns = [{ binaryEqualTo: req.request.bodyAsBase64 }];
     }

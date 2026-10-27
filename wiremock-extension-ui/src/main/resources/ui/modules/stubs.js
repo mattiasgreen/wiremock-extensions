@@ -99,17 +99,22 @@ export function generateJavaStubFor(stub) {
     }
   }
   if (req.bodyPatterns && req.bodyPatterns.length > 0) {
-    const bp = req.bodyPatterns[0];
-    if (bp.equalToJson) {
-      const jsonStr = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson);
-      lines.push(`    .withRequestBody(equalToJson("${jsonStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}", true, true))`);
-    } else if (bp.contains) {
-      lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
-    } else if (bp.matchesJsonPath) {
-      lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
-    } else if (bp.equalTo) {
-      lines.push(`    .withRequestBody(equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}"))`);
-    }
+    req.bodyPatterns.forEach(bp => {
+      if (bp.equalToJson) {
+        const jsonStr = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson);
+        lines.push(`    .withRequestBody(equalToJson("${jsonStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}", true, true))`);
+      } else if (bp.contains) {
+        lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
+      } else if (bp.matchesJsonPath) {
+        if (bp.equalTo) {
+          lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}", equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}")))`);
+        } else {
+          lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
+        }
+      } else if (bp.equalTo) {
+        lines.push(`    .withRequestBody(equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}"))`);
+      }
+    });
   }
 
   if (res.proxyBaseUrl) {
@@ -504,12 +509,23 @@ export function sendStubToTester(stub, switchTab = true) {
     } else if (bp.equalTo) {
       body = bp.equalTo;
     } else if (bp.matchesJsonPath) {
-      const match = bp.matchesJsonPath.match(/\$\.([a-zA-Z0-9_-]+)/);
-      if (match && match[1]) {
-        body = JSON.stringify({ [match[1]]: "sample_value" }, null, 2);
-      } else {
-        body = '{\n  \n}';
-      }
+      const sampleObj = {};
+      stub.request.bodyPatterns.forEach(p => {
+        if (p.matchesJsonPath) {
+          const match = p.matchesJsonPath.match(/\$\.([a-zA-Z0-9_.-]+)/);
+          if (match && match[1]) {
+            const val = p.equalTo !== undefined ? p.equalTo : 'sample_value';
+            const parts = match[1].split('.');
+            let curr = sampleObj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (!curr[parts[i]]) curr[parts[i]] = {};
+              curr = curr[parts[i]];
+            }
+            curr[parts[parts.length - 1]] = val;
+          }
+        }
+      });
+      body = Object.keys(sampleObj).length > 0 ? JSON.stringify(sampleObj, null, 2) : '{\n  \n}';
     } else if (bp.contains) {
       body = bp.contains;
     }

@@ -214,3 +214,133 @@ export function normalizeJsonPayload(input) {
   return null;
 }
 
+/**
+ * Common volatile / transient header & envelope JSON properties that should be omitted
+ * when generating request matchers from snapshot traffic.
+ */
+export const DEFAULT_IGNORED_JSON_PROPERTIES = [
+  'correlation_id',
+  'correlationid',
+  'x-correlation-id',
+  'request_timestamp',
+  'requesttimestamp',
+  'timestamp',
+  'transaction_id',
+  'transactionid',
+  'xid',
+  'execution_id',
+  'executionid',
+  'trace_id',
+  'traceid',
+  'span_id',
+  'spanid',
+  'request_id',
+  'requestid'
+];
+
+/**
+ * Checks if a property key matches any ignored transient property name (case-insensitive, ignoring - and _).
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isIgnoredJsonProperty(key) {
+  if (!key || typeof key !== 'string') return false;
+  const normalized = key.toLowerCase().replace(/[-_]/g, '');
+  return DEFAULT_IGNORED_JSON_PROPERTIES.some(p => p.replace(/[-_]/g, '') === normalized);
+}
+
+/**
+ * Recursively strips ignored transient properties (e.g. CORRELATION_ID, REQUEST_TIMESTAMP)
+ * from an object or array.
+ *
+ * @param {any} input
+ * @returns {any}
+ */
+export function stripIgnoredProperties(input) {
+  if (input === null || typeof input !== 'object') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map(stripIgnoredProperties);
+  }
+  const result = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (isIgnoredJsonProperty(key)) {
+      continue;
+    }
+    result[key] = stripIgnoredProperties(value);
+  }
+  return result;
+}
+
+/**
+ * Flattens a JSON object into a list of leaf property paths and their values.
+ * e.g. { customerId: "CUST-001", FML_ARCHIVE_JSON: { caseId: "12356" } }
+ * -> [
+ *   { path: "$.customerId", value: "CUST-001" },
+ *   { path: "$.FML_ARCHIVE_JSON.caseId", value: "12356" }
+ * ]
+ *
+ * @param {any} obj
+ * @param {string} prefix
+ * @returns {Array<{ path: string, value: any }>}
+ */
+export function extractJsonPaths(obj, prefix = '$') {
+  if (obj === null || typeof obj !== 'object') return [];
+  const paths = [];
+
+  function walk(current, path) {
+    if (current === null || current === undefined) {
+      paths.push({ path, value: null });
+      return;
+    }
+    if (typeof current !== 'object') {
+      paths.push({ path, value: current });
+      return;
+    }
+    if (Array.isArray(current)) {
+      if (current.length === 0) {
+        paths.push({ path, value: [] });
+      } else {
+        current.forEach((item, idx) => {
+          walk(item, `${path}[${idx}]`);
+        });
+      }
+      return;
+    }
+    const entries = Object.entries(current);
+    if (entries.length === 0) {
+      paths.push({ path, value: {} });
+    } else {
+      for (const [key, val] of entries) {
+        const keyProp = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key) ? `.${key}` : `['${key}']`;
+        walk(val, `${path}${keyProp}`);
+      }
+    }
+  }
+
+  walk(obj, prefix);
+  return paths;
+}
+
+/**
+ * Builds a list of WireMock matchesJsonPath bodyPattern objects from a normalized JSON object,
+ * filtering out transient properties.
+ *
+ * @param {any} normalizedJson
+ * @returns {Array<{ matchesJsonPath: string, equalTo: string }>}
+ */
+export function buildJsonPathBodyPatterns(normalizedJson) {
+  const clean = stripIgnoredProperties(normalizedJson);
+  const paths = extractJsonPaths(clean);
+  if (paths.length === 0) {
+    return [];
+  }
+  return paths.map(({ path, value }) => ({
+    matchesJsonPath: path,
+    equalTo: typeof value === 'object' ? JSON.stringify(value) : String(value)
+  }));
+}
+
+

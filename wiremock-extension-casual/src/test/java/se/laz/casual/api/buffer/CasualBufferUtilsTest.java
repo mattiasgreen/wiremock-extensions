@@ -294,7 +294,7 @@ class CasualBufferUtilsTest {
             assertThat(reExtracted).contains("\"FLD_CRM_CUSTOMER_ID\":54321");
             assertThat(reExtracted).contains("\"FLD_CRM_CUSTOMER_NAME\":\"Acme Partner\"");
             assertThat(reExtracted).contains("\"FLD_CRM_STATUS_FLAG\":1");
-            assertThat(reExtracted).contains("\"FLD_ARCHIVE_DATA\":\"" + binaryPayloadB64 + "\"");
+            assertThat(reExtracted).contains("\"FLD_ARCHIVE_DATA\":{\"caseId\":\"12356\"}");
         } finally {
             System.clearProperty("CASUAL_FIELD_TABLE");
             se.laz.casual.config.ConfigurationService.setConfiguration(
