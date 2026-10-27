@@ -31,7 +31,7 @@ It re-exports all extensions under a single dependency coordinate and includes a
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.7.0'
 ```
 
 **Maven**:
@@ -39,7 +39,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-bundle</artifactId>
-    <version>1.6.0</version>
+    <version>1.7.0</version>
 </dependency>
 ```
 
@@ -48,7 +48,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'
 Run WireMock Standalone with the bundle JAR on the classpath:
 
 ```bash
-java -cp "wiremock-extension-bundle-1.6.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-bundle-1.7.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose
@@ -77,15 +77,17 @@ curl -X POST http://localhost:8080/__admin/mappings/import \
   -d @wiremock-examples/example-stubs.json
 ```
 
-### Casual Configuration (Local & Docker)
+### Port & Extension Configuration
 
-When running `StandaloneDevServer` locally or in Docker containers, Casual settings are configured via environment variables or JVM system properties:
+Extending WireMock Standalone, the **main WireMock HTTP port** is configured via standard program arguments (e.g. `--port 8080`), while extension listener ports (**NetEm** and **Casual**) are simplified to configure strictly via **environment properties**:
 
-| Setting | Environment Variable | System Property | Default |
-| :--- | :--- | :--- | :--- |
-| Enable Casual Gateway | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` |
-| Casual TCP Port | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` |
-| Upstream Timeout | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `wiremock.casual.upstream.timeout.seconds` | `4` |
+| Setting / Port | Configuration Mechanism | Environment Property | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Main WireMock HTTP** | Program Argument (WireMock Standalone) | `--port <port>` | `8080` | Core WireMock HTTP listener, Admin API, and Web UI. |
+| **TCP NetEm Ingress** | Environment Property | `WIREMOCK_NETEM_PORT` | `8081` | Dedicated Layer 4 TCP proxy port for fault injection. |
+| **Casual TCP Gateway** | Environment Property | `WIREMOCK_CASUAL_PORT` | `7772` | Dedicated raw TCP port for Casual / XATMI gateway. |
+| **Casual Enabled** | Environment Property | `WIREMOCK_CASUAL_ENABLED` | `true` | Enables or disables the Casual TCP gateway. |
+| **Casual Upstream Timeout** | Environment Property | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `4` | Seconds before timing out slow upstream Casual services. |
 
 Dynamic upstream proxying and recording are declared directly in standard WireMock stub mappings (`targetBaseUrl: "casual://host:port"` with `metadata.mode = "proxy"`), with multi-upstream 2PC XA stickiness and human-readable Request Journal logging. Settings can be inspected via:
 - Inspect configuration: `GET http://localhost:8080/__admin/casual/config`

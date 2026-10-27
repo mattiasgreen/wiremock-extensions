@@ -93,7 +93,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.6.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.7.0'
 ```
 
 **Maven**:
@@ -101,7 +101,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.6.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-ui</artifactId>
-    <version>1.6.0</version>
+    <version>1.7.0</version>
 </dependency>
 ```
 
@@ -110,7 +110,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.6.0'
 Add the JAR to the classpath:
 
 ```bash
-java -cp "wiremock-extension-ui-1.6.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-ui-1.7.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080
 ```

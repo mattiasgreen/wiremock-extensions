@@ -32,6 +32,9 @@ tasks.register('runStandalone', JavaExec) {
     description = 'Runs WireMock standalone with all extensions, TCP NetEm, Casual gateway, and active UI'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
+    if (project.hasProperty('args')) {
+        args project.property('args').toString().split('\\s+')
+    }
 }
 
 tasks.register('runUpstream', JavaExec) {

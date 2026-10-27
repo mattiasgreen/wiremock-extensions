@@ -377,15 +377,15 @@ Here is the complete inner loop for proxying live Casual interactions, recording
 
 ## 9. Configuration & Admin API Control Plane
 
-The Casual extension supports lightweight configuration via JVM system properties, environment variables, or dynamic REST API queries:
+The Casual extension supports lightweight configuration via environment properties or dynamic REST API queries. Extending WireMock Standalone (where the main HTTP port is configured via `--port`), extension ports and settings are configured strictly via environment properties:
 
-### A. Environment Variables & System Properties
+### A. Environment Properties
 
-| Setting | Environment Variable | System Property | Default | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **Casual Enabled** | `WIREMOCK_CASUAL_ENABLED` | `wiremock.casual.enabled` | `true` | Enables or disables the Casual TCP gateway. |
-| **Gateway Port** | `WIREMOCK_CASUAL_PORT` | `wiremock.casual.port` | `7772` | TCP port where the Casual server listens. |
-| **Upstream Timeout** | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `wiremock.casual.upstream.timeout.seconds` | `4` | Upstream timeout in seconds before failing fast. |
+| Setting | Environment Property | Default | Description |
+| :--- | :--- | :--- | :--- |
+| **Gateway Port** | `WIREMOCK_CASUAL_PORT` | `7772` | TCP port where the Casual server listens. |
+| **Casual Enabled** | `WIREMOCK_CASUAL_ENABLED` | `true` | Enables or disables the Casual TCP gateway. |
+| **Upstream Timeout** | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `4` | Upstream timeout in seconds before failing fast. |
 
 ### B. Admin API REST Control Plane (`/__admin/casual/config`)
 

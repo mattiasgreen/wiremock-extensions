@@ -59,13 +59,13 @@ public class CasualConfiguration {
     }
 
     private static String getRawPropertyOrEnv(String propKey, String envKey) {
-        String prop = System.getProperty(propKey);
-        if (prop != null && !prop.isBlank()) {
-            return prop;
-        }
         String env = System.getenv(envKey);
         if (env != null && !env.isBlank()) {
             return env;
+        }
+        String prop = System.getProperty(propKey);
+        if (prop != null && !prop.isBlank()) {
+            return prop;
         }
         return null;
     }

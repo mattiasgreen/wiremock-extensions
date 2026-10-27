@@ -137,9 +137,13 @@
         <h3>Standalone CLI Execution</h3>
         <p>WireMock discovers extensions via standard Java SPI (<code>java.util.ServiceLoader</code>). Place both JARs on the classpath:</p>
         <pre class="code-block"><code><span class="comment"># Download WireMock Standalone &amp; the Extension Bundle:</span>
-java -cp <span class="str">"wiremock-extension-bundle-1.6.0.jar:wiremock-standalone-3.12.1.jar"</span> \
+java -cp <span class="str">"wiremock-extension-bundle-1.7.0.jar:wiremock-standalone-3.12.1.jar"</span> \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 --verbose</code></pre>
+        <p>
+          <strong>Simplified Port Configuration Model</strong>: Extending WireMock Standalone, the primary HTTP port is passed via standard CLI program arguments (<code>--port 8080</code>). Extension listener ports are configured strictly via environment properties:
+          <code>WIREMOCK_NETEM_PORT=8081</code> for L4 NetEm ingress and <code>WIREMOCK_CASUAL_PORT=7772</code> for the Netty Casual XATMI gateway.
+        </p>
 
         <h3 id="docker" style="margin-top: 2rem;">Production Dockerfile Reference</h3>
         <p>Assemble a minimal alpine container running the unified server:</p>
@@ -147,7 +151,7 @@ java -cp <span class="str">"wiremock-extension-bundle-1.6.0.jar:wiremock-standal
 <span class="kw">WORKDIR</span> /wiremock
 
 <span class="kw">ARG</span> WIREMOCK_VERSION=3.12.1
-<span class="kw">ARG</span> BUNDLE_VERSION=1.6.0
+<span class="kw">ARG</span> BUNDLE_VERSION=1.7.0
 
 <span class="kw">RUN</span> wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
  &amp;&amp; wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
@@ -161,7 +165,7 @@ java -cp <span class="str">"wiremock-extension-bundle-1.6.0.jar:wiremock-standal
           Simply add the bundle to your test dependencies:
         </p>
         <pre class="code-block"><code><span class="comment">// Gradle build.gradle</span>
-testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.6.0'</span>
+testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-bundle:1.7.0'</span>
 
 <span class="comment">// In your test class:</span>
 <span class="kw">@WireMockTest</span>(httpPort = <span class="str">8080</span>)
