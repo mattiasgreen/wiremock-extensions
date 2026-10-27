@@ -6,6 +6,27 @@ import { state } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
 import { highlightJson } from './highlighter.js';
 import { setRoute, toBase64 } from './router.js';
+import {
+  resolveMacro,
+  loadLocalHeaders,
+  saveLocalHeaders,
+  isLocalHeadersEnabled,
+  setLocalHeadersEnabled,
+  getEffectiveTesterHeaders,
+  LOCAL_HEADERS_KEY,
+  LOCAL_HEADERS_ENABLED_KEY
+} from './settings.js';
+
+export {
+  resolveMacro,
+  loadLocalHeaders,
+  saveLocalHeaders,
+  isLocalHeadersEnabled,
+  setLocalHeadersEnabled,
+  getEffectiveTesterHeaders,
+  LOCAL_HEADERS_KEY,
+  LOCAL_HEADERS_ENABLED_KEY
+};
 
 const TESTER_HISTORY_KEY = 'wiremock_ui_tester_history';
 const TESTER_COLLAPSED_KEY = 'wiremock_ui_tester_history_collapsed';
@@ -15,6 +36,7 @@ export function appendHeader(name, value) {
   const current = elements.testerHeaders.value.trim();
   if (current.toLowerCase().includes(name.toLowerCase() + ':')) return;
   elements.testerHeaders.value = (current ? current + '\n' : '') + `${name}: ${value}`;
+  renderLocalHeaderChips();
   updateTesterRoute(true);
 }
 
@@ -258,5 +280,57 @@ export function renderTesterResponse(bodyText) {
     elements.testerResponseBody.textContent = bodyText;
   } else {
     elements.testerResponseBody.innerHTML = highlightJson(bodyText);
+  }
+}
+
+export function renderLocalHeaderChips() {
+  if (!elements.testerLocalHeadersChips) return;
+
+  const localHeaders = loadLocalHeaders();
+  const isEnabled = isLocalHeadersEnabled();
+  const textareaVal = elements.testerHeaders ? elements.testerHeaders.value : '';
+  const { overriddenKeys } = getEffectiveTesterHeaders(textareaVal, false);
+
+  const activeHeaders = localHeaders.filter(h => h.enabled && h.name && h.name.trim());
+  if (elements.testerLocalHeadersCount) {
+    elements.testerLocalHeadersCount.textContent = activeHeaders.length;
+  }
+
+  if (elements.testerLocalHeadersToggle) {
+    elements.testerLocalHeadersToggle.checked = isEnabled;
+  }
+
+  if (elements.testerLocalHeadersContainer) {
+    if (!isEnabled) {
+      elements.testerLocalHeadersContainer.classList.add('disabled');
+    } else {
+      elements.testerLocalHeadersContainer.classList.remove('disabled');
+    }
+  }
+
+  if (!isEnabled) {
+    elements.testerLocalHeadersChips.innerHTML = '<span class="muted-text text-small">Persistent headers paused (toggle switch to re-enable).</span>';
+    return;
+  }
+
+  if (activeHeaders.length === 0) {
+    elements.testerLocalHeadersChips.innerHTML = '<span class="muted-text text-small">No persistent headers configured (click ⚙️ Manage to add).</span>';
+    return;
+  }
+
+  elements.testerLocalHeadersChips.innerHTML = '';
+  for (const h of activeHeaders) {
+    const isOverridden = overriddenKeys.has(h.name.trim().toLowerCase());
+    const chip = document.createElement('div');
+    chip.className = isOverridden ? 'local-header-chip overridden' : 'local-header-chip';
+    chip.setAttribute('data-header-name', h.name.trim());
+    if (isOverridden) {
+      chip.setAttribute('title', 'Overridden by Request Headers textarea');
+      chip.innerHTML = `<span class="chip-name">${escapeHtml(h.name.trim())}:</span> <span class="chip-val">${escapeHtml(h.value || '')}</span><span class="chip-override-badge">(overridden)</span>`;
+    } else {
+      chip.setAttribute('title', 'From browser local storage');
+      chip.innerHTML = `<span class="chip-name">${escapeHtml(h.name.trim())}:</span> <span class="chip-val">${escapeHtml(h.value || '')}</span>`;
+    }
+    elements.testerLocalHeadersChips.appendChild(chip);
   }
 }

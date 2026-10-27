@@ -11,6 +11,7 @@ import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.
 import { handleStubCheckboxClick, updateBulkToolbar } from './bulk-actions.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
 import { matchesStub } from './filter.js';
+import { normalizeJsonPayload } from './base64.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -98,17 +99,30 @@ export function generateJavaStubFor(stub) {
     }
   }
   if (req.bodyPatterns && req.bodyPatterns.length > 0) {
-    const bp = req.bodyPatterns[0];
-    if (bp.equalToJson) {
-      const jsonStr = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson);
-      lines.push(`    .withRequestBody(equalToJson("${jsonStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}", true, true))`);
-    } else if (bp.contains) {
-      lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
-    } else if (bp.matchesJsonPath) {
-      lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
-    } else if (bp.equalTo) {
-      lines.push(`    .withRequestBody(equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}"))`);
-    }
+    req.bodyPatterns.forEach(bp => {
+      if (bp.equalToJson) {
+        const jsonStr = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson);
+        lines.push(`    .withRequestBody(equalToJson("${jsonStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}", true, true))`);
+      } else if (bp.contains) {
+        lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
+      } else if (bp.matchesJsonPath) {
+        if (typeof bp.matchesJsonPath === 'object' && bp.matchesJsonPath !== null) {
+          const expr = bp.matchesJsonPath.expression || '';
+          const sub = bp.matchesJsonPath.equalTo !== undefined ? bp.matchesJsonPath.equalTo : bp.matchesJsonPath.contains;
+          if (sub !== undefined) {
+            lines.push(`    .withRequestBody(matchingJsonPath("${String(expr).replace(/"/g, '\\"')}", equalTo("${String(sub).replace(/"/g, '\\"')}")))`);
+          } else {
+            lines.push(`    .withRequestBody(matchingJsonPath("${String(expr).replace(/"/g, '\\"')}"))`);
+          }
+        } else if (bp.equalTo) {
+          lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}", equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}")))`);
+        } else {
+          lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
+        }
+      } else if (bp.equalTo) {
+        lines.push(`    .withRequestBody(equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}"))`);
+      }
+    });
   }
 
   if (res.proxyBaseUrl) {
@@ -498,16 +512,33 @@ export function sendStubToTester(stub, switchTab = true) {
   } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
     const bp = stub.request.bodyPatterns[0];
     if (bp.equalToJson) {
-      body = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2);
+      const normalized = normalizeJsonPayload(bp.equalToJson);
+      body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
     } else if (bp.equalTo) {
       body = bp.equalTo;
     } else if (bp.matchesJsonPath) {
-      const match = bp.matchesJsonPath.match(/\$\.([a-zA-Z0-9_-]+)/);
-      if (match && match[1]) {
-        body = JSON.stringify({ [match[1]]: "sample_value" }, null, 2);
-      } else {
-        body = '{\n  \n}';
-      }
+      const sampleObj = {};
+      stub.request.bodyPatterns.forEach(p => {
+        if (p.matchesJsonPath) {
+          const expr = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null
+            ? (p.matchesJsonPath.expression || '')
+            : String(p.matchesJsonPath);
+          const val = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null && p.matchesJsonPath.equalTo !== undefined
+            ? p.matchesJsonPath.equalTo
+            : (p.equalTo !== undefined ? p.equalTo : 'sample_value');
+          const match = expr.match(/\$\.([a-zA-Z0-9_.-]+)/);
+          if (match && match[1]) {
+            const parts = match[1].split('.');
+            let curr = sampleObj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (!curr[parts[i]]) curr[parts[i]] = {};
+              curr = curr[parts[i]];
+            }
+            curr[parts[parts.length - 1]] = val;
+          }
+        }
+      });
+      body = Object.keys(sampleObj).length > 0 ? JSON.stringify(sampleObj, null, 2) : '{\n  \n}';
     } else if (bp.contains) {
       body = bp.contains;
     }

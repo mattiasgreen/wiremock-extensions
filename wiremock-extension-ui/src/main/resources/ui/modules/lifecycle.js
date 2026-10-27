@@ -4,6 +4,7 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
+import { normalizeJsonPayload } from './base64.js';
 import {
   toggleStubState,
   deleteStubMapping,
@@ -157,6 +158,20 @@ export const STUB_TEMPLATES = {
 export function updateBodyMatchLabel(type) {
   const label = document.getElementById('editor-body-match-label');
   const input = document.getElementById('editor-body-match-pattern');
+  const formatBtn = document.getElementById('btn-editor-format-request-json');
+  const optionsDiv = document.getElementById('editor-json-match-options');
+
+  if (type === 'equalToJson') {
+    if (formatBtn) formatBtn.classList.remove('hidden');
+    if (optionsDiv) optionsDiv.classList.remove('hidden');
+  } else if (type === 'matchesJsonPath') {
+    if (formatBtn) formatBtn.classList.remove('hidden');
+    if (optionsDiv) optionsDiv.classList.add('hidden');
+  } else {
+    if (formatBtn) formatBtn.classList.add('hidden');
+    if (optionsDiv) optionsDiv.classList.add('hidden');
+  }
+
   if (!label || !input) return;
 
   switch (type) {
@@ -173,13 +188,45 @@ export function updateBodyMatchLabel(type) {
       input.placeholder = 'exact string content';
       break;
     case 'matchesJsonPath':
-      label.textContent = 'JSONPath Expression ("matchesJsonPath"):';
-      input.placeholder = '$.item';
+      label.textContent = 'JSONPath Matcher(s) ("matchesJsonPath"):';
+      input.placeholder = '[\n  {\n    "matchesJsonPath": "$.customerId",\n    "equalTo": "CUST-001"\n  }\n]';
       break;
     default:
       label.textContent = 'Expected Request Body Pattern:';
       input.placeholder = 'Expected pattern...';
       break;
+  }
+}
+
+export function formatRequestBodyJson() {
+  const input = document.getElementById('editor-body-match-pattern');
+  if (!input || !input.value.trim()) return;
+  const normalized = normalizeJsonPayload(input.value);
+  if (normalized !== null) {
+    input.value = JSON.stringify(normalized, null, 2);
+  } else {
+    try {
+      const parsed = JSON.parse(input.value);
+      input.value = JSON.stringify(parsed, null, 2);
+    } catch (err) {
+      alert('Invalid JSON in request body matcher: ' + err.message);
+    }
+  }
+}
+
+export function formatResponseBodyJson() {
+  const input = document.getElementById('editor-body');
+  if (!input || !input.value.trim()) return;
+  const normalized = normalizeJsonPayload(input.value);
+  if (normalized !== null) {
+    input.value = JSON.stringify(normalized, null, 2);
+  } else {
+    try {
+      const parsed = JSON.parse(input.value);
+      input.value = JSON.stringify(parsed, null, 2);
+    } catch (err) {
+      alert('Invalid JSON in response body: ' + err.message);
+    }
   }
 }
 
@@ -233,10 +280,14 @@ export function openStubEditorFromRequest(reqObj) {
   const rawBody = reqObj.body || '';
   const bodyPatterns = [];
   if (rawBody.trim()) {
-    try {
-      JSON.parse(rawBody);
-      bodyPatterns.push({ equalToJson: rawBody.trim() });
-    } catch {
+    const normalized = normalizeJsonPayload(rawBody);
+    if (normalized !== null) {
+      bodyPatterns.push({
+        equalToJson: normalized,
+        ignoreArrayOrder: true,
+        ignoreExtraElements: true
+      });
+    } else {
       bodyPatterns.push({ equalTo: rawBody });
     }
   }
@@ -329,13 +380,30 @@ export function buildStubFromForm() {
     } else if (bodyMatchType === 'equalTo') {
       requestPattern.bodyPatterns = [{ equalTo: bodyMatchPattern }];
     } else if (bodyMatchType === 'equalToJson') {
+      let equalToJsonVal = bodyMatchPattern.trim();
+      const normalized = normalizeJsonPayload(equalToJsonVal);
+      if (normalized !== null) {
+        equalToJsonVal = normalized;
+      }
+      const ignoreExtraEl = document.getElementById('editor-json-ignore-extra');
+      const ignoreOrderEl = document.getElementById('editor-json-ignore-order');
       requestPattern.bodyPatterns = [{
-        equalToJson: bodyMatchPattern.trim(),
-        ignoreArrayOrder: true,
-        ignoreExtraElements: true
+        equalToJson: equalToJsonVal,
+        ignoreArrayOrder: ignoreOrderEl ? ignoreOrderEl.checked : true,
+        ignoreExtraElements: ignoreExtraEl ? ignoreExtraEl.checked : false
       }];
     } else if (bodyMatchType === 'matchesJsonPath') {
-      requestPattern.bodyPatterns = [{ matchesJsonPath: bodyMatchPattern.trim() }];
+      const trimmed = bodyMatchPattern.trim();
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          requestPattern.bodyPatterns = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (_) {
+          requestPattern.bodyPatterns = [{ matchesJsonPath: trimmed }];
+        }
+      } else {
+        requestPattern.bodyPatterns = [{ matchesJsonPath: trimmed }];
+      }
     }
   }
 
@@ -349,10 +417,15 @@ export function buildStubFromForm() {
   }
   const rawBody = bodyText ? bodyText.value : '';
   if (rawBody && !proxyUrl) {
-    try {
-      responseDef.jsonBody = JSON.parse(rawBody);
-    } catch {
-      responseDef.body = rawBody;
+    const normalizedRes = normalizeJsonPayload(rawBody);
+    if (normalizedRes !== null) {
+      responseDef.jsonBody = normalizedRes;
+    } else {
+      try {
+        responseDef.jsonBody = JSON.parse(rawBody);
+      } catch {
+        responseDef.body = rawBody;
+      }
     }
   }
 
@@ -414,6 +487,8 @@ export function populateFormFromStub(stub) {
 
   let matchType = 'none';
   let matchPattern = '';
+  let ignoreExtra = true;
+  let ignoreOrder = true;
   if (req.bodyPatterns && req.bodyPatterns.length > 0) {
     const bp = req.bodyPatterns[0];
     if (bp.contains) {
@@ -421,18 +496,43 @@ export function populateFormFromStub(stub) {
       matchPattern = bp.contains;
     } else if (bp.equalToJson) {
       matchType = 'equalToJson';
-      matchPattern = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2);
+      const normalized = normalizeJsonPayload(bp.equalToJson);
+      if (normalized !== null) {
+        matchPattern = JSON.stringify(normalized, null, 2);
+      } else if (typeof bp.equalToJson === 'string') {
+        matchPattern = bp.equalToJson;
+      } else {
+        matchPattern = JSON.stringify(bp.equalToJson, null, 2);
+      }
+      if (bp.ignoreExtraElements !== undefined) {
+        ignoreExtra = bp.ignoreExtraElements;
+      }
+      if (bp.ignoreArrayOrder !== undefined) {
+        ignoreOrder = bp.ignoreArrayOrder;
+      }
+    } else if (bp.matchesJsonPath) {
+      matchType = 'matchesJsonPath';
+      const allJsonPath = req.bodyPatterns.every(p => p.matchesJsonPath);
+      if (allJsonPath && req.bodyPatterns.length > 1) {
+        matchPattern = JSON.stringify(req.bodyPatterns, null, 2);
+      } else if (typeof bp.matchesJsonPath === 'object' || bp.equalTo || bp.contains) {
+        matchPattern = JSON.stringify(req.bodyPatterns.length === 1 ? req.bodyPatterns[0] : req.bodyPatterns, null, 2);
+      } else {
+        matchPattern = typeof bp.matchesJsonPath === 'string' ? bp.matchesJsonPath : JSON.stringify(bp.matchesJsonPath, null, 2);
+      }
     } else if (bp.equalTo) {
       matchType = 'equalTo';
       matchPattern = bp.equalTo;
-    } else if (bp.matchesJsonPath) {
-      matchType = 'matchesJsonPath';
-      matchPattern = bp.matchesJsonPath;
     }
   }
 
   if (bodyMatchTypeSelect) bodyMatchTypeSelect.value = matchType;
   if (bodyMatchPatternInput) bodyMatchPatternInput.value = matchPattern;
+  const ignoreExtraEl = document.getElementById('editor-json-ignore-extra');
+  const ignoreOrderEl = document.getElementById('editor-json-ignore-order');
+  if (ignoreExtraEl) ignoreExtraEl.checked = ignoreExtra;
+  if (ignoreOrderEl) ignoreOrderEl.checked = ignoreOrder;
+
   if (bodyMatchContainer) {
     if (matchType === 'none') {
       bodyMatchContainer.classList.add('hidden');
@@ -451,10 +551,16 @@ export function populateFormFromStub(stub) {
   if (headersText) headersText.value = headerLines.join('\n');
 
   let bodyContent = '';
-  if (res.body != null) {
-    bodyContent = res.body;
-  } else if (res.jsonBody != null) {
-    bodyContent = JSON.stringify(res.jsonBody, null, 2);
+  if (res.jsonBody != null) {
+    const normalized = normalizeJsonPayload(res.jsonBody);
+    bodyContent = JSON.stringify(normalized || res.jsonBody, null, 2);
+  } else if (res.body != null) {
+    const normalized = normalizeJsonPayload(res.body);
+    if (normalized !== null) {
+      bodyContent = JSON.stringify(normalized, null, 2);
+    } else {
+      bodyContent = res.body;
+    }
   }
   if (bodyText) bodyText.value = bodyContent;
 }
@@ -571,9 +677,7 @@ export function openStubEditor(stub, clone = false) {
     }
   }
 
-  // Reset to form mode on open
-  setEditorMode('form');
-
+  // Initialize raw JSON textarea with current stub
   const rawTextarea = document.getElementById('editor-raw-json');
   if (rawTextarea) {
     const initialStub = clone
@@ -582,12 +686,30 @@ export function openStubEditor(stub, clone = false) {
     rawTextarea.value = JSON.stringify(initialStub, null, 2);
   }
 
+  // Reset to form mode on open without re-parsing rawTextarea
+  const formPanel = document.getElementById('editor-form-panel');
+  const jsonPanel = document.getElementById('editor-json-panel');
+  const btnForm = document.getElementById('btn-editor-mode-form');
+  const btnJson = document.getElementById('btn-editor-mode-json');
+  const errorEl = document.getElementById('editor-raw-json-error');
+  if (errorEl) {
+    errorEl.classList.add('hidden');
+    errorEl.textContent = '';
+  }
+  if (formPanel) formPanel.classList.remove('hidden');
+  if (jsonPanel) jsonPanel.classList.add('hidden');
+  if (btnForm) btnForm.classList.add('active');
+  if (btnJson) btnJson.classList.remove('active');
+  activeEditorMode = 'form';
+
   modal.classList.remove('hidden');
 }
 
 export function closeStubEditor() {
   const modal = document.getElementById('stub-editor-modal');
   if (modal) modal.classList.add('hidden');
+  const rawTextarea = document.getElementById('editor-raw-json');
+  if (rawTextarea) rawTextarea.value = '';
   activeEditingStub = null;
   isCloneMode = false;
   activeEditorMode = 'form';
@@ -624,8 +746,16 @@ export function saveStubEditor() {
     ? activeEditingStub.id
     : (stubPayload.id && !isCloneMode ? stubPayload.id : null);
 
+  const isSnapshot = !targetId && stubPayload.metadata && stubPayload.metadata.source === 'recorded-proxy';
   const savePromise = (isCloneMode || !targetId)
-    ? createStubMapping(stubPayload)
+    ? createStubMapping(stubPayload).then(async saved => {
+        if (isSnapshot && saved && saved.id && state.capabilities.lifecycle) {
+          try {
+            await toggleStubState(saved.id);
+          } catch (_) {}
+        }
+        return saved;
+      })
     : saveStubMapping(targetId, { ...stubPayload, id: targetId });
 
   return savePromise

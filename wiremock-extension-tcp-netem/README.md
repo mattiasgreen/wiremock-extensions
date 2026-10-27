@@ -96,6 +96,14 @@ TcpNetEmProxy proxy = TcpNetEmProxy.builder()
     .build();
 ```
 
+### Ingress Port Configuration
+
+Extending WireMock Standalone (where the main HTTP port is configured via standard `--port` program arguments), the TCP NetEm ingress listener port is configured via environment property:
+
+| Setting | Environment Property | Default | Description |
+| :--- | :--- | :--- | :--- |
+| **NetEm Ingress Port** | `WIREMOCK_NETEM_PORT` | `8081` | TCP port where the NetEm virtual-thread proxy listens and forwards to WireMock. |
+
 ---
 
 ## 5. Admin API Endpoints

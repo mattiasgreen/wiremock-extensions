@@ -5,20 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.admin.model.SingleStubMappingResult;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
-import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.common.Json;
-import com.github.tomakehurst.wiremock.common.Metadata;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
-import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
-import com.github.tomakehurst.wiremock.matching.RequestPatternBuilder;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -268,6 +264,16 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             boolean allProjects =
                     targetProject.isBlank() || "*".equals(targetProject) || "_all".equalsIgnoreCase(targetProject);
 
+            RecordedStubConverter.SnapshotOptions options = RecordedStubConverter.SnapshotOptions.defaults();
+            String body = serveEvent.getRequest().getBodyAsString();
+            if (body != null && !body.isBlank()) {
+                try {
+                    JsonNode root = objectMapper.readTree(body);
+                    options = parseSnapshotOptions(root);
+                } catch (IOException ignored) {
+                }
+            }
+
             List<ServeEvent> serveEvents = admin.getServeEvents().getServeEvents();
             List<StubMapping> createdStubs = new ArrayList<>();
             Set<String> seenSignatures = new HashSet<>();
@@ -288,16 +294,20 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                     continue;
                 }
 
+                String bodyHash = event.getRequest().getBody() != null
+                        ? Integer.toHexString(Arrays.hashCode(event.getRequest().getBody()))
+                        : "";
                 String signature = event.getRequest().getMethod().getName() + ":"
                         + event.getRequest().getUrl() + ":"
-                        + event.getResponse().getStatus();
+                        + event.getResponse().getStatus() + ":"
+                        + bodyHash;
                 if (seenSignatures.contains(signature)) {
                     continue;
                 }
                 seenSignatures.add(signature);
 
                 StubMapping recordedStub =
-                        convertEventToRecordedStub(event, allProjects ? "Recorded Traffic" : targetProject);
+                        RecordedStubConverter.convert(event, allProjects ? "Recorded Traffic" : targetProject, options);
                 if (recordedStub != null) {
                     disabledStubStore.put(recordedStub);
                     createdStubs.add(recordedStub);
@@ -316,6 +326,61 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             return ok(respBody);
         });
 
+        // Generate Snapshot Stub Template: converts a single ServeEvent into an editable StubMapping definition
+        router.add(RequestMethod.POST, "/stubs/snapshot-template", (admin, serveEvent, pathParams) -> {
+            String body = serveEvent.getRequest().getBodyAsString();
+            if (body == null || body.isBlank()) {
+                return badRequest("Missing request body with requestId");
+            }
+
+            String targetId = null;
+            String targetProject = "Recorded Traffic";
+            RecordedStubConverter.SnapshotOptions options = RecordedStubConverter.SnapshotOptions.defaults();
+
+            try {
+                JsonNode root = objectMapper.readTree(body);
+                if (root.has("requestId")) {
+                    targetId = root.get("requestId").asText();
+                }
+                if (root.has("project") && !root.get("project").asText().isBlank()) {
+                    String p = root.get("project").asText();
+                    if (!"*".equals(p) && !"_all".equalsIgnoreCase(p)) {
+                        targetProject = p;
+                    }
+                }
+                options = parseSnapshotOptions(root);
+            } catch (IOException e) {
+                return badRequest("Failed to parse request JSON: " + e.getMessage());
+            }
+
+            if (targetId == null || targetId.isBlank()) {
+                return badRequest("requestId is required");
+            }
+
+            ServeEvent foundEvent = null;
+            for (ServeEvent event : admin.getServeEvents().getServeEvents()) {
+                if (targetId.equals(event.getId().toString())) {
+                    foundEvent = event;
+                    break;
+                }
+            }
+
+            if (foundEvent == null) {
+                return notFound("Recorded request not found in journal for id: " + targetId);
+            }
+
+            StubMapping stub = RecordedStubConverter.convert(foundEvent, targetProject, options);
+            if (stub == null) {
+                return badRequest("Failed to convert recorded event into stub mapping (empty response)");
+            }
+
+            return ResponseDefinitionBuilder.responseDefinition()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(Json.write(stub))
+                    .build();
+        });
+
         // Filtered Request Snapshot: converts specific ServeEvents (by requestIds or all proxied events) into stubs
         router.add(RequestMethod.POST, "/stubs/snapshot-filtered", (admin, serveEvent, pathParams) -> {
             String body = serveEvent.getRequest().getBodyAsString();
@@ -323,6 +388,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             String targetProject = "Recorded Traffic";
             boolean activate = false;
             boolean onlyProxied = true;
+            RecordedStubConverter.SnapshotOptions options = RecordedStubConverter.SnapshotOptions.defaults();
 
             if (body != null && !body.isBlank()) {
                 try {
@@ -344,6 +410,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                     if (root.has("onlyProxied")) {
                         onlyProxied = root.get("onlyProxied").asBoolean(true);
                     }
+                    options = parseSnapshotOptions(root);
                 } catch (IOException e) {
                     return badRequest("Failed to parse request JSON: " + e.getMessage());
                 }
@@ -371,15 +438,19 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                     continue;
                 }
 
+                String bodyHash = event.getRequest().getBody() != null
+                        ? Integer.toHexString(Arrays.hashCode(event.getRequest().getBody()))
+                        : "";
                 String signature = event.getRequest().getMethod().getName() + ":"
                         + event.getRequest().getUrl() + ":"
-                        + event.getResponse().getStatus();
+                        + event.getResponse().getStatus() + ":"
+                        + bodyHash;
                 if (seenSignatures.contains(signature)) {
                     continue;
                 }
                 seenSignatures.add(signature);
 
-                StubMapping recordedStub = convertEventToRecordedStub(event, targetProject);
+                StubMapping recordedStub = RecordedStubConverter.convert(event, targetProject, options);
                 if (recordedStub != null) {
                     if (activate) {
                         admin.addStubMapping(recordedStub);
@@ -491,95 +562,21 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
         return (project != null && !project.isBlank()) ? project : "Ungrouped";
     }
 
-    private StubMapping convertEventToRecordedStub(ServeEvent event, String fallbackProject) {
-        if (event.getResponse() == null || event.getResponse().getStatus() <= 0) {
-            return null;
+    private RecordedStubConverter.SnapshotOptions parseSnapshotOptions(JsonNode root) {
+        if (root == null) {
+            return RecordedStubConverter.SnapshotOptions.defaults();
         }
-
-        StubMapping matchedStub = event.getStubMapping();
-
-        RequestPatternBuilder reqPattern = RequestPatternBuilder.newRequestPattern(
-                event.getRequest().getMethod(),
-                WireMock.urlEqualTo(event.getRequest().getUrl()));
-
-        ResponseDefinitionBuilder respDef = ResponseDefinitionBuilder.responseDefinition()
-                .withStatus(event.getResponse().getStatus());
-
-        byte[] bodyBytes = event.getResponse().getBody();
-        String bodyString = null;
-        if (bodyBytes != null && bodyBytes.length > 0) {
-            if (com.github.tomakehurst.wiremock.common.Gzip.isGzipped(bodyBytes)) {
-                bodyString = com.github.tomakehurst.wiremock.common.Gzip.unGzipToString(bodyBytes);
-            } else {
-                bodyString = event.getResponse().getBodyAsString();
-            }
-        }
-        if (bodyString != null && !bodyString.isEmpty()) {
-            respDef.withBody(bodyString);
-        }
-
-        if (event.getResponse().getHeaders() != null) {
-            for (HttpHeader header : event.getResponse().getHeaders().all()) {
-                String name = header.key();
-                if (!name.equalsIgnoreCase("Transfer-Encoding")
-                        && !name.equalsIgnoreCase("Content-Length")
-                        && !name.equalsIgnoreCase("Content-Encoding")
-                        && !name.equalsIgnoreCase("Connection")
-                        && !name.equalsIgnoreCase("Matched-Stub-Id")
-                        && !name.equalsIgnoreCase("Matched-Stub-Name")) {
-                    respDef.withHeader(name, header.firstValue());
+        Set<String> excluded = new HashSet<>(RecordedStubConverter.DEFAULT_EXCLUDED_JSON_PATHS);
+        if (root.has("excludedJsonPaths") && root.get("excludedJsonPaths").isArray()) {
+            for (JsonNode n : root.get("excludedJsonPaths")) {
+                if (n.isTextual() && !n.asText().isBlank()) {
+                    excluded.add(n.asText().trim());
                 }
             }
         }
-
-        String assignedProject = matchedStub != null
-                        && !getStubProject(matchedStub).isBlank()
-                        && !"Ungrouped".equals(getStubProject(matchedStub))
-                ? getStubProject(matchedStub)
-                : (fallbackProject != null && !fallbackProject.isBlank() ? fallbackProject : "Recorded Traffic");
-
-        boolean isCasualReq = event.getRequest().getUrl() != null
-                && event.getRequest().getUrl().startsWith("/__casual/services/");
-        String casualErr = event.getResponse().getHeaders() != null
-                        && event.getResponse()
-                                .getHeaders()
-                                .getHeader("X-Casual-Error-State")
-                                .isPresent()
-                ? event.getResponse()
-                        .getHeaders()
-                        .getHeader("X-Casual-Error-State")
-                        .firstValue()
-                : (event.getResponse().getStatus() >= 200 && event.getResponse().getStatus() < 300
-                        ? "OK"
-                        : "TPESVCFAIL");
-        String stubName = isCasualReq
-                ? String.format(
-                        Locale.ROOT,
-                        "[RECORDED CASUAL %s] %s",
-                        casualErr,
-                        event.getRequest().getUrl())
-                : String.format(
-                        Locale.ROOT,
-                        "[RECORDED %s %d] %s",
-                        event.getRequest().getMethod().getName(),
-                        event.getResponse().getStatus(),
-                        event.getRequest().getUrl());
-
-        StubMapping recordedStub = new StubMapping(reqPattern.build(), respDef.build());
-        recordedStub.setId(UUID.randomUUID());
-        recordedStub.setName(stubName);
-        recordedStub.setPriority(5); // Higher priority than proxy (10)
-
-        Metadata.Builder metadataBuilder = Metadata.metadata()
-                .attr("source", "recorded-proxy")
-                .attr("project", assignedProject)
-                .attr("mode", "static")
-                .attr("recordedAt", Instant.now().toString());
-        if (isCasualReq) {
-            metadataBuilder.attr("protocol", "casual");
-        }
-        recordedStub.setMetadata(metadataBuilder.build());
-        return recordedStub;
+        boolean useEqualToJson =
+                root.has("useEqualToJson") && root.get("useEqualToJson").asBoolean(false);
+        return new RecordedStubConverter.SnapshotOptions(excluded, useEqualToJson);
     }
 
     private static com.github.tomakehurst.wiremock.http.ResponseDefinition ok(Object body) {

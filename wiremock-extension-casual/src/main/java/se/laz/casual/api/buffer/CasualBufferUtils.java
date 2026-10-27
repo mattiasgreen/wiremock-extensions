@@ -2,6 +2,7 @@ package se.laz.casual.api.buffer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
@@ -266,7 +267,10 @@ public final class CasualBufferUtils {
                         List<Object> values = new ArrayList<>();
                         for (FieldedData<?> item : list) {
                             Object data = item.getData();
-                            if (data instanceof byte[] bytes) {
+                            Object parsedJson = tryParseJsonPayload(data);
+                            if (parsedJson != null) {
+                                values.add(parsedJson);
+                            } else if (data instanceof byte[] bytes) {
                                 values.add(Base64.getEncoder().encodeToString(bytes));
                             } else if (data instanceof Character c) {
                                 values.add(String.valueOf(c));
@@ -475,5 +479,42 @@ public final class CasualBufferUtils {
             sb.append("... [").append(bytes.length - maxBytes).append(" more bytes]");
         }
         return sb.toString();
+    }
+
+    private static Object tryParseJsonPayload(Object data) {
+        if (data == null) {
+            return null;
+        }
+        String str = null;
+        if (data instanceof byte[] bytes) {
+            if (bytes.length > 0) {
+                str = new String(bytes, StandardCharsets.UTF_8).trim();
+            }
+        } else if (data instanceof String s) {
+            str = s.trim();
+        }
+        if (str == null || str.isEmpty()) {
+            return null;
+        }
+
+        // 1. Direct JSON object or array
+        if ((str.startsWith("{") && str.endsWith("}")) || (str.startsWith("[") && str.endsWith("]"))) {
+            try {
+                return OBJECT_MAPPER.readValue(str, Object.class);
+            } catch (IOException ignored) {
+            }
+        }
+
+        // 2. Base64-encoded JSON payload
+        try {
+            byte[] decoded = Base64.getDecoder().decode(str);
+            String decodedStr = new String(decoded, StandardCharsets.UTF_8).trim();
+            if ((decodedStr.startsWith("{") && decodedStr.endsWith("}"))
+                    || (decodedStr.startsWith("[") && decodedStr.endsWith("]"))) {
+                return OBJECT_MAPPER.readValue(decodedStr, Object.class);
+            }
+        } catch (IOException | IllegalArgumentException ignored) {
+        }
+        return null;
     }
 }

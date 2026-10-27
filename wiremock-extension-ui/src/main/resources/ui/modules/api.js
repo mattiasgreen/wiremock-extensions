@@ -11,6 +11,7 @@ import { renderProjectSelector, updateFilterCounts } from './projects.js';
 import { updateBulkToolbar } from './bulk-actions.js';
 import {
   parseHeadersInput,
+  getEffectiveTesterHeaders,
   updateTesterRoute,
   displaySentRequest,
   displayResponseResult,
@@ -357,11 +358,17 @@ export function executeTesterRequest() {
     url = '/' + url;
   }
   const headersText = elements.testerHeaders ? elements.testerHeaders.value : '';
-  const headers = parseHeadersInput(headersText);
+  const { headers } = getEffectiveTesterHeaders(headersText, true);
   const bodyText = elements.testerBody ? elements.testerBody.value.trim() : '';
 
+  const sentHeadersLines = [];
+  for (const [k, v] of Object.entries(headers)) {
+    sentHeadersLines.push(`${k}: ${v}`);
+  }
+  const sentHeadersText = sentHeadersLines.join('\n');
+
   updateTesterRoute(false);
-  displaySentRequest(method, url, headersText, bodyText);
+  displaySentRequest(method, url, sentHeadersText, bodyText);
 
   if (elements.btnTesterSend) {
     elements.btnTesterSend.disabled = true;
@@ -456,16 +463,30 @@ export function inspectOpenApi(spec) {
   }).then(res => res.json());
 }
 
-export function snapshotProjectRecordings(project) {
+export function snapshotProjectRecordings(project, excludedJsonPaths = null, useEqualToJson = false) {
   const enc = encodeURIComponent(project || '*');
-  return apiPost(`/__admin/projects/${enc}/recordings/snapshot`);
+  return apiPost(`/__admin/projects/${enc}/recordings/snapshot`, {
+    excludedJsonPaths,
+    useEqualToJson
+  });
 }
 
-export function snapshotFilteredRecordings(requestIds, project, activate = false) {
+export function snapshotFilteredRecordings(requestIds, project, activate = false, excludedJsonPaths = null, useEqualToJson = false) {
   return apiPost('/__admin/stubs/snapshot-filtered', {
     requestIds,
     project,
-    activate
+    activate,
+    excludedJsonPaths,
+    useEqualToJson
+  });
+}
+
+export function getSnapshotStubTemplate(requestId, project = null, excludedJsonPaths = null, useEqualToJson = false) {
+  return apiPost('/__admin/stubs/snapshot-template', {
+    requestId,
+    project,
+    excludedJsonPaths,
+    useEqualToJson
   });
 }
 

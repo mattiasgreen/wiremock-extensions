@@ -27,6 +27,7 @@ public final class BankingSimulationHarness implements AutoCloseable {
     private final WireMockServer wireMockServer;
     private final CasualWireMockGateway casualGateway;
     private final ProductPortalServer productPortal;
+    private final java.nio.file.Path tempFieldTable;
 
     /**
      * Starts all 3 nodes and seeds the initial Live Proxy stubs in WireMock for
@@ -35,6 +36,18 @@ public final class BankingSimulationHarness implements AutoCloseable {
      * @throws Exception if any node fails to start
      */
     public BankingSimulationHarness() throws Exception {
+        this.tempFieldTable = java.nio.file.Files.createTempFile("casual-banking-fields", ".json");
+        try (java.io.InputStream is =
+                BankingSimulationHarness.class.getResourceAsStream("/casual-banking-fields.json")) {
+            if (is != null) {
+                java.nio.file.Files.copy(is, tempFieldTable, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        System.setProperty("CASUAL_FIELD_TABLE", tempFieldTable.toAbsolutePath().toString());
+        se.laz.casual.config.ConfigurationService.setConfiguration(
+                se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE,
+                tempFieldTable.toAbsolutePath().toString());
+
         this.upstreamBackend = new UpstreamBackendServer();
         this.upstreamBackend.start();
 
@@ -134,6 +147,15 @@ public final class BankingSimulationHarness implements AutoCloseable {
 
     @Override
     public void close() {
+        System.clearProperty("CASUAL_FIELD_TABLE");
+        se.laz.casual.config.ConfigurationService.setConfiguration(
+                se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        if (tempFieldTable != null) {
+            try {
+                java.nio.file.Files.deleteIfExists(tempFieldTable);
+            } catch (java.io.IOException ignored) {
+            }
+        }
         if (productPortal != null) {
             productPortal.close();
         }

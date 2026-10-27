@@ -47,8 +47,21 @@ import {
   renderTesterResponse,
   initTesterHistoryCollapse,
   setTesterHistoryCollapsed,
-  toggleTesterHistory
+  toggleTesterHistory,
+  renderLocalHeaderChips
 } from './modules/tester.js';
+import {
+  openLocalHeadersModal,
+  closeLocalHeadersModal,
+  switchSettingsTab,
+  addLocalHeaderRow,
+  saveSettingsFromModal,
+  copySettingsConfigToClipboard,
+  applyPastedSettingsFromModal,
+  resetDefaultSettingsInModal,
+  setLocalHeadersEnabled,
+  loadExcludedJsonPaths
+} from './modules/settings.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
   renderProjectSelector,
@@ -64,7 +77,9 @@ import {
   applyStubTemplate,
   updateBodyMatchLabel,
   setEditorMode,
-  formatRawEditorJson
+  formatRawEditorJson,
+  formatRequestBodyJson,
+  formatResponseBodyJson
 } from './modules/lifecycle.js';
 import {
   exportStubs,
@@ -419,16 +434,10 @@ if (elements.btnEditorRawFormatJson) {
   elements.btnEditorRawFormatJson.addEventListener('click', formatRawEditorJson);
 }
 if (elements.btnEditorFormatJson) {
-  elements.btnEditorFormatJson.addEventListener('click', () => {
-    const bodyEl = document.getElementById('editor-body');
-    if (!bodyEl || !bodyEl.value.trim()) return;
-    try {
-      const parsed = JSON.parse(bodyEl.value);
-      bodyEl.value = JSON.stringify(parsed, null, 2);
-    } catch (err) {
-      alert('Invalid JSON: ' + err.message);
-    }
-  });
+  elements.btnEditorFormatJson.addEventListener('click', formatResponseBodyJson);
+}
+if (elements.btnEditorFormatRequestJson) {
+  elements.btnEditorFormatRequestJson.addEventListener('click', formatRequestBodyJson);
 }
 if (elements.btnEditorOpenOpenApi) {
   elements.btnEditorOpenOpenApi.addEventListener('click', () => {
@@ -643,7 +652,7 @@ if (elements.btnJournalSnapshotFiltered) {
     try {
       const requestIds = proxiedReqs.map(r => r.id);
       if (state.capabilities.lifecycle) {
-        await snapshotFilteredRecordings(requestIds, targetProject, false);
+        await snapshotFilteredRecordings(requestIds, targetProject, false, loadExcludedJsonPaths());
       } else {
         // Vanilla WireMock fallback: create active mappings
         for (const req of proxiedReqs) {
@@ -812,6 +821,55 @@ if (elements.btnTesterShareLink) {
     }
     elements.btnTesterShareLink.textContent = '✅ Link Copied!';
     setTimeout(() => elements.btnTesterShareLink.textContent = '🔗 Copy Share Link', 1500);
+  });
+}
+
+// Browser Preferences & Persistent Local Headers
+if (elements.btnOpenSettings) {
+  elements.btnOpenSettings.addEventListener('click', () => openLocalHeadersModal('headers'));
+}
+if (elements.btnManageLocalHeaders) {
+  elements.btnManageLocalHeaders.addEventListener('click', () => openLocalHeadersModal('headers'));
+}
+if (elements.btnCloseLocalHeadersModal) {
+  elements.btnCloseLocalHeadersModal.addEventListener('click', closeLocalHeadersModal);
+}
+if (elements.btnCancelLocalHeaders) {
+  elements.btnCancelLocalHeaders.addEventListener('click', closeLocalHeadersModal);
+}
+if (elements.btnAddLocalHeaderRow) {
+  elements.btnAddLocalHeaderRow.addEventListener('click', () => addLocalHeaderRow('', '', true));
+}
+if (elements.btnSaveLocalHeaders) {
+  elements.btnSaveLocalHeaders.addEventListener('click', () => saveSettingsFromModal(() => renderLocalHeaderChips()));
+}
+if (elements.settingsTabHeaders) {
+  elements.settingsTabHeaders.addEventListener('click', () => switchSettingsTab('headers'));
+}
+if (elements.settingsTabExclusions) {
+  elements.settingsTabExclusions.addEventListener('click', () => switchSettingsTab('exclusions'));
+}
+if (elements.settingsTabSync) {
+  elements.settingsTabSync.addEventListener('click', () => switchSettingsTab('sync'));
+}
+if (elements.btnSettingsCopyConfig) {
+  elements.btnSettingsCopyConfig.addEventListener('click', copySettingsConfigToClipboard);
+}
+if (elements.btnSettingsApplyImport) {
+  elements.btnSettingsApplyImport.addEventListener('click', () => applyPastedSettingsFromModal(() => renderLocalHeaderChips()));
+}
+if (elements.btnResetDefaultSettings) {
+  elements.btnResetDefaultSettings.addEventListener('click', () => resetDefaultSettingsInModal(() => renderLocalHeaderChips()));
+}
+if (elements.testerLocalHeadersToggle) {
+  elements.testerLocalHeadersToggle.addEventListener('change', (e) => {
+    setLocalHeadersEnabled(e.target.checked);
+    renderLocalHeaderChips();
+  });
+}
+if (elements.testerHeaders) {
+  elements.testerHeaders.addEventListener('input', () => {
+    renderLocalHeaderChips();
   });
 }
 if (elements.btnViewHighlighted) {
@@ -998,6 +1056,7 @@ function loadVersionInfo() {
 function boot() {
   updateTargetHostDisplay();
   setupTargetHostControls();
+  renderLocalHeaderChips();
   loadData();
   loadVersionInfo();
   initNetEmTab();

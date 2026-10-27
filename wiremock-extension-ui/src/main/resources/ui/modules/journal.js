@@ -5,12 +5,19 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
-import { decodeBase64Payload } from './base64.js';
+import {
+  decodeBase64Payload,
+  normalizeJsonPayload,
+  stripIgnoredProperties,
+  buildJsonPathBodyPatterns
+} from './base64.js';
 import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
-import { openStubEditorFromRequest } from './lifecycle.js';
+import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
+import { getSnapshotStubTemplate } from './api.js';
+import { loadExcludedJsonPaths } from './settings.js';
 
 let journalAutoRefreshTimer = null;
 let loadJournalFn = null;
@@ -324,10 +331,11 @@ function setupLazyScroll() {
   });
 }
 
-export function buildSnapshotStubMapping(req) {
+export function buildSnapshotStubMapping(req, options = {}) {
   const project = (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.project) || 'Recorded Traffic';
   const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
-  const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+  const rawResBody = (req.response && (req.response.body || req.response.base64Body))
+    || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '';
   const headers = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
 
   const method = req.request ? req.request.method : 'POST';
@@ -338,25 +346,35 @@ export function buildSnapshotStubMapping(req) {
     url: url
   };
 
-  if (req.request && req.request.body) {
-    const raw = req.request.body;
-    const trimmed = typeof raw === 'string' ? raw.trim() : '';
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      try {
-        JSON.parse(trimmed);
+  const rawBody = req.request && (req.request.body || req.request.bodyAsBase64);
+  if (rawBody) {
+    const normalizedJson = normalizeJsonPayload(rawBody);
+    if (normalizedJson !== null) {
+      const jsonPathPatterns = buildJsonPathBodyPatterns(normalizedJson);
+      if (options.useEqualToJson || jsonPathPatterns.length === 0) {
         requestMatch.bodyPatterns = [{
-          equalToJson: raw,
+          equalToJson: stripIgnoredProperties(normalizedJson),
           ignoreArrayOrder: true,
-          ignoreExtraElements: false
+          ignoreExtraElements: true
         }];
-      } catch (ignored) {
-        requestMatch.bodyPatterns = [{ equalTo: raw }];
+      } else {
+        requestMatch.bodyPatterns = jsonPathPatterns;
       }
-    } else if (raw) {
-      requestMatch.bodyPatterns = [{ equalTo: raw }];
+    } else if (req.request.body) {
+      requestMatch.bodyPatterns = [{ equalTo: req.request.body }];
+    } else {
+      requestMatch.bodyPatterns = [{ binaryEqualTo: req.request.bodyAsBase64 }];
     }
-  } else if (req.request && req.request.bodyAsBase64) {
-    requestMatch.bodyPatterns = [{ binaryEqualTo: req.request.bodyAsBase64 }];
+  }
+
+  let finalResBody = '';
+  const normalizedResJson = normalizeJsonPayload(rawResBody);
+  if (normalizedResJson !== null) {
+    finalResBody = JSON.stringify(normalizedResJson, null, 2);
+  } else if (typeof rawResBody === 'string') {
+    finalResBody = rawResBody;
+  } else if (rawResBody) {
+    finalResBody = JSON.stringify(rawResBody, null, 2);
   }
 
   return {
@@ -366,7 +384,7 @@ export function buildSnapshotStubMapping(req) {
     response: {
       status: status,
       headers: headers,
-      body: typeof resBody === 'string' ? resBody : JSON.stringify(resBody)
+      body: finalResBody
     },
     metadata: {
       source: 'recorded-proxy',
@@ -581,27 +599,34 @@ function setupEventDelegation() {
     if (snapshotBtn) {
       e.stopPropagation();
       const targetId = snapshotBtn.getAttribute('data-id') || (snapshotBtn.dataset && snapshotBtn.dataset.id);
+      if (!targetId) return;
+
+      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
+        ? state.selectedProject
+        : 'Recorded Traffic';
+
+      if (state.capabilities && state.capabilities.lifecycle) {
+        try {
+          const template = await getSnapshotStubTemplate(targetId, targetProject, loadExcludedJsonPaths());
+          openStubEditor(template, false);
+          const titleEl = document.getElementById('editor-modal-title');
+          if (titleEl) {
+            titleEl.textContent = 'Snapshot Stub from Journal';
+          }
+          return;
+        } catch (err) {
+          console.warn('Failed to fetch snapshot template from backend, using local fallback:', err);
+        }
+      }
+
       const req = state.currentRequests.find(r => r.id === targetId);
       if (!req) return;
 
       const stubData = buildSnapshotStubMapping(req);
-
-      try {
-        snapshotBtn.disabled = true;
-        snapshotBtn.textContent = 'Saving...';
-        const { createStubMapping, toggleStubState, loadData } = await import('./api.js');
-        const created = await createStubMapping(stubData);
-        if (created && created.id) {
-          await toggleStubState(created.id);
-        }
-        await loadData();
-        snapshotBtn.textContent = '✅ Snapshotted!';
-        setTimeout(() => snapshotBtn.textContent = '📸 Snapshot Stub', 1500);
-      } catch (err) {
-        alert('Failed to snapshot stub: ' + err.message);
-        snapshotBtn.textContent = '📸 Snapshot Stub';
-      } finally {
-        snapshotBtn.disabled = false;
+      openStubEditor(stubData, false);
+      const titleEl = document.getElementById('editor-modal-title');
+      if (titleEl) {
+        titleEl.textContent = 'Snapshot Stub from Journal';
       }
       return;
     }
