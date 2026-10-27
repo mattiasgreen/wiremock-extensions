@@ -106,7 +106,15 @@ export function generateJavaStubFor(stub) {
       } else if (bp.contains) {
         lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
       } else if (bp.matchesJsonPath) {
-        if (bp.equalTo) {
+        if (typeof bp.matchesJsonPath === 'object' && bp.matchesJsonPath !== null) {
+          const expr = bp.matchesJsonPath.expression || '';
+          const sub = bp.matchesJsonPath.equalTo !== undefined ? bp.matchesJsonPath.equalTo : bp.matchesJsonPath.contains;
+          if (sub !== undefined) {
+            lines.push(`    .withRequestBody(matchingJsonPath("${String(expr).replace(/"/g, '\\"')}", equalTo("${String(sub).replace(/"/g, '\\"')}")))`);
+          } else {
+            lines.push(`    .withRequestBody(matchingJsonPath("${String(expr).replace(/"/g, '\\"')}"))`);
+          }
+        } else if (bp.equalTo) {
           lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}", equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}")))`);
         } else {
           lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
@@ -512,9 +520,14 @@ export function sendStubToTester(stub, switchTab = true) {
       const sampleObj = {};
       stub.request.bodyPatterns.forEach(p => {
         if (p.matchesJsonPath) {
-          const match = p.matchesJsonPath.match(/\$\.([a-zA-Z0-9_.-]+)/);
+          const expr = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null
+            ? (p.matchesJsonPath.expression || '')
+            : String(p.matchesJsonPath);
+          const val = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null && p.matchesJsonPath.equalTo !== undefined
+            ? p.matchesJsonPath.equalTo
+            : (p.equalTo !== undefined ? p.equalTo : 'sample_value');
+          const match = expr.match(/\$\.([a-zA-Z0-9_.-]+)/);
           if (match && match[1]) {
-            const val = p.equalTo !== undefined ? p.equalTo : 'sample_value';
             const parts = match[1].split('.');
             let curr = sampleObj;
             for (let i = 0; i < parts.length - 1; i++) {

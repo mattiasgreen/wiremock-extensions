@@ -146,6 +146,52 @@ class CasualWireMockGatewayTest {
         assertThat(reply.getError()).isEqualTo(ErrorState.OK);
         String responsePayload = new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
         assertThat(responsePayload).contains("APPROVED").contains("50000");
+
+        // Verify that different customer ID fails to match (value matching, not just existence!)
+        String wrongPayload = "{\"customerId\": \"CUST-999\"}";
+        CasualServiceCallReplyMessage wrongReply = client.tpcall("creditCheckService", wrongPayload);
+        assertThat(wrongReply.getError()).isNotEqualTo(ErrorState.OK);
+    }
+
+    @Test
+    @DisplayName("Should deserialize and match JSON stub with matchesJsonPath expression and equalTo sub-matcher")
+    void shouldMatchJsonStubWithMatchesJsonPathSubMatcher() throws Exception {
+        String stubJson =
+                """
+                {
+                  "request": {
+                    "method": "POST",
+                    "url": "/__casual/services/subMatcherTestService",
+                    "bodyPatterns": [
+                      {
+                        "matchesJsonPath": {
+                          "expression": "$.customerId",
+                          "equalTo": "12345"
+                        }
+                      }
+                    ]
+                  },
+                  "response": {
+                    "status": 200,
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": "{\\"matched\\": true}"
+                  }
+                }
+                """;
+
+        com.github.tomakehurst.wiremock.stubbing.StubMapping stub =
+                com.github.tomakehurst.wiremock.stubbing.StubMapping.buildFrom(stubJson);
+        wireMockServer.addStubMapping(stub);
+
+        // 1. Correct value matches
+        CasualServiceCallReplyMessage reply = client.tpcall("subMatcherTestService", "{\"customerId\": \"12345\"}");
+        assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+
+        // 2. Different value fails
+        CasualServiceCallReplyMessage failReply = client.tpcall("subMatcherTestService", "{\"customerId\": \"99999\"}");
+        assertThat(failReply.getError()).isNotEqualTo(ErrorState.OK);
     }
 
     @Test
@@ -201,6 +247,108 @@ class CasualWireMockGatewayTest {
             String responsePayload =
                     new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
             assertThat(responsePayload).contains("APPROVED");
+
+            // Verify that mismatched nested caseId fails to match
+            String wrongRawJson = "{\"caseId\":\"99999\",\"timestamp\":1729000000}";
+            ServiceBuffer wrongBuffer = CasualBufferUtils.wrapPayload(
+                    ".FIELDED",
+                    String.format(
+                            java.util.Locale.ROOT,
+                            """
+                    {
+                      "FLD_USER_ID": 9999,
+                      "FLD_ARCHIVE_DATA": "%s"
+                    }
+                    """,
+                            Base64.getEncoder()
+                                    .encodeToString(wrongRawJson.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            CasualServiceCallReplyMessage wrongReply = client.tpcall("fmlRiskService", wrongBuffer);
+            assertThat(wrongReply.getError()).isNotEqualTo(ErrorState.OK);
+        } finally {
+            System.clearProperty("CASUAL_FIELD_TABLE");
+            se.laz.casual.config.ConfigurationService.setConfiguration(
+                    se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
+        }
+    }
+
+    @Test
+    @DisplayName("Should match Casual Fielded call with equalToJson deep matching on nested archive JSON")
+    void shouldMatchCasualFieldedCallWithEqualToJsonDeepMatching() throws Exception {
+        String fieldTableJson =
+                """
+        {
+          "groups": [
+            {
+              "base": 1000,
+              "fields": [
+                { "name": "FLD_USER_ID", "id": 1, "type": "long" },
+                { "name": "FLD_STATUS", "id": 2, "type": "string" },
+                { "name": "FLD_ARCHIVE_DATA", "id": 9, "type": "binary" }
+              ]
+            }
+          ]
+        }
+        """;
+        java.nio.file.Path temp = java.nio.file.Files.createTempFile("casual-fields-deep-match-test", ".json");
+        temp.toFile().deleteOnExit();
+        java.nio.file.Files.writeString(temp, fieldTableJson, java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            System.setProperty("CASUAL_FIELD_TABLE", temp.toAbsolutePath().toString());
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/deepFmlMatchService"))
+                    .withRequestBody(equalToJson(
+                            """
+                    {
+                      "FLD_USER_ID": 12345,
+                      "FLD_ARCHIVE_DATA": {
+                        "caseId": "12356"
+                      }
+                    }
+                    """,
+                            true,
+                            true))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"FLD_STATUS\": \"MATCHED\"}")));
+
+            // Client sends payload containing extra transient fields in root and in nested JSON
+            String rawJsonData = "{\"caseId\":\"12356\",\"timestamp\":1729000000,\"tempExecutionId\":\"exec-abc\"}";
+            ServiceBuffer fieldedBuffer = CasualBufferUtils.wrapPayload(
+                    ".FIELDED",
+                    String.format(
+                            java.util.Locale.ROOT,
+                            """
+                    {
+                      "FLD_USER_ID": 12345,
+                      "FLD_ARCHIVE_DATA": "%s"
+                    }
+                    """,
+                            Base64.getEncoder()
+                                    .encodeToString(rawJsonData.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+
+            // 1. Correct nested caseId matches
+            CasualServiceCallReplyMessage reply = client.tpcall("deepFmlMatchService", fieldedBuffer);
+            assertThat(reply).isNotNull();
+            assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+
+            // 2. Different nested caseId fails to match
+            String wrongRawJson = "{\"caseId\":\"WRONG-CASE\",\"timestamp\":1729000000}";
+            ServiceBuffer wrongBuffer = CasualBufferUtils.wrapPayload(
+                    ".FIELDED",
+                    String.format(
+                            java.util.Locale.ROOT,
+                            """
+                    {
+                      "FLD_USER_ID": 12345,
+                      "FLD_ARCHIVE_DATA": "%s"
+                    }
+                    """,
+                            Base64.getEncoder()
+                                    .encodeToString(wrongRawJson.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            CasualServiceCallReplyMessage wrongReply = client.tpcall("deepFmlMatchService", wrongBuffer);
+            assertThat(wrongReply.getError()).isNotEqualTo(ErrorState.OK);
         } finally {
             System.clearProperty("CASUAL_FIELD_TABLE");
             se.laz.casual.config.ConfigurationService.setConfiguration(
@@ -243,6 +391,11 @@ class CasualWireMockGatewayTest {
         assertThat(reply.getError()).isEqualTo(ErrorState.OK);
         String responsePayload = new String(reply.getServiceBuffer().getBytes().get(0), StandardCharsets.UTF_8);
         assertThat(responsePayload).contains("APPROVED").contains("50000");
+
+        // Verify that different customer ID fails to match (value matching, not just existence!)
+        String wrongPayload = "{\"customerId\": \"CUST-999\"}";
+        CasualServiceCallReplyMessage wrongReply = client.tpcall("creditCheckService", wrongPayload);
+        assertThat(wrongReply.getError()).isNotEqualTo(ErrorState.OK);
     }
 
     @Test

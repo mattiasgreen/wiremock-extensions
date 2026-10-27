@@ -690,12 +690,16 @@ public class UiModuleUnitTest {
                 (java.util.List<java.util.Map<String, Object>>) result.get("custBodyPatterns");
         assertThat(custPatterns).hasSize(2);
         assertThat(custPatterns).anySatisfy(p -> {
-            assertThat(p.get("matchesJsonPath")).isEqualTo("$.customerId");
-            assertThat(p.get("equalTo")).isEqualTo("CUST-001");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> jp = (java.util.Map<String, Object>) p.get("matchesJsonPath");
+            assertThat(jp.get("expression")).isEqualTo("$.customerId");
+            assertThat(jp.get("equalTo")).isEqualTo("CUST-001");
         });
         assertThat(custPatterns).anySatisfy(p -> {
-            assertThat(p.get("matchesJsonPath")).isEqualTo("$.role");
-            assertThat(p.get("equalTo")).isEqualTo("customer");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> jp = (java.util.Map<String, Object>) p.get("matchesJsonPath");
+            assertThat(jp.get("expression")).isEqualTo("$.role");
+            assertThat(jp.get("equalTo")).isEqualTo("customer");
         });
         // Volatile CORRELATION_ID and REQUEST_TIMESTAMP must NOT be in path patterns
         assertThat(custPatterns).noneSatisfy(p -> assertThat(String.valueOf(p.get("matchesJsonPath")))
@@ -719,12 +723,16 @@ public class UiModuleUnitTest {
         java.util.List<java.util.Map<String, Object>> spousePatterns =
                 (java.util.List<java.util.Map<String, Object>>) result.get("spouseBodyPatterns");
         assertThat(spousePatterns).anySatisfy(p -> {
-            assertThat(p.get("matchesJsonPath")).isEqualTo("$.customerId");
-            assertThat(p.get("equalTo")).isEqualTo("CUST-002");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> jp = (java.util.Map<String, Object>) p.get("matchesJsonPath");
+            assertThat(jp.get("expression")).isEqualTo("$.customerId");
+            assertThat(jp.get("equalTo")).isEqualTo("CUST-002");
         });
         assertThat(spousePatterns).anySatisfy(p -> {
-            assertThat(p.get("matchesJsonPath")).isEqualTo("$.role");
-            assertThat(p.get("equalTo")).isEqualTo("spouse");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> jp = (java.util.Map<String, Object>) p.get("matchesJsonPath");
+            assertThat(jp.get("expression")).isEqualTo("$.role");
+            assertThat(jp.get("equalTo")).isEqualTo("spouse");
         });
 
         // FML Base64 JSON is decoded into nested path matcher and response body
@@ -733,8 +741,10 @@ public class UiModuleUnitTest {
         java.util.List<java.util.Map<String, Object>> fmlPatterns =
                 (java.util.List<java.util.Map<String, Object>>) result.get("fmlBodyPatterns");
         assertThat(fmlPatterns).anySatisfy(p -> {
-            assertThat(p.get("matchesJsonPath")).isEqualTo("$.FML_ARCHIVE_JSON.caseId");
-            assertThat(p.get("equalTo")).isEqualTo("12356");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> jp = (java.util.Map<String, Object>) p.get("matchesJsonPath");
+            assertThat(jp.get("expression")).isEqualTo("$.FML_ARCHIVE_JSON.caseId");
+            assertThat(jp.get("equalTo")).isEqualTo("12356");
         });
         assertThat(fmlPatterns).noneSatisfy(p -> assertThat(String.valueOf(p.get("matchesJsonPath")))
                 .containsIgnoringCase("CORRELATION"));
@@ -943,8 +953,8 @@ public class UiModuleUnitTest {
                     responseContainsLimit: responseBodyValue.includes('"limit": 50000'),
                     responseContainsNoB64: !responseBodyValue.includes('eyJsaW1pdCI6NTAwMDB9'),
                     formatReqBtnVisible: !formatReqBtn.classList.contains('hidden'),
-                    rawJsonPathMatches: Array.isArray(rawJson.request.bodyPatterns) && rawJson.request.bodyPatterns.some(p => p.matchesJsonPath === '$.FML_ARCHIVE_JSON.score'),
-                    builtPayloadHasJsonPath: Array.isArray(builtPayload.request.bodyPatterns) && builtPayload.request.bodyPatterns.some(p => p.matchesJsonPath === '$.FML_ARCHIVE_JSON.score')
+                    rawJsonPathMatches: Array.isArray(rawJson.request.bodyPatterns) && rawJson.request.bodyPatterns.some(p => (typeof p.matchesJsonPath === 'object' ? p.matchesJsonPath.expression : p.matchesJsonPath) === '$.FML_ARCHIVE_JSON.score'),
+                    builtPayloadHasJsonPath: Array.isArray(builtPayload.request.bodyPatterns) && builtPayload.request.bodyPatterns.some(p => (typeof p.matchesJsonPath === 'object' ? p.matchesJsonPath.expression : p.matchesJsonPath) === '$.FML_ARCHIVE_JSON.score')
                 };
             }
         """;
@@ -1147,11 +1157,11 @@ public class UiModuleUnitTest {
                     importedHeader: importedPrefs.headers[0].name,
                     importedPathsCount: importedPrefs.excludedJsonPaths.length,
                     bodyPatternsCount: bodyPatterns.length,
-                    hasOrderIdMatcher: bodyPatterns.some(p => p.matchesJsonPath === "$.orderId" && p.equalTo === "ORD-999"),
-                    hasCustomerIdMatcher: bodyPatterns.some(p => p.matchesJsonPath === "$.customerId" && p.equalTo === "CUST-42"),
-                    omittedCorrelationId: !bodyPatterns.some(p => (p.matchesJsonPath || "").includes("CORRELATION_ID")),
-                    omittedRequestTimestamp: !bodyPatterns.some(p => (p.matchesJsonPath || "").includes("REQUEST_TIMESTAMP")),
-                    omittedEphemeralToken: !bodyPatterns.some(p => (p.matchesJsonPath || "").includes("ephemeralToken"))
+                    hasOrderIdMatcher: bodyPatterns.some(p => typeof p.matchesJsonPath === 'object' ? (p.matchesJsonPath.expression === "$.orderId" && p.matchesJsonPath.equalTo === "ORD-999") : (p.matchesJsonPath === "$.orderId" && p.equalTo === "ORD-999")),
+                    hasCustomerIdMatcher: bodyPatterns.some(p => typeof p.matchesJsonPath === 'object' ? (p.matchesJsonPath.expression === "$.customerId" && p.matchesJsonPath.equalTo === "CUST-42") : (p.matchesJsonPath === "$.customerId" && p.equalTo === "CUST-42")),
+                    omittedCorrelationId: !bodyPatterns.some(p => JSON.stringify(p.matchesJsonPath).includes("CORRELATION_ID")),
+                    omittedRequestTimestamp: !bodyPatterns.some(p => JSON.stringify(p.matchesJsonPath).includes("REQUEST_TIMESTAMP")),
+                    omittedEphemeralToken: !bodyPatterns.some(p => JSON.stringify(p.matchesJsonPath).includes("ephemeralToken"))
                 };
             }
         """;

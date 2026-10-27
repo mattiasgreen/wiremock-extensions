@@ -330,8 +330,10 @@ export function buildJsonPathBodyPatterns(normalizedJson, excludedPaths = null) 
     return [];
   }
   return paths.map(({ path, value }) => ({
-    matchesJsonPath: path,
-    equalTo: typeof value === 'object' ? JSON.stringify(value) : String(value)
+    matchesJsonPath: {
+      expression: path,
+      equalTo: typeof value === 'object' ? JSON.stringify(value) : String(value)
+    }
   }));
 }
 

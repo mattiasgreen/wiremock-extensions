@@ -515,7 +515,7 @@ export function populateFormFromStub(stub) {
       const allJsonPath = req.bodyPatterns.every(p => p.matchesJsonPath);
       if (allJsonPath && req.bodyPatterns.length > 1) {
         matchPattern = JSON.stringify(req.bodyPatterns, null, 2);
-      } else if (bp.equalTo || bp.contains) {
+      } else if (typeof bp.matchesJsonPath === 'object' || bp.equalTo || bp.contains) {
         matchPattern = JSON.stringify(req.bodyPatterns.length === 1 ? req.bodyPatterns[0] : req.bodyPatterns, null, 2);
       } else {
         matchPattern = typeof bp.matchesJsonPath === 'string' ? bp.matchesJsonPath : JSON.stringify(bp.matchesJsonPath, null, 2);
