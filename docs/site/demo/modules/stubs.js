@@ -11,6 +11,7 @@ import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.
 import { handleStubCheckboxClick, updateBulkToolbar } from './bulk-actions.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
 import { matchesStub } from './filter.js';
+import { normalizeJsonPayload } from './base64.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -498,7 +499,8 @@ export function sendStubToTester(stub, switchTab = true) {
   } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
     const bp = stub.request.bodyPatterns[0];
     if (bp.equalToJson) {
-      body = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2);
+      const normalized = normalizeJsonPayload(bp.equalToJson);
+      body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
     } else if (bp.equalTo) {
       body = bp.equalTo;
     } else if (bp.matchesJsonPath) {

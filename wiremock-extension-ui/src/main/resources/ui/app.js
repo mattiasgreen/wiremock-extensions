@@ -64,7 +64,9 @@ import {
   applyStubTemplate,
   updateBodyMatchLabel,
   setEditorMode,
-  formatRawEditorJson
+  formatRawEditorJson,
+  formatRequestBodyJson,
+  formatResponseBodyJson
 } from './modules/lifecycle.js';
 import {
   exportStubs,
@@ -419,16 +421,10 @@ if (elements.btnEditorRawFormatJson) {
   elements.btnEditorRawFormatJson.addEventListener('click', formatRawEditorJson);
 }
 if (elements.btnEditorFormatJson) {
-  elements.btnEditorFormatJson.addEventListener('click', () => {
-    const bodyEl = document.getElementById('editor-body');
-    if (!bodyEl || !bodyEl.value.trim()) return;
-    try {
-      const parsed = JSON.parse(bodyEl.value);
-      bodyEl.value = JSON.stringify(parsed, null, 2);
-    } catch (err) {
-      alert('Invalid JSON: ' + err.message);
-    }
-  });
+  elements.btnEditorFormatJson.addEventListener('click', formatResponseBodyJson);
+}
+if (elements.btnEditorFormatRequestJson) {
+  elements.btnEditorFormatRequestJson.addEventListener('click', formatRequestBodyJson);
 }
 if (elements.btnEditorOpenOpenApi) {
   elements.btnEditorOpenOpenApi.addEventListener('click', () => {

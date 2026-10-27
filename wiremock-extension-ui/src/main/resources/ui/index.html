@@ -797,8 +797,19 @@
           </div>
 
           <div id="editor-body-match-container" class="form-group hidden" style="margin-top: 10px;">
-            <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
-            <textarea id="editor-body-match-pattern" class="code-input" rows="3" placeholder="Expected pattern or substring..."></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
+              <button type="button" id="btn-editor-format-request-json" class="btn btn-tiny hidden" data-testid="btn-editor-format-request-json">Format JSON</button>
+            </div>
+            <textarea id="editor-body-match-pattern" class="code-input" rows="5" placeholder="Expected pattern or substring..."></textarea>
+            <div id="editor-json-match-options" class="form-row hidden" style="display: flex; gap: 16px; margin-top: 6px; font-size: 0.85rem;" data-testid="editor-json-match-options">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="editor-json-ignore-extra" data-testid="editor-json-ignore-extra" checked> Ignore extra elements (relaxed match)
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="editor-json-ignore-order" data-testid="editor-json-ignore-order" checked> Ignore array order
+              </label>
+            </div>
           </div>
 
           <div class="editor-section-header" style="margin-top: 14px;">Response Definition</div>

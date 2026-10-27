@@ -87,6 +87,10 @@ export const elements = {
   editorBodyMatchContainer: document.getElementById('editor-body-match-container'),
   editorBodyMatchLabel: document.getElementById('editor-body-match-label'),
   editorBodyMatchPattern: document.getElementById('editor-body-match-pattern'),
+  btnEditorFormatRequestJson: document.getElementById('btn-editor-format-request-json'),
+  editorJsonMatchOptions: document.getElementById('editor-json-match-options'),
+  editorJsonIgnoreExtra: document.getElementById('editor-json-ignore-extra'),
+  editorJsonIgnoreOrder: document.getElementById('editor-json-ignore-order'),
   editorProxyUrl: document.getElementById('editor-proxy-url'),
 
   // Welcome Guide

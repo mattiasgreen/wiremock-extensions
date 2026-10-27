@@ -618,8 +618,30 @@ public class UiModuleUnitTest {
                     response: { status: 200, body: "OK" }
                 };
 
+                // Casual FML / Base64 nested call
+                const fmlReq = {
+                    id: "req-fml",
+                    request: {
+                        method: "POST",
+                        url: "/__casual/services/plaVLtlogg",
+                        body: JSON.stringify({
+                            ACME_CORP_HEADER_SOURCE_MACHINE: "SOME_MACHINE",
+                            FML_ARCHIVE_JSON: "eyJjYXNlSWQiOiIxMjM1NiJ9",
+                            FML_ARCHIVE_TYPE: 5
+                        })
+                    },
+                    response: {
+                        status: 200,
+                        body: JSON.stringify({
+                            RETURN_CODE: 0,
+                            FML_ARCHIVE_JSON: "eyJzdGF0dXMiOiJPSyJ9"
+                        })
+                    }
+                };
+
                 const customerStub = buildSnapshotStubMapping(customerReq);
                 const spouseStub = buildSnapshotStubMapping(spouseReq);
+                const fmlStub = buildSnapshotStubMapping(fmlReq);
                 const textStub = buildSnapshotStubMapping(textReq);
                 const binStub = buildSnapshotStubMapping(binReq);
 
@@ -633,6 +655,10 @@ public class UiModuleUnitTest {
                     spouseName: spouseStub.name,
                     spouseEqualJson: spouseStub.request.bodyPatterns[0].equalToJson,
 
+                    fmlName: fmlStub.name,
+                    fmlEqualJson: fmlStub.request.bodyPatterns[0].equalToJson,
+                    fmlResponseBody: fmlStub.response.body,
+
                     textEqualTo: textStub.request.bodyPatterns[0].equalTo,
                     binBinaryEqualTo: binStub.request.bodyPatterns[0].binaryEqualTo
                 };
@@ -644,14 +670,34 @@ public class UiModuleUnitTest {
 
         assertThat(result.get("custName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/crmRiskControlService");
         assertThat(result.get("custHasBodyPatterns")).isEqualTo(true);
-        assertThat(result.get("custEqualJson")).isEqualTo("{\"customerId\": \"CUST-001\", \"role\": \"customer\"}");
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> custMap = (java.util.Map<String, Object>) result.get("custEqualJson");
+        assertThat(custMap.get("customerId")).isEqualTo("CUST-001");
+        assertThat(custMap.get("role")).isEqualTo("customer");
         assertThat(result.get("custIgnoreArrayOrder")).isEqualTo(true);
         assertThat(result.get("custIgnoreExtraElements")).isEqualTo(false);
 
         // Spouse has distinct body pattern preventing stub collision
         assertThat(result.get("spouseName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/crmRiskControlService");
-        assertThat(result.get("spouseEqualJson")).isEqualTo("{\"customerId\": \"CUST-002\", \"role\": \"spouse\"}");
-        assertThat(result.get("custEqualJson")).isNotEqualTo(result.get("spouseEqualJson"));
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> spouseMap = (java.util.Map<String, Object>) result.get("spouseEqualJson");
+        assertThat(spouseMap.get("customerId")).isEqualTo("CUST-002");
+        assertThat(spouseMap.get("role")).isEqualTo("spouse");
+        assertThat(custMap).isNotEqualTo(spouseMap);
+
+        // FML Base64 JSON is decoded into nested object in both equalToJson matcher and response body
+        assertThat(result.get("fmlName")).isEqualTo("[SNAPSHOT POST 200] /__casual/services/plaVLtlogg");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> fmlMap = (java.util.Map<String, Object>) result.get("fmlEqualJson");
+        assertThat(fmlMap.get("ACME_CORP_HEADER_SOURCE_MACHINE")).isEqualTo("SOME_MACHINE");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> fmlArchiveReq = (java.util.Map<String, Object>) fmlMap.get("FML_ARCHIVE_JSON");
+        assertThat(fmlArchiveReq.get("caseId")).isEqualTo("12356");
+
+        String fmlResBody = (String) result.get("fmlResponseBody");
+        assertThat(fmlResBody).contains("\"status\": \"OK\"");
+        assertThat(fmlResBody).doesNotContain("eyJzdGF0dXMiOiJPSyJ9");
 
         // Plain text and binary matchers
         assertThat(result.get("textEqualTo")).isEqualTo("Hello Plain Text");
@@ -778,5 +824,105 @@ public class UiModuleUnitTest {
         assertThat(result.get("modeAfterFailedSwitch")).isEqualTo("json");
         assertThat(result.get("errorVisible")).isEqualTo(true);
         assertThat(result.get("errorMsgContainsInvalid")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
+            "Snapshot Modal: Reuses stub editor modal with decoded Base64 JSON, unescaped equalToJson, and relaxation controls")
+    void testSnapshotStubModalPrePopulationAndMatcherRelaxation() {
+        String script =
+                """
+            async () => {
+                const { buildSnapshotStubMapping } = await import('./modules/journal.js');
+                const { openStubEditor, closeStubEditor, setEditorMode, buildStubFromForm } = await import('./modules/lifecycle.js');
+
+                const journalReq = {
+                    id: "req-snapshot-editor-test",
+                    request: {
+                        method: "POST",
+                        url: "/__casual/services/creditCheckService",
+                        body: JSON.stringify({
+                            SOURCE_SYSTEM: "ERP",
+                            FML_ARCHIVE_JSON: "eyJzY29yZSI6NzUwfQ==",
+                            REQUEST_FLAGS: 1
+                        })
+                    },
+                    response: {
+                        status: 200,
+                        body: JSON.stringify({
+                            STATUS: "APPROVED",
+                            FML_ARCHIVE_JSON: "eyJsaW1pdCI6NTAwMDB9"
+                        })
+                    }
+                };
+
+                const stubData = buildSnapshotStubMapping(journalReq);
+
+                // Open stub editor with snapshot stub
+                openStubEditor(stubData, false);
+                const titleEl = document.getElementById('editor-modal-title');
+                titleEl.textContent = 'Snapshot Stub from Journal';
+
+                const modal = document.getElementById('stub-editor-modal');
+                const isModalVisible = !modal.classList.contains('hidden');
+                const modalTitle = titleEl.textContent;
+
+                const matchTypeSelect = document.getElementById('editor-body-match-type');
+                const matchPatternInput = document.getElementById('editor-body-match-pattern');
+                const ignoreExtraChk = document.getElementById('editor-json-ignore-extra');
+                const ignoreOrderChk = document.getElementById('editor-json-ignore-order');
+                const formatReqBtn = document.getElementById('btn-editor-format-request-json');
+                const responseBodyInput = document.getElementById('editor-body');
+
+                const matchType = matchTypeSelect.value;
+                const patternValue = matchPatternInput.value;
+                const responseBodyValue = responseBodyInput.value;
+
+                // Relax the matcher: check ignore extra elements
+                ignoreExtraChk.checked = true;
+
+                // Switch to raw JSON mode to inspect serialized representation
+                setEditorMode('json');
+                const rawTextarea = document.getElementById('editor-raw-json');
+                const rawJson = JSON.parse(rawTextarea.value);
+
+                // Switch back to form mode and build stub payload
+                setEditorMode('form');
+                const builtPayload = buildStubFromForm();
+
+                closeStubEditor();
+
+                return {
+                    isModalVisible,
+                    modalTitle,
+                    matchType,
+                    patternContainsScore: patternValue.includes('"score": 750'),
+                    patternContainsNoB64: !patternValue.includes('eyJzY29yZSI6NzUwfQ=='),
+                    responseContainsLimit: responseBodyValue.includes('"limit": 50000'),
+                    responseContainsNoB64: !responseBodyValue.includes('eyJsaW1pdCI6NTAwMDB9'),
+                    formatReqBtnVisible: !formatReqBtn.classList.contains('hidden'),
+                    rawEqualJsonIsObject: typeof rawJson.request.bodyPatterns[0].equalToJson === 'object',
+                    rawEqualJsonScore: rawJson.request.bodyPatterns[0].equalToJson.FML_ARCHIVE_JSON.score,
+                    builtPayloadEqualJsonIsObject: typeof builtPayload.request.bodyPatterns[0].equalToJson === 'object',
+                    builtPayloadIgnoreExtra: builtPayload.request.bodyPatterns[0].ignoreExtraElements
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("isModalVisible")).isEqualTo(true);
+        assertThat(result.get("modalTitle")).isEqualTo("Snapshot Stub from Journal");
+        assertThat(result.get("matchType")).isEqualTo("equalToJson");
+        assertThat(result.get("patternContainsScore")).isEqualTo(true);
+        assertThat(result.get("patternContainsNoB64")).isEqualTo(true);
+        assertThat(result.get("responseContainsLimit")).isEqualTo(true);
+        assertThat(result.get("responseContainsNoB64")).isEqualTo(true);
+        assertThat(result.get("formatReqBtnVisible")).isEqualTo(true);
+        assertThat(result.get("rawEqualJsonIsObject")).isEqualTo(true);
+        assertThat(result.get("rawEqualJsonScore")).isEqualTo(750);
+        assertThat(result.get("builtPayloadEqualJsonIsObject")).isEqualTo(true);
+        assertThat(result.get("builtPayloadIgnoreExtra")).isEqualTo(true);
     }
 }

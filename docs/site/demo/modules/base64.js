@@ -172,3 +172,45 @@ export function decodeBase64Payload(rawInput) {
     decodedFormatted: ''
   };
 }
+
+/**
+ * Normalizes a payload into a parsed JSON object/array (with all nested Base64-encoded JSON strings
+ * such as FML_ARCHIVE_JSON decoded into nested JSON structures), or returns null if not JSON.
+ *
+ * @param {any} input
+ * @returns {any|null} Decoded JSON object or array, or null if input is not valid JSON
+ */
+export function normalizeJsonPayload(input) {
+  if (input === null || input === undefined) return null;
+
+  let parsed = null;
+  if (typeof input === 'object') {
+    parsed = input;
+  } else if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch (_) {
+        return null;
+      }
+    } else {
+      // Check if the raw string is a direct Base64-encoded JSON string
+      const directDecoded = tryDecodeBase64Json(trimmed);
+      if (directDecoded !== null) {
+        parsed = directDecoded;
+      } else {
+        return null;
+      }
+    }
+  } else {
+    return null;
+  }
+
+  if (parsed !== null && typeof parsed === 'object') {
+    const { decoded } = deepDecodeBase64InObject(parsed);
+    return decoded;
+  }
+  return null;
+}
+
