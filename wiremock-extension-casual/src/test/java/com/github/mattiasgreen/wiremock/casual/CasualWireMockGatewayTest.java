@@ -404,6 +404,17 @@ class CasualWireMockGatewayTest {
         CasualServiceCallReplyMessage reply = client.tpcall("nonExistentService", "{}");
         assertThat(reply).isNotNull();
         assertThat(reply.getError()).isEqualTo(ErrorState.TPENOENT);
+
+        List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> events = wireMockServer.getAllServeEvents();
+        assertThat(events).hasSize(1);
+        com.github.tomakehurst.wiremock.stubbing.ServeEvent event = events.get(0);
+        assertThat(event.getWasMatched()).isFalse();
+        assertThat(event.getResponse().getStatus()).isEqualTo(404);
+        assertThat(event.getResponse()
+                        .getHeaders()
+                        .getHeader("X-Casual-Error-State")
+                        .firstValue())
+                .isEqualTo("TPENOENT");
     }
 
     @Test

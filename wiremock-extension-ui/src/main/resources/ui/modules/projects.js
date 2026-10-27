@@ -6,6 +6,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { getStubUrl } from './stubs.js';
 import { setProjectMode, snapshotProjectRecordings } from './api.js';
+import { loadExcludedJsonPaths } from './settings.js';
 
 export function extractBaseSegment(path) {
   if (!path || path === '/') return 'Root';
@@ -173,7 +174,7 @@ export function setupProjectLifecycleBar(loadDataFn) {
       try {
         elements.btnProjectSnapshot.disabled = true;
         elements.btnProjectSnapshot.textContent = 'Capturing...';
-        const res = await snapshotProjectRecordings(targetProject);
+        const res = await snapshotProjectRecordings(targetProject, loadExcludedJsonPaths());
         if (loadDataFn) await loadDataFn();
         alert(`Snapshot complete! Captured ${res.totalRecorded || 0} stubs in disabled state for review.`);
       } catch (err) {

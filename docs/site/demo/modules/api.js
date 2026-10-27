@@ -463,16 +463,30 @@ export function inspectOpenApi(spec) {
   }).then(res => res.json());
 }
 
-export function snapshotProjectRecordings(project) {
+export function snapshotProjectRecordings(project, excludedJsonPaths = null, useEqualToJson = false) {
   const enc = encodeURIComponent(project || '*');
-  return apiPost(`/__admin/projects/${enc}/recordings/snapshot`);
+  return apiPost(`/__admin/projects/${enc}/recordings/snapshot`, {
+    excludedJsonPaths,
+    useEqualToJson
+  });
 }
 
-export function snapshotFilteredRecordings(requestIds, project, activate = false) {
+export function snapshotFilteredRecordings(requestIds, project, activate = false, excludedJsonPaths = null, useEqualToJson = false) {
   return apiPost('/__admin/stubs/snapshot-filtered', {
     requestIds,
     project,
-    activate
+    activate,
+    excludedJsonPaths,
+    useEqualToJson
+  });
+}
+
+export function getSnapshotStubTemplate(requestId, project = null, excludedJsonPaths = null, useEqualToJson = false) {
+  return apiPost('/__admin/stubs/snapshot-template', {
+    requestId,
+    project,
+    excludedJsonPaths,
+    useEqualToJson
   });
 }
 

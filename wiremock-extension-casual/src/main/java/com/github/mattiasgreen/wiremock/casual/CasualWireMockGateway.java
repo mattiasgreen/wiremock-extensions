@@ -386,12 +386,12 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                     "[CASUAL-GATEWAY-INVALID-TYPE] Service [{}] bufferType [{}] unmatched without proxy. Returning TPEITYPE.",
                     serviceName,
                     bufferType);
-            recordUnmatchedServeEvent(wiremockRequest);
+            recordUnmatchedServeEvent(wiremockRequest, ErrorState.TPEITYPE);
             return buildErrorReply(req, ErrorState.TPEITYPE);
         }
         LOG.error(
                 "[CASUAL-GATEWAY-NOTFOUND] Service [{}] unmatched in WireMock stubs. Returning TPENOENT.", serviceName);
-        recordUnmatchedServeEvent(wiremockRequest);
+        recordUnmatchedServeEvent(wiremockRequest, ErrorState.TPENOENT);
         return buildErrorReply(req, ErrorState.TPENOENT);
     }
 
@@ -806,9 +806,21 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         recordServeEvent(serveEvent);
     }
 
-    private void recordUnmatchedServeEvent(Request wiremockRequest) {
-        ResponseDefinition responseDef = ResponseDefinition.notFound();
-        Response response = Response.response().status(404).build();
+    private void recordUnmatchedServeEvent(Request wiremockRequest, ErrorState errorState) {
+        ResponseDefinition responseDef = ResponseDefinition.notConfigured();
+        String errName = errorState != null ? errorState.name() : "TPENOENT";
+        int status = errorState == ErrorState.TPEITYPE ? 415 : 404;
+        Response response = Response.response()
+                .status(status)
+                .headers(new HttpHeaders(
+                        new HttpHeader("Content-Type", "application/json"),
+                        new HttpHeader("X-Casual-Error-State", errName),
+                        new HttpHeader("X-Casual-Service", wiremockRequest.getHeader("X-Casual-Service"))))
+                .body(String.format(
+                        Locale.ROOT,
+                        "{\"error\": \"%s\", \"message\": \"Service unmatched in WireMock stubs\"}",
+                        errName))
+                .build();
         ServeEvent serveEvent = ServeEvent.of(wiremockRequest)
                 .withResponseDefinition(responseDef)
                 .complete(response, DataTruncationSettings.DEFAULTS);

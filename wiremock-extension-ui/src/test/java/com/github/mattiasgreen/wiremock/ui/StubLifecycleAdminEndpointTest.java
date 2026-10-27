@@ -369,4 +369,86 @@ class StubLifecycleAdminEndpointTest {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Should generate snapshot stub template via POST /stubs/snapshot-template with nested JSON and excluded fields")
+    void shouldGenerateSnapshotStubTemplateWithNestedJsonAndExcludedFields() throws Exception {
+        WireMockServer upstream =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstream.start();
+
+        try {
+            upstream.stubFor(WireMock.post(urlEqualTo("/api/billing/charge"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"status\":\"CHARGED\",\"invoiceId\":\"INV-12345\"}")));
+
+            server.stubFor(WireMock.post(urlMatching("/api/billing/.*"))
+                    .atPriority(10)
+                    .withMetadata(Map.of("project", "Billing", "mode", "proxy"))
+                    .willReturn(aResponse().proxiedFrom(upstream.baseUrl())));
+
+            // Send request with nested Base64 JSON and volatile fields
+            String nestedJson = "{\"caseId\":\"CASE-999\",\"amount\":299.0}";
+            String encodedNested = java.util.Base64.getEncoder()
+                    .encodeToString(nestedJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String reqBody = String.format(
+                    java.util.Locale.ROOT,
+                    "{\"customerId\":\"CUST-42\",\"CORRELATION_ID\":\"TX-123\",\"REQUEST_TIMESTAMP\":1729000000,\"FML_ARCHIVE_JSON\":\"%s\"}",
+                    encodedNested);
+
+            HttpResponse<String> chargeRes = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/api/billing/charge"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(reqBody))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(chargeRes.statusCode()).isEqualTo(200);
+
+            List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> events = server.getAllServeEvents();
+            assertThat(events).hasSize(1);
+            String requestId = events.get(0).getId().toString();
+
+            // Call /__admin/stubs/snapshot-template
+            String templateReq = objectMapper.writeValueAsString(Map.of("requestId", requestId, "project", "Billing"));
+
+            HttpResponse<String> templateRes = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/__admin/stubs/snapshot-template"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(templateReq))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            assertThat(templateRes.statusCode()).isEqualTo(200);
+            JsonNode stubNode = objectMapper.readTree(templateRes.body());
+
+            assertThat(stubNode.get("name").asText()).contains("[RECORDED POST 200]");
+            assertThat(stubNode.get("request").get("url").asText()).isEqualTo("/api/billing/charge");
+
+            // Verify body patterns contain business fields and exclude transient fields
+            JsonNode bodyPatterns = stubNode.get("request").get("bodyPatterns");
+            assertThat(bodyPatterns.isArray()).isTrue();
+            assertThat(bodyPatterns.size()).isGreaterThanOrEqualTo(2);
+
+            String bodyPatternsStr = bodyPatterns.toString();
+            assertThat(bodyPatternsStr).contains("$.customerId");
+            assertThat(bodyPatternsStr).contains("$.FML_ARCHIVE_JSON.caseId");
+            assertThat(bodyPatternsStr).doesNotContain("CORRELATION_ID");
+            assertThat(bodyPatternsStr).doesNotContain("REQUEST_TIMESTAMP");
+
+            // Verify metadata
+            assertThat(stubNode.get("metadata").get("mode").asText()).isEqualTo("static");
+            assertThat(stubNode.get("metadata").get("source").asText()).isEqualTo("recorded-proxy");
+            assertThat(stubNode.get("metadata").get("project").asText()).isEqualTo("Billing");
+
+            // Verify response body is formatted
+            assertThat(stubNode.get("response").get("body").asText()).contains("\"invoiceId\" : \"INV-12345\"");
+        } finally {
+            upstream.stop();
+        }
+    }
 }

@@ -16,6 +16,8 @@ import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
+import { getSnapshotStubTemplate } from './api.js';
+import { loadExcludedJsonPaths } from './settings.js';
 
 let journalAutoRefreshTimer = null;
 let loadJournalFn = null;
@@ -597,6 +599,26 @@ function setupEventDelegation() {
     if (snapshotBtn) {
       e.stopPropagation();
       const targetId = snapshotBtn.getAttribute('data-id') || (snapshotBtn.dataset && snapshotBtn.dataset.id);
+      if (!targetId) return;
+
+      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
+        ? state.selectedProject
+        : 'Recorded Traffic';
+
+      if (state.capabilities && state.capabilities.lifecycle) {
+        try {
+          const template = await getSnapshotStubTemplate(targetId, targetProject, loadExcludedJsonPaths());
+          openStubEditor(template, false);
+          const titleEl = document.getElementById('editor-modal-title');
+          if (titleEl) {
+            titleEl.textContent = 'Snapshot Stub from Journal';
+          }
+          return;
+        } catch (err) {
+          console.warn('Failed to fetch snapshot template from backend, using local fallback:', err);
+        }
+      }
+
       const req = state.currentRequests.find(r => r.id === targetId);
       if (!req) return;
 

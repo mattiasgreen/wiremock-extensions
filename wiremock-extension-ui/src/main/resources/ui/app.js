@@ -59,7 +59,8 @@ import {
   copySettingsConfigToClipboard,
   applyPastedSettingsFromModal,
   resetDefaultSettingsInModal,
-  setLocalHeadersEnabled
+  setLocalHeadersEnabled,
+  loadExcludedJsonPaths
 } from './modules/settings.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
@@ -651,7 +652,7 @@ if (elements.btnJournalSnapshotFiltered) {
     try {
       const requestIds = proxiedReqs.map(r => r.id);
       if (state.capabilities.lifecycle) {
-        await snapshotFilteredRecordings(requestIds, targetProject, false);
+        await snapshotFilteredRecordings(requestIds, targetProject, false, loadExcludedJsonPaths());
       } else {
         // Vanilla WireMock fallback: create active mappings
         for (const req of proxiedReqs) {

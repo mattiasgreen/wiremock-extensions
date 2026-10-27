@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.examples.banking;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
@@ -302,6 +303,32 @@ public final class ProductPortalServer implements AutoCloseable {
     public PurchaseConfirmationResult approvePurchase(
             String caseId, String customerId, String productCode, double amount, String correlationId, String faultMode)
             throws Exception {
+        return approvePurchase(caseId, customerId, productCode, amount, correlationId, faultMode, null);
+    }
+
+    /**
+     * Executes Phase 2 of the scenario with explicit or catalog-inferred Casual buffer type
+     * (e.g. {@code "JSON"} vs {@code "FIELDED"}).
+     *
+     * @param caseId case ID from Phase 1
+     * @param customerId customer ID
+     * @param productCode product code
+     * @param amount offer amount to bill
+     * @param correlationId distributed trace correlation identifier
+     * @param faultMode optional simulated fault mode ({@code "NONE"}, {@code "COMMIT_HAZARD"})
+     * @param bufferType optional buffer type override ({@code "JSON"}, {@code "FIELDED"}, or null for catalog default)
+     * @return the resulting {@link PurchaseConfirmationResult}
+     * @throws Exception if billing 2PC or HTTP orchestration fails
+     */
+    public PurchaseConfirmationResult approvePurchase(
+            String caseId,
+            String customerId,
+            String productCode,
+            double amount,
+            String correlationId,
+            String faultMode,
+            String bufferType)
+            throws Exception {
         // 1. Bill customer over Casual XATMI inside a 2PC XA Transaction
         int seq = txSequence.getAndIncrement();
         Xid xid = XID.of(
@@ -309,15 +336,40 @@ public final class ProductPortalServer implements AutoCloseable {
                 ("bqual-banking-" + seq).getBytes(StandardCharsets.UTF_8),
                 42);
 
-        String billingPayload = objectMapper.writeValueAsString(Map.of(
-                "caseId", caseId,
-                "customerId", customerId,
-                "productCode", productCode,
-                "amount", amount,
-                "currency", "EUR",
-                "correlationId", correlationId));
+        boolean isFielded = "FIELDED".equalsIgnoreCase(bufferType)
+                || "CFIELD/".equalsIgnoreCase(bufferType)
+                || (bufferType == null && ProductCatalog.GREEN_AUTO_LOAN.equals(productCode));
 
-        CasualServiceCallReplyMessage callReply = casualClient.tpcall("billing/charge", billingPayload, xid);
+        CasualServiceCallReplyMessage callReply;
+        if (isFielded) {
+            String archiveData = objectMapper.writeValueAsString(Map.of(
+                    "caseId", caseId,
+                    "correlationId", correlationId,
+                    "productCode", productCode));
+            String base64Archive =
+                    java.util.Base64.getEncoder().encodeToString(archiveData.getBytes(StandardCharsets.UTF_8));
+            String fieldedJson = String.format(
+                    java.util.Locale.ROOT,
+                    "{\"FLD_CASE_ID\":\"%s\",\"FLD_CUSTOMER_ID\":\"%s\",\"FLD_PRODUCT_CODE\":\"%s\",\"FLD_AMOUNT\":%.2f,\"FLD_CURRENCY\":\"EUR\",\"FML_ARCHIVE_JSON\":\"%s\"}",
+                    caseId,
+                    customerId,
+                    productCode,
+                    amount,
+                    base64Archive);
+            se.laz.casual.api.buffer.type.ServiceBuffer requestBuffer =
+                    CasualBufferUtils.wrapPayload("CFIELD/", fieldedJson);
+            callReply = casualClient.tpcall("billing/charge", requestBuffer, xid);
+        } else {
+            String billingPayload = objectMapper.writeValueAsString(Map.of(
+                    "caseId", caseId,
+                    "customerId", customerId,
+                    "productCode", productCode,
+                    "amount", amount,
+                    "currency", "EUR",
+                    "correlationId", correlationId));
+            callReply = casualClient.tpcall("billing/charge", billingPayload, xid);
+        }
+
         if (callReply.getError() != ErrorState.OK || callReply.getTransactionState() != TransactionState.TX_ACTIVE) {
             casualClient.rollback(xid, BILLING_XA_RESOURCE_ID);
             throw new IllegalStateException("Casual billing/charge failed: " + callReply.getError());
@@ -349,8 +401,19 @@ public final class ProductPortalServer implements AutoCloseable {
             throw new IllegalStateException("Casual 2PC commit failed: " + commitReply.getTransactionReturnCode());
         }
 
-        JsonNode billingResult = objectMapper.readTree(CasualBufferUtils.extractPayload(callReply.getServiceBuffer()));
-        String invoiceId = billingResult.path("invoiceId").asText("INV-9001");
+        String rawBilling = CasualBufferUtils.extractPayload(callReply.getServiceBuffer());
+        String invoiceId = "INV-9001";
+        if (rawBilling != null && !rawBilling.isBlank()) {
+            try {
+                JsonNode billingResult = objectMapper.readTree(rawBilling);
+                if (billingResult.has("invoiceId")) {
+                    invoiceId = billingResult.path("invoiceId").asText("INV-9001");
+                } else if (billingResult.has("FLD_INVOICE_ID")) {
+                    invoiceId = billingResult.path("FLD_INVOICE_ID").asText("INV-9001");
+                }
+            } catch (JsonProcessingException ignored) {
+            }
+        }
 
         // 2. Mark Case complete
         JsonNode completedCase = httpPostJson(

@@ -205,10 +205,13 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
                     }
                 } catch (JsonProcessingException ignored) {
                 }
+                String caseId = ("CUST-99".equals(customerId) || "GREEN-AUTO-LOAN".equals(productCode))
+                        ? "CASE-1002"
+                        : "CASE-1001";
                 sendJson(
                         exchange,
                         200,
-                        "{\"caseId\":\"CASE-1001\",\"customerId\":\"" + customerId + "\","
+                        "{\"caseId\":\"" + caseId + "\",\"customerId\":\"" + customerId + "\","
                                 + "\"productCode\":\"" + productCode + "\",\"status\":\"APPLICATION_RECEIVED\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/offer")) {
@@ -225,17 +228,19 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
                     }
                 } catch (JsonProcessingException ignored) {
                 }
+                String caseId = path.substring("/api/cases/".length(), path.lastIndexOf('/'));
                 sendJson(
                         exchange,
                         200,
-                        "{\"caseId\":\"CASE-1001\",\"status\":\"OFFER_READY\","
+                        "{\"caseId\":\"" + caseId + "\",\"status\":\"OFFER_READY\","
                                 + "\"annualFee\":" + annualFee + ",\"creditLimit\":" + creditLimit + ","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/complete")) {
+                String caseId = path.substring("/api/cases/".length(), path.lastIndexOf('/'));
                 sendJson(
                         exchange,
                         200,
-                        "{\"caseId\":\"CASE-1001\",\"status\":\"PURCHASED\","
+                        "{\"caseId\":\"" + caseId + "\",\"status\":\"PURCHASED\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else {
                 sendJson(exchange, 404, "{\"error\":\"Unknown case route\"}");
@@ -249,17 +254,19 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
             String method = exchange.getRequestMethod();
 
             if ("GET".equalsIgnoreCase(method) && path.endsWith("/kyc")) {
+                String customerId = path.substring("/api/crm/customers/".length(), path.lastIndexOf('/'));
                 sendJson(
                         exchange,
                         200,
-                        "{\"customerId\":\"CUST-42\",\"fullName\":\"Eleanor Vance\","
+                        "{\"customerId\":\"" + customerId + "\",\"fullName\":\"Eleanor Vance\","
                                 + "\"kycStatus\":\"VERIFIED\",\"riskTier\":\"LOW\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("GET".equalsIgnoreCase(method) && path.endsWith("/eligibility")) {
+                String customerId = path.substring("/api/crm/customers/".length(), path.lastIndexOf('/'));
                 sendJson(
                         exchange,
                         200,
-                        "{\"customerId\":\"CUST-42\",\"doNotSell\":false,"
+                        "{\"customerId\":\"" + customerId + "\",\"doNotSell\":false,"
                                 + "\"eligibleForPurchase\":true,\"segment\":\"PREMIER\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else if ("POST".equalsIgnoreCase(method) && path.endsWith("/sales")) {
@@ -276,10 +283,11 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
                     }
                 } catch (JsonProcessingException ignored) {
                 }
+                String salesRecordId = "CUST-99".equals(customerId) ? "SALE-5002" : "SALE-5001";
                 sendJson(
                         exchange,
                         200,
-                        "{\"customerId\":\"" + customerId + "\",\"salesRecordId\":\"SALE-5001\","
+                        "{\"customerId\":\"" + customerId + "\",\"salesRecordId\":\"" + salesRecordId + "\","
                                 + "\"productCode\":\"" + productCode + "\",\"status\":\"RECORDED\","
                                 + "\"processedBy\":\"upstream-server-B\"}");
             } else {
@@ -317,28 +325,68 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
         double amount = 299.00;
         String productCode = "PLATINUM-CREDIT";
         String customerId = "CUST-42";
+        String caseId = "CASE-1001";
         try {
             if (reqPayload != null && !reqPayload.isBlank()) {
                 JsonNode n = objectMapper.readTree(reqPayload);
                 if (n.has("amount")) {
                     amount = n.path("amount").asDouble(299.00);
+                } else if (n.has("FLD_AMOUNT")) {
+                    amount = n.path("FLD_AMOUNT").asDouble(299.00);
                 }
                 if (n.has("productCode")) {
                     productCode = n.path("productCode").asText("PLATINUM-CREDIT");
+                } else if (n.has("FLD_PRODUCT_CODE")) {
+                    productCode = n.path("FLD_PRODUCT_CODE").asText("PLATINUM-CREDIT");
                 }
                 if (n.has("customerId")) {
                     customerId = n.path("customerId").asText("CUST-42");
+                } else if (n.has("FLD_CUSTOMER_ID")) {
+                    customerId = n.path("FLD_CUSTOMER_ID").asText("CUST-42");
+                }
+                if (n.has("caseId")) {
+                    caseId = n.path("caseId").asText("CASE-1001");
+                } else if (n.has("FLD_CASE_ID")) {
+                    caseId = n.path("FLD_CASE_ID").asText("CASE-1001");
+                } else if (n.has("FML_ARCHIVE_JSON")
+                        && n.get("FML_ARCHIVE_JSON").has("caseId")) {
+                    caseId = n.get("FML_ARCHIVE_JSON").get("caseId").asText("CASE-1001");
                 }
             }
         } catch (JsonProcessingException ignored) {
         }
 
-        String replyJson = "{\"invoiceId\":\"INV-9001\",\"customerId\":\"" + customerId + "\","
-                + "\"amount\":" + amount + ",\"currency\":\"EUR\",\"status\":\"CHARGED\","
-                + "\"productCode\":\"" + productCode + "\","
-                + "\"service\":\""
-                + req.getServiceName()
-                + "\",\"processedBy\":\"upstream-server-B\"}";
+        boolean isFielded = req.getServiceBuffer() != null
+                && CasualBufferUtils.isFieldedType(req.getServiceBuffer().getType());
+        ServiceBuffer replyBuffer;
+        if (isFielded) {
+            String invoiceId = "CUST-99".equals(customerId) ? "INV-9002" : "INV-9001";
+            String archiveData = String.format(
+                    java.util.Locale.ROOT,
+                    "{\"caseId\":\"%s\",\"invoiceId\":\"%s\",\"processedBy\":\"upstream-server-B\"}",
+                    caseId,
+                    invoiceId);
+            String encodedArchive =
+                    java.util.Base64.getEncoder().encodeToString(archiveData.getBytes(StandardCharsets.UTF_8));
+            String fieldedJson = String.format(
+                    java.util.Locale.ROOT,
+                    "{\"FLD_INVOICE_ID\":\"%s\",\"FLD_CUSTOMER_ID\":\"%s\",\"FLD_AMOUNT\":%.2f,\"FLD_CURRENCY\":\"EUR\",\"FLD_STATUS\":\"CHARGED\",\"FLD_PRODUCT_CODE\":\"%s\",\"FML_ARCHIVE_JSON\":\"%s\"}",
+                    invoiceId,
+                    customerId,
+                    amount,
+                    productCode,
+                    encodedArchive);
+            replyBuffer = CasualBufferUtils.wrapPayload("CFIELD/", fieldedJson);
+        } else {
+            String invoiceId = "CUST-99".equals(customerId) ? "INV-9002" : "INV-9001";
+            String replyJson = "{\"invoiceId\":\"" + invoiceId + "\",\"customerId\":\"" + customerId + "\","
+                    + "\"amount\":" + amount + ",\"currency\":\"EUR\",\"status\":\"CHARGED\","
+                    + "\"productCode\":\"" + productCode + "\","
+                    + "\"service\":\""
+                    + req.getServiceName()
+                    + "\",\"processedBy\":\"upstream-server-B\"}";
+            replyBuffer = ServiceBuffer.of(JsonBuffer.of(replyJson));
+        }
 
         return CasualServiceCallReplyMessage.createBuilder()
                 .setProtocolVersion(ProtocolVersion.VERSION_1_0)
@@ -346,7 +394,7 @@ public final class UpstreamBackendServer implements CasualTransactionHandler, Au
                 .setXid(req.getXid())
                 .setError(ErrorState.OK)
                 .setTransactionState(TransactionState.TX_ACTIVE)
-                .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of(replyJson)))
+                .setServiceBuffer(replyBuffer)
                 .build();
     }
 

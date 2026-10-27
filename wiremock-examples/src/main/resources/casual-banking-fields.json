@@ -1,0 +1,17 @@
+{
+  "groups": [
+    {
+      "base": 1000,
+      "fields": [
+        { "name": "FLD_CASE_ID", "id": 1, "type": "string" },
+        { "name": "FLD_CUSTOMER_ID", "id": 2, "type": "string" },
+        { "name": "FLD_PRODUCT_CODE", "id": 3, "type": "string" },
+        { "name": "FLD_AMOUNT", "id": 4, "type": "double" },
+        { "name": "FLD_CURRENCY", "id": 5, "type": "string" },
+        { "name": "FLD_INVOICE_ID", "id": 6, "type": "string" },
+        { "name": "FLD_STATUS", "id": 7, "type": "string" },
+        { "name": "FML_ARCHIVE_JSON", "id": 9, "type": "binary" }
+      ]
+    }
+  ]
+}
