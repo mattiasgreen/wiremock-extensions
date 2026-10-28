@@ -1,11 +1,14 @@
 package com.github.mattiasgreen.wiremock.casual;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.admin.model.ListStubMappingsResult;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.DataTruncationSettings;
 import com.github.tomakehurst.wiremock.common.Json;
+import com.github.tomakehurst.wiremock.extension.Parameters;
+import com.github.tomakehurst.wiremock.extension.ServeEventListener;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.HttpHeaders;
@@ -19,6 +22,7 @@ import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import com.github.tomakehurst.wiremock.verification.RequestJournal;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -343,16 +347,39 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         String absoluteUrl = baseUrl + "/__casual/services/" + serviceName;
 
         // Build in-memory probe request
-        ImmutableRequest wiremockRequest = ImmutableRequest.create()
+        ImmutableRequest.Builder requestBuilder = ImmutableRequest.create()
                 .withMethod(RequestMethod.POST)
                 .withAbsoluteUrl(absoluteUrl)
                 .withHeader(
                         "Content-Type",
                         CasualBufferUtils.isJsonType(bufferType) ? "application/json" : "application/octet-stream")
+                .withHeader("X-WireMock-Protocol", "casual")
                 .withHeader("X-Casual-Service", serviceName)
                 .withHeader("X-Casual-Buffer-Type", bufferType)
-                .withHeader("X-Casual-Execution", executionId)
-                .withBody(requestPayload.getBytes(StandardCharsets.UTF_8))
+                .withHeader("X-Casual-Execution", executionId);
+
+        if (isTransactional(req.getXid())) {
+            Xid xid = req.getXid();
+            requestBuilder.withHeader("X-Casual-Xid", formatXid(xid));
+            requestBuilder.withHeader("X-Casual-Gtrid", toHex(xid.getGlobalTransactionId()));
+            requestBuilder.withHeader("X-Casual-Bqual", toHex(xid.getBranchQualifier()));
+            requestBuilder.withHeader("X-Casual-Format-Id", String.valueOf(xid.getFormatId()));
+        }
+
+        try {
+            SpanId parentSpan = req.getParentSpan();
+            if (parentSpan != null) {
+                requestBuilder.withHeader("X-Casual-Parent-Span", parentSpan.toString());
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (requestPayload != null && requestPayload.trim().startsWith("{")) {
+            extractJsonTracingHeaders(requestPayload, requestBuilder);
+        }
+
+        ImmutableRequest wiremockRequest = requestBuilder
+                .withBody(requestPayload != null ? requestPayload.getBytes(StandardCharsets.UTF_8) : new byte[0])
                 .build();
 
         // In-memory WireMock stub probing:
@@ -782,10 +809,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 .body(bodyForResponse)
                 .build();
 
-        ServeEvent serveEvent = ServeEvent.of(wiremockRequest)
-                .withStubMapping(stub)
-                .withResponseDefinition(responseDef)
-                .complete(response, DataTruncationSettings.DEFAULTS);
+        ServeEvent serveEvent =
+                ServeEvent.of(wiremockRequest).withStubMapping(stub).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        serveEvent = serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
 
         recordServeEvent(serveEvent);
     }
@@ -798,10 +826,11 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 .body(body != null ? body : "")
                 .build();
 
-        ServeEvent serveEvent = ServeEvent.of(wiremockRequest)
-                .withStubMapping(stub)
-                .withResponseDefinition(responseDef)
-                .complete(response, DataTruncationSettings.DEFAULTS);
+        ServeEvent serveEvent =
+                ServeEvent.of(wiremockRequest).withStubMapping(stub).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        serveEvent = serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
 
         recordServeEvent(serveEvent);
     }
@@ -821,13 +850,19 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                         "{\"error\": \"%s\", \"message\": \"Service unmatched in WireMock stubs\"}",
                         errName))
                 .build();
-        ServeEvent serveEvent = ServeEvent.of(wiremockRequest)
-                .withResponseDefinition(responseDef)
-                .complete(response, DataTruncationSettings.DEFAULTS);
+        ServeEvent serveEvent = ServeEvent.of(wiremockRequest).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        serveEvent = serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
         recordServeEvent(serveEvent);
     }
 
     private void recordServeEvent(ServeEvent serveEvent) {
+        recordServeEventInJournal(serveEvent);
+        notifyServeEventListeners(serveEvent);
+    }
+
+    private void recordServeEventInJournal(ServeEvent serveEvent) {
         // 1. Try in-memory WireMockServer requestJournal reflection (specific to this gateway instance)
         if (wireMockServer != null) {
             try {
@@ -866,11 +901,102 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         if (servicesOpt.isPresent()) {
             try {
                 servicesOpt.get().getStores().getRequestJournalStore().add(serveEvent);
-                return;
             } catch (Exception e) {
                 LOG.debug("Could not add ServeEvent to RequestJournalStore: {}", e.getMessage());
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void notifyServeEventListeners(ServeEvent serveEvent) {
+        Map<String, ServeEventListener> listeners = new LinkedHashMap<>();
+        if (wireMockServer != null) {
+            try {
+                Field appField = WireMockServer.class.getDeclaredField("wireMockApp");
+                appField.setAccessible(true);
+                Object wireMockApp = appField.get(wireMockServer);
+                if (wireMockApp != null) {
+                    try {
+                        Method getExtensions = wireMockApp.getClass().getMethod("getExtensions");
+                        com.github.tomakehurst.wiremock.extension.Extensions exts =
+                                (com.github.tomakehurst.wiremock.extension.Extensions)
+                                        getExtensions.invoke(wireMockApp);
+                        if (exts != null) {
+                            listeners.putAll(exts.ofType(ServeEventListener.class));
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    if (listeners.isEmpty()) {
+                        Field listenersField = wireMockApp.getClass().getDeclaredField("serveEventListeners");
+                        listenersField.setAccessible(true);
+                        Map<String, ServeEventListener> map =
+                                (Map<String, ServeEventListener>) listenersField.get(wireMockApp);
+                        if (map != null) {
+                            listeners.putAll(map);
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                LOG.debug("Could not resolve ServeEventListeners from wireMockServer: {}", t.getMessage());
+            }
+        }
+        if (listeners.isEmpty()) {
+            Optional<WireMockServices> servicesOpt =
+                    CasualRegistry.getInstance().getWireMockServices();
+            if (servicesOpt.isPresent() && servicesOpt.get().getExtensions() != null) {
+                listeners.putAll(servicesOpt.get().getExtensions().ofType(ServeEventListener.class));
+            }
+        }
+        for (ServeEventListener listener : listeners.values()) {
+            try {
+                listener.afterComplete(serveEvent, Parameters.empty());
+            } catch (Throwable t) {
+                LOG.warn("Failed to notify ServeEventListener [{}]: {}", listener.getName(), t.getMessage());
+            }
+        }
+    }
+
+    private void extractJsonTracingHeaders(String json, ImmutableRequest.Builder requestBuilder) {
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            if (root.has("traceparent")) {
+                requestBuilder.withHeader("traceparent", root.get("traceparent").asText());
+            }
+            if (root.has("tracestate")) {
+                requestBuilder.withHeader("tracestate", root.get("tracestate").asText());
+            }
+            if (root.has("X-Correlation-Id")) {
+                requestBuilder.withHeader(
+                        "X-Correlation-Id", root.get("X-Correlation-Id").asText());
+            } else if (root.has("CORRELATION_ID")) {
+                requestBuilder.withHeader(
+                        "X-Correlation-Id", root.get("CORRELATION_ID").asText());
+            }
+        } catch (IOException | RuntimeException ignored) {
+        }
+    }
+
+    private static String formatXid(Xid xid) {
+        if (xid == null || XID.NULL_XID.equals(xid)) {
+            return null;
+        }
+        return String.format(
+                Locale.ROOT,
+                "%d:%s:%s",
+                xid.getFormatId(),
+                toHex(xid.getGlobalTransactionId()),
+                toHex(xid.getBranchQualifier()));
+    }
+
+    private static String toHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format(Locale.ROOT, "%02x", b));
+        }
+        return sb.toString();
     }
 
     private List<StubMapping> getActiveStubMappings() {
@@ -881,7 +1007,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
         if (servicesOpt.isPresent()) {
             try {
                 return servicesOpt.get().getStores().getStubStore().getAll().toList();
-            } catch (Exception ignored) {
+            } catch (RuntimeException ignored) {
             }
         }
         if (!wireMockBaseUrl.isBlank()) {

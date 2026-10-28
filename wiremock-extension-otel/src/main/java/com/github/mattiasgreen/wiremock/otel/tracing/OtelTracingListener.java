@@ -43,7 +43,12 @@ public class OtelTracingListener implements ServeEventListener {
             AttributeKey.stringKey("wiremock.target_upstream");
     private static final AttributeKey<String> RPC_SYSTEM = AttributeKey.stringKey("rpc.system");
     private static final AttributeKey<String> RPC_SERVICE = AttributeKey.stringKey("rpc.service");
+    private static final AttributeKey<String> RPC_METHOD = AttributeKey.stringKey("rpc.method");
     private static final AttributeKey<String> CASUAL_ERROR_STATE = AttributeKey.stringKey("casual.error_state");
+    private static final AttributeKey<String> CASUAL_XID = AttributeKey.stringKey("casual.xid");
+    private static final AttributeKey<String> CASUAL_XID_GTRID = AttributeKey.stringKey("casual.xid.gtrid");
+    private static final AttributeKey<String> CASUAL_XID_BQUAL = AttributeKey.stringKey("casual.xid.bqual");
+    private static final AttributeKey<Long> CASUAL_XID_FORMAT_ID = AttributeKey.longKey("casual.xid.format_id");
 
     private final OtelTracingRegistry tracingRegistry;
 
@@ -76,14 +81,22 @@ public class OtelTracingListener implements ServeEventListener {
             return;
         }
 
+        String protocol = detectProtocol(request);
+        String rpcService = "casual".equals(protocol) ? detectCasualRpcService(request) : null;
+
         Context extractedContext = tracingRegistry
                 .getOpenTelemetry()
                 .getPropagators()
                 .getTextMapPropagator()
                 .extract(Context.current(), request, WireMockRequestTextMapGetter.INSTANCE);
 
-        String method = request.getMethod() != null ? request.getMethod().getName() : "HTTP";
-        String spanName = method + " " + sanitizeSpanPath(request.getUrl());
+        String spanName;
+        if ("casual".equals(protocol) && rpcService != null) {
+            spanName = "casual." + rpcService;
+        } else {
+            String method = request.getMethod() != null ? request.getMethod().getName() : "HTTP";
+            spanName = method + " " + sanitizeSpanPath(request.getUrl());
+        }
 
         Span span = tracingRegistry
                 .getTracer()
@@ -92,33 +105,42 @@ public class OtelTracingListener implements ServeEventListener {
                 .setSpanKind(SpanKind.SERVER)
                 .startSpan();
 
-        String traceId = span.getSpanContext().getTraceId();
-        String spanId = span.getSpanContext().getSpanId();
-        if (traceId != null && !traceId.isBlank()) {
-            MDC.put("trace_id", traceId);
-        }
-        if (spanId != null && !spanId.isBlank()) {
-            MDC.put("span_id", spanId);
-        }
+        try {
+            String traceId = span.getSpanContext().getTraceId();
+            String spanId = span.getSpanContext().getSpanId();
+            if (traceId != null && !traceId.isBlank()) {
+                MDC.put("trace_id", traceId);
+            }
+            if (spanId != null && !spanId.isBlank()) {
+                MDC.put("span_id", spanId);
+            }
 
-        span.setAttribute(HTTP_REQUEST_METHOD, method);
-        span.setAttribute(URL_FULL, request.getAbsoluteUrl());
-        span.setAttribute(URL_PATH, sanitizeSpanPath(request.getUrl()));
+            if (!"casual".equals(protocol)) {
+                String method =
+                        request.getMethod() != null ? request.getMethod().getName() : "HTTP";
+                span.setAttribute(HTTP_REQUEST_METHOD, method);
+                span.setAttribute(URL_FULL, request.getAbsoluteUrl());
+                span.setAttribute(URL_PATH, sanitizeSpanPath(request.getUrl()));
 
-        String query = extractQuery(request.getUrl());
-        if (query != null && !query.isEmpty()) {
-            span.setAttribute(URL_QUERY, query);
+                String query = extractQuery(request.getUrl());
+                if (query != null && !query.isEmpty()) {
+                    span.setAttribute(URL_QUERY, query);
+                }
+            }
+
+            if (request.getClientIp() != null) {
+                span.setAttribute(CLIENT_ADDRESS, request.getClientIp());
+            }
+
+            enrichSpanWithCompletion(span, serveEvent, protocol, rpcService);
+        } finally {
+            span.end();
+            MDC.remove("trace_id");
+            MDC.remove("span_id");
         }
-
-        if (request.getClientIp() != null) {
-            span.setAttribute(CLIENT_ADDRESS, request.getClientIp());
-        }
-
-        enrichSpanWithCompletion(span, serveEvent);
-        span.end();
     }
 
-    private void enrichSpanWithCompletion(Span span, ServeEvent serveEvent) {
+    private void enrichSpanWithCompletion(Span span, ServeEvent serveEvent, String protocol, String rpcService) {
         LoggedResponse response = serveEvent.getResponse();
         int statusCode = response != null ? response.getStatus() : 0;
         if (statusCode > 0) {
@@ -188,50 +210,86 @@ public class OtelTracingListener implements ServeEventListener {
         }
 
         Request request = serveEvent.getRequest();
-        String protocol = "http";
-        if (request != null) {
-            if (request.header("X-WireMock-Protocol").isPresent()) {
-                protocol = request.header("X-WireMock-Protocol").firstValue().toLowerCase(Locale.ROOT);
-            } else if (request.header("X-Casual-Service").isPresent()
-                    || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
-                protocol = "casual";
-            } else if ((request.header("Content-Type").isPresent()
-                            && request.header("Content-Type").firstValue().contains("application/grpc"))
-                    || request.header("X-Grpc-Service").isPresent()) {
-                protocol = "grpc";
-            }
-        }
         span.setAttribute(WIREMOCK_PROTOCOL, protocol);
 
         if ("casual".equals(protocol) && request != null) {
             span.setAttribute(RPC_SYSTEM, "casual");
-            String rpcService = null;
-            if (request.header("X-Casual-Service").isPresent()) {
-                rpcService = request.header("X-Casual-Service").firstValue();
-            } else if (request.getUrl() != null && request.getUrl().startsWith("/__casual/services/")) {
-                rpcService = request.getUrl().substring("/__casual/services/".length());
-                int slashIdx = rpcService.indexOf('/');
-                int queryIdx = rpcService.indexOf('?');
-                int end = rpcService.length();
-                if (slashIdx >= 0) {
-                    end = Math.min(end, slashIdx);
-                }
-                if (queryIdx >= 0) {
-                    end = Math.min(end, queryIdx);
-                }
-                rpcService = rpcService.substring(0, end);
-            }
+            span.setAttribute(RPC_METHOD, "tpcall");
             if (rpcService != null) {
                 span.setAttribute(RPC_SERVICE, rpcService);
             }
             if (response != null
                     && response.getHeaders() != null
                     && response.getHeaders().getHeader("X-Casual-Error-State").isPresent()) {
+                String err =
+                        response.getHeaders().getHeader("X-Casual-Error-State").firstValue();
+                span.setAttribute(CASUAL_ERROR_STATE, err);
+                if (!"OK".equalsIgnoreCase(err)) {
+                    span.setStatus(StatusCode.ERROR, "Casual error state: " + err);
+                }
+            }
+            if (request.header("X-Casual-Xid").isPresent()) {
+                span.setAttribute(CASUAL_XID, request.header("X-Casual-Xid").firstValue());
+            }
+            if (request.header("X-Casual-Gtrid").isPresent()) {
                 span.setAttribute(
-                        CASUAL_ERROR_STATE,
-                        response.getHeaders().getHeader("X-Casual-Error-State").firstValue());
+                        CASUAL_XID_GTRID, request.header("X-Casual-Gtrid").firstValue());
+            }
+            if (request.header("X-Casual-Bqual").isPresent()) {
+                span.setAttribute(
+                        CASUAL_XID_BQUAL, request.header("X-Casual-Bqual").firstValue());
+            }
+            if (request.header("X-Casual-Format-Id").isPresent()) {
+                try {
+                    span.setAttribute(
+                            CASUAL_XID_FORMAT_ID,
+                            Long.parseLong(request.header("X-Casual-Format-Id").firstValue()));
+                } catch (NumberFormatException ignored) {
+                }
             }
         }
+    }
+
+    private String detectProtocol(Request request) {
+        if (request == null) {
+            return "http";
+        }
+        if (request.header("X-WireMock-Protocol").isPresent()) {
+            return request.header("X-WireMock-Protocol").firstValue().toLowerCase(Locale.ROOT);
+        }
+        if (request.header("X-Casual-Service").isPresent()
+                || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
+            return "casual";
+        }
+        if ((request.header("Content-Type").isPresent()
+                        && request.header("Content-Type").firstValue().contains("application/grpc"))
+                || request.header("X-Grpc-Service").isPresent()) {
+            return "grpc";
+        }
+        return "http";
+    }
+
+    private String detectCasualRpcService(Request request) {
+        if (request == null) {
+            return null;
+        }
+        if (request.header("X-Casual-Service").isPresent()) {
+            return request.header("X-Casual-Service").firstValue();
+        }
+        if (request.getUrl() != null && request.getUrl().startsWith("/__casual/services/")) {
+            String rpcService = request.getUrl().substring("/__casual/services/".length());
+            int slashIdx = rpcService.indexOf('/');
+            int queryIdx = rpcService.indexOf('?');
+            int end = rpcService.length();
+            if (slashIdx >= 0) {
+                end = Math.min(end, slashIdx);
+            }
+            if (queryIdx >= 0) {
+                end = Math.min(end, queryIdx);
+            }
+            return rpcService.substring(0, end);
+        }
+        return null;
     }
 
     private static String sanitizeSpanPath(String rawUrl) {
