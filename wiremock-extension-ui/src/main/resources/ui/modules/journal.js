@@ -15,6 +15,7 @@ import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
+import { fetchCasualConfig, updateCasualRoute } from './casual-tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import { getSnapshotStubTemplate } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
@@ -211,7 +212,7 @@ function buildRowHtml(req) {
                   <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     ${correlationId ? `<button class="btn btn-small btn-journal-filter-corr" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 Corr: ${escapeHtml(correlationId)}</button>` : ''}
-                    <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill HTTP Tester with this exact request">🚀 Replay in Tester</button>
+                    <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill ${isCasual ? 'Casual ' : 'HTTP '}Tester with this exact request">🚀 Replay in ${isCasual ? 'Casual ' : ''}Tester</button>
                     <button class="btn btn-small btn-journal-copy-curl" data-id="${req.id}" data-testid="btn-journal-copy-curl" title="Copy request as cURL command">📋 Copy cURL</button>
                     <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
                   </div>
@@ -425,6 +426,36 @@ function setupEventDelegation() {
       const targetId = toTesterBtn.getAttribute('data-id') || (toTesterBtn.dataset && toTesterBtn.dataset.id);
       const req = state.currentRequests.find(r => r.id === targetId);
       if (req && req.request) {
+        const reqHeaders = req.request.headers || {};
+        const url = req.request.url || '';
+        const casualService = getHeader(reqHeaders, 'x-casual-service')
+          || (url.startsWith('/__casual/services/') ? url.substring('/__casual/services/'.length) : null);
+        const isCasual = Boolean(casualService);
+
+        if (isCasual) {
+          if (elements.casualServiceName) elements.casualServiceName.value = casualService;
+          const rawBufferType = getHeader(reqHeaders, 'x-casual-buffer-type') || 'JSON';
+          let normBuffer = 'JSON';
+          const upper = rawBufferType.toUpperCase();
+          if (upper.includes('FIELD')) normBuffer = 'FIELDED';
+          else if (upper.includes('STRING')) normBuffer = 'CSTRING';
+          else if (upper.includes('OCTET')) normBuffer = 'X_OCTET';
+
+          if (elements.casualBufferType) elements.casualBufferType.value = normBuffer;
+          if (elements.casualRequestPayload) elements.casualRequestPayload.value = req.request.body || '';
+          if (elements.casualPayloadEncoding) {
+            elements.casualPayloadEncoding.value = normBuffer === 'X_OCTET' ? 'hex' : 'text';
+          }
+          if (typeof fetchCasualConfig === 'function') {
+            fetchCasualConfig();
+          }
+          activateTab('tab-casual', false);
+          if (typeof updateCasualRoute === 'function') {
+            updateCasualRoute(false);
+          }
+          return;
+        }
+
         if (elements.testerMethod) elements.testerMethod.value = req.request.method || 'GET';
         if (elements.testerUrl) elements.testerUrl.value = req.request.url || '/';
         const headerLines = [];

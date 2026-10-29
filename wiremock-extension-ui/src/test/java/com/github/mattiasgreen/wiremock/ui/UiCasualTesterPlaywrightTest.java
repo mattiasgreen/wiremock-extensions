@@ -3,15 +3,20 @@ package com.github.mattiasgreen.wiremock.ui;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.microsoft.playwright.Locator;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import se.laz.casual.client.CasualCallResult;
+import se.laz.casual.client.CasualClient;
 
 public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
@@ -21,7 +26,7 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
     void startCasualGateway() throws Exception {
         casualGateway = CasualWireMockGateway.builder()
                 .port(0)
-                .wireMockBaseUrl(wireMockServer.baseUrl())
+                .wireMockServer(wireMockServer)
                 .build();
         casualGateway.start();
         CasualRegistry.getInstance().setGateway(casualGateway);
@@ -141,5 +146,92 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(bodyEl.textContent()).contains("48 65 6C 6C 6F 21");
 
         assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "Should replay Casual request from Journal into Casual Tester, execute tpcall upstream, and verify resulting journal entry")
+    void testCasualJournalReplayFlow() throws Exception {
+        WireMockServer upstreamServer = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamServer.start();
+
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamServer)
+                .build();
+        upstreamGateway.start();
+
+        try {
+            upstreamServer.stubFor(post(urlEqualTo("/__casual/services/upstreamEcho"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"upstream\": true, \"received\": \"proxyOK\"}")));
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/upstreamEcho"))
+                    .withMetadata(Map.of(
+                            "mode", "proxy",
+                            "protocol", "casual",
+                            "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            // 1. Execute initial proxy call over TCP to gateway
+            try (CasualClient client = new CasualClient("127.0.0.1", casualGateway.getPort())) {
+                CasualCallResult initialResult = client.call("upstreamEcho", "{\"clientCall\": 1}");
+                assertThat(initialResult.isSuccess()).isTrue();
+                assertThat(initialResult.payload()).contains("\"upstream\": true");
+            }
+
+            // 2. Open Journal in UI and verify recorded request and response
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+            page.waitForSelector("#tab-journal.active");
+            page.waitForSelector(".journal-row");
+
+            Locator journalRows = page.locator(".journal-row");
+            assertThat(journalRows.count()).isGreaterThanOrEqualTo(1);
+            Locator firstRow = journalRows.first();
+            assertThat(firstRow.textContent()).contains("CASUAL");
+            assertThat(firstRow.textContent()).contains("upstreamEcho");
+
+            // Expand row
+            firstRow.click();
+            page.waitForSelector(".journal-detail-row");
+            Locator detailContent = page.locator(".journal-detail-content");
+            assertThat(detailContent.textContent()).contains("Casual Request: tpcall(\"upstreamEcho\")");
+            assertThat(detailContent.textContent()).contains("\"clientCall\": 1");
+            assertThat(detailContent.textContent()).contains("\"upstream\": true");
+
+            // 3. Click 'Replay in Casual Tester' button
+            Locator replayBtn = page.locator("[data-testid='btn-journal-to-tester']");
+            assertThat(replayBtn.isVisible()).isTrue();
+            assertThat(replayBtn.textContent()).contains("Replay in Casual Tester");
+            replayBtn.click();
+
+            // 4. Verify tab switched to Casual Tester with pre-filled service and payload
+            page.waitForSelector("#tab-casual.active");
+            assertThat(page.locator("#casual-service-name").inputValue()).isEqualTo("upstreamEcho");
+            assertThat(page.locator("#casual-request-payload").inputValue()).contains("\"clientCall\": 1");
+
+            // 5. Send replayed request from Casual Tester
+            page.locator("#btn-casual-send").click();
+
+            // 6. Verify response in Casual Tester is received from upstream
+            page.waitForSelector("#casual-response-status:has-text('OK')");
+            assertThat(page.locator("#casual-response-status").textContent()).contains("OK (0)");
+            Locator responseBody = page.locator("#casual-response-body");
+            assertThat(responseBody.textContent()).contains("\"upstream\": true");
+            assertThat(responseBody.textContent()).contains("\"received\": \"proxyOK\"");
+
+            // 7. Switch back to Journal and verify new entry recorded
+            page.locator("#nav-tab-journal").click();
+            page.waitForSelector("#tab-journal.active");
+            page.locator("#btn-refresh-journal").click();
+            page.waitForSelector(".journal-row:nth-child(2)");
+            Locator updatedRows = page.locator(".journal-row");
+            assertThat(updatedRows.count()).isGreaterThanOrEqualTo(2);
+        } finally {
+            upstreamGateway.close();
+            upstreamServer.stop();
+        }
     }
 }

@@ -183,7 +183,7 @@ public final class CasualBufferUtils {
             return false;
         }
         String normalized = bufferType.trim().toLowerCase(Locale.ROOT);
-        return normalized.contains("cstring");
+        return normalized.contains("cstring") || normalized.equals("string");
     }
 
     /**

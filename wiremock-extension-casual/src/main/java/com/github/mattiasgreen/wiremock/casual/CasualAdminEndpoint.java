@@ -106,8 +106,13 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                     : "127.0.0.1";
 
             int port = root.hasNonNull("port") ? root.get("port").asInt() : 0;
-            if (port <= 0) {
-                port = registry.getGateway().map(CasualWireMockGateway::getPort).orElse(CasualClient.DEFAULT_PORT);
+            if (port <= 0
+                    || (registry.getGateway().isPresent()
+                            && port == CasualConfiguration.DEFAULT_PORT
+                            && (host.equals("127.0.0.1") || host.equalsIgnoreCase("localhost")))) {
+                port = registry.getGateway()
+                        .map(CasualWireMockGateway::getPort)
+                        .orElse(port > 0 ? port : CasualClient.DEFAULT_PORT);
             }
 
             int timeout = root.hasNonNull("timeoutSeconds")
@@ -188,8 +193,13 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                 }
             }
 
-            if (port <= 0) {
-                port = registry.getGateway().map(CasualWireMockGateway::getPort).orElse(CasualClient.DEFAULT_PORT);
+            if (port <= 0
+                    || (registry.getGateway().isPresent()
+                            && port == CasualConfiguration.DEFAULT_PORT
+                            && (host.equals("127.0.0.1") || host.equalsIgnoreCase("localhost")))) {
+                port = registry.getGateway()
+                        .map(CasualWireMockGateway::getPort)
+                        .orElse(port > 0 ? port : CasualClient.DEFAULT_PORT);
             }
             if (timeout <= 0) {
                 timeout = CasualClient.DEFAULT_TIMEOUT_SECONDS;
@@ -233,6 +243,7 @@ public class CasualAdminEndpoint implements AdminApiExtension {
             map.put(
                     "running",
                     registry.getGateway().map(CasualWireMockGateway::isRunning).orElse(false));
+            registry.getGateway().ifPresent(gw -> map.put("port", gw.getPort()));
             String json = objectMapper.writeValueAsString(map);
             return jsonResponse(200, json);
         } catch (JsonProcessingException e) {
