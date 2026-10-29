@@ -494,15 +494,13 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
             recordVoteOverrideFromHeaders(headers, "X-Casual-XA-Rollback-Vote", req.getXid(), rollbackVoteOverrides);
         }
 
+        byte[] rawByteBody = responseDef.getByteBody();
         String respBody = responseDef.getBody();
         if (respBody == null && responseDef.getBase64Body() != null) {
             respBody = responseDef.getBase64Body();
         }
         if (respBody == null && responseDef.getReponseBody() != null) {
             respBody = responseDef.getReponseBody().asString();
-        }
-        if (respBody == null && responseDef.getByteBody() != null) {
-            respBody = new String(responseDef.getByteBody(), StandardCharsets.UTF_8);
         }
         if (respBody == null && responseDef.getBodyFileName() != null) {
             respBody = readBodyFromFile(responseDef.getBodyFileName());
@@ -514,6 +512,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
                 : requestBufferType;
         if (respBody != null && !respBody.isBlank()) {
             replyBuffer = CasualBufferUtils.wrapPayload(replyBufferType, respBody);
+        } else if (rawByteBody != null && rawByteBody.length > 0) {
+            replyBuffer = CasualBufferUtils.wrapPayload(replyBufferType, rawByteBody);
         }
 
         recordOfflineServeEvent(stub, wiremockRequest, responseDef, replyBufferType, respBody);
@@ -792,11 +792,16 @@ public class CasualWireMockGateway implements AutoCloseable, CasualTransactionHa
 
     private void recordOfflineServeEvent(
             StubMapping stub, Request wiremockRequest, ResponseDefinition responseDef, String bufferType, String body) {
-        Response response = Response.response()
-                .status(responseDef.getStatus())
-                .headers(responseDef.getHeaders())
-                .body(body != null ? body : "")
-                .build();
+        Response.Builder responseBuilder =
+                Response.response().status(responseDef.getStatus()).headers(responseDef.getHeaders());
+        if (responseDef.getBody() != null) {
+            responseBuilder.body(responseDef.getBody());
+        } else if (responseDef.getByteBody() != null) {
+            responseBuilder.body(responseDef.getByteBody());
+        } else {
+            responseBuilder.body(body != null ? body : "");
+        }
+        Response response = responseBuilder.build();
 
         ServeEvent serveEvent = ServeEvent.of(wiremockRequest)
                 .withStubMapping(stub)

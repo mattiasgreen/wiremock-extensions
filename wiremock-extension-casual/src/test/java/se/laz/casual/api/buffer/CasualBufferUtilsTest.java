@@ -107,7 +107,6 @@ class CasualBufferUtilsTest {
     }
 
     @Test
-<<<<<<< HEAD
     @DisplayName("Should early exit to Base64 when field table is not available")
     void shouldEarlyExitToBase64WhenFieldTableNotAvailable() {
         // Construct a realistic 16-byte buffer with 8 bytes field id and 8 bytes length

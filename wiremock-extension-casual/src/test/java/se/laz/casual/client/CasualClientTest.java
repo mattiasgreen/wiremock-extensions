@@ -46,7 +46,7 @@ class CasualClientTest {
                         .withHeader("Content-Type", "application/octet-stream")
                         .withBody(new byte[] {0x10, 0x20, 0x30, 0x40, 0x50})));
 
-        gateway = new CasualWireMockGateway(0, wireMockServer.baseUrl());
+        gateway = new CasualWireMockGateway(0, wireMockServer);
         gateway.start();
         gatewayPort = gateway.getPort();
     }

@@ -475,34 +475,7 @@ public final class CasualBufferUtils {
         if (binaryData == null || binaryData.length == 0) {
             return ServiceBuffer.of(type, List.of());
         }
-        try {
-            String asStr = new String(binaryData, StandardCharsets.US_ASCII).trim();
-            if (isBase64(asStr)) {
-                byte[] decoded = Base64.getDecoder().decode(asStr);
-                return ServiceBuffer.of(type, List.of(decoded));
-            }
-        } catch (IllegalArgumentException ignored) {
-        }
         return ServiceBuffer.of(type, List.of(binaryData));
-    }
-
-    private static boolean isBase64(String s) {
-        if (s == null || s.length() < 4 || s.length() % 4 != 0) {
-            return false;
-        }
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            boolean valid = (c >= 'A' && c <= 'Z')
-                    || (c >= 'a' && c <= 'z')
-                    || (c >= '0' && c <= '9')
-                    || c == '+'
-                    || c == '/'
-                    || c == '=';
-            if (!valid) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**
