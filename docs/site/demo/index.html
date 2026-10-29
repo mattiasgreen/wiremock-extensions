@@ -50,6 +50,9 @@
         <button class="tab nav-tab" data-tab="tab-tester" role="tab" id="nav-tab-tester" data-testid="nav-tab-tester">
           <span class="tab-icon">🚀</span> HTTP Tester
         </button>
+        <button class="tab nav-tab" data-tab="tab-casual" role="tab" id="nav-tab-casual" data-testid="nav-tab-casual">
+          <span class="tab-icon">🔌</span> Casual Tester
+        </button>
         <button class="tab nav-tab" data-tab="tab-scenarios" role="tab" id="nav-tab-scenarios" data-testid="nav-tab-scenarios">
           <span class="tab-icon">🔀</span> Scenarios <span id="stat-scenarios" class="nav-badge">0</span>
         </button>
@@ -472,6 +475,103 @@
                     <div class="code-viewer-container" style="flex: 1;">
                       <div class="headers-section-label">Sent Request Body</div>
                       <pre id="tester-sent-body" class="code-block">(empty body)</pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3b: Casual Tester (Full Width) -->
+      <div id="tab-casual" class="tab-content" data-testid="tab-casual">
+        <div class="tester-container">
+          <div class="tester-workspace">
+            <!-- Left Vertical History Panel (Horizontally Collapsible) -->
+            <aside class="tester-history-panel" id="casual-history-panel" data-testid="casual-history-panel">
+              <!-- Expanded View Header -->
+              <div class="tester-history-header">
+                <span class="history-title">⏱️ History (<span id="casual-history-count">0</span>)</span>
+                <div class="tester-history-header-actions">
+                  <button id="btn-casual-clear-history" data-testid="btn-casual-clear-history" class="btn btn-tiny" title="Clear Casual call history">Clear</button>
+                  <button id="btn-toggle-casual-history" data-testid="btn-toggle-casual-history" class="btn btn-tiny btn-history-collapse" title="Collapse history sidebar">◀</button>
+                </div>
+              </div>
+              <div id="casual-history-list" data-testid="casual-history-list" class="tester-history-list">
+                <div class="empty-state text-small">No Casual calls sent yet.</div>
+              </div>
+
+              <!-- Collapsed Mini Rail -->
+              <div class="tester-history-collapsed-bar" id="casual-history-collapsed-bar" title="Expand Casual History">
+                <button id="btn-expand-casual-history" class="btn btn-tiny btn-history-expand" title="Expand history sidebar">▶</button>
+                <span class="collapsed-history-icon" title="Casual Call History">⏱️</span>
+                <span id="casual-history-collapsed-count" class="badge-count" title="History item count">0</span>
+                <span class="collapsed-history-label">History</span>
+              </div>
+            </aside>
+
+            <!-- Center & Right Split Panels: Request Builder & Response Inspector -->
+            <div class="tester-main-panel">
+              <!-- Casual Request Builder Panel -->
+              <div class="tester-request-panel" data-testid="casual-request-panel">
+                <div class="tester-url-bar">
+                  <div class="casual-target-group" style="display:flex; gap:6px; align-items:center;">
+                    <span class="muted-text text-small" style="font-weight:600;">TCP:</span>
+                    <input type="text" id="casual-target-host" data-testid="casual-target-host" placeholder="127.0.0.1" value="127.0.0.1" style="width:110px;" autocomplete="off" title="Casual domain host">
+                    <span class="muted-text text-small">:</span>
+                    <input type="number" id="casual-target-port" data-testid="casual-target-port" placeholder="7772" value="7772" style="width:80px;" autocomplete="off" title="Casual domain port">
+                  </div>
+                  <select id="casual-buffer-type" data-testid="casual-buffer-type" class="tester-method-select" style="min-width:90px;" title="Casual Service Buffer Type">
+                    <option value="JSON">JSON</option>
+                    <option value="STRING">STRING</option>
+                    <option value="X_OCTET">X_OCTET</option>
+                  </select>
+                  <input type="text" id="casual-service-name" data-testid="casual-service-name" placeholder="Service name (e.g. echoService, createOrder)..." value="echoService" autocomplete="off" style="flex:1;">
+                  <button id="btn-casual-send" data-testid="btn-casual-send" class="btn btn-primary" title="Execute Casual Service Call (Ctrl+Enter)">🔌 Execute tpcall</button>
+                </div>
+
+                <div class="tester-subcontrols">
+                  <div class="tester-section" id="casual-payload-section">
+                    <div class="tester-section-header">
+                      <span>Request Payload</span>
+                      <div class="preset-badges">
+                        <button id="btn-casual-format-json" class="btn btn-small" title="Prettify JSON Payload">Format JSON</button>
+                      </div>
+                    </div>
+                    <textarea id="casual-request-payload" class="code-input" rows="8" placeholder='{"key": "value"}'></textarea>
+                  </div>
+                </div>
+
+                <div class="tester-action-bar">
+                  <button id="btn-casual-reset" class="btn btn-small" title="Reset form to defaults">↺ Reset</button>
+                  <span id="casual-gateway-status" class="muted-text text-small" style="margin-left: auto;">Casual Gateway: Port 7772</span>
+                </div>
+              </div>
+
+              <!-- Casual Response Inspector Panel -->
+              <div class="tester-response-panel">
+                <div class="tester-response-header">
+                  <div class="tester-response-meta">
+                    <span class="muted-text">Status:</span>
+                    <span id="casual-response-status" class="card-value" style="font-size: 0.95rem; margin: 0;">—</span>
+                    <span id="casual-response-time" class="muted-text text-small">—</span>
+                    <span id="casual-response-code" class="muted-text text-small">—</span>
+                    <span id="casual-response-execution" class="muted-text text-small" style="font-family: monospace;"></span>
+                  </div>
+                  <div class="tester-response-actions">
+                    <div class="view-mode-toggle" id="casual-format-switcher">
+                      <button class="btn btn-small active" id="btn-casual-view-highlighted">Formatted</button>
+                      <button class="btn btn-small" id="btn-casual-view-raw">Raw</button>
+                    </div>
+                    <button id="btn-casual-copy-response" class="btn btn-small" title="Copy response to clipboard">📋 Copy</button>
+                  </div>
+                </div>
+                <div class="tester-response-content" id="casual-inspector-content">
+                  <div id="casual-view-response" class="inspector-view active">
+                    <div class="code-viewer-container" style="flex: 1;">
+                      <div class="headers-section-label">Response Payload</div>
+                      <pre id="casual-response-body" class="code-block" data-testid="casual-response-body">(no response yet - execute tpcall)</pre>
                     </div>
                   </div>
                 </div>

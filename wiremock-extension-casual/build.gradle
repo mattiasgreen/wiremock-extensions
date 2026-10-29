@@ -31,4 +31,24 @@ tasks.register('quarkusIntegrationTest', Test) {
     useJUnitPlatform()
 }
 
+tasks.register('clientJar', Jar) {
+    group = 'build'
+    description = 'Assembles a standalone, executable fat-jar for the CasualClient CLI.'
+    archiveBaseName = 'wiremock-casual-client'
+    archiveClassifier = ''
+    manifest {
+        attributes(
+            'Main-Class': 'se.laz.casual.client.CasualClient',
+            'Implementation-Title': 'WireMock Casual Standalone Client',
+            'Implementation-Version': project.version
+        )
+    }
+    from sourceSets.main.output
+    dependsOn configurations.runtimeClasspath
+    from {
+        configurations.runtimeClasspath.findAll { it.name.endsWith('.jar') }.collect { zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 

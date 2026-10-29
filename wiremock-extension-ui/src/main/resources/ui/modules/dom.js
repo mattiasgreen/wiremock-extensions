@@ -247,7 +247,35 @@ export const elements = {
   settingsImportJson: document.getElementById('settings-import-json'),
   btnSettingsApplyImport: document.getElementById('btn-settings-apply-import'),
   settingsImportFeedback: document.getElementById('settings-import-feedback'),
-  btnResetDefaultSettings: document.getElementById('btn-reset-default-settings')
+  btnResetDefaultSettings: document.getElementById('btn-reset-default-settings'),
+
+  // Casual Tester Tab
+  navTabCasual: document.getElementById('nav-tab-casual'),
+  casualHistoryPanel: document.getElementById('casual-history-panel'),
+  casualHistoryList: document.getElementById('casual-history-list'),
+  casualHistoryCount: document.getElementById('casual-history-count'),
+  btnCasualClearHistory: document.getElementById('btn-casual-clear-history'),
+  btnToggleCasualHistory: document.getElementById('btn-toggle-casual-history'),
+  btnExpandCasualHistory: document.getElementById('btn-expand-casual-history'),
+  casualHistoryCollapsedBar: document.getElementById('casual-history-collapsed-bar'),
+  casualHistoryCollapsedCount: document.getElementById('casual-history-collapsed-count'),
+  casualTargetHost: document.getElementById('casual-target-host'),
+  casualTargetPort: document.getElementById('casual-target-port'),
+  casualBufferType: document.getElementById('casual-buffer-type'),
+  casualServiceName: document.getElementById('casual-service-name'),
+  btnCasualSend: document.getElementById('btn-casual-send'),
+  btnCasualFormatJson: document.getElementById('btn-casual-format-json'),
+  casualRequestPayload: document.getElementById('casual-request-payload'),
+  btnCasualReset: document.getElementById('btn-casual-reset'),
+  casualGatewayStatus: document.getElementById('casual-gateway-status'),
+  casualResponseStatus: document.getElementById('casual-response-status'),
+  casualResponseTime: document.getElementById('casual-response-time'),
+  casualResponseCode: document.getElementById('casual-response-code'),
+  casualResponseExecution: document.getElementById('casual-response-execution'),
+  btnCasualViewHighlighted: document.getElementById('btn-casual-view-highlighted'),
+  btnCasualViewRaw: document.getElementById('btn-casual-view-raw'),
+  btnCasualCopyResponse: document.getElementById('btn-casual-copy-response'),
+  casualResponseBody: document.getElementById('casual-response-body')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */

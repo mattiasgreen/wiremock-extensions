@@ -41,6 +41,13 @@ export const CAPABILITY_METADATA = [
     desc: 'In-process request count histograms and Prometheus scrape route',
     icon: '📊',
     endpoint: '/__admin/metrics/prometheus'
+  },
+  {
+    key: 'casual',
+    name: 'Casual Protocol Gateway',
+    desc: 'Netty XATMI Casual protocol gateway and transaction emulation',
+    icon: '🔌',
+    endpoint: '/__admin/casual/config'
   }
 ];
 
@@ -138,6 +145,31 @@ export function applyCapabilityVisibility() {
       missingBanner.classList.remove('hidden');
     } else if (missingBanner) {
       missingBanner.classList.add('hidden');
+    }
+  }
+
+  // 1b. Casual Tester Tab & Container Banner
+  if (elements.navTabCasual) {
+    applyControlState(
+      elements.navTabCasual,
+      caps.casual,
+      'Casual Tester requires wiremock-extension-casual (/__admin/casual/config)'
+    );
+  }
+  const tabCasual = document.getElementById('tab-casual');
+  if (tabCasual) {
+    let casualMissingBanner = document.getElementById('casual-cap-missing-banner');
+    if (!caps.casual) {
+      if (!casualMissingBanner) {
+        casualMissingBanner = document.createElement('div');
+        casualMissingBanner.id = 'casual-cap-missing-banner';
+        casualMissingBanner.className = 'cap-missing-banner';
+        casualMissingBanner.innerHTML = '<span>🔌 <strong>Extension Not Installed:</strong> <code>wiremock-extension-casual</code> is not active on this WireMock instance. Install the extension to enable Casual XATMI protocol service calls, stubbing, and transaction simulation.</span>';
+        tabCasual.prepend(casualMissingBanner);
+      }
+      casualMissingBanner.classList.remove('hidden');
+    } else if (casualMissingBanner) {
+      casualMissingBanner.classList.add('hidden');
     }
   }
 
