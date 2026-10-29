@@ -143,6 +143,41 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                     respMap.put("payloadHex", result.toHexDump(256));
                 }
 
+                Map<String, String> responseHeaders = new LinkedHashMap<>();
+                responseHeaders.put(
+                        "Content-Type",
+                        result.isJson()
+                                ? "application/json"
+                                : (se.laz.casual.api.buffer.CasualBufferUtils.isCStringType(result.bufferType())
+                                        ? "text/plain; charset=UTF-8"
+                                        : "application/octet-stream"));
+                responseHeaders.put("X-Casual-Error-State", result.errorState().name());
+                responseHeaders.put("X-Casual-Buffer-Type", result.bufferType());
+                if (result.userCode() != 0) {
+                    responseHeaders.put("X-Casual-User-Error", String.valueOf(result.userCode()));
+                }
+                if (result.execution() != null) {
+                    responseHeaders.put("X-Casual-Execution", result.execution().toString());
+                }
+                respMap.put("headers", responseHeaders);
+
+                Map<String, String> requestHeaders = new LinkedHashMap<>();
+                requestHeaders.put(
+                        "Content-Type",
+                        se.laz.casual.api.buffer.CasualBufferUtils.isJsonType(bufferType)
+                                ? "application/json"
+                                : (se.laz.casual.api.buffer.CasualBufferUtils.isCStringType(bufferType)
+                                        ? "text/plain; charset=UTF-8"
+                                        : "application/octet-stream"));
+                requestHeaders.put("X-Casual-Service", service);
+                requestHeaders.put("X-Casual-Buffer-Type", bufferType);
+                if (root.has("headers") && root.get("headers").isObject()) {
+                    root.get("headers").fields().forEachRemaining(entry -> {
+                        requestHeaders.put(entry.getKey(), entry.getValue().asText());
+                    });
+                }
+                respMap.put("requestHeaders", requestHeaders);
+
                 return jsonResponse(200, objectMapper.writeValueAsString(respMap));
             } catch (Exception e) {
                 String safeMsg = e.getMessage() != null

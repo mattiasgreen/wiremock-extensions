@@ -443,6 +443,13 @@ function setupEventDelegation() {
 
           if (elements.casualBufferType) elements.casualBufferType.value = normBuffer;
           if (elements.casualRequestPayload) elements.casualRequestPayload.value = req.request.body || '';
+          if (elements.casualRequestHeaders && req.request.headers) {
+            const hLines = [];
+            for (const [k, v] of Object.entries(req.request.headers)) {
+              hLines.push(`${k}: ${v}`);
+            }
+            elements.casualRequestHeaders.value = hLines.join('\n');
+          }
           if (elements.casualPayloadEncoding) {
             elements.casualPayloadEncoding.value = normBuffer === 'X_OCTET' ? 'hex' : 'text';
           }

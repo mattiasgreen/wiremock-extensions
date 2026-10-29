@@ -268,6 +268,9 @@ export const elements = {
   casualPayloadEncoding: document.getElementById('casual-payload-encoding'),
   casualFileInput: document.getElementById('casual-file-input'),
   btnCasualUploadFile: document.getElementById('btn-casual-upload-file'),
+  casualRequestHeaders: document.getElementById('casual-request-headers'),
+  btnCasualPresetCorr: document.getElementById('btn-casual-preset-corr'),
+  btnCasualPresetTx: document.getElementById('btn-casual-preset-tx'),
   casualRequestPayload: document.getElementById('casual-request-payload'),
   btnCasualReset: document.getElementById('btn-casual-reset'),
   casualGatewayStatus: document.getElementById('casual-gateway-status'),
@@ -275,12 +278,23 @@ export const elements = {
   casualResponseTime: document.getElementById('casual-response-time'),
   casualResponseCode: document.getElementById('casual-response-code'),
   casualResponseExecution: document.getElementById('casual-response-execution'),
+  btnCasualTabResponse: document.getElementById('btn-casual-tab-response'),
+  btnCasualTabRequest: document.getElementById('btn-casual-tab-request'),
+  btnCasualTabBoth: document.getElementById('btn-casual-tab-both'),
   btnCasualViewHighlighted: document.getElementById('btn-casual-view-highlighted'),
   btnCasualViewRaw: document.getElementById('btn-casual-view-raw'),
   btnCasualViewHex: document.getElementById('btn-casual-view-hex'),
   btnCasualDownloadBinary: document.getElementById('btn-casual-download-binary'),
   btnCasualCopyResponse: document.getElementById('btn-casual-copy-response'),
-  casualResponseBody: document.getElementById('casual-response-body')
+  casualInspectorContent: document.getElementById('casual-inspector-content'),
+  casualViewResponse: document.getElementById('casual-view-response'),
+  casualViewRequest: document.getElementById('casual-view-request'),
+  casualResponseHeaders: document.getElementById('casual-response-headers'),
+  casualResponseHeaderCount: document.getElementById('casual-response-header-count'),
+  casualResponseBody: document.getElementById('casual-response-body'),
+  casualSentHeaders: document.getElementById('casual-sent-headers'),
+  casualSentBody: document.getElementById('casual-sent-body'),
+  casualSentServiceSummary: document.getElementById('casual-sent-service-summary')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */

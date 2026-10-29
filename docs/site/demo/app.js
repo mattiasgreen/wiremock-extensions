@@ -68,6 +68,8 @@ import {
   formatCasualJsonPayload,
   resetCasualForm,
   setCasualViewMode,
+  setCasualInspectorTab,
+  appendCasualHeader,
   clearCasualHistory,
   toggleCasualHistory,
   setCasualHistoryCollapsed,
@@ -968,6 +970,21 @@ if (elements.btnCasualDownloadBinary) {
 if (elements.btnCasualUploadFile && elements.casualFileInput) {
   elements.btnCasualUploadFile.addEventListener('click', () => elements.casualFileInput.click());
   elements.casualFileInput.addEventListener('change', handleCasualFileUpload);
+}
+if (elements.btnCasualTabResponse) {
+  elements.btnCasualTabResponse.addEventListener('click', () => setCasualInspectorTab('response'));
+}
+if (elements.btnCasualTabRequest) {
+  elements.btnCasualTabRequest.addEventListener('click', () => setCasualInspectorTab('request'));
+}
+if (elements.btnCasualTabBoth) {
+  elements.btnCasualTabBoth.addEventListener('click', () => setCasualInspectorTab('both'));
+}
+if (elements.btnCasualPresetCorr) {
+  elements.btnCasualPresetCorr.addEventListener('click', () => appendCasualHeader('X-Correlation-Id', crypto.randomUUID()));
+}
+if (elements.btnCasualPresetTx) {
+  elements.btnCasualPresetTx.addEventListener('click', () => appendCasualHeader('X-Casual-Transaction-State', 'TX_ACTIVE'));
 }
 if (elements.btnCasualCopyResponse) {
   elements.btnCasualCopyResponse.addEventListener('click', () => {

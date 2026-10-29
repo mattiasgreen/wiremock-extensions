@@ -81,6 +81,42 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         Locator timeEl = page.locator("#casual-response-time");
         assertThat(timeEl.textContent()).contains("ms");
 
+        // Verify response headers
+        Locator responseHeaders = page.locator("#casual-response-headers");
+        assertThat(responseHeaders.isVisible()).isTrue();
+        assertThat(responseHeaders.textContent()).contains("Content-Type: application/json");
+        assertThat(responseHeaders.textContent()).contains("X-Casual-Error-State: OK");
+        assertThat(page.locator("#casual-response-header-count").textContent()).matches("\\d+");
+
+        // Verify Sent Request tab
+        page.locator("#btn-casual-tab-request").click();
+        assertThat(page.locator("#casual-view-request").isVisible()).isTrue();
+        assertThat(page.locator("#casual-view-response").isVisible()).isFalse();
+        assertThat(page.locator("#casual-sent-headers").textContent()).contains("X-Casual-Service: echoService");
+        assertThat(page.locator("#casual-sent-body").textContent())
+                .contains("\"testMessage\": \"Hello from Playwright\"");
+
+        // Verify Both tab
+        page.locator("#btn-casual-tab-both").click();
+        assertThat(page.locator("#casual-view-request").isVisible()).isTrue();
+        assertThat(page.locator("#casual-view-response").isVisible()).isTrue();
+        assertThat(page.locator("#casual-inspector-content").getAttribute("class"))
+                .contains("both-mode");
+
+        // Switch back to Response tab
+        page.locator("#btn-casual-tab-response").click();
+        assertThat(page.locator("#casual-view-response").isVisible()).isTrue();
+        assertThat(page.locator("#casual-view-request").isVisible()).isFalse();
+        assertThat(page.locator("#casual-inspector-content").getAttribute("class"))
+                .doesNotContain("both-mode");
+
+        // Test Preset badges
+        page.locator("#btn-casual-preset-corr").click();
+        assertThat(page.locator("#casual-request-headers").inputValue()).contains("X-Correlation-Id:");
+        page.locator("#btn-casual-preset-tx").click();
+        assertThat(page.locator("#casual-request-headers").inputValue())
+                .contains("X-Casual-Transaction-State: TX_ACTIVE");
+
         // Verify history item recorded
         Locator historyItems = page.locator("#casual-history-list .history-item");
         assertThat(historyItems.count()).isGreaterThanOrEqualTo(1);
@@ -211,6 +247,7 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector("#tab-casual.active");
             assertThat(page.locator("#casual-service-name").inputValue()).isEqualTo("upstreamEcho");
             assertThat(page.locator("#casual-request-payload").inputValue()).contains("\"clientCall\": 1");
+            assertThat(page.locator("#casual-request-headers").inputValue()).contains("X-Casual-Service: upstreamEcho");
 
             // 5. Send replayed request from Casual Tester
             page.locator("#btn-casual-send").click();
@@ -221,6 +258,9 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             Locator responseBody = page.locator("#casual-response-body");
             assertThat(responseBody.textContent()).contains("\"upstream\": true");
             assertThat(responseBody.textContent()).contains("\"received\": \"proxyOK\"");
+            Locator responseHeaders = page.locator("#casual-response-headers");
+            assertThat(responseHeaders.isVisible()).isTrue();
+            assertThat(responseHeaders.textContent()).contains("X-Casual-Error-State: OK");
 
             // 7. Switch back to Journal and verify new entry recorded
             page.locator("#nav-tab-journal").click();

@@ -15,12 +15,32 @@ const CASUAL_COLLAPSED_KEY = 'wiremock_ui_casual_history_collapsed';
 let lastRawCasualResponse = '';
 let lastHexCasualResponse = '';
 let lastCasualResponseData = null;
+let lastCasualResponseHeaders = null;
+let lastCasualRequestHeaders = null;
+let lastCasualSentBody = '';
+let lastCasualSentService = '';
 let casualViewMode = 'formatted'; // 'formatted', 'raw', or 'hex'
+let casualActiveInspectorTab = 'response'; // 'response', 'request', or 'both'
+
+function formatHeadersBlock(headersObj) {
+  if (!headersObj) return '(no headers)';
+  const entries = Object.entries(headersObj);
+  if (entries.length === 0) return '(no headers)';
+  return entries.map(([k, v]) => `${k}: ${v}`).join('\n');
+}
 
 export function initCasualTester() {
   initCasualHistoryCollapse();
   loadCasualHistoryFromStorage();
   fetchCasualConfig();
+  syncDefaultCasualHeaders();
+
+  if (elements.casualServiceName) {
+    elements.casualServiceName.addEventListener('input', () => syncDefaultCasualHeaders());
+  }
+  if (elements.casualBufferType) {
+    elements.casualBufferType.addEventListener('change', () => syncDefaultCasualHeaders());
+  }
 
   if (elements.casualBufferType && elements.casualPayloadEncoding) {
     elements.casualBufferType.addEventListener('change', () => {
@@ -198,13 +218,21 @@ export function restoreCasualHistoryItem(item) {
   if (elements.casualTargetHost && item.host) elements.casualTargetHost.value = item.host;
   if (elements.casualTargetPort && item.port) elements.casualTargetPort.value = item.port;
   if (elements.casualRequestPayload) elements.casualRequestPayload.value = item.requestPayload || '';
+  if (elements.casualRequestHeaders && item.requestHeaders) {
+    const lines = Object.entries(item.requestHeaders).map(([k, v]) => `${k}: ${v}`).join('\n');
+    elements.casualRequestHeaders.value = lines;
+  } else {
+    syncDefaultCasualHeaders();
+  }
 
   lastCasualResponseData = {
     service: item.serviceName,
     payload: item.responsePayload,
     isBinary: item.isBinary,
     sizeBytes: item.sizeBytes,
-    payloadHex: item.payloadHex
+    payloadHex: item.payloadHex,
+    headers: item.headers,
+    requestHeaders: item.requestHeaders
   };
 
   displayCasualResponseResult(
@@ -216,7 +244,11 @@ export function restoreCasualHistoryItem(item) {
     item.responsePayload || '',
     item.isBinary || false,
     item.sizeBytes,
-    item.payloadHex || ''
+    item.payloadHex || '',
+    item.headers || null,
+    item.requestHeaders || null,
+    item.requestPayload || '',
+    item.serviceName || ''
   );
   updateCasualRoute(true);
 }
@@ -234,13 +266,87 @@ export function formatCasualJsonPayload() {
   }
 }
 
+export function syncDefaultCasualHeaders() {
+  if (!elements.casualRequestHeaders) return;
+  const current = elements.casualRequestHeaders.value.trim();
+  const service = elements.casualServiceName ? elements.casualServiceName.value.trim() : 'echoService';
+  const bufferType = elements.casualBufferType ? elements.casualBufferType.value : 'JSON';
+  const ctype = bufferType === 'X_OCTET'
+    ? 'application/octet-stream'
+    : (bufferType.includes('STRING') ? 'text/plain; charset=UTF-8' : 'application/json');
+
+  if (!current || current.startsWith('Content-Type:') || current.startsWith('X-Casual-Service:')) {
+    elements.casualRequestHeaders.value = `Content-Type: ${ctype}\nX-Casual-Service: ${service}\nX-Casual-Buffer-Type: ${bufferType}`;
+  }
+}
+
+export function appendCasualHeader(name, value) {
+  if (!elements.casualRequestHeaders) return;
+  const current = elements.casualRequestHeaders.value.trim();
+  const line = `${name}: ${value}`;
+  if (!current) {
+    elements.casualRequestHeaders.value = line;
+  } else {
+    elements.casualRequestHeaders.value = `${current}\n${line}`;
+  }
+}
+
 export function resetCasualForm() {
   if (elements.casualServiceName) elements.casualServiceName.value = 'echoService';
   if (elements.casualBufferType) elements.casualBufferType.value = 'JSON';
   if (elements.casualRequestPayload) elements.casualRequestPayload.value = '{\n  "message": "Hello Casual"\n}';
   if (elements.casualTargetHost) elements.casualTargetHost.value = '127.0.0.1';
+  if (elements.casualRequestHeaders) {
+    elements.casualRequestHeaders.value = '';
+    syncDefaultCasualHeaders();
+  }
   fetchCasualConfig();
   updateCasualRoute(true);
+}
+
+export function setCasualInspectorTab(tab) {
+  casualActiveInspectorTab = tab;
+  [elements.btnCasualTabResponse, elements.btnCasualTabRequest, elements.btnCasualTabBoth].forEach(b => {
+    if (b) b.classList.remove('active');
+  });
+
+  const container = elements.casualInspectorContent || document.getElementById('casual-inspector-content');
+  if (!container) return;
+
+  if (tab === 'response') {
+    if (elements.btnCasualTabResponse) elements.btnCasualTabResponse.classList.add('active');
+    if (elements.casualViewResponse) {
+      elements.casualViewResponse.classList.remove('hidden');
+      elements.casualViewResponse.classList.add('active');
+    }
+    if (elements.casualViewRequest) {
+      elements.casualViewRequest.classList.add('hidden');
+      elements.casualViewRequest.classList.remove('active');
+    }
+    container.classList.remove('both-mode');
+  } else if (tab === 'request') {
+    if (elements.btnCasualTabRequest) elements.btnCasualTabRequest.classList.add('active');
+    if (elements.casualViewRequest) {
+      elements.casualViewRequest.classList.remove('hidden');
+      elements.casualViewRequest.classList.add('active');
+    }
+    if (elements.casualViewResponse) {
+      elements.casualViewResponse.classList.add('hidden');
+      elements.casualViewResponse.classList.remove('active');
+    }
+    container.classList.remove('both-mode');
+  } else if (tab === 'both') {
+    if (elements.btnCasualTabBoth) elements.btnCasualTabBoth.classList.add('active');
+    if (elements.casualViewResponse) {
+      elements.casualViewResponse.classList.remove('hidden');
+      elements.casualViewResponse.classList.add('active');
+    }
+    if (elements.casualViewRequest) {
+      elements.casualViewRequest.classList.remove('hidden');
+      elements.casualViewRequest.classList.add('active');
+    }
+    container.classList.add('both-mode');
+  }
 }
 
 export function setCasualViewMode(mode) {
@@ -284,7 +390,11 @@ export function displayCasualResponseResult(
   payload,
   isBinary = false,
   sizeBytes,
-  payloadHex = ''
+  payloadHex = '',
+  headers = null,
+  requestHeaders = null,
+  sentPayload = '',
+  sentService = ''
 ) {
   if (elements.casualResponseStatus) {
     const isOk = errorState === 'OK';
@@ -304,6 +414,29 @@ export function displayCasualResponseResult(
 
   if (elements.btnCasualDownloadBinary) {
     elements.btnCasualDownloadBinary.style.display = isBinary ? 'inline-flex' : 'none';
+  }
+
+  // Response headers
+  lastCasualResponseHeaders = headers;
+  if (elements.casualResponseHeaders) {
+    elements.casualResponseHeaders.textContent = formatHeadersBlock(headers);
+  }
+  if (elements.casualResponseHeaderCount) {
+    elements.casualResponseHeaderCount.textContent = headers ? Object.keys(headers).length : 0;
+  }
+
+  // Sent Request view
+  lastCasualRequestHeaders = requestHeaders;
+  lastCasualSentBody = sentPayload;
+  lastCasualSentService = sentService;
+  if (elements.casualSentHeaders) {
+    elements.casualSentHeaders.textContent = formatHeadersBlock(requestHeaders);
+  }
+  if (elements.casualSentBody) {
+    elements.casualSentBody.textContent = sentPayload || '(empty body)';
+  }
+  if (elements.casualSentServiceSummary) {
+    elements.casualSentServiceSummary.textContent = sentService || 'tpcall';
   }
 
   lastRawCasualResponse = payload || '';
@@ -407,6 +540,17 @@ export function executeCasualRequest() {
   const payload = elements.casualRequestPayload ? elements.casualRequestPayload.value.trim() : '{}';
   const encoding = elements.casualPayloadEncoding ? elements.casualPayloadEncoding.value : 'text';
 
+  const headerLines = elements.casualRequestHeaders ? elements.casualRequestHeaders.value.trim().split('\n') : [];
+  const customHeaders = {};
+  headerLines.forEach(line => {
+    const colon = line.indexOf(':');
+    if (colon > 0) {
+      const k = line.substring(0, colon).trim();
+      const v = line.substring(colon + 1).trim();
+      if (k) customHeaders[k] = v;
+    }
+  });
+
   if (elements.btnCasualSend) {
     elements.btnCasualSend.setAttribute('disabled', 'true');
     elements.btnCasualSend.textContent = '⏳ Executing...';
@@ -419,6 +563,7 @@ export function executeCasualRequest() {
     bufferType: bufferType,
     payload: payload,
     payloadEncoding: encoding,
+    headers: customHeaders,
     timeoutSeconds: 4
   });
 
@@ -442,7 +587,11 @@ export function executeCasualRequest() {
         data.payload || '',
         data.isBinary || false,
         data.sizeBytes,
-        data.payloadHex || ''
+        data.payloadHex || '',
+        data.headers || null,
+        data.requestHeaders || null,
+        payload,
+        service
       );
 
       saveCasualHistoryItem({
@@ -452,6 +601,8 @@ export function executeCasualRequest() {
         port: port,
         bufferType: bufferType,
         requestPayload: payload,
+        requestHeaders: data.requestHeaders || customHeaders,
+        headers: data.headers || null,
         errorState: data.errorState || 'OK',
         errorCode: data.errorCode !== undefined ? data.errorCode : 0,
         userCode: data.userCode || 0,
@@ -467,7 +618,7 @@ export function executeCasualRequest() {
     .catch(err => {
       const elapsed = Math.round(performance.now() - startTime);
       lastCasualResponseData = null;
-      displayCasualResponseResult('ERROR', -1, -1, elapsed, '', 'Error connecting to Admin API: ' + err.message);
+      displayCasualResponseResult('ERROR', -1, -1, elapsed, '', 'Error connecting to Admin API: ' + err.message, false, undefined, '', null, customHeaders, payload, service);
 
       saveCasualHistoryItem({
         timestamp: Date.now(),
@@ -476,6 +627,8 @@ export function executeCasualRequest() {
         port: port,
         bufferType: bufferType,
         requestPayload: payload,
+        requestHeaders: customHeaders,
+        headers: null,
         errorState: 'ERROR',
         errorCode: -1,
         userCode: -1,

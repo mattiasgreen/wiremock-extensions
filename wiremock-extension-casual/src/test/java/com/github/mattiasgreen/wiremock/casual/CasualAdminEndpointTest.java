@@ -152,6 +152,12 @@ class CasualAdminEndpointTest {
             assertThat(root.get("service").asText()).isEqualTo("adminCallTest");
             assertThat(root.get("errorState").asText()).isEqualTo("OK");
             assertThat(root.get("payload").asText()).contains("\"adminCalled\": true");
+            assertThat(root.has("headers")).isTrue();
+            assertThat(root.get("headers").get("Content-Type").asText()).isEqualTo("application/json");
+            assertThat(root.get("headers").get("X-Casual-Error-State").asText()).isEqualTo("OK");
+            assertThat(root.has("requestHeaders")).isTrue();
+            assertThat(root.get("requestHeaders").get("X-Casual-Service").asText())
+                    .isEqualTo("adminCallTest");
 
             // Also test discover
             String discoverReqJson =

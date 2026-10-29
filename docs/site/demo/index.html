@@ -533,6 +533,17 @@
                 </div>
 
                 <div class="tester-subcontrols">
+                  <div class="tester-section" id="casual-headers-section">
+                    <div class="tester-section-header">
+                      <span>Request Headers</span>
+                      <div class="preset-badges">
+                        <span class="preset-badge" id="btn-casual-preset-corr" title="Add X-Correlation-Id header">+ Corr ID</span>
+                        <span class="preset-badge" id="btn-casual-preset-tx" title="Add X-Casual-Transaction-State header">+ TX State</span>
+                      </div>
+                    </div>
+                    <textarea id="casual-request-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;X-Casual-Service: echoService&#10;X-Casual-Buffer-Type: JSON"></textarea>
+                  </div>
+
                   <div class="tester-section" id="casual-payload-section">
                     <div class="tester-section-header">
                       <span>Request Payload</span>
@@ -547,7 +558,7 @@
                         <button id="btn-casual-format-json" class="btn btn-small" title="Prettify JSON Payload">Format JSON</button>
                       </div>
                     </div>
-                    <textarea id="casual-request-payload" class="code-input" rows="8" placeholder='{"key": "value"}'></textarea>
+                    <textarea id="casual-request-payload" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
                   </div>
                 </div>
 
@@ -568,6 +579,11 @@
                     <span id="casual-response-execution" class="muted-text text-small" style="font-family: monospace;"></span>
                   </div>
                   <div class="tester-response-actions">
+                    <div class="view-mode-toggle" id="casual-view-switcher">
+                      <button class="btn btn-small active" id="btn-casual-tab-response" title="View Response">Response</button>
+                      <button class="btn btn-small" id="btn-casual-tab-request" title="View Sent Request">Sent Request</button>
+                      <button class="btn btn-small" id="btn-casual-tab-both" title="View Both">Both</button>
+                    </div>
                     <div class="view-mode-toggle" id="casual-format-switcher">
                       <button class="btn btn-small active" id="btn-casual-view-highlighted">Formatted</button>
                       <button class="btn btn-small" id="btn-casual-view-raw">Raw</button>
@@ -577,11 +593,32 @@
                     <button id="btn-casual-copy-response" class="btn btn-small" title="Copy response to clipboard">📋 Copy</button>
                   </div>
                 </div>
-                <div class="tester-response-content" id="casual-inspector-content">
+                <div class="tester-response-content tester-inspector-content" id="casual-inspector-content">
+                  <!-- Response View Container -->
                   <div id="casual-view-response" class="inspector-view active">
+                    <div class="headers-permanent-section">
+                      <div class="headers-section-label">Response Headers (<span id="casual-response-header-count">0</span>)</div>
+                      <pre id="casual-response-headers" class="code-block-mini" data-testid="casual-response-headers">(no headers yet)</pre>
+                    </div>
                     <div class="code-viewer-container" style="flex: 1;">
-                      <div class="headers-section-label">Response Payload</div>
+                      <div class="headers-section-label">Response Body</div>
                       <pre id="casual-response-body" class="code-block" data-testid="casual-response-body">(no response yet - execute tpcall)</pre>
+                    </div>
+                  </div>
+
+                  <!-- Sent Request View Container -->
+                  <div id="casual-view-request" class="inspector-view hidden">
+                    <div class="sent-summary-bar">
+                      <span class="http-badge badge-get">TPCALL</span>
+                      <span id="casual-sent-service-summary" class="detail-url">echoService</span>
+                    </div>
+                    <div class="headers-permanent-section">
+                      <div class="headers-section-label">Sent Request Headers</div>
+                      <pre id="casual-sent-headers" class="code-block-mini" data-testid="casual-sent-headers">(no headers sent)</pre>
+                    </div>
+                    <div class="code-viewer-container" style="flex: 1;">
+                      <div class="headers-section-label">Sent Request Body</div>
+                      <pre id="casual-sent-body" class="code-block" data-testid="casual-sent-body">(empty body)</pre>
                     </div>
                   </div>
                 </div>
