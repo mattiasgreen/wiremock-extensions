@@ -40,6 +40,12 @@ class CasualClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"echoed\": true, \"received\": 123}")));
 
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/binaryService"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/octet-stream")
+                        .withBody(new byte[] {0x10, 0x20, 0x30, 0x40, 0x50})));
+
         gateway = new CasualWireMockGateway(0, wireMockServer.baseUrl());
         gateway.start();
         gatewayPort = gateway.getPort();
@@ -207,5 +213,75 @@ class CasualClientTest {
         assertThat(exitCode).isEqualTo(0);
         assertThat(outBytes.toString(StandardCharsets.UTF_8)).contains("Usage:");
         assertThat(outBytes.toString(StandardCharsets.UTF_8)).contains("Commands:");
+    }
+
+    @Test
+    @DisplayName("Should execute programmatic binary tpcall successfully")
+    void shouldExecuteProgrammaticBinaryCall() throws Exception {
+        try (CasualClient client = CasualClient.create("127.0.0.1", gatewayPort)) {
+            CasualCallResult result = client.call("binaryService", new byte[] {0x01, 0x02, 0x03});
+
+            assertThat(result.isSuccess()).isTrue();
+            assertThat(result.isJson()).isFalse();
+            assertThat(result.getBytes()).isEqualTo(new byte[] {0x10, 0x20, 0x30, 0x40, 0x50});
+            assertThat(result.toHexDump(16)).contains("10 20 30 40 50");
+        }
+    }
+
+    @Test
+    @DisplayName("CLI: should run call command with --hex flag")
+    void cliShouldRunCallWithHexPayload() {
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream errBytes = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(errBytes, true, StandardCharsets.UTF_8);
+
+        int exitCode = CasualClient.run(
+                new String[] {
+                    "call",
+                    "binaryService",
+                    "--hex",
+                    "01 02 03",
+                    "-b",
+                    "X_OCTET",
+                    "--port",
+                    String.valueOf(gatewayPort),
+                    "--no-color"
+                },
+                out,
+                err);
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = outBytes.toString(StandardCharsets.UTF_8);
+        assertThat(output).contains("Status:     OK");
+        assertThat(output).contains("10 20 30 40 50");
+    }
+
+    @Test
+    @DisplayName("CLI: should save binary response to output file with -o")
+    void cliShouldSaveBinaryResponseToFile(@TempDir Path tempDir) throws Exception {
+        Path outFile = tempDir.resolve("response.bin");
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream errBytes = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(errBytes, true, StandardCharsets.UTF_8);
+
+        int exitCode = CasualClient.run(
+                new String[] {
+                    "call",
+                    "binaryService",
+                    "-B",
+                    "-o",
+                    outFile.toAbsolutePath().toString(),
+                    "--port",
+                    String.valueOf(gatewayPort),
+                    "--no-color"
+                },
+                out,
+                err);
+
+        assertThat(exitCode).isEqualTo(0);
+        assertThat(Files.readAllBytes(outFile)).isEqualTo(new byte[] {0x10, 0x20, 0x30, 0x40, 0x50});
     }
 }

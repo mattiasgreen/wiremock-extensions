@@ -13,12 +13,29 @@ const CASUAL_HISTORY_KEY = 'wiremock_ui_casual_history';
 const CASUAL_COLLAPSED_KEY = 'wiremock_ui_casual_history_collapsed';
 
 let lastRawCasualResponse = '';
-let casualViewMode = 'formatted'; // 'formatted' or 'raw'
+let lastHexCasualResponse = '';
+let lastCasualResponseData = null;
+let casualViewMode = 'formatted'; // 'formatted', 'raw', or 'hex'
 
 export function initCasualTester() {
   initCasualHistoryCollapse();
   loadCasualHistoryFromStorage();
   fetchCasualConfig();
+
+  if (elements.casualBufferType && elements.casualPayloadEncoding) {
+    elements.casualBufferType.addEventListener('change', () => {
+      const val = elements.casualBufferType.value;
+      if (val === 'X_OCTET' || val === 'FIELDED') {
+        if (elements.casualPayloadEncoding.value === 'text') {
+          elements.casualPayloadEncoding.value = 'hex';
+        }
+      } else if (val === 'JSON') {
+        if (elements.casualPayloadEncoding.value === 'hex') {
+          elements.casualPayloadEncoding.value = 'text';
+        }
+      }
+    });
+  }
 
   // Restore from URL query params if present
   const hash = window.location.hash || '';
@@ -182,13 +199,24 @@ export function restoreCasualHistoryItem(item) {
   if (elements.casualTargetPort && item.port) elements.casualTargetPort.value = item.port;
   if (elements.casualRequestPayload) elements.casualRequestPayload.value = item.requestPayload || '';
 
+  lastCasualResponseData = {
+    service: item.serviceName,
+    payload: item.responsePayload,
+    isBinary: item.isBinary,
+    sizeBytes: item.sizeBytes,
+    payloadHex: item.payloadHex
+  };
+
   displayCasualResponseResult(
     item.errorState || 'OK',
     item.errorCode !== undefined ? item.errorCode : 0,
     item.userCode || 0,
     item.durationMs || 0,
     item.execution || '',
-    item.responsePayload || ''
+    item.responsePayload || '',
+    item.isBinary || false,
+    item.sizeBytes,
+    item.payloadHex || ''
   );
   updateCasualRoute(true);
 }
@@ -223,21 +251,41 @@ export function setCasualViewMode(mode) {
   if (elements.btnCasualViewRaw) {
     elements.btnCasualViewRaw.classList.toggle('active', mode === 'raw');
   }
-  renderCasualResponseBody(lastRawCasualResponse);
+  if (elements.btnCasualViewHex) {
+    elements.btnCasualViewHex.classList.toggle('active', mode === 'hex');
+  }
+  renderCasualResponseBody(lastRawCasualResponse, lastHexCasualResponse);
 }
 
-export function renderCasualResponseBody(bodyText) {
-  lastRawCasualResponse = bodyText || '';
+export function renderCasualResponseBody(bodyText, hexText) {
+  if (bodyText !== undefined) lastRawCasualResponse = bodyText || '';
+  if (hexText !== undefined) lastHexCasualResponse = hexText || '';
   if (!elements.casualResponseBody) return;
 
-  if (casualViewMode === 'raw') {
+  if (casualViewMode === 'hex') {
+    elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
+  } else if (casualViewMode === 'raw') {
     elements.casualResponseBody.textContent = lastRawCasualResponse;
   } else {
-    elements.casualResponseBody.innerHTML = highlightJson(lastRawCasualResponse);
+    if (lastCasualResponseData && lastCasualResponseData.isBinary) {
+      elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
+    } else {
+      elements.casualResponseBody.innerHTML = highlightJson(lastRawCasualResponse);
+    }
   }
 }
 
-export function displayCasualResponseResult(errorState, errorCode, userCode, durationMs, execution, payload) {
+export function displayCasualResponseResult(
+  errorState,
+  errorCode,
+  userCode,
+  durationMs,
+  execution,
+  payload,
+  isBinary = false,
+  sizeBytes,
+  payloadHex = ''
+) {
   if (elements.casualResponseStatus) {
     const isOk = errorState === 'OK';
     elements.casualResponseStatus.textContent = `${errorState} (${errorCode})`;
@@ -247,12 +295,100 @@ export function displayCasualResponseResult(errorState, errorCode, userCode, dur
     elements.casualResponseTime.textContent = `${durationMs} ms`;
   }
   if (elements.casualResponseCode) {
-    elements.casualResponseCode.textContent = `UserCode: ${userCode}`;
+    const sizeStr = (isBinary && sizeBytes !== undefined) ? ` | ${sizeBytes} B` : '';
+    elements.casualResponseCode.textContent = `UserCode: ${userCode}${sizeStr}`;
   }
   if (elements.casualResponseExecution) {
     elements.casualResponseExecution.textContent = execution ? `UUID: ${execution}` : '';
   }
-  renderCasualResponseBody(payload);
+
+  if (elements.btnCasualDownloadBinary) {
+    elements.btnCasualDownloadBinary.style.display = isBinary ? 'inline-flex' : 'none';
+  }
+
+  lastRawCasualResponse = payload || '';
+  lastHexCasualResponse = payloadHex || '';
+  if (isBinary && casualViewMode === 'formatted') {
+    setCasualViewMode('hex');
+  } else {
+    renderCasualResponseBody(payload, payloadHex);
+  }
+}
+
+export function handleCasualFileUpload(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+
+  const encoding = elements.casualPayloadEncoding ? elements.casualPayloadEncoding.value : 'text';
+
+  if (encoding === 'hex') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const bytes = new Uint8Array(e.target.result);
+      let hex = '';
+      for (let i = 0; i < bytes.length; i++) {
+        hex += bytes[i].toString(16).padStart(2, '0').toUpperCase() + ' ';
+      }
+      if (elements.casualRequestPayload) {
+        elements.casualRequestPayload.value = hex.trim();
+        updateCasualRoute(true);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (encoding === 'base64') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const bytes = new Uint8Array(e.target.result);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      if (elements.casualRequestPayload) {
+        elements.casualRequestPayload.value = btoa(binary);
+        updateCasualRoute(true);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (elements.casualRequestPayload) {
+        elements.casualRequestPayload.value = e.target.result;
+        updateCasualRoute(true);
+      }
+    };
+    reader.readAsText(file);
+  }
+}
+
+export function downloadCasualBinaryResponse() {
+  if (!lastCasualResponseData || !lastCasualResponseData.payload) return;
+  try {
+    const binaryString = atob(lastCasualResponseData.payload);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${lastCasualResponseData.service || 'casual-response'}.bin`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (_) {
+    const blob = new Blob([lastCasualResponseData.payload], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${lastCasualResponseData.service || 'casual-response'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function executeCasualRequest() {
@@ -269,6 +405,7 @@ export function executeCasualRequest() {
   const port = elements.casualTargetPort ? parseInt(elements.casualTargetPort.value.trim(), 10) || 7772 : 7772;
   const bufferType = elements.casualBufferType ? elements.casualBufferType.value : 'JSON';
   const payload = elements.casualRequestPayload ? elements.casualRequestPayload.value.trim() : '{}';
+  const encoding = elements.casualPayloadEncoding ? elements.casualPayloadEncoding.value : 'text';
 
   if (elements.btnCasualSend) {
     elements.btnCasualSend.setAttribute('disabled', 'true');
@@ -281,6 +418,7 @@ export function executeCasualRequest() {
     port: port,
     bufferType: bufferType,
     payload: payload,
+    payloadEncoding: encoding,
     timeoutSeconds: 4
   });
 
@@ -294,13 +432,17 @@ export function executeCasualRequest() {
     .then(res => res.json())
     .then(data => {
       const elapsed = Math.round(performance.now() - startTime);
+      lastCasualResponseData = data;
       displayCasualResponseResult(
         data.errorState || 'OK',
         data.errorCode !== undefined ? data.errorCode : 0,
         data.userCode || 0,
         data.durationMs || elapsed,
         data.execution || '',
-        data.payload || ''
+        data.payload || '',
+        data.isBinary || false,
+        data.sizeBytes,
+        data.payloadHex || ''
       );
 
       saveCasualHistoryItem({
@@ -315,12 +457,16 @@ export function executeCasualRequest() {
         userCode: data.userCode || 0,
         durationMs: data.durationMs || elapsed,
         execution: data.execution || '',
-        responsePayload: data.payload || ''
+        responsePayload: data.payload || '',
+        isBinary: data.isBinary || false,
+        sizeBytes: data.sizeBytes,
+        payloadHex: data.payloadHex || ''
       });
       updateCasualRoute(true);
     })
     .catch(err => {
       const elapsed = Math.round(performance.now() - startTime);
+      lastCasualResponseData = null;
       displayCasualResponseResult('ERROR', -1, -1, elapsed, '', 'Error connecting to Admin API: ' + err.message);
 
       saveCasualHistoryItem({

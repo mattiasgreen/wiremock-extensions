@@ -107,6 +107,7 @@ class CasualBufferUtilsTest {
     }
 
     @Test
+<<<<<<< HEAD
     @DisplayName("Should early exit to Base64 when field table is not available")
     void shouldEarlyExitToBase64WhenFieldTableNotAvailable() {
         // Construct a realistic 16-byte buffer with 8 bytes field id and 8 bytes length
@@ -300,5 +301,27 @@ class CasualBufferUtilsTest {
             se.laz.casual.config.ConfigurationService.setConfiguration(
                     se.laz.casual.config.ConfigurationOptions.CASUAL_FIELD_TABLE, null);
         }
+    }
+
+    @Test
+    @DisplayName("Should parse hex strings accurately into byte arrays")
+    void shouldParseHexStrings() {
+        byte[] expected = new byte[] {0x01, 0x02, (byte) 0xAA, (byte) 0xBB};
+        assertThat(CasualBufferUtils.fromHex("01 02 AA BB")).isEqualTo(expected);
+        assertThat(CasualBufferUtils.fromHex("0102AABB")).isEqualTo(expected);
+        assertThat(CasualBufferUtils.fromHex("0x01, 0x02, 0xaa, 0xbb")).isEqualTo(expected);
+        assertThat(CasualBufferUtils.fromHex(null)).isEmpty();
+        assertThat(CasualBufferUtils.fromHex("")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should produce canonical hex dump with offset and ASCII characters")
+    void shouldProduceCanonicalHexDump() {
+        byte[] bytes = "Hello, World!".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String dump = CasualBufferUtils.toCanonicalHexDump(bytes, 32);
+
+        assertThat(dump).contains("00000000");
+        assertThat(dump).contains("48 65 6C 6C 6F");
+        assertThat(dump).contains("|Hello, World!|");
     }
 }

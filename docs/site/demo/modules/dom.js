@@ -265,6 +265,9 @@ export const elements = {
   casualServiceName: document.getElementById('casual-service-name'),
   btnCasualSend: document.getElementById('btn-casual-send'),
   btnCasualFormatJson: document.getElementById('btn-casual-format-json'),
+  casualPayloadEncoding: document.getElementById('casual-payload-encoding'),
+  casualFileInput: document.getElementById('casual-file-input'),
+  btnCasualUploadFile: document.getElementById('btn-casual-upload-file'),
   casualRequestPayload: document.getElementById('casual-request-payload'),
   btnCasualReset: document.getElementById('btn-casual-reset'),
   casualGatewayStatus: document.getElementById('casual-gateway-status'),
@@ -274,6 +277,8 @@ export const elements = {
   casualResponseExecution: document.getElementById('casual-response-execution'),
   btnCasualViewHighlighted: document.getElementById('btn-casual-view-highlighted'),
   btnCasualViewRaw: document.getElementById('btn-casual-view-raw'),
+  btnCasualViewHex: document.getElementById('btn-casual-view-hex'),
+  btnCasualDownloadBinary: document.getElementById('btn-casual-download-binary'),
   btnCasualCopyResponse: document.getElementById('btn-casual-copy-response'),
   casualResponseBody: document.getElementById('casual-response-body')
 };

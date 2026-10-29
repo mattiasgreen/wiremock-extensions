@@ -99,4 +99,47 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
         assertThat(pageErrors).isEmpty();
     }
+
+    @Test
+    @DisplayName("Should execute binary Casual service call, display hex dump, and toggle views in UI")
+    void testCasualTesterBinaryExecution() {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/binaryService"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/octet-stream")
+                        .withHeader("X-Casual-Buffer-Type", "X_OCTET")
+                        .withBody(new byte[] {0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x21})));
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#casual");
+        page.waitForSelector("#tab-casual.active");
+
+        page.locator("#casual-target-port").fill(String.valueOf(casualGateway.getPort()));
+        page.locator("#casual-service-name").fill("binaryService");
+        page.locator("#casual-buffer-type").selectOption("X_OCTET");
+
+        page.locator("#casual-payload-encoding").selectOption("hex");
+        page.locator("#casual-request-payload").fill("01 02 03 04");
+
+        page.locator("#btn-casual-send").click();
+
+        page.waitForSelector("#casual-response-status:has-text('OK')");
+        assertThat(page.locator("#casual-response-status").textContent()).contains("OK (0)");
+
+        assertThat(page.locator("#casual-response-code").textContent()).contains("6 B");
+
+        Locator downloadBtn = page.locator("#btn-casual-download-binary");
+        assertThat(downloadBtn.isVisible()).isTrue();
+
+        Locator bodyEl = page.locator("#casual-response-body");
+        assertThat(bodyEl.textContent()).contains("48 65 6C 6C 6F 21");
+        assertThat(bodyEl.textContent()).contains("|Hello!|");
+
+        page.locator("#btn-casual-view-raw").click();
+        assertThat(bodyEl.textContent()).contains("SGVsbG8h");
+
+        page.locator("#btn-casual-view-hex").click();
+        assertThat(bodyEl.textContent()).contains("48 65 6C 6C 6F 21");
+
+        assertThat(pageErrors).isEmpty();
+    }
 }

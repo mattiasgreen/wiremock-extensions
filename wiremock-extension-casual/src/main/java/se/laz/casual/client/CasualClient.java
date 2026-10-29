@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -134,6 +135,42 @@ public class CasualClient implements AutoCloseable {
     }
 
     /**
+     * Executes a Casual service call (tpcall) with raw binary payload bytes using X_OCTET buffer type.
+     * Automatically connects if not already connected.
+     */
+    public CasualCallResult call(String serviceName, byte[] binaryPayload) throws Exception {
+        return call(serviceName, "X_OCTET", binaryPayload);
+    }
+
+    /**
+     * Executes a Casual service call (tpcall) with specified buffer type and raw binary payload bytes.
+     * Automatically connects if not already connected.
+     */
+    public CasualCallResult call(String serviceName, String bufferType, byte[] binaryPayload) throws Exception {
+        Objects.requireNonNull(serviceName, "serviceName must not be null");
+        connect();
+
+        ServiceBuffer buffer = CasualBufferUtils.wrapPayload(bufferType, binaryPayload);
+        long startNanos = System.nanoTime();
+        CasualServiceCallReplyMessage reply = tcpClient.tpcall(serviceName, buffer);
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+
+        String replyType = reply.getServiceBuffer() != null
+                ? reply.getServiceBuffer().getType()
+                : (bufferType != null ? bufferType : "X_OCTET");
+        String replyPayload = CasualBufferUtils.extractPayload(reply.getServiceBuffer());
+
+        return new CasualCallResult(
+                serviceName,
+                reply.getError(),
+                reply.getUserDefinedCode(),
+                reply.getExecution(),
+                replyType,
+                replyPayload,
+                durationMs);
+    }
+
+    /**
      * Discovers advertised services from the connected Casual domain.
      */
     public CasualDomainDiscoveryReplyMessage discover(String... serviceNames) throws Exception {
@@ -189,8 +226,19 @@ public class CasualClient implements AutoCloseable {
         String host = getOption(args, "-H", "--host", DEFAULT_HOST);
         int port = getIntOption(args, "-p", "--port", DEFAULT_PORT);
         int timeout = getIntOption(args, "-t", "--timeout", DEFAULT_TIMEOUT_SECONDS);
-        String bufferType = getOption(args, "-b", "--buffer-type", "JSON");
+        boolean isBinary = hasFlag(args, "-B") || hasFlag(args, "--binary");
+        String defaultBufferType = isBinary ? "X_OCTET" : "JSON";
+        String bufferType = getOption(args, "-b", "--buffer-type", defaultBufferType);
+        if (isBinary
+                || "X_OCTET".equalsIgnoreCase(bufferType)
+                || "FIELDED".equalsIgnoreCase(bufferType)
+                || "CFIELD/".equalsIgnoreCase(bufferType)) {
+            isBinary = true;
+        }
         String filePath = getOption(args, "-f", "--file", null);
+        String hexPayload = getOption(args, "--hex", null);
+        String base64Payload = getOption(args, "--base64", null);
+        String outputFile = getOption(args, "-o", "--output", null);
         boolean noColor = hasFlag(args, "--no-color") || System.getenv("NO_COLOR") != null;
 
         ConsoleColor color = new ConsoleColor(!noColor);
@@ -209,7 +257,11 @@ public class CasualClient implements AutoCloseable {
                         || arg.equals("-b")
                         || arg.equals("--buffer-type")
                         || arg.equals("-f")
-                        || arg.equals("--file")) {
+                        || arg.equals("--file")
+                        || arg.equals("--hex")
+                        || arg.equals("--base64")
+                        || arg.equals("-o")
+                        || arg.equals("--output")) {
                     i++; // Skip option value
                 }
             } else {
@@ -244,8 +296,15 @@ public class CasualClient implements AutoCloseable {
                         return 1;
                     }
                     String serviceName = positionals.get(1);
-                    String payload = resolvePayload(positionals.size() > 2 ? positionals.get(2) : null, filePath, in);
-                    return executeCall(client, host, port, serviceName, bufferType, payload, color, out, err);
+                    String payload = resolvePayload(
+                            positionals.size() > 2 ? positionals.get(2) : null,
+                            filePath,
+                            hexPayload,
+                            base64Payload,
+                            isBinary,
+                            in);
+                    return executeCall(
+                            client, host, port, serviceName, bufferType, payload, outputFile, color, out, err);
                 }
                 default -> {
                     err.println(color.red("Error: Unknown command '" + command + "'."));
@@ -314,6 +373,7 @@ public class CasualClient implements AutoCloseable {
             String serviceName,
             String bufferType,
             String payload,
+            String outputFile,
             ConsoleColor c,
             PrintStream out,
             PrintStream err) {
@@ -342,11 +402,32 @@ public class CasualClient implements AutoCloseable {
             }
             out.printf("Buffer:     %s%n", result.bufferType());
 
-            out.println(c.bold("Payload:"));
-            if (result.payload() != null && !result.payload().isBlank()) {
+            byte[] payloadBytes = result.getBytes();
+            if (!result.isJson()) {
+                out.printf("Size:       %d bytes%n", payloadBytes.length);
+                out.println(c.bold("Hex Dump:"));
+                out.print(result.toHexDump(256));
+                out.println(c.bold("Base64:"));
                 out.println(result.payload());
             } else {
-                out.println(c.muted("(empty payload)"));
+                out.println(c.bold("Payload:"));
+                if (result.payload() != null && !result.payload().isBlank()) {
+                    out.println(result.payload());
+                } else {
+                    out.println(c.muted("(empty payload)"));
+                }
+            }
+
+            if (outputFile != null && !outputFile.isBlank()) {
+                try {
+                    File outF = new File(outputFile);
+                    Files.write(outF.toPath(), payloadBytes);
+                    out.println(c.green(String.format(
+                            Locale.ROOT, "✓ Saved %d binary bytes to %s", payloadBytes.length, outputFile)));
+                } catch (IOException e) {
+                    err.println(c.red(String.format(
+                            Locale.ROOT, "Failed saving output file '%s': %s", outputFile, e.getMessage())));
+                }
             }
 
             return result.isSuccess() ? 0 : 2;
@@ -357,22 +438,56 @@ public class CasualClient implements AutoCloseable {
         }
     }
 
-    private static String resolvePayload(String positionalPayload, String filePath, InputStream in) throws IOException {
+    private static String resolvePayload(
+            String positionalPayload,
+            String filePath,
+            String hexPayload,
+            String base64Payload,
+            boolean isBinary,
+            InputStream in)
+            throws IOException {
+        if (hexPayload != null && !hexPayload.isBlank()) {
+            byte[] bytes = CasualBufferUtils.fromHex(hexPayload);
+            return Base64.getEncoder().encodeToString(bytes);
+        }
+        if (base64Payload != null && !base64Payload.isBlank()) {
+            return base64Payload.trim();
+        }
         if (filePath != null && !filePath.isBlank()) {
             File file = new File(filePath);
+            if (isBinary) {
+                byte[] bytes = Files.readAllBytes(file.toPath());
+                return Base64.getEncoder().encodeToString(bytes);
+            }
             return Files.readString(file.toPath(), StandardCharsets.UTF_8);
         }
         if (positionalPayload != null) {
             if (positionalPayload.startsWith("@")) {
                 File file = new File(positionalPayload.substring(1));
+                if (isBinary) {
+                    byte[] bytes = Files.readAllBytes(file.toPath());
+                    return Base64.getEncoder().encodeToString(bytes);
+                }
                 return Files.readString(file.toPath(), StandardCharsets.UTF_8);
             }
             if (positionalPayload.equals("-")) {
-                return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                byte[] bytes = in.readAllBytes();
+                if (isBinary) {
+                    return Base64.getEncoder().encodeToString(bytes);
+                }
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+            if (isBinary) {
+                // If positional payload looks like hex, decode hex; else wrap as raw bytes
+                byte[] hexBytes = CasualBufferUtils.fromHex(positionalPayload);
+                if (hexBytes.length > 0) {
+                    return Base64.getEncoder().encodeToString(hexBytes);
+                }
+                return Base64.getEncoder().encodeToString(positionalPayload.getBytes(StandardCharsets.UTF_8));
             }
             return positionalPayload;
         }
-        return "{}";
+        return isBinary ? "" : "{}";
     }
 
     private static void printUsage(PrintStream out) {
@@ -392,8 +507,12 @@ public class CasualClient implements AutoCloseable {
               -H, --host <host>          Casual domain host (default: 127.0.0.1)
               -p, --port <port>          Casual domain TCP port (default: 7772)
               -t, --timeout <seconds>    Call timeout in seconds (default: 4)
-              -b, --buffer-type <type>   Buffer type: JSON, STRING, X_OCTET (default: JSON)
-              -f, --file <path>          Read request payload from file
+              -b, --buffer-type <type>   Buffer type: JSON, STRING, X_OCTET, FIELDED (default: JSON)
+              -B, --binary               Shorthand for --buffer-type X_OCTET with raw byte I/O
+              -f, --file <path>          Read request payload from file (raw bytes if binary)
+              --hex <hexString>          Send hex-encoded binary payload (e.g. "01 02 AA BB")
+              --base64 <b64String>       Send Base64-encoded binary payload
+              -o, --output <path>        Save reply payload bytes to a file
               --no-color                 Disable ANSI terminal colors
               -h, --help                 Display this help message
 
@@ -402,6 +521,8 @@ public class CasualClient implements AutoCloseable {
               CasualClient discover orderService paymentService --port 7772
               CasualClient call echoService '{"message":"hello"}' --port 7772
               CasualClient call createOrder --file order.json --port 7772
+              CasualClient call uploadDocument --binary --file document.pdf --port 7772
+              CasualClient call processData --hex "48 65 6C 6C 6F" -b X_OCTET --port 7772
             """);
     }
 
@@ -412,9 +533,14 @@ public class CasualClient implements AutoCloseable {
         return false;
     }
 
+    private static String getOption(String[] args, String longFlag, String defaultValue) {
+        return getOption(args, null, longFlag, defaultValue);
+    }
+
     private static String getOption(String[] args, String shortFlag, String longFlag, String defaultValue) {
         for (int i = 0; i < args.length - 1; i++) {
-            if (args[i].equalsIgnoreCase(shortFlag) || args[i].equalsIgnoreCase(longFlag)) {
+            if ((shortFlag != null && args[i].equalsIgnoreCase(shortFlag))
+                    || (longFlag != null && args[i].equalsIgnoreCase(longFlag))) {
                 return args[i + 1];
             }
         }

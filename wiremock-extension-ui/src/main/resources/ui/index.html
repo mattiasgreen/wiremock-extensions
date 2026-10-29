@@ -535,7 +535,14 @@
                   <div class="tester-section" id="casual-payload-section">
                     <div class="tester-section-header">
                       <span>Request Payload</span>
-                      <div class="preset-badges">
+                      <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
+                        <select id="casual-payload-encoding" class="preset-badge" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 2px 6px; font-size: 0.75rem; border-radius: 4px;" title="Payload format encoding">
+                          <option value="text">JSON / Text</option>
+                          <option value="hex">Hex Bytes</option>
+                          <option value="base64">Base64</option>
+                        </select>
+                        <input type="file" id="casual-file-input" style="display: none;">
+                        <button id="btn-casual-upload-file" class="btn btn-small" title="Load file into payload">📁 File</button>
                         <button id="btn-casual-format-json" class="btn btn-small" title="Prettify JSON Payload">Format JSON</button>
                       </div>
                     </div>
@@ -563,7 +570,9 @@
                     <div class="view-mode-toggle" id="casual-format-switcher">
                       <button class="btn btn-small active" id="btn-casual-view-highlighted">Formatted</button>
                       <button class="btn btn-small" id="btn-casual-view-raw">Raw</button>
+                      <button class="btn btn-small" id="btn-casual-view-hex" title="Canonical Hex Dump view">Hex Dump</button>
                     </div>
+                    <button id="btn-casual-download-binary" class="btn btn-small" style="display: none;" title="Download raw binary response">💾 Download</button>
                     <button id="btn-casual-copy-response" class="btn btn-small" title="Copy response to clipboard">📋 Copy</button>
                   </div>
                 </div>

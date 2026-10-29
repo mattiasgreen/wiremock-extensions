@@ -89,6 +89,18 @@ public class CasualAdminEndpoint implements AdminApiExtension {
             String payload = root.hasNonNull("payload") ? root.get("payload").asText() : "{}";
             String bufferType =
                     root.hasNonNull("bufferType") ? root.get("bufferType").asText() : "JSON";
+            String encoding = root.hasNonNull("payloadEncoding")
+                    ? root.get("payloadEncoding").asText().toLowerCase(java.util.Locale.ROOT)
+                    : "";
+
+            if ("hex".equals(encoding) && !payload.isBlank()) {
+                byte[] hexBytes = se.laz.casual.api.buffer.CasualBufferUtils.fromHex(payload);
+                payload = java.util.Base64.getEncoder().encodeToString(hexBytes);
+                if (bufferType.equalsIgnoreCase("JSON")) {
+                    bufferType = "X_OCTET";
+                }
+            }
+
             String host = root.hasNonNull("host") && !root.get("host").asText().isBlank()
                     ? root.get("host").asText().trim()
                     : "127.0.0.1";
@@ -120,6 +132,11 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                 respMap.put("payload", result.payload());
                 respMap.put("durationMs", result.durationMs());
                 respMap.put("success", result.isSuccess());
+                respMap.put("isBinary", !result.isJson());
+                respMap.put("sizeBytes", result.getBytes().length);
+                if (!result.isJson()) {
+                    respMap.put("payloadHex", result.toHexDump(256));
+                }
 
                 return jsonResponse(200, objectMapper.writeValueAsString(respMap));
             } catch (Exception e) {

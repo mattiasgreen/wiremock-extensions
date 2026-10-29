@@ -71,7 +71,9 @@ import {
   clearCasualHistory,
   toggleCasualHistory,
   setCasualHistoryCollapsed,
-  updateCasualRoute
+  updateCasualRoute,
+  handleCasualFileUpload,
+  downloadCasualBinaryResponse
 } from './modules/casual-tester.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
@@ -956,6 +958,16 @@ if (elements.btnCasualViewHighlighted) {
 }
 if (elements.btnCasualViewRaw) {
   elements.btnCasualViewRaw.addEventListener('click', () => setCasualViewMode('raw'));
+}
+if (elements.btnCasualViewHex) {
+  elements.btnCasualViewHex.addEventListener('click', () => setCasualViewMode('hex'));
+}
+if (elements.btnCasualDownloadBinary) {
+  elements.btnCasualDownloadBinary.addEventListener('click', downloadCasualBinaryResponse);
+}
+if (elements.btnCasualUploadFile && elements.casualFileInput) {
+  elements.btnCasualUploadFile.addEventListener('click', () => elements.casualFileInput.click());
+  elements.casualFileInput.addEventListener('change', handleCasualFileUpload);
 }
 if (elements.btnCasualCopyResponse) {
   elements.btnCasualCopyResponse.addEventListener('click', () => {
