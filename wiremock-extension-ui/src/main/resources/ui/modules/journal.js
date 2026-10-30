@@ -17,7 +17,13 @@ import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
 import { fetchCasualConfig, updateCasualRoute } from './casual-tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
-import { getSnapshotStubTemplate } from './api.js';
+import {
+  getSnapshotStubTemplate,
+  doFetch,
+  loadJournal,
+  loadData,
+  snapshotFilteredRecordings
+} from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
 
 let journalAutoRefreshTimer = null;
@@ -757,6 +763,220 @@ export function setupJournalAutoRefresh() {
       clearInterval(journalAutoRefreshTimer);
       journalAutoRefreshTimer = null;
     }
+  }
+}
+
+export function initJournalTab() {
+  ['all', 'proxied', 'stub', 'stateful', 'unmatched'].forEach(verdict => {
+    const btn = document.getElementById(`btn-journal-verdict-${verdict}`);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        state.journalVerdictFilter = verdict;
+        const wasUnmatched = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
+        const isNowUnmatched = (verdict === 'unmatched');
+        if (elements.filterUnmatchedOnly) {
+          elements.filterUnmatchedOnly.checked = isNowUnmatched;
+        }
+        renderJournal();
+        loadJournal();
+        setRoute('journal', { unmatched: isNowUnmatched ? 'true' : null }, true);
+      });
+    }
+  });
+
+  if (elements.filterUnmatchedOnly) {
+    elements.filterUnmatchedOnly.addEventListener('change', () => {
+      const isChecked = elements.filterUnmatchedOnly.checked;
+      state.journalVerdictFilter = isChecked ? 'unmatched' : 'all';
+      document.querySelectorAll('.journal-verdict-pill').forEach(p => p.classList.remove('active'));
+      const activeBtn = document.getElementById(isChecked ? 'btn-journal-verdict-unmatched' : 'btn-journal-verdict-all');
+      if (activeBtn) activeBtn.classList.add('active');
+      renderJournal();
+      loadJournal();
+      setRoute('journal', { unmatched: isChecked ? 'true' : null }, true);
+    });
+  }
+
+  if (elements.journalSearch) {
+    elements.journalSearch.addEventListener('input', () => {
+      renderJournal();
+      setRoute('journal', { q: elements.journalSearch.value.trim() }, true);
+    });
+    elements.journalSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadJournal();
+      }
+    });
+  }
+
+  if (elements.journalTimeRange) {
+    elements.journalTimeRange.addEventListener('change', () => {
+      const range = elements.journalTimeRange.value;
+      state.journalTimeRange = range;
+      const now = Date.now();
+      if (range === 'custom') {
+        if (elements.journalCustomTime) elements.journalCustomTime.classList.remove('hidden');
+        return;
+      }
+      if (elements.journalCustomTime) elements.journalCustomTime.classList.add('hidden');
+      if (range === '5m') {
+        state.journalSince = new Date(now - 5 * 60 * 1000).toISOString();
+        state.journalUntil = null;
+      } else if (range === '15m') {
+        state.journalSince = new Date(now - 15 * 60 * 1000).toISOString();
+        state.journalUntil = null;
+      } else if (range === '1h') {
+        state.journalSince = new Date(now - 60 * 60 * 1000).toISOString();
+        state.journalUntil = null;
+      } else if (range === '24h') {
+        state.journalSince = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+        state.journalUntil = null;
+      } else {
+        state.journalSince = null;
+        state.journalUntil = null;
+      }
+      renderJournal();
+      loadJournal();
+    });
+  }
+
+  if (elements.journalTimeSince) {
+    elements.journalTimeSince.addEventListener('change', () => {
+      state.journalSince = elements.journalTimeSince.value ? new Date(elements.journalTimeSince.value).toISOString() : null;
+      renderJournal();
+      loadJournal();
+    });
+    elements.journalTimeSince.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        state.journalSince = elements.journalTimeSince.value ? new Date(elements.journalTimeSince.value).toISOString() : null;
+        renderJournal();
+        loadJournal();
+      }
+    });
+  }
+
+  if (elements.journalTimeUntil) {
+    elements.journalTimeUntil.addEventListener('change', () => {
+      state.journalUntil = elements.journalTimeUntil.value ? new Date(elements.journalTimeUntil.value).toISOString() : null;
+      renderJournal();
+      loadJournal();
+    });
+    elements.journalTimeUntil.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        state.journalUntil = elements.journalTimeUntil.value ? new Date(elements.journalTimeUntil.value).toISOString() : null;
+        renderJournal();
+        loadJournal();
+      }
+    });
+  }
+
+  if (elements.btnJournalSnapshotFiltered) {
+    elements.btnJournalSnapshotFiltered.addEventListener('click', async () => {
+      const proxiedReqs = getFilteredProxiedRequests();
+      if (!proxiedReqs || proxiedReqs.length === 0) return;
+      const count = proxiedReqs.length;
+      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
+        ? state.selectedProject
+        : 'Recorded Traffic';
+
+      elements.btnJournalSnapshotFiltered.disabled = true;
+      const origText = elements.btnJournalSnapshotFiltered.innerHTML;
+      elements.btnJournalSnapshotFiltered.textContent = '⏳ Snapshotting...';
+
+      try {
+        const requestIds = proxiedReqs.map(r => r.id);
+        if (state.capabilities.lifecycle) {
+          await snapshotFilteredRecordings(requestIds, targetProject, false, loadExcludedJsonPaths());
+        } else {
+          for (const req of proxiedReqs) {
+            const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+            const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
+            await doFetch('/__admin/mappings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: `[RECORDED ${req.request.method} ${status}] ${req.request.url}`,
+                priority: 5,
+                request: { method: req.request.method, url: req.request.url },
+                response: { status, body: resBody },
+                metadata: { source: 'recorded-proxy', project: targetProject, mode: 'static' }
+              })
+            });
+          }
+        }
+        await loadData();
+        elements.btnJournalSnapshotFiltered.textContent = `✅ Snapshotted ${count}!`;
+        setTimeout(() => {
+          elements.btnJournalSnapshotFiltered.innerHTML = origText;
+          renderJournal();
+        }, 2000);
+      } catch (err) {
+        alert('Failed to snapshot recordings: ' + err.message);
+        elements.btnJournalSnapshotFiltered.innerHTML = origText;
+        renderJournal();
+      }
+    });
+  }
+
+  if (elements.journalLimitInput) {
+    const handleLimitChange = () => {
+      const val = parseInt(elements.journalLimitInput.value, 10);
+      state.journalLimit = (val && val > 0) ? val : 100;
+      elements.journalLimitInput.value = state.journalLimit;
+      loadJournal();
+    };
+    elements.journalLimitInput.addEventListener('change', handleLimitChange);
+    elements.journalLimitInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLimitChange();
+      }
+    });
+  }
+
+  if (elements.journalAutoRefresh) {
+    elements.journalAutoRefresh.addEventListener('change', setupJournalAutoRefresh);
+  }
+
+  if (elements.btnRefreshJournal) {
+    elements.btnRefreshJournal.addEventListener('click', () => {
+      elements.btnRefreshJournal.disabled = true;
+      loadJournal().finally(() => {
+        elements.btnRefreshJournal.disabled = false;
+      });
+    });
+  }
+
+  if (elements.btnResetJournal) {
+    elements.btnResetJournal.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear the request journal?')) {
+        doFetch('/__admin/requests', { method: 'DELETE' })
+          .then(() => {
+            state.journalCurrentPage = 1;
+            loadJournal();
+          })
+          .catch(err => console.warn('Could not reset journal', err));
+      }
+    });
+  }
+
+  if (elements.btnJournalClearStubFilter) {
+    elements.btnJournalClearStubFilter.addEventListener('click', () => {
+      state.journalCurrentPage = 1;
+      if (elements.journalSearch) {
+        elements.journalSearch.value = '';
+      }
+      if (elements.journalContextBanner) {
+        elements.journalContextBanner.classList.add('hidden');
+      }
+      renderJournal();
+      setRoute('journal', {}, false);
+    });
   }
 }
 

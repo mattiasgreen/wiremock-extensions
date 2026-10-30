@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.mattiasgreen.wiremock.stateful.ast.AstJson;
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.WaitForSelectorState;
@@ -336,73 +334,5 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         assertThat(page.locator("#target-host-label").textContent()).contains("(same-origin)");
         assertThat(page.url()).doesNotContain("wiremock=");
         assertThat(page.url()).doesNotContain("strategy=");
-    }
-
-    @Test
-    @DisplayName("Scenario 27: Graceful degradation on remote WireMock lacking custom extensions")
-    void testGracefulDegradationOnVanillaWireMock() {
-        WireMockServer vanillaServer =
-                new WireMockServer(WireMockConfiguration.options().dynamicPort());
-        vanillaServer.start();
-        WireMockConsoleProxy proxy = new WireMockConsoleProxy(wireMockServer.baseUrl(), 0);
-        try {
-            vanillaServer.stubFor(get(urlEqualTo("/api/v1/health"))
-                    .withName("Health Check")
-                    .willReturn(okJson("{\"status\":\"UP\"}")));
-
-            page.navigate("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/?wiremock="
-                    + URLEncoder.encode(vanillaServer.baseUrl(), StandardCharsets.UTF_8)
-                    + "&strategy=proxy#stubs");
-
-            page.waitForSelector(".stub-card");
-            assertThat(page.locator(".stub-card").count()).isEqualTo(1);
-            assertThat(page.locator(".stub-card").first().textContent()).contains("/api/v1/health");
-
-            assertThat(page.locator("#nav-tab-netem").getAttribute("class")).contains("cap-disabled");
-            assertThat(page.locator("#link-metrics").getAttribute("class")).contains("cap-disabled");
-            assertThat(page.locator("#btn-create-dynamic-stub").getAttribute("class"))
-                    .contains("cap-disabled");
-            assertThat(page.locator("#btn-filter-dynamic").getAttribute("class"))
-                    .contains("cap-disabled");
-            assertThat(page.locator("#btn-filter-disabled").getAttribute("class"))
-                    .contains("cap-disabled");
-
-            page.locator(".stub-card").first().click();
-            assertThat(page.locator("#btn-toggle-stub").getAttribute("class")).contains("cap-disabled");
-            assertThat(page.locator("#detail-lifecycle-state").textContent()).isEqualTo("ACTIVE");
-
-            page.locator("#btn-target-host").click();
-            page.waitForSelector("#target-host-modal:not(.hidden)");
-
-            page.waitForSelector("#target-capabilities-status");
-            assertThat(page.locator("#target-capabilities-status").textContent())
-                    .contains("1/6 active (Degraded)");
-
-            assertThat(page.locator("[data-testid='cap-badge-core']").textContent())
-                    .isEqualTo("Active");
-            assertThat(page.locator("[data-testid='cap-badge-lifecycle']").textContent())
-                    .isEqualTo("Not Installed");
-            assertThat(page.locator("[data-testid='cap-badge-stateful']").textContent())
-                    .isEqualTo("Not Installed");
-            assertThat(page.locator("[data-testid='cap-badge-netem']").textContent())
-                    .isEqualTo("Not Installed");
-            assertThat(page.locator("[data-testid='cap-badge-metrics']").textContent())
-                    .isEqualTo("Not Installed");
-            assertThat(page.locator("[data-testid='cap-badge-casual']").textContent())
-                    .isEqualTo("Not Installed");
-
-            page.locator("#btn-close-target-host").click();
-            page.waitForSelector(
-                    "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
-
-            page.locator("#btn-test-stub").click();
-            page.waitForSelector("#tab-tester.active");
-            page.locator("#btn-tester-send").click();
-            page.waitForSelector("#tester-response-status:has-text('200')");
-            assertThat(page.locator("#tester-response-body").textContent()).contains("\"status\": \"UP\"");
-        } finally {
-            proxy.stop();
-            vanillaServer.stop();
-        }
     }
 }

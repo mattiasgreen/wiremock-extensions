@@ -5,3 +5,29 @@ dependencies {
     testImplementation libs.junit.jupiter
     testImplementation libs.assertj.core
 }
+
+tasks.register('syncJep330Scripts') {
+    description = 'Syncs canonical Java source files to root of wiremock-cli for JDK 21 JEP 330 standalone runner execution'
+    inputs.file('src/main/java/com/github/mattiasgreen/wiremock/cli/WireMockCli.java')
+    inputs.file(project(':wiremock-extension-ui').file('src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java'))
+    outputs.file(file('WireMockCli.java'))
+    outputs.file(file('WireMockConsoleProxy.java'))
+    doLast {
+        copy {
+            from 'src/main/java/com/github/mattiasgreen/wiremock/cli/WireMockCli.java'
+            into projectDir
+        }
+        copy {
+            from project(':wiremock-extension-ui').file('src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java')
+            into projectDir
+        }
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn 'syncJep330Scripts'
+}
+
+tasks.named('check') {
+    dependsOn 'syncJep330Scripts'
+}

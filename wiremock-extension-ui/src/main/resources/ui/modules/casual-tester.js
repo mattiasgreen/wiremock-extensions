@@ -71,6 +71,79 @@ export function initCasualTester() {
       if (p && elements.casualRequestPayload) elements.casualRequestPayload.value = fromBase64(p);
     }
   }
+
+  if (elements.btnCasualSend) {
+    elements.btnCasualSend.addEventListener('click', executeCasualRequest);
+  }
+  const tabCasualEl = document.getElementById('tab-casual');
+  if (tabCasualEl) {
+    tabCasualEl.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        executeCasualRequest();
+      }
+    });
+  }
+  if (elements.btnCasualFormatJson) {
+    elements.btnCasualFormatJson.addEventListener('click', formatCasualJsonPayload);
+  }
+  if (elements.btnCasualReset) {
+    elements.btnCasualReset.addEventListener('click', resetCasualForm);
+  }
+  if (elements.btnToggleCasualHistory) {
+    elements.btnToggleCasualHistory.addEventListener('click', toggleCasualHistory);
+  }
+  if (elements.btnExpandCasualHistory) {
+    elements.btnExpandCasualHistory.addEventListener('click', () => setCasualHistoryCollapsed(false));
+  }
+  if (elements.btnCasualClearHistory) {
+    elements.btnCasualClearHistory.addEventListener('click', clearCasualHistory);
+  }
+  if (elements.btnCasualViewHighlighted) {
+    elements.btnCasualViewHighlighted.addEventListener('click', () => setCasualViewMode('formatted'));
+  }
+  if (elements.btnCasualViewRaw) {
+    elements.btnCasualViewRaw.addEventListener('click', () => setCasualViewMode('raw'));
+  }
+  if (elements.btnCasualViewHex) {
+    elements.btnCasualViewHex.addEventListener('click', () => setCasualViewMode('hex'));
+  }
+  if (elements.btnCasualDownloadBinary) {
+    elements.btnCasualDownloadBinary.addEventListener('click', downloadCasualBinaryResponse);
+  }
+  if (elements.btnCasualUploadFile && elements.casualFileInput) {
+    elements.btnCasualUploadFile.addEventListener('click', () => elements.casualFileInput.click());
+    elements.casualFileInput.addEventListener('change', handleCasualFileUpload);
+  }
+  if (elements.btnCasualTabResponse) {
+    elements.btnCasualTabResponse.addEventListener('click', () => setCasualInspectorTab('response'));
+  }
+  if (elements.btnCasualTabRequest) {
+    elements.btnCasualTabRequest.addEventListener('click', () => setCasualInspectorTab('request'));
+  }
+  if (elements.btnCasualTabBoth) {
+    elements.btnCasualTabBoth.addEventListener('click', () => setCasualInspectorTab('both'));
+  }
+  if (elements.btnCasualPresetCorr) {
+    elements.btnCasualPresetCorr.addEventListener('click', () => appendCasualHeader('X-Correlation-Id', crypto.randomUUID()));
+  }
+  if (elements.btnCasualPresetTx) {
+    elements.btnCasualPresetTx.addEventListener('click', () => appendCasualHeader('X-Casual-Transaction-State', 'TX_ACTIVE'));
+  }
+  if (elements.btnCasualCopyResponse) {
+    elements.btnCasualCopyResponse.addEventListener('click', () => {
+      if (elements.casualResponseBody && elements.casualResponseBody.textContent) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(elements.casualResponseBody.textContent).catch(() => {});
+        }
+        elements.btnCasualCopyResponse.textContent = '✅ Copied!';
+        setTimeout(() => elements.btnCasualCopyResponse.textContent = '📋 Copy', 1500);
+      }
+    });
+  }
+  [elements.casualServiceName, elements.casualBufferType, elements.casualTargetHost, elements.casualTargetPort, elements.casualRequestPayload].forEach(el => {
+    if (el) el.addEventListener('change', () => updateCasualRoute(true));
+  });
 }
 
 export function fetchCasualConfig() {

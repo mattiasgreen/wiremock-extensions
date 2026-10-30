@@ -6,6 +6,8 @@ import { state } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
 import { highlightJson } from './highlighter.js';
 import { setRoute, toBase64 } from './router.js';
+import { generateCurl, sendStubToTester } from './stubs.js';
+import { executeTesterRequest } from './api.js';
 import {
   resolveMacro,
   loadLocalHeaders,
@@ -332,5 +334,161 @@ export function renderLocalHeaderChips() {
       chip.innerHTML = `<span class="chip-name">${escapeHtml(h.name.trim())}:</span> <span class="chip-val">${escapeHtml(h.value || '')}</span>`;
     }
     elements.testerLocalHeadersChips.appendChild(chip);
+  }
+}
+
+export function initTesterTab() {
+  initTesterHistoryCollapse();
+
+  if (elements.btnTesterSend) {
+    elements.btnTesterSend.addEventListener('click', executeTesterRequest);
+  }
+  const tabTesterEl = document.getElementById('tab-tester');
+  if (tabTesterEl) {
+    tabTesterEl.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        executeTesterRequest();
+      }
+    });
+  }
+  if (elements.btnPresetJson) {
+    elements.btnPresetJson.addEventListener('click', () => appendHeader('Content-Type', 'application/json'));
+  }
+  if (elements.btnPresetBearer) {
+    elements.btnPresetBearer.addEventListener('click', () => appendHeader('Authorization', 'Bearer <token>'));
+  }
+  if (elements.btnPresetAccept) {
+    elements.btnPresetAccept.addEventListener('click', () => appendHeader('Accept', 'application/json'));
+  }
+  if (elements.btnTesterResetForm) {
+    elements.btnTesterResetForm.addEventListener('click', () => {
+      if (elements.testerMethod) elements.testerMethod.value = 'GET';
+      if (elements.testerUrl) elements.testerUrl.value = '/api/v1/users';
+      if (elements.testerHeaders) elements.testerHeaders.value = '';
+      if (elements.testerBody) elements.testerBody.value = '';
+      setRoute('tester', { m: null, p: null, h: null, b: null });
+    });
+  }
+  if (elements.btnTesterClearHistory) {
+    elements.btnTesterClearHistory.addEventListener('click', () => {
+      if (confirm('Clear all request history?')) {
+        clearTesterHistory();
+      }
+    });
+  }
+  if (elements.btnToggleTesterHistory) {
+    elements.btnToggleTesterHistory.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTesterHistory();
+    });
+  }
+  if (elements.btnExpandTesterHistory) {
+    elements.btnExpandTesterHistory.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setTesterHistoryCollapsed(false);
+    });
+  }
+  if (elements.testerHistoryCollapsedBar) {
+    elements.testerHistoryCollapsedBar.addEventListener('click', () => {
+      setTesterHistoryCollapsed(false);
+    });
+  }
+  if (elements.btnTesterTabResponse) {
+    elements.btnTesterTabResponse.addEventListener('click', () => setInspectorTab('response'));
+  }
+  if (elements.btnTesterTabRequest) {
+    elements.btnTesterTabRequest.addEventListener('click', () => setInspectorTab('request'));
+  }
+  if (elements.btnTesterTabBoth) {
+    elements.btnTesterTabBoth.addEventListener('click', () => setInspectorTab('both'));
+  }
+  if (elements.btnTesterFormatJson) {
+    elements.btnTesterFormatJson.addEventListener('click', () => {
+      if (!elements.testerBody || !elements.testerBody.value.trim()) return;
+      try {
+        const parsed = JSON.parse(elements.testerBody.value);
+        elements.testerBody.value = JSON.stringify(parsed, null, 2);
+        appendHeader('Content-Type', 'application/json');
+      } catch (err) {
+        alert('Invalid JSON: ' + err.message);
+      }
+    });
+  }
+  if (elements.btnTesterCopyCurl) {
+    elements.btnTesterCopyCurl.addEventListener('click', () => {
+      const method = (elements.testerMethod && elements.testerMethod.value) || 'GET';
+      const path = (elements.testerUrl && elements.testerUrl.value) || '/';
+      const headers = parseHeadersInput((elements.testerHeaders && elements.testerHeaders.value) || '');
+      const body = (elements.testerBody && elements.testerBody.value) || '';
+      const cmd = generateCurl(method, path, headers, body);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).catch(() => {});
+      }
+      elements.btnTesterCopyCurl.textContent = '✅ Copied!';
+      setTimeout(() => elements.btnTesterCopyCurl.textContent = '📋 Copy cURL', 1500);
+    });
+  }
+  if (elements.btnTesterShareLink) {
+    elements.btnTesterShareLink.addEventListener('click', () => {
+      updateTesterRoute(false);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(window.location.href).catch(() => {});
+      }
+      elements.btnTesterShareLink.textContent = '✅ Link Copied!';
+      setTimeout(() => elements.btnTesterShareLink.textContent = '🔗 Copy Share Link', 1500);
+    });
+  }
+  if (elements.btnViewHighlighted) {
+    elements.btnViewHighlighted.addEventListener('click', () => {
+      state.testerViewMode = 'highlighted';
+      elements.btnViewHighlighted.classList.add('active');
+      if (elements.btnViewRaw) elements.btnViewRaw.classList.remove('active');
+      renderTesterResponse(state.lastRawResponseBody);
+    });
+  }
+  if (elements.btnViewRaw) {
+    elements.btnViewRaw.addEventListener('click', () => {
+      state.testerViewMode = 'raw';
+      elements.btnViewRaw.classList.add('active');
+      if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.remove('active');
+      renderTesterResponse(state.lastRawResponseBody);
+    });
+  }
+  if (elements.btnTesterCopyResponse) {
+    elements.btnTesterCopyResponse.addEventListener('click', () => {
+      if (state.lastRawResponseBody) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(state.lastRawResponseBody).catch(() => {});
+        }
+        elements.btnTesterCopyResponse.textContent = '✅ Copied!';
+        setTimeout(() => elements.btnTesterCopyResponse.textContent = '📋 Copy', 1500);
+      }
+    });
+  }
+  [elements.testerMethod, elements.testerUrl, elements.testerHeaders, elements.testerBody].forEach(el => {
+    if (el) el.addEventListener('change', () => updateTesterRoute(true));
+  });
+  if (elements.btnTesterResetStub) {
+    elements.btnTesterResetStub.addEventListener('click', () => {
+      if (state.contextStub) {
+        sendStubToTester(state.contextStub);
+      }
+    });
+  }
+  if (elements.btnTesterClearContext) {
+    elements.btnTesterClearContext.addEventListener('click', () => {
+      state.contextStub = null;
+      state.selectedStubId = null;
+      document.querySelectorAll('.stub-card').forEach(el => el.classList.remove('selected'));
+      if (elements.testerContextBanner) {
+        elements.testerContextBanner.classList.add('hidden');
+      }
+      if (elements.testerMethod) elements.testerMethod.value = 'GET';
+      if (elements.testerUrl) elements.testerUrl.value = '/api/v1/users';
+      if (elements.testerHeaders) elements.testerHeaders.value = '';
+      if (elements.testerBody) elements.testerBody.value = '';
+      updateTesterRoute(true);
+    });
   }
 }

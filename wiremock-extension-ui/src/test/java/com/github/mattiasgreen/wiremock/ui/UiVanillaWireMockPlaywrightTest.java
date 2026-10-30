@@ -7,7 +7,6 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
-import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
@@ -50,9 +49,8 @@ class UiVanillaWireMockPlaywrightTest {
         // 2. Start WireMockConsoleProxy pointing to the vanilla instance
         proxy = new WireMockConsoleProxy(vanillaWireMock.baseUrl(), 0);
 
-        // 3. Launch headless browser
-        playwright = Playwright.create();
-        browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+        // 3. Reuse shared headless browser
+        browser = AbstractUiPlaywrightTest.getSharedBrowser();
         context = browser.newContext(new Browser.NewContextOptions().setViewportSize(1280, 800));
         page = context.newPage();
 
@@ -68,12 +66,6 @@ class UiVanillaWireMockPlaywrightTest {
     void tearAll() {
         if (context != null) {
             context.close();
-        }
-        if (browser != null) {
-            browser.close();
-        }
-        if (playwright != null) {
-            playwright.close();
         }
         if (proxy != null) {
             proxy.stop();

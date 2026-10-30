@@ -4,6 +4,9 @@
  * Supports zero-file clipboard copy-paste export and import.
  */
 import { elements, escapeHtml } from './dom.js';
+import { state, setTargetUrlInLocation, getWireMockUri } from './state.js';
+import { renderTargetCapabilities } from './capabilities.js';
+import { renderLocalHeaderChips } from './tester.js';
 
 export const LOCAL_SETTINGS_KEY = 'wiremock_ui_preferences';
 export const LOCAL_HEADERS_KEY = 'wiremock_ui_local_headers';
@@ -465,5 +468,169 @@ export function resetDefaultSettingsInModal(onResetCallback = null) {
   savePreferences({ headers: DEFAULT_HEADERS, excludedJsonPaths: DEFAULT_EXCLUDED_JSON_PATHS });
   if (typeof onResetCallback === 'function') {
     onResetCallback();
+  }
+}
+
+export function updateTargetHostDisplay() {
+  const wiremockUri = getWireMockUri();
+  document.title = `WMC - ${wiremockUri}`;
+
+  const brandEl = document.querySelector('.brand');
+  if (brandEl) {
+    brandEl.title = `WMC - ${wiremockUri}`;
+  }
+
+  if (elements.targetHostLabel) {
+    if (state.targetConfig) {
+      const modeStr = state.connectionStrategy === 'direct' ? 'direct' : 'proxied';
+      elements.targetHostLabel.textContent = `Target: ${state.targetConfig.fullUrl} (${modeStr})`;
+    } else {
+      elements.targetHostLabel.textContent = 'Target: (same-origin)';
+    }
+  }
+  if (elements.targetHostDot) {
+    elements.targetHostDot.className = state.targetConfig
+      ? 'target-host-dot remote'
+      : 'target-host-dot';
+  }
+  const upstreamUrl = state.targetConfig ? state.targetConfig.fullUrl : '';
+  if (elements.linkSwaggerUi) {
+    elements.linkSwaggerUi.href = upstreamUrl
+      ? `${upstreamUrl}/__admin/swagger-ui/`
+      : '../swagger-ui/';
+  }
+  if (elements.linkMetrics) {
+    elements.linkMetrics.href = upstreamUrl
+      ? `${upstreamUrl}/__admin/metrics/prometheus`
+      : '../metrics/prometheus';
+  }
+}
+
+export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
+  if (elements.btnOpenSettings) {
+    elements.btnOpenSettings.addEventListener('click', () => openLocalHeadersModal('headers'));
+  }
+  if (elements.btnManageLocalHeaders) {
+    elements.btnManageLocalHeaders.addEventListener('click', () => openLocalHeadersModal('headers'));
+  }
+  if (elements.btnCloseLocalHeadersModal) {
+    elements.btnCloseLocalHeadersModal.addEventListener('click', closeLocalHeadersModal);
+  }
+  if (elements.btnCancelLocalHeaders) {
+    elements.btnCancelLocalHeaders.addEventListener('click', closeLocalHeadersModal);
+  }
+  if (elements.btnAddLocalHeaderRow) {
+    elements.btnAddLocalHeaderRow.addEventListener('click', () => addLocalHeaderRow('', '', true));
+  }
+  if (elements.btnSaveLocalHeaders) {
+    elements.btnSaveLocalHeaders.addEventListener('click', () => saveSettingsFromModal(() => renderLocalHeaderChips()));
+  }
+  if (elements.settingsTabHeaders) {
+    elements.settingsTabHeaders.addEventListener('click', () => switchSettingsTab('headers'));
+  }
+  if (elements.settingsTabExclusions) {
+    elements.settingsTabExclusions.addEventListener('click', () => switchSettingsTab('exclusions'));
+  }
+  if (elements.settingsTabSync) {
+    elements.settingsTabSync.addEventListener('click', () => switchSettingsTab('sync'));
+  }
+  if (elements.btnSettingsCopyConfig) {
+    elements.btnSettingsCopyConfig.addEventListener('click', copySettingsConfigToClipboard);
+  }
+  if (elements.btnSettingsApplyImport) {
+    elements.btnSettingsApplyImport.addEventListener('click', () => applyPastedSettingsFromModal(() => renderLocalHeaderChips()));
+  }
+  if (elements.btnResetDefaultSettings) {
+    elements.btnResetDefaultSettings.addEventListener('click', () => resetDefaultSettingsInModal(() => renderLocalHeaderChips()));
+  }
+  if (elements.testerLocalHeadersToggle) {
+    elements.testerLocalHeadersToggle.addEventListener('change', (e) => {
+      setLocalHeadersEnabled(e.target.checked);
+      renderLocalHeaderChips();
+    });
+  }
+  if (elements.testerHeaders) {
+    elements.testerHeaders.addEventListener('input', () => {
+      renderLocalHeaderChips();
+    });
+  }
+
+  // Target Host Switcher
+  if (elements.btnTargetHost && elements.targetHostModal) {
+    elements.btnTargetHost.addEventListener('click', () => {
+      elements.targetHostModal.classList.remove('hidden');
+      if (elements.inputTargetHost) {
+        elements.inputTargetHost.value = (state.targetConfig && state.targetConfig.fullUrl) || state.apiBaseUrl || '';
+        elements.inputTargetHost.focus();
+      }
+      if (state.connectionStrategy === 'direct') {
+        if (elements.radioStrategyDirect) elements.radioStrategyDirect.checked = true;
+      } else {
+        if (elements.radioStrategyProxy) elements.radioStrategyProxy.checked = true;
+      }
+      if (elements.targetHostStatus) {
+        elements.targetHostStatus.classList.add('hidden');
+      }
+      renderTargetCapabilities();
+    });
+  }
+
+  const closeTargetModal = () => {
+    if (elements.targetHostModal) {
+      elements.targetHostModal.classList.add('hidden');
+    }
+  };
+
+  if (elements.btnCloseTargetHost) {
+    elements.btnCloseTargetHost.addEventListener('click', closeTargetModal);
+  }
+  if (elements.btnCancelTargetHost) {
+    elements.btnCancelTargetHost.addEventListener('click', closeTargetModal);
+  }
+  if (elements.targetHostModal) {
+    elements.targetHostModal.addEventListener('click', (e) => {
+      if (e.target === elements.targetHostModal) {
+        closeTargetModal();
+      }
+    });
+  }
+
+  const applyTargetHost = (newTarget, strategy) => {
+    state.capabilitiesDetected = false;
+    setTargetUrlInLocation(newTarget, strategy);
+    updateTargetHostDisplay();
+    renderTargetCapabilities();
+    closeTargetModal();
+    if (typeof loadData === 'function') loadData();
+    if (typeof loadVersionInfo === 'function') loadVersionInfo();
+  };
+
+  if (elements.btnSaveTargetHost) {
+    elements.btnSaveTargetHost.addEventListener('click', () => {
+      let val = (elements.inputTargetHost ? elements.inputTargetHost.value : '').trim();
+      if (val && !val.startsWith('http://') && !val.startsWith('https://')) {
+        val = `http://${val}`;
+      }
+      const isDirect = elements.radioStrategyDirect && elements.radioStrategyDirect.checked;
+      const strategy = isDirect ? 'direct' : 'proxy';
+      applyTargetHost(val, strategy);
+    });
+  }
+
+  if (elements.btnResetTargetHost) {
+    elements.btnResetTargetHost.addEventListener('click', () => {
+      applyTargetHost('', 'proxy');
+    });
+  }
+
+  if (elements.inputTargetHost) {
+    elements.inputTargetHost.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (elements.btnSaveTargetHost) elements.btnSaveTargetHost.click();
+      } else if (e.key === 'Escape') {
+        closeTargetModal();
+      }
+    });
   }
 }

@@ -6,7 +6,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { bulkStubs, loadData } from './api.js';
 import { exportStubs } from './import-export.js';
-import { renderStubList } from './stubs.js';
+import { renderStubList, getVisibleCatalogStubs } from './stubs.js';
 
 export function updateBulkToolbar() {
   const bar = document.getElementById('bulk-actions-bar');
@@ -40,26 +40,7 @@ export function updateBulkToolbar() {
 }
 
 export function getCurrentlyVisibleStubs() {
-  const filter = (elements.searchBox && elements.searchBox.value || '').toLowerCase().trim();
-  const allStubs = [...state.currentStubs, ...state.disabledStubs];
-
-  return allStubs.filter(s => {
-    const isDisabled = state.disabledStubs.some(d => d.id === s.id);
-    if (state.statusFilter === 'active' && isDisabled) return false;
-    if (state.statusFilter === 'disabled' && !isDisabled) return false;
-
-    if (state.selectedProject) {
-      const proj = (s.metadata && s.metadata.project) ? String(s.metadata.project) : 'Ungrouped';
-      if (proj !== state.selectedProject) return false;
-    }
-
-    if (!filter) return true;
-    const method = (s.request && s.request.method ? s.request.method : 'ANY').toLowerCase();
-    const url = (s.request && (s.request.url || s.request.urlPath || s.request.urlPathTemplate || ''))
-      .toLowerCase();
-    const name = (s.name || '').toLowerCase();
-    return method.includes(filter) || url.includes(filter) || name.includes(filter);
-  });
+  return getVisibleCatalogStubs().filter(s => !s.isDynamic && !s._dynamic);
 }
 
 export function handleSelectAllToggle(checked) {

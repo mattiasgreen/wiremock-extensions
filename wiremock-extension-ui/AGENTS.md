@@ -59,3 +59,27 @@ Keep these DOM selector contracts intact across `index.html`, `modules/dom.js`, 
 - **Scenarios**: `#scenarios-container`, `#btn-refresh-scenarios`, `#btn-reset-scenarios`.
 
 > **UX & Visual Changes**: Activate the `ux-audit-and-snapshots` skill whenever adding or modifying UI views or workflows.
+
+---
+
+## 4. Deepened Architecture Topology
+
+1. **Frontend Modules (`src/main/resources/ui/modules/`)**:
+   - `modules/stubs.js`: Canonical Stub Catalog module (`getAllCatalogStubs`, `getVisibleCatalogStubs`, `getCatalogCounts`, `findCatalogStubById`, `initStubsTab`). Unifies active, disabled, and dynamic stateful stubs under URL-inferred project derivation and boolean query evaluation.
+   - `modules/lifecycle.js`: Stub lifecycle operations, modal workflows, and `initStubLifecycleHandlers`.
+   - `modules/journal.js`: Request journal table, diff inspector, and `initJournalTab`.
+   - `modules/tester.js`: HTTP tester UI, history management, local header chips, and `initTesterTab`.
+   - `modules/casual-tester.js`: Casual binary protocol GUI and `initCasualTester`.
+   - `modules/settings.js`: Target host switcher (`updateTargetHostDisplay`, `initTargetConnectionModal`) and persistent header preferences.
+   - `app.js`: Slim composition root registering route handlers and invoking module initializers.
+
+2. **Backend & Static Asset Services (`src/main/java/.../ui/`)**:
+   - `DisabledStubStore`: Thread-safe domain coordinator for stub transitions (`enable`, `disable`, `toggle`, `upsert`, `delete`, `bulkApply`, `switchProjectMode`) and deduplicated `snapshotServeEvents`.
+   - `StubLifecycleAdminEndpoint`: Thin HTTP adapter routing Admin API endpoints to `DisabledStubStore`.
+   - `WireMockConsoleProxy`: Standalone reverse proxy and shared static asset resolver (`loadStaticAsset`, `resolveVersionJson`).
+   - `UiAdminApiEndpoint`: Admin API endpoint serving static console assets and version info delegated to `WireMockConsoleProxy`.
+
+3. **Test Harness & Seams (`src/test/java/.../ui/`)**:
+   - `AbstractUiPlaywrightTest`: Shared headless Chromium instance and `UiDriver` domain seam (`openUi`, `switchTab`, `filterStubs`, `selectStubCard`, `selectProject`, `selectStatusFilter`, `openJournalTab`, `filterJournal`).
+   - `UiAssetAndContractTest`: Verifies all static asset paths, relative ES6 imports, and DOM selector contracts across all UI modules.
+   - `UiModuleUnitTest`: In-browser headless unit test suite verifying ES6 modules and dual-implementation parity between Java and ES6 matchers.

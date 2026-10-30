@@ -235,3 +235,29 @@ export function attachScenarioEventListeners() {
     });
   });
 }
+
+export function initScenariosTab() {
+  if (elements.btnRefreshScenarios) {
+    elements.btnRefreshScenarios.addEventListener('click', () => {
+      elements.btnRefreshScenarios.disabled = true;
+      if (loadScenariosFn) {
+        loadScenariosFn().finally(() => {
+          elements.btnRefreshScenarios.disabled = false;
+        });
+      }
+    });
+  }
+  if (elements.btnResetScenarios) {
+    elements.btnResetScenarios.addEventListener('click', () => {
+      if (confirm('Reset all scenarios to their Started state?')) {
+        if (doFetchFn) {
+          doFetchFn('/__admin/scenarios/reset', { method: 'POST' })
+            .then(() => {
+              if (loadScenariosFn) loadScenariosFn();
+            })
+            .catch(err => console.warn('Could not reset scenarios', err));
+        }
+      }
+    });
+  }
+}

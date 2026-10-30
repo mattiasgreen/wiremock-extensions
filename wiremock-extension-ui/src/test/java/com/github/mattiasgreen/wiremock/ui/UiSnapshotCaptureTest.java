@@ -7,7 +7,6 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Playwright;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -16,7 +15,6 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +33,6 @@ public class UiSnapshotCaptureTest {
 
     private WireMockServer wireMockServer;
     private DisabledStubStore disabledStubStore;
-    private Playwright playwright;
     private Browser browser;
     private Path webOutputDir;
 
@@ -60,10 +57,14 @@ public class UiSnapshotCaptureTest {
 
         seedSampleData();
 
-        playwright = Playwright.create();
-        browser = playwright
-                .chromium()
-                .launch(new com.microsoft.playwright.BrowserType.LaunchOptions().setHeadless(true));
+        browser = AbstractUiPlaywrightTest.getSharedBrowser();
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    void stopAll() {
+        if (wireMockServer != null && wireMockServer.isRunning()) {
+            wireMockServer.stop();
+        }
     }
 
     private void seedSampleData() throws Exception {
@@ -119,13 +120,6 @@ public class UiSnapshotCaptureTest {
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
-    }
-
-    @AfterAll
-    void stopAll() {
-        if (browser != null) browser.close();
-        if (playwright != null) playwright.close();
-        if (wireMockServer != null && wireMockServer.isRunning()) wireMockServer.stop();
     }
 
     // ─── Web SPA Snapshots ──────────────────────────────────────────────────

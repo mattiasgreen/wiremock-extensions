@@ -21,3 +21,21 @@ _Avoid_: frame downgrading, version rebuilding
 **2PC Transaction Coordinator**:
 The module that tracks transactional `Xid` enlistment across upstream Casual domains and synthetic local XA vote overrides (`prepare`, `commit`, `rollback`), aggregating `XAReturnCode` outcomes across participants.
 _Avoid_: XA bridge, transaction manager, Xid tracker
+
+### Web Console & Developer UI
+
+**Stub Catalog**:
+An in-process module that aggregates active stubs, disabled stubs, and synthesized dynamic stateful stubs, managing project ownership derivation, multi-token boolean query evaluation, and selection state without leaking internal list mutation across caller boundaries.
+_Avoid_: stub state bag, stub cache, stub list manager
+
+**Stub Lifecycle Service**:
+A domain module managing the state lifecycle of WireMock stubs (`enable`, `disable`, `toggle`, `upsert`, `delete`, `bulkApply`, `switchProjectMode`) across active admin and parked disabled stores, as well as deduplicated serve event snapshot conversions.
+_Avoid_: disabled stub store manager, lifecycle helper, recording converter
+
+**UI Static Asset Resolver**:
+A zero-dependency loader resolving embedded console assets (`/ui/*`) from workspace development roots with classpath fallback, path-traversal protection, and MIME content-type mapping, shared across standalone proxy and admin extension adapters.
+_Avoid_: asset helper, file server, web resource loader
+
+**UI Domain Driver**:
+A high-level test seam encapsulating console navigation, tab switching, stub/journal query evaluation, modal interactions, and assertion waiting without coupling test suites to raw DOM selectors or arbitrary sleep timeouts.
+_Avoid_: page object boilerplate, playwright helper, UI tester fixture
