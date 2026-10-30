@@ -50,7 +50,7 @@ Incoming Request ─────────┼──► Proxied (Forwarded to u
 - **Runtime Capacity & Health Gauges**:
   - `wiremock_journal_size_requests`: Active in-memory request journal count.
   - `wiremock_journal_capacity`: Configured journal limit (`-1` if unbounded).
-  - `wiremock_stubs_total{status="active"}`: Total registered active stub mappings.
+  - `wiremock_stubs{status="active"}`: Total registered active stub mappings.
 - **Distributed Tracing (W3C & OTLP)**:
   - Automatically extracts incoming W3C `traceparent` and `tracestate` headers to preserve parent-child trace context.
   - Generates OpenTelemetry `SERVER` spans with standard HTTP semantic conventions (`http.request.method`, `http.response.status_code`, `url.path`, `url.query`, `client.address`).
@@ -93,9 +93,9 @@ wiremock_journal_size_requests 67
 # TYPE wiremock_journal_capacity gauge
 wiremock_journal_capacity -1
 
-# HELP wiremock_stubs_total Total number of stub mappings in WireMock
-# TYPE wiremock_stubs_total gauge
-wiremock_stubs_total{status="active"} 12
+# HELP wiremock_stubs Total number of stub mappings in WireMock
+# TYPE wiremock_stubs gauge
+wiremock_stubs{status="active"} 12
 ```
 
 ## OTLP Exporter Configuration & Deployment Options

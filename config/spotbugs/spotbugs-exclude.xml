@@ -25,6 +25,10 @@
         <Class name="com.github.mattiasgreen.wiremock.casual.CasualRegistry"/>
         <Bug pattern="MS_EXPOSE_REP"/>
     </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.otel.WireMockTelemetryEngine"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
 
     <!-- Exclude browser launcher and local file operations in desktop client WireMockStudio -->
     <Match>

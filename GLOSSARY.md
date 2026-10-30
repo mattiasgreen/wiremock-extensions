@@ -39,3 +39,13 @@ _Avoid_: asset helper, file server, web resource loader
 **UI Domain Driver**:
 A high-level test seam encapsulating console navigation, tab switching, stub/journal query evaluation, modal interactions, and assertion waiting without coupling test suites to raw DOM selectors or arbitrary sleep timeouts.
 _Avoid_: page object boilerplate, playwright helper, UI tester fixture
+
+### Observability & Telemetry
+
+**Telemetry Engine**:
+An in-process observability module that encapsulates a unified OpenTelemetry SDK (MeterProvider, TracerProvider, and Resource), metric instruments, asynchronous observable gauges for WireMock journal/stubs/NetEm state, and W3C trace span lifecycle management, scoped per WireMock server instance.
+_Avoid_: metrics registry, tracing registry, telemetry helper, monitoring service
+
+**Traffic Classification**:
+An immutable domain representation derived from a WireMock `ServeEvent` and `Request` that encapsulates protocol detection (`http`, `casual`, `grpc`), routing outcome (`stubbed`, `proxied`, `fault`, `unmatched`), upstream proxy target, RPC service/error metadata, and elapsed duration.
+_Avoid_: request inspector, traffic sniffer, protocol detector

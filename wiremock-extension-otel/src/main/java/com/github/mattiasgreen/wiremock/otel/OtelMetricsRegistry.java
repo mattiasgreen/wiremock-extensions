@@ -1,77 +1,47 @@
 package com.github.mattiasgreen.wiremock.otel;
 
 import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.common.AttributesBuilder;
-import io.opentelemetry.api.metrics.DoubleHistogram;
-import io.opentelemetry.api.metrics.LongCounter;
-import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.exporter.prometheus.PrometheusMetricReader;
-import io.opentelemetry.sdk.OpenTelemetrySdk;
-import io.opentelemetry.sdk.metrics.SdkMeterProvider;
-import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
+/**
+ * Backward-compatible facade delegating to {@link WireMockTelemetryEngine}.
+ * For modern usage, prefer injecting or configuring {@link WireMockTelemetryEngine} directly.
+ */
 public class OtelMetricsRegistry {
 
-    private static final OtelMetricsRegistry INSTANCE = new OtelMetricsRegistry();
+    private static final OtelMetricsRegistry INSTANCE = new OtelMetricsRegistry(WireMockTelemetryEngine.getInstance());
 
-    public static final AttributeKey<String> ATTR_PROTOCOL = AttributeKey.stringKey("protocol");
-    public static final AttributeKey<String> ATTR_TRAFFIC_TYPE = AttributeKey.stringKey("traffic_type");
-    public static final AttributeKey<String> ATTR_WIREMOCK_MATCHED = AttributeKey.stringKey("wiremock_matched");
-    public static final AttributeKey<String> ATTR_WIREMOCK_STUB_NAME = AttributeKey.stringKey("wiremock_stub_name");
-    public static final AttributeKey<String> ATTR_HTTP_METHOD = AttributeKey.stringKey("http_request_method");
-    public static final AttributeKey<String> ATTR_HTTP_STATUS = AttributeKey.stringKey("http_response_status_code");
-    public static final AttributeKey<String> ATTR_TARGET_UPSTREAM = AttributeKey.stringKey("target_upstream");
-    public static final AttributeKey<String> ATTR_RPC_SERVICE = AttributeKey.stringKey("rpc_service");
-    public static final AttributeKey<String> ATTR_CASUAL_ERROR_STATE = AttributeKey.stringKey("casual_error_state");
+    public static final AttributeKey<String> ATTR_PROTOCOL = WireMockTelemetryEngine.ATTR_PROTOCOL;
+    public static final AttributeKey<String> ATTR_TRAFFIC_TYPE = WireMockTelemetryEngine.ATTR_TRAFFIC_TYPE;
+    public static final AttributeKey<String> ATTR_WIREMOCK_MATCHED = WireMockTelemetryEngine.ATTR_WIREMOCK_MATCHED;
+    public static final AttributeKey<String> ATTR_WIREMOCK_STUB_NAME = WireMockTelemetryEngine.ATTR_WIREMOCK_STUB_NAME;
+    public static final AttributeKey<String> ATTR_HTTP_METHOD = WireMockTelemetryEngine.ATTR_HTTP_METHOD;
+    public static final AttributeKey<String> ATTR_HTTP_STATUS = WireMockTelemetryEngine.ATTR_HTTP_STATUS;
+    public static final AttributeKey<String> ATTR_TARGET_UPSTREAM = WireMockTelemetryEngine.ATTR_TARGET_UPSTREAM;
+    public static final AttributeKey<String> ATTR_RPC_SERVICE = WireMockTelemetryEngine.ATTR_RPC_SERVICE;
+    public static final AttributeKey<String> ATTR_CASUAL_ERROR_STATE = WireMockTelemetryEngine.ATTR_CASUAL_ERROR_STATE;
 
-    private final PrometheusMetricReader prometheusReader;
-    private final Meter meter;
-
-    private final LongCounter requestsTotal;
-    private final DoubleHistogram requestDuration;
-    private final DoubleHistogram upstreamDuration;
-    private final LongCounter unmatchedTotal;
+    private final WireMockTelemetryEngine telemetryEngine;
 
     public static OtelMetricsRegistry getInstance() {
         return INSTANCE;
     }
 
     public static OtelMetricsRegistry create() {
-        return new OtelMetricsRegistry();
+        return new OtelMetricsRegistry(WireMockTelemetryEngine.create());
     }
 
-    private OtelMetricsRegistry() {
-        this.prometheusReader = new PrometheusMetricReader(false, name -> true);
-        SdkMeterProvider meterProvider = SdkMeterProvider.builder()
-                .registerMetricReader(prometheusReader)
-                .build();
+    public OtelMetricsRegistry() {
+        this(WireMockTelemetryEngine.getInstance());
+    }
 
-        OpenTelemetrySdk openTelemetry =
-                OpenTelemetrySdk.builder().setMeterProvider(meterProvider).build();
+    public OtelMetricsRegistry(WireMockTelemetryEngine telemetryEngine) {
+        this.telemetryEngine = Objects.requireNonNull(telemetryEngine, "telemetryEngine must not be null");
+    }
 
-        this.meter = openTelemetry.getMeter("wiremock-otel");
-
-        this.requestsTotal = meter.counterBuilder("wiremock_requests_total")
-                .setDescription("Total requests handled by WireMock")
-                .build();
-
-        this.requestDuration = meter.histogramBuilder("wiremock_request_duration_ms")
-                .setDescription("WireMock request execution duration in milliseconds")
-                .setUnit("ms")
-                .build();
-
-        this.upstreamDuration = meter.histogramBuilder("wiremock_upstream_duration_ms")
-                .setDescription("Upstream target execution duration in milliseconds for proxied requests")
-                .setUnit("ms")
-                .build();
-
-        this.unmatchedTotal = meter.counterBuilder("wiremock_requests_unmatched_total")
-                .setDescription("Total requests that did not match any stub")
-                .build();
+    public WireMockTelemetryEngine getTelemetryEngine() {
+        return telemetryEngine;
     }
 
     public void recordRequest(String method, int statusCode, boolean matched, String stubName, double durationMs) {
@@ -102,73 +72,37 @@ public class OtelMetricsRegistry {
             double durationMs,
             double upstreamDurationMs) {
 
-        String safeProtocol = protocol != null && !protocol.isBlank() ? protocol : "http";
-        String safeTrafficType = trafficType != null && !trafficType.isBlank() ? trafficType : "stubbed";
+        TrafficClassification tc = new TrafficClassification(
+                protocol,
+                trafficType,
+                method,
+                statusCode,
+                matched,
+                null,
+                stubName,
+                null,
+                null,
+                targetUpstream,
+                "casual".equalsIgnoreCase(protocol) ? "casual" : null,
+                rpcService,
+                rpcStatus,
+                "/",
+                null,
+                "/",
+                null,
+                durationMs,
+                upstreamDurationMs,
+                java.time.Instant.now(),
+                java.time.Instant.now());
 
-        AttributesBuilder builder = Attributes.builder()
-                .put(ATTR_PROTOCOL, safeProtocol)
-                .put(ATTR_TRAFFIC_TYPE, safeTrafficType)
-                .put(ATTR_WIREMOCK_MATCHED, String.valueOf(matched))
-                .put(ATTR_WIREMOCK_STUB_NAME, stubName != null ? stubName : "none");
-
-        if ("casual".equalsIgnoreCase(safeProtocol)) {
-            if (rpcService != null && !rpcService.isBlank()) {
-                builder.put(ATTR_RPC_SERVICE, rpcService);
-            }
-            if (rpcStatus != null && !rpcStatus.isBlank()) {
-                builder.put(ATTR_CASUAL_ERROR_STATE, rpcStatus);
-            }
-        } else {
-            builder.put(ATTR_HTTP_METHOD, method != null ? method : "UNKNOWN");
-            builder.put(ATTR_HTTP_STATUS, String.valueOf(statusCode));
-        }
-
-        if ("proxied".equalsIgnoreCase(safeTrafficType)
-                && targetUpstream != null
-                && !targetUpstream.isBlank()
-                && !"none".equals(targetUpstream)) {
-            builder.put(ATTR_TARGET_UPSTREAM, targetUpstream);
-        }
-
-        Attributes attributes = builder.build();
-
-        requestsTotal.add(1, attributes);
-        requestDuration.record(durationMs, attributes);
-
-        if ("proxied".equalsIgnoreCase(safeTrafficType) && upstreamDurationMs > 0) {
-            Attributes upstreamAttrs = Attributes.of(
-                    ATTR_PROTOCOL,
-                    safeProtocol,
-                    ATTR_TARGET_UPSTREAM,
-                    targetUpstream != null ? targetUpstream : "none",
-                    ATTR_HTTP_STATUS,
-                    String.valueOf(statusCode));
-            upstreamDuration.record(upstreamDurationMs, upstreamAttrs);
-        }
-
-        if (!matched) {
-            AttributesBuilder unmatchedAttrs = Attributes.builder().put(ATTR_PROTOCOL, safeProtocol);
-            if ("casual".equalsIgnoreCase(safeProtocol) && rpcService != null) {
-                unmatchedAttrs.put(ATTR_RPC_SERVICE, rpcService);
-            } else {
-                unmatchedAttrs.put(ATTR_HTTP_METHOD, method != null ? method : "UNKNOWN");
-            }
-            unmatchedTotal.add(1, unmatchedAttrs.build());
-        }
+        telemetryEngine.recordMetrics(tc);
     }
 
     public String scrapePrometheusText() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrometheusTextFormatWriter writer = new PrometheusTextFormatWriter(false);
-        try {
-            writer.write(baos, prometheusReader.collect());
-            return baos.toString(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to format Prometheus metrics", e);
-        }
+        return telemetryEngine.scrapePrometheusText();
     }
 
     public PrometheusMetricReader getPrometheusReader() {
-        return prometheusReader;
+        return telemetryEngine.getPrometheusReader();
     }
 }

@@ -90,6 +90,29 @@ public class OtelTracingTest {
                 .isEqualTo("stubbed");
         assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.protocol")))
                 .isEqualTo("http");
+        assertThat(span.getEndEpochNanos()).isGreaterThanOrEqualTo(span.getStartEpochNanos());
+    }
+
+    @Test
+    void testSpanDurationReflectsRequestExecutionTime() throws Exception {
+        server.stubFor(get(urlEqualTo("/api/v1/delayed"))
+                .willReturn(ok("delayed-response").withFixedDelay(100)));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/api/v1/delayed"))
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        List<SpanData> finishedSpans = awaitFinishedSpans(1);
+        assertThat(finishedSpans).hasSize(1);
+
+        SpanData span = finishedSpans.get(0);
+        long durationNanos = span.getEndEpochNanos() - span.getStartEpochNanos();
+        long durationMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(durationNanos);
+        assertThat(durationMillis).isGreaterThanOrEqualTo(90L);
     }
 
     @Test

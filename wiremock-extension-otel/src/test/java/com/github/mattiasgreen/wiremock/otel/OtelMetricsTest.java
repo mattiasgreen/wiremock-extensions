@@ -213,7 +213,8 @@ public class OtelMetricsTest {
 
         assertThat(body).contains("wiremock_journal_size_requests");
         assertThat(body).contains("wiremock_journal_capacity");
-        assertThat(body).contains("wiremock_stubs_total{status=\"active\"}");
+        assertThat(body).contains("wiremock_stubs");
+        assertThat(body).contains("status=\"active\"");
     }
 
     @Test
@@ -248,10 +249,10 @@ public class OtelMetricsTest {
             assertThat(body).contains("wiremock_netem_connections_active{proxy=\"otel-test-proxy\"}");
             assertThat(body)
                     .contains(
-                            "wiremock_netem_transfers_total{proxy=\"otel-test-proxy\",outcome=\"normal\",toxic=\"none\"}");
+                            "wiremock_netem_transfers_total{outcome=\"normal\",proxy=\"otel-test-proxy\",toxic=\"none\"}");
             assertThat(body)
                     .contains(
-                            "wiremock_netem_bytes_transferred_total{proxy=\"otel-test-proxy\",direction=\"upstream\",outcome=\"normal\"}");
+                            "wiremock_netem_bytes_transferred_total{direction=\"upstream\",outcome=\"normal\",proxy=\"otel-test-proxy\"}");
         } finally {
             com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry.getInstance()
                     .closeAll();
