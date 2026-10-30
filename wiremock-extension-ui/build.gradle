@@ -2,6 +2,7 @@ dependencies {
     testImplementation project(':wiremock-extension-openapi')
     testImplementation project(':wiremock-extension-stateful')
     testImplementation project(':wiremock-extension-tcp-netem')
+    testImplementation project(':wiremock-extension-casual')
     testImplementation libs.playwright
     testImplementation libs.jackson.databind
     testImplementation libs.animated.gif.lib

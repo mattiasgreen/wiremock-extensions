@@ -1382,6 +1382,7 @@ kbd {
   min-height: 0;
 }
 
+.tester-inspector-content.both-mode,
 .inspector-view.both-mode {
   display: grid;
   grid-template-columns: 1fr 1fr;

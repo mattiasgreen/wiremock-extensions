@@ -62,6 +62,21 @@ import {
   setLocalHeadersEnabled,
   loadExcludedJsonPaths
 } from './modules/settings.js';
+import {
+  initCasualTester,
+  executeCasualRequest,
+  formatCasualJsonPayload,
+  resetCasualForm,
+  setCasualViewMode,
+  setCasualInspectorTab,
+  appendCasualHeader,
+  clearCasualHistory,
+  toggleCasualHistory,
+  setCasualHistoryCollapsed,
+  updateCasualRoute,
+  handleCasualFileUpload,
+  downloadCasualBinaryResponse
+} from './modules/casual-tester.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
   renderProjectSelector,
@@ -154,6 +169,7 @@ setupOpenApiModal();
 setupProjectLifecycleBar(loadData);
 setupDynamicStubModal();
 initTesterHistoryCollapse();
+initCasualTester();
 
 registerRouteHandlers({
   applyStubs: (params) => {
@@ -195,6 +211,14 @@ registerRouteHandlers({
     if (h && elements.testerHeaders) elements.testerHeaders.value = fromBase64(h);
     const b = params.get('b');
     if (b && elements.testerBody) elements.testerBody.value = fromBase64(b);
+  },
+  applyCasual: (params) => {
+    const s = params.get('s');
+    if (s && elements.casualServiceName) elements.casualServiceName.value = s;
+    const b = params.get('b');
+    if (b && elements.casualBufferType) elements.casualBufferType.value = b;
+    const p = params.get('p');
+    if (p && elements.casualRequestPayload) elements.casualRequestPayload.value = fromBase64(p);
   },
   applyNetEm: () => {
     activateNetEm();
@@ -901,6 +925,80 @@ if (elements.btnTesterCopyResponse) {
 }
 [elements.testerMethod, elements.testerUrl, elements.testerHeaders, elements.testerBody].forEach(el => {
   if (el) el.addEventListener('change', () => updateTesterRoute(true));
+});
+
+// Event Listeners: Casual Tester Tab
+if (elements.btnCasualSend) {
+  elements.btnCasualSend.addEventListener('click', executeCasualRequest);
+}
+const tabCasualEl = document.getElementById('tab-casual');
+if (tabCasualEl) {
+  tabCasualEl.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      executeCasualRequest();
+    }
+  });
+}
+if (elements.btnCasualFormatJson) {
+  elements.btnCasualFormatJson.addEventListener('click', formatCasualJsonPayload);
+}
+if (elements.btnCasualReset) {
+  elements.btnCasualReset.addEventListener('click', resetCasualForm);
+}
+if (elements.btnToggleCasualHistory) {
+  elements.btnToggleCasualHistory.addEventListener('click', toggleCasualHistory);
+}
+if (elements.btnExpandCasualHistory) {
+  elements.btnExpandCasualHistory.addEventListener('click', () => setCasualHistoryCollapsed(false));
+}
+if (elements.btnCasualClearHistory) {
+  elements.btnCasualClearHistory.addEventListener('click', clearCasualHistory);
+}
+if (elements.btnCasualViewHighlighted) {
+  elements.btnCasualViewHighlighted.addEventListener('click', () => setCasualViewMode('formatted'));
+}
+if (elements.btnCasualViewRaw) {
+  elements.btnCasualViewRaw.addEventListener('click', () => setCasualViewMode('raw'));
+}
+if (elements.btnCasualViewHex) {
+  elements.btnCasualViewHex.addEventListener('click', () => setCasualViewMode('hex'));
+}
+if (elements.btnCasualDownloadBinary) {
+  elements.btnCasualDownloadBinary.addEventListener('click', downloadCasualBinaryResponse);
+}
+if (elements.btnCasualUploadFile && elements.casualFileInput) {
+  elements.btnCasualUploadFile.addEventListener('click', () => elements.casualFileInput.click());
+  elements.casualFileInput.addEventListener('change', handleCasualFileUpload);
+}
+if (elements.btnCasualTabResponse) {
+  elements.btnCasualTabResponse.addEventListener('click', () => setCasualInspectorTab('response'));
+}
+if (elements.btnCasualTabRequest) {
+  elements.btnCasualTabRequest.addEventListener('click', () => setCasualInspectorTab('request'));
+}
+if (elements.btnCasualTabBoth) {
+  elements.btnCasualTabBoth.addEventListener('click', () => setCasualInspectorTab('both'));
+}
+if (elements.btnCasualPresetCorr) {
+  elements.btnCasualPresetCorr.addEventListener('click', () => appendCasualHeader('X-Correlation-Id', crypto.randomUUID()));
+}
+if (elements.btnCasualPresetTx) {
+  elements.btnCasualPresetTx.addEventListener('click', () => appendCasualHeader('X-Casual-Transaction-State', 'TX_ACTIVE'));
+}
+if (elements.btnCasualCopyResponse) {
+  elements.btnCasualCopyResponse.addEventListener('click', () => {
+    if (elements.casualResponseBody && elements.casualResponseBody.textContent) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(elements.casualResponseBody.textContent).catch(() => {});
+      }
+      elements.btnCasualCopyResponse.textContent = '✅ Copied!';
+      setTimeout(() => elements.btnCasualCopyResponse.textContent = '📋 Copy', 1500);
+    }
+  });
+}
+[elements.casualServiceName, elements.casualBufferType, elements.casualTargetHost, elements.casualTargetPort, elements.casualRequestPayload].forEach(el => {
+  if (el) el.addEventListener('change', () => updateCasualRoute(true));
 });
 
 // Event Listeners: Scenarios Tab

@@ -183,7 +183,7 @@ public final class CasualBufferUtils {
             return false;
         }
         String normalized = bufferType.trim().toLowerCase(Locale.ROOT);
-        return normalized.contains("cstring");
+        return normalized.contains("cstring") || normalized.equals("string");
     }
 
     /**
@@ -295,12 +295,13 @@ public final class CasualBufferUtils {
      * or parses JSON object into a binary .FIELDED buffer.
      */
     public static ServiceBuffer wrapPayload(String bufferType, String payload) {
-        if (payload == null || payload.isBlank()) {
-            return ServiceBuffer.empty();
-        }
         String type = (bufferType != null && !bufferType.isBlank()) ? bufferType.trim() : "JSON";
         if (isJsonType(type)) {
-            return ServiceBuffer.of(JsonBuffer.of(payload));
+            String json = (payload != null && !payload.isBlank()) ? payload : "{}";
+            return ServiceBuffer.of(JsonBuffer.of(json));
+        }
+        if (payload == null || payload.isBlank()) {
+            return ServiceBuffer.of(type, List.of());
         }
         if (isCStringType(type)) {
             String text = payload.endsWith("\0") ? payload : payload + "\0";
@@ -458,6 +459,78 @@ public final class CasualBufferUtils {
                     fieldType,
                     e.getMessage());
         }
+    }
+
+    /**
+     * Wraps raw binary bytes directly into a {@link ServiceBuffer}.
+     */
+    public static ServiceBuffer wrapPayload(String bufferType, byte[] binaryData) {
+        String type = (bufferType != null && !bufferType.isBlank()) ? bufferType.trim() : "X_OCTET";
+        if (isJsonType(type)) {
+            String json = (binaryData != null && binaryData.length > 0)
+                    ? new String(binaryData, StandardCharsets.UTF_8)
+                    : "{}";
+            return ServiceBuffer.of(JsonBuffer.of(json));
+        }
+        if (binaryData == null || binaryData.length == 0) {
+            return ServiceBuffer.of(type, List.of());
+        }
+        return ServiceBuffer.of(type, List.of(binaryData));
+    }
+
+    /**
+     * Parses a hex string (e.g. "01 02 AA BB" or "0102AABB" or "0x01, 0x02") into raw bytes.
+     */
+    public static byte[] fromHex(String hexString) {
+        if (hexString == null || hexString.isBlank()) {
+            return new byte[0];
+        }
+        String cleaned = hexString.replaceAll("(?:0x|0X|[^0-9a-fA-F])", "");
+        if (cleaned.isEmpty()) {
+            return new byte[0];
+        }
+        if (cleaned.length() % 2 != 0) {
+            cleaned = "0" + cleaned;
+        }
+        byte[] result = new byte[cleaned.length() / 2];
+        for (int i = 0; i < cleaned.length(); i += 2) {
+            result[i / 2] = (byte) Integer.parseInt(cleaned.substring(i, i + 2), 16);
+        }
+        return result;
+    }
+
+    /**
+     * Formats bytes as a canonical multi-line hex dump with byte offsets, hex pairs, and ASCII representation.
+     */
+    public static String toCanonicalHexDump(byte[] bytes, int maxBytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "<empty>";
+        }
+        int len = Math.min(bytes.length, maxBytes);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < len; i += 16) {
+            sb.append(String.format(Locale.ROOT, "%08X  ", i));
+            int chunk = Math.min(16, len - i);
+            for (int j = 0; j < 16; j++) {
+                if (j < chunk) {
+                    sb.append(String.format(Locale.ROOT, "%02X ", bytes[i + j]));
+                } else {
+                    sb.append("   ");
+                }
+                if (j == 7) sb.append(" ");
+            }
+            sb.append(" |");
+            for (int j = 0; j < chunk; j++) {
+                int val = bytes[i + j] & 0xFF;
+                char c = (val >= 32 && val < 127) ? (char) val : '.';
+                sb.append(c);
+            }
+            sb.append(String.format(Locale.ROOT, "|%n"));
+        }
+        if (bytes.length > maxBytes) {
+            sb.append(String.format(Locale.ROOT, "... [%d more bytes]%n", bytes.length - maxBytes));
+        }
+        return sb.toString();
     }
 
     /**

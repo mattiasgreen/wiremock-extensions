@@ -108,4 +108,80 @@ class CasualAdminEndpointTest {
         assertThat(root.get("enabled").asBoolean()).isTrue();
         assertThat(root.get("port").asInt()).isEqualTo(7772);
     }
+
+    @Test
+    void shouldExecuteCasualCallViaAdminApi() throws Exception {
+        com.github.tomakehurst.wiremock.client.WireMock wireMock =
+                new com.github.tomakehurst.wiremock.client.WireMock(wireMockServer.port());
+        wireMock.register(com.github.tomakehurst.wiremock.client.WireMock.post(
+                        com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo("/__casual/services/adminCallTest"))
+                .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"adminCalled\": true, \"id\": 999}")));
+
+        CasualWireMockGateway gateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockBaseUrl("http://127.0.0.1:" + wireMockServer.port())
+                .build();
+        gateway.start();
+        CasualRegistry.getInstance().setGateway(gateway);
+
+        try {
+            String callReqJson =
+                    """
+                    {
+                        "service": "adminCallTest",
+                        "payload": "{\\"test\\": 1}",
+                        "port": %d
+                    }
+                    """
+                            .formatted(gateway.getPort());
+
+            HttpRequest callReq = HttpRequest.newBuilder()
+                    .uri(URI.create(adminBaseUrl + "/casual/call"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(callReqJson))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(callReq, HttpResponse.BodyHandlers.ofString());
+
+            assertThat(response.statusCode()).isEqualTo(200);
+            JsonNode root = objectMapper.readTree(response.body());
+            assertThat(root.get("success").asBoolean()).isTrue();
+            assertThat(root.get("service").asText()).isEqualTo("adminCallTest");
+            assertThat(root.get("errorState").asText()).isEqualTo("OK");
+            assertThat(root.get("payload").asText()).contains("\"adminCalled\": true");
+            assertThat(root.has("headers")).isTrue();
+            assertThat(root.get("headers").get("Content-Type").asText()).isEqualTo("application/json");
+            assertThat(root.get("headers").get("X-Casual-Error-State").asText()).isEqualTo("OK");
+            assertThat(root.has("requestHeaders")).isTrue();
+            assertThat(root.get("requestHeaders").get("X-Casual-Service").asText())
+                    .isEqualTo("adminCallTest");
+
+            // Also test discover
+            String discoverReqJson =
+                    """
+                    {
+                        "services": ["adminCallTest"],
+                        "port": %d
+                    }
+                    """
+                            .formatted(gateway.getPort());
+
+            HttpRequest discReq = HttpRequest.newBuilder()
+                    .uri(URI.create(adminBaseUrl + "/casual/discover"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(discoverReqJson))
+                    .build();
+
+            HttpResponse<String> discResp = httpClient.send(discReq, HttpResponse.BodyHandlers.ofString());
+            assertThat(discResp.statusCode()).isEqualTo(200);
+            JsonNode discRoot = objectMapper.readTree(discResp.body());
+            assertThat(discRoot.get("domainName").asText()).isEqualTo("wiremock-casual-domain");
+            assertThat(discRoot.get("services").toString()).contains("adminCallTest");
+        } finally {
+            gateway.close();
+        }
+    }
 }

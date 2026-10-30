@@ -32,6 +32,12 @@
         <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
     </Match>
 
+    <!-- Exclude CLI file reading operations for CasualClient -->
+    <Match>
+        <Class name="se.laz.casual.client.CasualClient"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+
     <!-- Exclude subprocess launcher for WireMockConsoleProxy in CLI runner -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.cli.WireMockCli"/>

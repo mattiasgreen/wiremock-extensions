@@ -376,7 +376,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
 
             page.waitForSelector("#target-capabilities-status");
             assertThat(page.locator("#target-capabilities-status").textContent())
-                    .contains("1/5 active (Degraded)");
+                    .contains("1/6 active (Degraded)");
 
             assertThat(page.locator("[data-testid='cap-badge-core']").textContent())
                     .isEqualTo("Active");
@@ -387,6 +387,8 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
             assertThat(page.locator("[data-testid='cap-badge-netem']").textContent())
                     .isEqualTo("Not Installed");
             assertThat(page.locator("[data-testid='cap-badge-metrics']").textContent())
+                    .isEqualTo("Not Installed");
+            assertThat(page.locator("[data-testid='cap-badge-casual']").textContent())
                     .isEqualTo("Not Installed");
 
             page.locator("#btn-close-target-host").click();
