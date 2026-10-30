@@ -78,3 +78,5 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - **`pr-and-release-prep`**: Activate before committing, creating a PR, or checking `release-please` / Maven Central readiness.
   - **`demo-video-recording`**: Activate when recording animated GIFs, pitch deck screenshots, or Playwright WebM video tours.
   - **`casual-upstream-sync`**: Activate when modifying `se.laz.casual.*` protocol classes in `wiremock-extension-casual`.
+  - **`codebase-design` & `improve-codebase-architecture`**: Activate when assessing module depth, restructuring interfaces/seams/adapters, reducing shallow modules, or generating visual architecture reports.
+  - **`domain-modeling` & `to-spec`**: Activate when defining ubiquitous domain language, drafting specifications, or setting up testing seams.
