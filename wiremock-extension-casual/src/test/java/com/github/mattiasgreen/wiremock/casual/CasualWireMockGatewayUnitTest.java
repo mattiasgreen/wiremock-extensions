@@ -1,20 +1,13 @@
 package com.github.mattiasgreen.wiremock.casual;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
-import static com.github.tomakehurst.wiremock.client.WireMock.post;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.tomakehurst.wiremock.WireMockServer;
+import java.util.Map;
 import java.util.UUID;
 import javax.transaction.xa.Xid;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
@@ -31,62 +24,40 @@ import se.laz.casual.network.protocol.messages.transaction.CasualTransactionReso
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareRequestMessage;
 
 /**
- * Fast in-memory unit tests for {@link CasualWireMockGateway}.
- * Tests HTTP-to-Casual status code mappings, error states, and thread-safe XA transaction overrides.
+ * Fast in-memory unit tests for {@link CasualWireMockGateway} and its mediation seam.
+ * Operates without sockets, threads, or HTTP ports using {@link InMemoryCasualStoreAdapter}.
  */
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CasualWireMockGatewayUnitTest {
 
-    private WireMockServer wireMockServer;
+    private InMemoryCasualStoreAdapter store;
     private CasualWireMockGateway gateway;
 
-    @BeforeAll
-    void start() {
-        wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
-        wireMockServer.start();
-
-        gateway = CasualWireMockGateway.builder()
-                .port(0)
-                .wireMockServer(wireMockServer)
-                .build();
-    }
-
-    @AfterAll
-    void stop() {
-        if (gateway != null) {
-            gateway.close();
-        }
-        if (wireMockServer != null) {
-            wireMockServer.stop();
-        }
+    @BeforeEach
+    void setUp() {
+        store = new InMemoryCasualStoreAdapter();
+        gateway = CasualWireMockGateway.builder().storePort(store).build();
     }
 
     @Test
     @DisplayName("Unit Test: HTTP Status Codes & Error Headers cleanly map to Casual ErrorState")
     void testCleanStatusMappingToCasualErrorStates() {
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/test/ok"))
-                .willReturn(aResponse().withStatus(200).withBody("{\"status\":\"ok\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/test/fail"))
-                .willReturn(aResponse().withStatus(500).withBody("{\"error\":\"failed\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/test/timeout"))
-                .willReturn(aResponse().withStatus(504).withBody("{\"error\":\"gateway timeout\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/test/inval"))
-                .willReturn(aResponse().withStatus(400).withBody("{\"error\":\"bad request\"}")));
-
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/test/custom-err"))
-                .willReturn(aResponse()
-                        .withStatus(500)
-                        .withHeader("X-Casual-Error-State", "TPESVCERR")
-                        .withHeader("X-Casual-User-Supplied-Error", "8888")
-                        .withBody("{\"error\":\"custom error\"}")));
+        store.addStub("/__casual/services/test/ok", 200, "{\"status\":\"ok\"}");
+        store.addStub("/__casual/services/test/fail", 500, "{\"error\":\"failed\"}");
+        store.addStub("/__casual/services/test/timeout", 504, "{\"error\":\"gateway timeout\"}");
+        store.addStub("/__casual/services/test/inval", 400, "{\"error\":\"bad request\"}");
+        store.addStub(
+                "/__casual/services/test/custom-err",
+                500,
+                "{\"error\":\"custom error\"}",
+                Map.of(
+                        "X-Casual-Error-State", "TPESVCERR",
+                        "X-Casual-User-Supplied-Error", "8888"));
 
         // 1. HTTP 200 -> OK + TX_ACTIVE
         CasualServiceCallReplyMessage okReply = gateway.handleServiceCall(buildRequest("test/ok", "{}"));
         assertThat(okReply.getError()).isEqualTo(ErrorState.OK);
         assertThat(okReply.getTransactionState()).isEqualTo(TransactionState.TX_ACTIVE);
+        assertThat(CasualBufferUtils.extractPayload(okReply.getServiceBuffer())).isEqualTo("{\"status\":\"ok\"}");
 
         // 2. HTTP 500 -> TPESVCFAIL + ROLLBACK_ONLY
         CasualServiceCallReplyMessage failReply = gateway.handleServiceCall(buildRequest("test/fail", "{}"));
@@ -116,23 +87,18 @@ class CasualWireMockGatewayUnitTest {
         Xid xidFault = XID.of(new byte[] {1, 2, 3}, new byte[] {4, 5, 6}, 42);
         Xid xidHappy = XID.of(new byte[] {7, 8, 9}, new byte[] {10, 11, 12}, 42);
 
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/order/charge"))
-                .withRequestBody(equalToJson("{\"item\":\"faulty\"}"))
-                .willReturn(aResponse()
-                        .withStatus(500)
-                        .withHeader("X-Casual-XA-Prepare-Vote", "XA_RBROLLBACK")
-                        .withBody("{\"error\":\"db prepare crash\"}")));
+        store.addStub(
+                "/__casual/services/order/charge",
+                500,
+                "{\"error\":\"db prepare crash\"}",
+                Map.of("X-Casual-XA-Prepare-Vote", "XA_RBROLLBACK"));
 
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/order/charge"))
-                .withRequestBody(equalToJson("{\"item\":\"happy\"}"))
-                .willReturn(aResponse().withStatus(200).withBody("{\"status\":\"success\"}")));
-
-        // Execute both transactional calls
+        // Execute transactional call for faulty branch
         gateway.handleServiceCall(buildTransactionalRequest("order/charge", "{\"item\":\"faulty\"}", xidFault));
-        gateway.handleServiceCall(buildTransactionalRequest("order/charge", "{\"item\":\"happy\"}", xidHappy));
 
-        // Verify only the fault Xid registered an override
-        assertThat(gateway.getPrepareVoteOverridesSize()).isEqualTo(1);
+        // Update stub for happy branch
+        store.addStub("/__casual/services/order/charge", 200, "{\"status\":\"success\"}");
+        gateway.handleServiceCall(buildTransactionalRequest("order/charge", "{\"item\":\"happy\"}", xidHappy));
 
         // Prepare Happy Path -> returns XA_OK
         CasualTransactionResourcePrepareReplyMessage prepareHappy = gateway.prepare(
@@ -144,9 +110,10 @@ class CasualWireMockGatewayUnitTest {
                 CasualTransactionResourcePrepareRequestMessage.of(UUID.randomUUID(), xidFault, 1, Flag.of()));
         assertThat(prepareFault.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_RBROLLBACK);
 
-        // Verify state maps were automatically cleaned up on abort (zero memory leak)
-        assertThat(gateway.getPrepareVoteOverridesSize()).isEqualTo(0);
-        assertThat(gateway.getCommitVoteOverridesSize()).isEqualTo(0);
+        // Subsequent prepare on cleaned-up branch defaults to standard protocol outcome without lingering overrides
+        CasualTransactionResourcePrepareReplyMessage subsequentPrepare = gateway.prepare(
+                CasualTransactionResourcePrepareRequestMessage.of(UUID.randomUUID(), xidFault, 1, Flag.of()));
+        assertThat(subsequentPrepare.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
     }
 
     @Test
@@ -154,16 +121,14 @@ class CasualWireMockGatewayUnitTest {
     void testCommitHeuristicHazardOverride() {
         Xid xidHeuristic = XID.of(new byte[] {20, 21}, new byte[] {22, 23}, 99);
 
-        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/order/commit-hazard"))
-                .willReturn(aResponse()
-                        .withStatus(500)
-                        .withHeader("X-Casual-XA-Commit-Vote", "XA_HEURHAZ")
-                        .withBody("{\"error\":\"in-doubt commit state\"}")));
+        store.addStub(
+                "/__casual/services/order/commit-hazard",
+                500,
+                "{\"error\":\"in-doubt commit state\"}",
+                Map.of("X-Casual-XA-Commit-Vote", "XA_HEURHAZ"));
 
         gateway.handleServiceCall(
                 buildTransactionalRequest("order/commit-hazard", "{\"item\":\"hazard\"}", xidHeuristic));
-
-        assertThat(gateway.getCommitVoteOverridesSize()).isEqualTo(1);
 
         // Prepare succeeds
         CasualTransactionResourcePrepareReplyMessage prepareReply = gateway.prepare(
@@ -175,8 +140,10 @@ class CasualWireMockGatewayUnitTest {
                 CasualTransactionResourceCommitRequestMessage.of(UUID.randomUUID(), xidHeuristic, 1, Flag.of()));
         assertThat(commitReply.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_HEURHAZ);
 
-        // Cleaned up
-        assertThat(gateway.getCommitVoteOverridesSize()).isEqualTo(0);
+        // Subsequent commit returns standard XA_OK (state cleaned up, zero leak)
+        CasualTransactionResourceCommitReplyMessage subsequentCommit = gateway.commit(
+                CasualTransactionResourceCommitRequestMessage.of(UUID.randomUUID(), xidHeuristic, 1, Flag.of()));
+        assertThat(subsequentCommit.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
     }
 
     private CasualServiceCallRequestMessage buildRequest(String serviceName, String jsonPayload) {

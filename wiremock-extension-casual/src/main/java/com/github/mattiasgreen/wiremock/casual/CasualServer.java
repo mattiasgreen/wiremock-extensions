@@ -1,7 +1,6 @@
-package se.laz.casual.server;
+package com.github.mattiasgreen.wiremock.casual;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
@@ -19,7 +18,6 @@ import java.util.UUID;
 import javax.transaction.xa.Xid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
@@ -30,7 +28,6 @@ import se.laz.casual.network.CasualNWMessageEncoder;
 import se.laz.casual.network.ProtocolMatcher;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.inbound.ProtocolVersionValueHolder;
-import se.laz.casual.network.protocol.encoding.CasualMessageEncoder;
 import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage;
@@ -47,21 +44,36 @@ import se.laz.casual.network.protocol.messages.transaction.CasualTransactionReso
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackRequestMessage;
 
 /**
- * Super-lightweight in-process Casual Domain Gateway server.
- * Listens on a TCP port using Netty and delegates service invocations to a {@link CasualServiceHandler}.
- * <p>
- * Intended for upstream contribution to {@code se.laz.casual:casual-server}.
+ * In-process Casual Domain Gateway server listening on a TCP port using Netty.
  */
 public class CasualServer implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(CasualServer.class);
 
+    @FunctionalInterface
+    public interface ServiceHandler {
+        CasualServiceCallReplyMessage handle(CasualServiceCallRequestMessage request);
+    }
+
+    @FunctionalInterface
+    public interface DiscoveryHandler {
+        List<Service> discover(List<String> serviceNames);
+    }
+
+    public interface TransactionHandler {
+        CasualTransactionResourcePrepareReplyMessage prepare(CasualTransactionResourcePrepareRequestMessage request);
+
+        CasualTransactionResourceCommitReplyMessage commit(CasualTransactionResourceCommitRequestMessage request);
+
+        CasualTransactionResourceRollbackReplyMessage rollback(CasualTransactionResourceRollbackRequestMessage request);
+    }
+
     private final int port;
     private final UUID domainId;
     private final String domainName;
-    private final CasualServiceHandler serviceHandler;
-    private final CasualDiscoveryHandler discoveryHandler;
-    private final CasualTransactionHandler transactionHandler;
+    private final ServiceHandler serviceHandler;
+    private final DiscoveryHandler discoveryHandler;
+    private final TransactionHandler transactionHandler;
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -72,8 +84,8 @@ public class CasualServer implements AutoCloseable {
             int port,
             UUID domainId,
             String domainName,
-            CasualServiceHandler serviceHandler,
-            CasualDiscoveryHandler discoveryHandler) {
+            ServiceHandler serviceHandler,
+            DiscoveryHandler discoveryHandler) {
         this(port, domainId, domainName, serviceHandler, discoveryHandler, null);
     }
 
@@ -81,9 +93,9 @@ public class CasualServer implements AutoCloseable {
             int port,
             UUID domainId,
             String domainName,
-            CasualServiceHandler serviceHandler,
-            CasualDiscoveryHandler discoveryHandler,
-            CasualTransactionHandler transactionHandler) {
+            ServiceHandler serviceHandler,
+            DiscoveryHandler discoveryHandler,
+            TransactionHandler transactionHandler) {
         this.port = port;
         this.domainId = Objects.requireNonNull(domainId, "domainId must not be null");
         this.domainName = Objects.requireNonNull(domainName, "domainName must not be null");
@@ -100,9 +112,9 @@ public class CasualServer implements AutoCloseable {
         private int port = 0;
         private UUID domainId = UUID.randomUUID();
         private String domainName = "casual-server";
-        private CasualServiceHandler serviceHandler;
-        private CasualDiscoveryHandler discoveryHandler;
-        private CasualTransactionHandler transactionHandler;
+        private ServiceHandler serviceHandler;
+        private DiscoveryHandler discoveryHandler;
+        private TransactionHandler transactionHandler;
 
         public Builder port(int port) {
             this.port = port;
@@ -119,17 +131,17 @@ public class CasualServer implements AutoCloseable {
             return this;
         }
 
-        public Builder serviceHandler(CasualServiceHandler serviceHandler) {
+        public Builder serviceHandler(ServiceHandler serviceHandler) {
             this.serviceHandler = serviceHandler;
             return this;
         }
 
-        public Builder discoveryHandler(CasualDiscoveryHandler discoveryHandler) {
+        public Builder discoveryHandler(DiscoveryHandler discoveryHandler) {
             this.discoveryHandler = discoveryHandler;
             return this;
         }
 
-        public Builder transactionHandler(CasualTransactionHandler transactionHandler) {
+        public Builder transactionHandler(TransactionHandler transactionHandler) {
             this.transactionHandler = transactionHandler;
             return this;
         }
@@ -286,7 +298,7 @@ public class CasualServer implements AutoCloseable {
 
             CasualNWMessage<CasualDomainConnectReplyMessage> replyMsg =
                     CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
+            ctx.writeAndFlush(replyMsg);
         }
 
         private void handleDomainDiscovery(
@@ -309,7 +321,7 @@ public class CasualServer implements AutoCloseable {
 
             CasualNWMessage<CasualDomainDiscoveryReplyMessage> replyMsg =
                     CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
+            ctx.writeAndFlush(replyMsg);
         }
 
         private void handleServiceCall(
@@ -359,7 +371,7 @@ public class CasualServer implements AutoCloseable {
             }
             CasualNWMessage<CasualServiceCallReplyMessage> replyMsg =
                     CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
-            writeMessage(ctx, replyMsg);
+            ctx.writeAndFlush(replyMsg);
         }
 
         private void handlePrepare(
@@ -369,7 +381,7 @@ public class CasualServer implements AutoCloseable {
                     ? transactionHandler.prepare(req)
                     : CasualTransactionResourcePrepareReplyMessage.of(
                             req.getExecution(), req.getXid(), req.getResourceId(), XAReturnCode.XA_OK);
-            writeMessage(ctx, CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
+            ctx.writeAndFlush(CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
         }
 
         private void handleCommit(
@@ -379,7 +391,7 @@ public class CasualServer implements AutoCloseable {
                     ? transactionHandler.commit(req)
                     : CasualTransactionResourceCommitReplyMessage.of(
                             req.getExecution(), req.getXid(), req.getResourceId(), XAReturnCode.XA_OK);
-            writeMessage(ctx, CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
+            ctx.writeAndFlush(CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
         }
 
         private void handleRollback(
@@ -389,29 +401,7 @@ public class CasualServer implements AutoCloseable {
                     ? transactionHandler.rollback(req)
                     : CasualTransactionResourceRollbackReplyMessage.of(
                             req.getExecution(), req.getXid(), req.getResourceId(), XAReturnCode.XA_OK);
-            writeMessage(ctx, CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
-        }
-
-        private <T extends se.laz.casual.api.network.protocol.messages.CasualNetworkTransmittable> void writeMessage(
-                ChannelHandlerContext ctx, CasualNWMessage<T> msg) {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug(
-                        "[CASUAL-SERVER-OUTBOUND] Sending reply type={} correlationId={} to={}",
-                        msg.getType(),
-                        msg.getCorrelationId(),
-                        ctx.channel().remoteAddress());
-            }
-            ByteBuf buf = ctx.alloc().buffer();
-            CasualMessageEncoder.write(buf, msg);
-            if (LOG.isTraceEnabled()) {
-                byte[] bytes = new byte[buf.readableBytes()];
-                buf.getBytes(buf.readerIndex(), bytes);
-                LOG.trace(
-                        "[CASUAL-SERVER-HEX] Outbound frame ({} bytes):\n{}",
-                        bytes.length,
-                        CasualBufferUtils.toHexDump(bytes, 128));
-            }
-            ctx.writeAndFlush(buf);
+            ctx.writeAndFlush(CasualNWMessageImpl.of(msg.getCorrelationId(), reply));
         }
     }
 }

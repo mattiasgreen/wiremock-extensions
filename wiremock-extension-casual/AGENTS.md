@@ -12,7 +12,11 @@ Scoped instructions for `wiremock-extension-casual` (In-process Netty XATMI / Ca
    ```bash
    ./gradlew :wiremock-extension-casual:test --tests "CasualWireMockGatewayTest" -q --console=plain
    ```
-   - Exercises domain handshake, service discovery, `tpcall`, L7 proxy forwarding, `TPESVCFAIL` fault recording, and 2PC protocol handlers using the lightweight `CasualTcpClient`.
+   - Exercises domain handshake, service discovery, `tpcall`, L7 proxy forwarding, `TPESVCFAIL` fault recording, and 2PC protocol handlers using `CasualClient`.
+   - In-memory fast unit tests using `InMemoryCasualStoreAdapter`:
+   ```bash
+   ./gradlew :wiremock-extension-casual:test --tests "CasualWireMockGatewayUnitTest" -q --console=plain
+   ```
 2. **Loop 2 — 3-Node 2PC/XA MitM Integration Suite (~12–15s)**:
    ```bash
    ./gradlew :wiremock-extension-casual:quarkusIntegrationTest -q --console=plain
@@ -21,26 +25,30 @@ Scoped instructions for `wiremock-extension-casual` (In-process Netty XATMI / Ca
 
 ---
 
-## 2. Package Isolation & Upstream Candidate Rules
+## 2. Package Architecture & Upstream Reuse
 
-To minimize Casual protocol maintenance inside `wiremock-extensions`, reusable protocol components live in target `se.laz.casual.*` packages slated for upstream contribution to [`casualcore/casual-java`](https://github.com/casualcore/casual-java):
+All extension classes live under `com.github.mattiasgreen.wiremock.casual.*` and directly reuse official `se.laz.casual:*` upstream libraries (3.4.0+):
 
-- **Strict Dependency Direction**:
-  - `com.github.mattiasgreen.wiremock.casual.*` **may** depend on `se.laz.casual.*` and WireMock.
-  - `se.laz.casual.*` (`CasualFrameDecoder`, `CasualTcpClient`, `CasualServer`, `CasualBufferUtils`) must **NEVER** import `com.github.tomakehurst.wiremock.*` or `com.github.mattiasgreen.wiremock.*`.
-- Activate the `casual-upstream-sync` skill when refactoring classes under `se.laz.casual.*`.
+- **Deep Modules & Clear Seams**:
+  - `CasualWireMockGateway`: Thin orchestrator binding the network server to mediation and coordination.
+  - `CasualStorePort` / `WireMockStoreAdapter` / `InMemoryCasualStoreAdapter`: Clean store seam isolating WireMock HTTP matching from reflection and internal state.
+  - `CasualHttpMediation`: Deep translation between Casual XATMI buffers and HTTP status/headers/payloads.
+  - `CasualTransactionCoordinator`: Multi-upstream 2PC transaction branch enlistment, atomic propagation, and synthetic XA voting overrides.
+  - `CasualClient`: Unified client leveraging upstream `NettyNetworkConnection` and `CorrelatorImpl` for auto-negotiated outbound framing.
+  - `CasualServer`: Slim in-process Netty inbound server using standard upstream `CasualNWMessageDecoder` and `CasualNWMessageEncoder`.
+- Upstream `casualcore/casual-java` components are imported directly as library dependencies; no custom classes shadow `se.laz.casual.*`.
 
 ---
 
 ## 3. Protocol & Concurrency Invariants
 
-1. **Netty `ByteBuf` Lifecycle**: Ensure all inbound `ByteBuf` instances in `CasualFrameDecoder` and channel handlers are properly released across both normal decoding and exception paths.
-2. **Stub-Driven Dynamic Proxying & Microsecond Probing**: Use WireMock proxy stubs (`targetBaseUrl: casual://host:port`) with in-memory probing to evaluate priority, headers, and body patterns with zero HTTP loopback overhead. Forward matching calls natively socket-to-socket over TCP.
-3. **Multi-Upstream 2PC Stickiness**: 2PC frames (`prepare`, `commit`, `rollback`) lack `serviceName` and only contain `Xid`. Enlisted upstream clients must be tracked per `Xid` (`enlistedXidClients`) to ensure atomic multi-upstream 2PC propagation.
-4. **Human-Readable Buffer Mediation**: Convert Fielded buffers (`.FIELDED`/`CFIELD/`) to/from structured JSON, strip null-terminators for `CSTRING/`, and preserve text in WireMock's Request Journal and offline stubs.
+1. **Netty `ByteBuf` Lifecycle**: Ensure all inbound `ByteBuf` instances in channel handlers and encoders/decoders are properly released across both normal and exception paths.
+2. **Stub-Driven Dynamic Proxying & Microsecond Probing**: Use WireMock proxy stubs (`targetBaseUrl: casual://host:port`) with in-memory probing via `CasualStorePort` to evaluate priority, headers, and body patterns with zero HTTP loopback overhead. Forward matching calls natively socket-to-socket over TCP.
+3. **Multi-Upstream 2PC Stickiness**: 2PC frames (`prepare`, `commit`, `rollback`) lack `serviceName` and only contain `Xid`. Enlisted upstream clients are tracked per `Xid` inside `CasualTransactionCoordinator` to ensure atomic multi-upstream 2PC propagation.
+4. **Human-Readable Buffer Mediation**: Convert Fielded buffers (`.FIELDED`/`CFIELD/`) to/from structured JSON, strip null-terminators for `CSTRING/`, and preserve text in WireMock's Request Journal and offline stubs via `CasualHttpMediation`.
 5. **Bidirectional L7 Protocol Normalization Invariant**:
    - Outbound service replies sent by `CasualServer` MUST strictly match the client's negotiated `connVersion` (`SERVICE_CALL_REPLY` / 3101 with `XID` for `< 1.3`, `SERVICE_CALL_REPLY_V_1_3` / 3103 for `>= 1.3`).
-   - Outbound proxied service requests sent by `CasualWireMockGateway` to upstream domains MUST match `upstreamClient.getProtocolVersion()`.
+   - Outbound proxied service requests sent by `CasualClient` to upstream domains MUST match `upstreamClient.getProtocolVersion()`.
    - Never leak Protocol 1.3+ frames (such as `3103`) to a Protocol 1.2 client or vice versa; doing so triggers `DecoderException: Unknown message type` and permanent TCP byte-stream desynchronization.
 
 ---

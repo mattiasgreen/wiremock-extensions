@@ -1,4 +1,4 @@
-package se.laz.casual.server;
+package com.github.mattiasgreen.wiremock.casual;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

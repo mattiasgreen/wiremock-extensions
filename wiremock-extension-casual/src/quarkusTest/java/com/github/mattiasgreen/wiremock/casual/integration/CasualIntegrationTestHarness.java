@@ -2,6 +2,9 @@ package com.github.mattiasgreen.wiremock.casual.integration;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
+import com.github.mattiasgreen.wiremock.casual.CasualBufferUtils;
+import com.github.mattiasgreen.wiremock.casual.CasualClient;
+import com.github.mattiasgreen.wiremock.casual.CasualServer;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.nio.charset.StandardCharsets;
@@ -12,14 +15,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.transaction.xa.Xid;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
-import se.laz.casual.client.CasualTcpClient;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
 import se.laz.casual.network.protocol.messages.domain.Service;
@@ -31,8 +32,6 @@ import se.laz.casual.network.protocol.messages.transaction.CasualTransactionReso
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackRequestMessage;
-import se.laz.casual.server.CasualServer;
-import se.laz.casual.server.CasualTransactionHandler;
 
 /**
  * Orchestrates the self-contained 3-node Casual / WireMock Man-in-the-Middle integration test topology:
@@ -144,18 +143,18 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
     public static final class ClientInitiatorNode implements AutoCloseable {
 
         private static final int RESOURCE_ID = 101;
-        private final CasualTcpClient tcpClient;
+        private final CasualClient tcpClient;
         private static final AtomicInteger txSequence = new AtomicInteger(1);
 
         public ClientInitiatorNode(String host, int port) {
-            this.tcpClient = new CasualTcpClient(host, port, UUID.randomUUID(), "casual-quarkus-client-domain");
+            this.tcpClient = new CasualClient(host, port, UUID.randomUUID(), "casual-quarkus-client-domain");
         }
 
         public void connect() throws Exception {
             tcpClient.connect();
         }
 
-        public CasualTcpClient getTcpClient() {
+        public CasualClient getTcpClient() {
             return tcpClient;
         }
 
@@ -305,7 +304,7 @@ public final class CasualIntegrationTestHarness implements AutoCloseable {
     /**
      * Node 3: Real Upstream Casual Server B hosting {@code casual/example} and a stateful XA Resource Manager.
      */
-    public static final class UpstreamDomainNode implements CasualTransactionHandler, AutoCloseable {
+    public static final class UpstreamDomainNode implements CasualServer.TransactionHandler, AutoCloseable {
 
         private final CasualServer server;
         private final AtomicInteger serviceCallCount = new AtomicInteger();

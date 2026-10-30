@@ -1,4 +1,4 @@
-package se.laz.casual.api.buffer;
+package com.github.mattiasgreen.wiremock.casual;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
@@ -35,8 +35,6 @@ import se.laz.casual.config.ConfigurationService;
  * Utility functions for Casual buffers, including text/JSON extraction, human-readable
  * FML32 (.FIELDED) JSON translation, CSTRING null-termination management, Base64
  * binary encoding/decoding for raw octet buffers, and hex dumps.
- * <p>
- * Intended for upstream contribution to {@code se.laz.casual:casual-api}.
  */
 public final class CasualBufferUtils {
 

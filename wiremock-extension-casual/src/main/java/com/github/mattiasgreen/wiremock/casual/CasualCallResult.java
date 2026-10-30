@@ -1,17 +1,14 @@
-package se.laz.casual.client;
+package com.github.mattiasgreen.wiremock.casual;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.flags.ErrorState;
 
 /**
  * Result of a Casual service call (tpcall), encapsulating execution metadata,
  * ATMI error state, user return code, and payload.
- * <p>
- * Intended for upstream contribution to {@code se.laz.casual:casual-client}.
  */
 public record CasualCallResult(
         String serviceName,

@@ -6,6 +6,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mattiasgreen.wiremock.casual.CasualCallResult;
+import com.github.mattiasgreen.wiremock.casual.CasualClient;
 import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -15,8 +17,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import se.laz.casual.client.CasualCallResult;
-import se.laz.casual.client.CasualClient;
 
 public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 

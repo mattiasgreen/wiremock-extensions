@@ -19,7 +19,7 @@ dependencies {
     api libs.casual.json.provider.gson
     implementation libs.netty.all
     implementation libs.jackson.databind
-    testImplementation 'jakarta.enterprise.concurrent:jakarta.enterprise.concurrent-api:3.0.3'
+    implementation 'jakarta.enterprise.concurrent:jakarta.enterprise.concurrent-api:3.0.3'
     testImplementation project(':wiremock-extension-tcp-netem')
 }
 
@@ -31,6 +31,13 @@ tasks.register('quarkusIntegrationTest', Test) {
     useJUnitPlatform()
 }
 
+tasks.withType(Test).configureEach {
+    systemProperty 'CASUAL_OUTBOUND_UNMANAGED', 'true'
+    systemProperty 'CASUAL_UNMANAGED', 'true'
+    environment 'CASUAL_OUTBOUND_UNMANAGED', 'true'
+    environment 'CASUAL_UNMANAGED', 'true'
+}
+
 tasks.register('clientJar', Jar) {
     group = 'build'
     description = 'Assembles a standalone, executable fat-jar for the CasualClient CLI.'
@@ -38,7 +45,7 @@ tasks.register('clientJar', Jar) {
     archiveClassifier = ''
     manifest {
         attributes(
-            'Main-Class': 'se.laz.casual.client.CasualClient',
+            'Main-Class': 'com.github.mattiasgreen.wiremock.casual.CasualClient',
             'Implementation-Title': 'WireMock Casual Standalone Client',
             'Implementation-Version': project.version
         )

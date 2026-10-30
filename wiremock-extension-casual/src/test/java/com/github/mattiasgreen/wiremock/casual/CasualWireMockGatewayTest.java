@@ -25,7 +25,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.AtmiFlags;
@@ -53,7 +52,7 @@ class CasualWireMockGatewayTest {
 
     private WireMockServer wireMockServer;
     private CasualWireMockGateway gateway;
-    private SimpleCasualTestClient client;
+    private CasualClient client;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -66,7 +65,7 @@ class CasualWireMockGatewayTest {
                 .build();
         gateway.start();
 
-        client = new SimpleCasualTestClient("127.0.0.1", gateway.getPort());
+        client = new CasualClient("127.0.0.1", gateway.getPort());
         client.connect();
     }
 
@@ -480,7 +479,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 // Call unstubbed service on proxyGateway -> should forward to upstreamGateway
@@ -544,7 +543,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 // 1. Call Customer -> Forwarded to upstream and recorded in Request Journal
@@ -649,7 +648,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 CasualServiceCallReplyMessage reply = proxyClient.tpcall("upstreamFailing", "{}");
@@ -696,7 +695,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 // 1st Call: Forwarded to upstream and recorded in Request Journal
@@ -771,7 +770,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 CasualServiceCallReplyMessage reply = proxyClient.tpcall("myService", "{}");
@@ -829,7 +828,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 Xid xid = XID.of(
@@ -973,7 +972,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 // 1st call: Forwarded upstream & recorded in Request Journal
@@ -1080,7 +1079,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 Xid xid = XID.of(
@@ -1143,7 +1142,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 // Query for local service and an upstream service
@@ -1214,7 +1213,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 byte[] requestBytes = new byte[] {0x01, 0x02, 0x03};
@@ -1393,7 +1392,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer fml =
@@ -1460,7 +1459,7 @@ class CasualWireMockGatewayTest {
                 .build();
         proxyGateway.start();
 
-        try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+        try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
             proxyClient.connect();
 
             CasualServiceCallReplyMessage reply = proxyClient.tpcall("timeoutTestService", "{}");
@@ -1721,7 +1720,7 @@ class CasualWireMockGatewayTest {
                     .build();
             proxyGateway.start();
 
-            try (SimpleCasualTestClient proxyClient = new SimpleCasualTestClient("127.0.0.1", proxyGateway.getPort())) {
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
                 proxyClient.connect();
 
                 byte[] cstringBytes = "Inbound CSTRING request\0".getBytes(StandardCharsets.UTF_8);

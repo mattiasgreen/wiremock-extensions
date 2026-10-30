@@ -34,7 +34,7 @@
 
     <!-- Exclude CLI file reading operations for CasualClient -->
     <Match>
-        <Class name="se.laz.casual.client.CasualClient"/>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualClient"/>
         <Bug pattern="PATH_TRAVERSAL_IN"/>
     </Match>
 
@@ -46,17 +46,21 @@
 
     <!-- Exclude CRLF log injection warnings for raw protocol frames and hex dumps in casual extension -->
     <Match>
-        <Package name="~se\.laz\.casual\..*"/>
-        <Bug pattern="CRLF_INJECTION_LOGS"/>
+        <Package name="~com\.github\.mattiasgreen\.wiremock\.casual.*"/>
+        <Bug pattern="CRLF_INJECTION_LOGS,SECCRLFLOG"/>
     </Match>
     <Match>
-        <Class name="com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway"/>
-        <Bug pattern="CRLF_INJECTION_LOGS"/>
+        <Class name="~com\.github\.mattiasgreen\.wiremock\.casual\..*"/>
+        <Bug pattern="CRLF_INJECTION_LOGS,SECCRLFLOG"/>
     </Match>
 
-    <!-- Exclude reflection setAccessible for dynamic field table reloading in casual extension -->
+    <!-- Exclude reflection setAccessible for dynamic field table reloading and WireMock server reflection in casual extension -->
     <Match>
-        <Class name="se.laz.casual.api.buffer.CasualBufferUtils"/>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualBufferUtils"/>
+        <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.casual.WireMockStoreAdapter"/>
         <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED"/>
     </Match>
 </FindBugsFilter>
