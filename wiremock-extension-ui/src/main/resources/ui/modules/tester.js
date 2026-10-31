@@ -4,7 +4,8 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
-import { highlightJson } from './highlighter.js';
+import { highlightJson, highlightPayload, formatXml, detectFormat } from './highlighter.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar } from './payload-lens.js';
 import { setRoute, toBase64 } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
 import { executeTesterRequest } from './api.js';
@@ -281,7 +282,12 @@ export function renderTesterResponse(bodyText) {
   if (state.testerViewMode === 'raw') {
     elements.testerResponseBody.textContent = bodyText;
   } else {
-    elements.testerResponseBody.innerHTML = highlightJson(bodyText);
+    const discovered = discoverEmbeddedPayloads(bodyText);
+    if (discovered.length > 0) {
+      elements.testerResponseBody.innerHTML = renderFormattedWithNestedPreviews(bodyText, discovered, 'tester_res');
+    } else {
+      elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
+    }
   }
 }
 
@@ -406,12 +412,19 @@ export function initTesterTab() {
   if (elements.btnTesterFormatJson) {
     elements.btnTesterFormatJson.addEventListener('click', () => {
       if (!elements.testerBody || !elements.testerBody.value.trim()) return;
-      try {
-        const parsed = JSON.parse(elements.testerBody.value);
-        elements.testerBody.value = JSON.stringify(parsed, null, 2);
-        appendHeader('Content-Type', 'application/json');
-      } catch (err) {
-        alert('Invalid JSON: ' + err.message);
+      const val = elements.testerBody.value.trim();
+      const detected = detectFormat(val);
+      if (detected === 'xml') {
+        elements.testerBody.value = formatXml(val);
+        appendHeader('Content-Type', 'application/xml');
+      } else {
+        try {
+          const parsed = JSON.parse(val);
+          elements.testerBody.value = JSON.stringify(parsed, null, 2);
+          appendHeader('Content-Type', 'application/json');
+        } catch (err) {
+          alert('Invalid payload: ' + err.message);
+        }
       }
     });
   }
@@ -490,5 +503,9 @@ export function initTesterTab() {
       if (elements.testerBody) elements.testerBody.value = '';
       updateTesterRoute(true);
     });
+  }
+
+  if (elements.testerBody && elements.testerBodyEmbeddedBar) {
+    attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
   }
 }

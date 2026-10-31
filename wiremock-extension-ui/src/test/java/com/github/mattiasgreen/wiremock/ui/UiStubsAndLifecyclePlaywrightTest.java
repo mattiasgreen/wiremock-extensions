@@ -390,4 +390,72 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         assertThat(consoleErrors).isEmpty();
         assertThat(httpErrors).isEmpty();
     }
+
+    @Test
+    @DisplayName("Scenario 31: Stub Editor Nested Payload Lens round-trip editing and re-escaping")
+    void testStubEditorNestedPayloadLensRoundTrip() throws Exception {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
+        page.waitForSelector("#stub-list");
+
+        // Open Stub Editor to create a new stub
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        page.locator("#editor-name").fill("Lens Roundtrip Stub");
+        page.locator("#editor-url").fill("/api/v1/roundtrip-test");
+
+        // Fill response body with JSON containing escaped XML
+        String initialXml =
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>OLD-ACC</account></soap:Body></soap:Envelope>";
+        String rootJson = "{\"status\": \"PENDING\", \"soapPayload\": \"" + initialXml.replace("\"", "\\\"") + "\"}";
+
+        page.locator("#editor-body").fill(rootJson);
+
+        // Embedded payloads bar should detect the nested XML
+        page.waitForSelector("#editor-body-embedded-bar:not(.hidden)");
+        Locator embeddedChip = page.locator("#editor-body-embedded-bar .embedded-node-chip");
+        assertThat(embeddedChip.count()).isGreaterThan(0);
+        assertThat(embeddedChip.first().textContent()).contains("soapPayload");
+        assertThat(embeddedChip.first().textContent()).contains("XML");
+
+        // Click chip to open Lens modal
+        embeddedChip.first().click();
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+
+        Locator lensEditor = page.locator("#payload-lens-editor");
+        assertThat(lensEditor.inputValue()).contains("OLD-ACC");
+
+        // Edit the inner XML in pretty-printed form
+        String updatedXml =
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>NEW-ACC-9999</account></soap:Body></soap:Envelope>";
+        lensEditor.fill(updatedXml);
+
+        // Save to root
+        page.locator("#btn-lens-save-root").click();
+        assertThat(page.locator("#modal-payload-lens").isHidden()).isTrue();
+
+        // The textarea #editor-body should now have the updated re-escaped XML
+        assertThat(page.locator("#editor-body").inputValue()).contains("NEW-ACC-9999");
+
+        // Save the stub
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Execute request against WireMock server via HTTP client to verify wire response
+        java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/roundtrip-test"))
+                .GET()
+                .build();
+        java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        assertThat(resp.statusCode()).isEqualTo(200);
+        assertThat(resp.body()).contains("NEW-ACC-9999");
+        assertThat(resp.body()).contains("<soap:Envelope");
+        assertThat(resp.body()).contains("xmlns:soap=\\\"http");
+
+        assertThat(pageErrors).isEmpty();
+        assertThat(consoleErrors).isEmpty();
+    }
 }

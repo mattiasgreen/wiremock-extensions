@@ -40,6 +40,26 @@ _Avoid_: asset helper, file server, web resource loader
 A high-level test seam encapsulating console navigation, tab switching, stub/journal query evaluation, modal interactions, and assertion waiting without coupling test suites to raw DOM selectors or arbitrary sleep timeouts.
 _Avoid_: page object boilerplate, playwright helper, UI tester fixture
 
+**Payload Unnesting Engine**:
+A domain module that recursively detects, extracts, and parses embedded JSON, XML, or Base64 documents inside JSON string properties or XML text/CDATA nodes while preserving structural path addressing.
+_Avoid_: string unescaper, regex payload cleaner, nested parser
+
+**Nested Payload Lens**:
+A focused inspection and editing surface for a single unwrapped inner payload (with breadcrumb path context, syntax validation, and round-trip re-escaping back into its parent container).
+_Avoid_: popup editor, sub-modal, raw string editor
+
+**Truncated Payload Preview**:
+An inline summary representation of a large escaped single-line XML/JSON blob in a parent viewer, displaying an interactive hint pill to open the **Nested Payload Lens** without flooding the viewport with horizontal scroll.
+_Avoid_: string ellipsis, clipped text, collapsed string
+
+**Detected Embedded Payloads Bar**:
+A live overlay toolbar attached to editable JSON/XML textareas that surfaces actionable pills for every nested escaped or Base64-encoded payload discovered in the current editor content.
+_Avoid_: helper bar, payload banner, editor chips
+
+**Container Encoding Envelope**:
+The structural metadata recorded when unnesting an inner payload (`JSON_STRING`, `XML_ENTITY_TEXT`, `XML_CDATA`, `BASE64_UTF8`, plus original compactness), governing how an edited child payload is re-encoded into its parent layer during round-tripping.
+_Avoid_: escape mode, encoding flag, wrapper type
+
 ### Observability & Telemetry
 
 **Telemetry Engine**:

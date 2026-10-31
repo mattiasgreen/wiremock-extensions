@@ -141,6 +141,24 @@ import {
   renderTargetCapabilities,
   applyCapabilityVisibility
 } from './modules/capabilities.js';
+import {
+  initPayloadLensModal,
+  openPayloadLens,
+  closePayloadLens,
+  discoverEmbeddedPayloads,
+  validatePayload,
+  applyNestedPayloadEdit,
+  cascadeLensStackToRoot,
+  renderPayloadViewer
+} from './modules/payload-lens.js';
+import {
+  formatPayload,
+  formatXml,
+  minifyXml,
+  highlightXml,
+  highlightPayload,
+  detectFormat
+} from './modules/highlighter.js';
 
 export function getAllStubs() {
   return getAllCatalogStubs();
@@ -162,7 +180,21 @@ export {
   renderTargetCapabilities,
   applyCapabilityVisibility,
   getWireMockUri,
-  updateTargetHostDisplay
+  updateTargetHostDisplay,
+  initPayloadLensModal,
+  openPayloadLens,
+  closePayloadLens,
+  discoverEmbeddedPayloads,
+  validatePayload,
+  applyNestedPayloadEdit,
+  cascadeLensStackToRoot,
+  renderPayloadViewer,
+  formatPayload,
+  formatXml,
+  minifyXml,
+  highlightXml,
+  highlightPayload,
+  detectFormat
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)
@@ -188,6 +220,7 @@ initCasualTester();
 initScenariosTab();
 initTargetConnectionModal({ loadData, loadVersionInfo });
 initNetEmTab();
+initPayloadLensModal();
 
 registerRouteHandlers({
   applyStubs: (params) => {

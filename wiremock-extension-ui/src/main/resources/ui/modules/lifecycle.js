@@ -5,6 +5,8 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { normalizeJsonPayload } from './base64.js';
+import { formatPayload } from './highlighter.js';
+import { attachEmbeddedPayloadsBar } from './payload-lens.js';
 import {
   toggleStubState,
   deleteStubMapping,
@@ -208,10 +210,9 @@ export function formatRequestBodyJson() {
     input.value = JSON.stringify(normalized, null, 2);
   } else {
     try {
-      const parsed = JSON.parse(input.value);
-      input.value = JSON.stringify(parsed, null, 2);
+      input.value = formatPayload(input.value);
     } catch (err) {
-      alert('Invalid JSON in request body matcher: ' + err.message);
+      alert('Invalid payload in request body matcher: ' + err.message);
     }
   }
 }
@@ -224,10 +225,9 @@ export function formatResponseBodyJson() {
     input.value = JSON.stringify(normalized, null, 2);
   } else {
     try {
-      const parsed = JSON.parse(input.value);
-      input.value = JSON.stringify(parsed, null, 2);
+      input.value = formatPayload(input.value);
     } catch (err) {
-      alert('Invalid JSON in response body: ' + err.message);
+      alert('Invalid payload in response body: ' + err.message);
     }
   }
 }
@@ -941,6 +941,20 @@ export function initStubLifecycleHandlers() {
         reader.readAsText(file);
       }
     });
+  }
+
+  // Attach embedded payload bars to stub editor textareas
+  const editorBody = document.getElementById('editor-body');
+  if (editorBody && elements.editorBodyEmbeddedBar) {
+    attachEmbeddedPayloadsBar(editorBody, elements.editorBodyEmbeddedBar);
+  }
+  const editorPattern = document.getElementById('editor-body-match-pattern');
+  if (editorPattern && elements.editorPatternEmbeddedBar) {
+    attachEmbeddedPayloadsBar(editorPattern, elements.editorPatternEmbeddedBar);
+  }
+  const editorRaw = document.getElementById('editor-raw-json');
+  if (editorRaw && elements.editorRawEmbeddedBar) {
+    attachEmbeddedPayloadsBar(editorRaw, elements.editorRawEmbeddedBar);
   }
 }
 

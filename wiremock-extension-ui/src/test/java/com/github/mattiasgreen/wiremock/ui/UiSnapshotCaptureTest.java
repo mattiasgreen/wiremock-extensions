@@ -168,11 +168,49 @@ public class UiSnapshotCaptureTest {
                     new Page.WaitForSelectorOptions()
                             .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
 
+            // 6. HTTP Tester with Truncated Payload Preview chip
+            String innerXml =
+                    "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>ACC-7788</account><balance>9400.50</balance></soap:Body></soap:Envelope>";
+            String middleJson = com.github.tomakehurst.wiremock.common.Json.write(
+                    java.util.Map.of("coreBankingXml", innerXml, "service", "cbs-mock"));
+            String rootJson = com.github.tomakehurst.wiremock.common.Json.write(
+                    java.util.Map.of("transactionId", "TXN-9012", "payload", middleJson));
+
+            wireMockServer.stubFor(get(urlEqualTo("/api/v1/nested-banking"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody(rootJson)));
+
+            page.locator("#nav-tab-tester").click();
+            page.waitForSelector("#tab-tester.active");
+            page.locator("#tester-url").fill("/api/v1/nested-banking");
+            page.locator("#btn-tester-send").click();
+            page.waitForSelector("#tester-response-status:has-text('200')");
+            page.waitForSelector("#tester-response-body .truncated-payload-preview");
+            page.waitForTimeout(300);
+            page.screenshot(
+                    new Page.ScreenshotOptions().setPath(webOutputDir.resolve("06-nested-payload-preview.png")));
+
+            // 7. Stacked Nested Payload Lens Modal View
+            page.locator("#tester-response-body .btn-lens-open-pill").first().click();
+            page.waitForSelector("#modal-payload-lens:not(.hidden)");
+            page.waitForTimeout(300);
+            page.screenshot(
+                    new Page.ScreenshotOptions().setPath(webOutputDir.resolve("07-nested-payload-lens-modal.png")));
+            page.locator("#btn-close-payload-lens").click();
+            page.waitForSelector(
+                    "#modal-payload-lens",
+                    new Page.WaitForSelectorOptions()
+                            .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
+
             Assertions.assertTrue(Files.exists(webOutputDir.resolve("01-stubs-explorer.png")));
             Assertions.assertTrue(Files.exists(webOutputDir.resolve("02-request-journal.png")));
             Assertions.assertTrue(Files.exists(webOutputDir.resolve("03-http-tester.png")));
             Assertions.assertTrue(Files.exists(webOutputDir.resolve("04-scenarios-view.png")));
             Assertions.assertTrue(Files.exists(webOutputDir.resolve("05-target-host-modal.png")));
+            Assertions.assertTrue(Files.exists(webOutputDir.resolve("06-nested-payload-preview.png")));
+            Assertions.assertTrue(Files.exists(webOutputDir.resolve("07-nested-payload-lens-modal.png")));
         } finally {
             context.close();
         }
