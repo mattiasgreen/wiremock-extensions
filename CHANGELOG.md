@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.8.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.7.0...v1.8.0) (2026-10-31)
+
+
+### Features
+
+* architecture deepening across casual gateway, ui modules, and cli proxy ([#61](https://github.com/mattiasgreen/wiremock-extensions/issues/61)) ([96008c0](https://github.com/mattiasgreen/wiremock-extensions/commit/96008c027ec374801e70ce7f6506169d4930e6e6))
+* **casual:** standalone CasualClient CLI, clientJar, and in-browser Casual tester ([#60](https://github.com/mattiasgreen/wiremock-extensions/issues/60)) ([0c61dcc](https://github.com/mattiasgreen/wiremock-extensions/commit/0c61dcc53cfdeba476e29d8bd0c1a7c11f613ae6))
+* **ui, casual, bundle:** port config simplification, enhanced snapshotting, and casual unmatched logging ([#57](https://github.com/mattiasgreen/wiremock-extensions/issues/57)) ([334bcb8](https://github.com/mattiasgreen/wiremock-extensions/commit/334bcb805c4240aa56972b71ff9fb95652da4c2b))
+
 ## [1.7.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.6.0...v1.7.0) (2026-10-26)
 
 
