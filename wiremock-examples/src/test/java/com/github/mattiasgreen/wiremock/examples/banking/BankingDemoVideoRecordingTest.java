@@ -114,8 +114,8 @@ class BankingDemoVideoRecordingTest {
         // Spotlight distributed trace correlation pill
         cursor.spotlight(page.locator("#portal-trace-pill"), 300);
 
-        // Select Green Auto Loan from product catalog dropdown
-        cursor.glideAndSelect(page.locator("#select-product"), "GREEN-AUTO-LOAN");
+        // Select Platinum Rewards Credit Card from product catalog dropdown
+        cursor.glideAndSelect(page.locator("#select-product"), "PLATINUM-CREDIT");
         page.waitForTimeout(400);
 
         // Submit Application
@@ -200,7 +200,7 @@ class BankingDemoVideoRecordingTest {
         page.waitForSelector("#btn-submit-application");
         page.waitForTimeout(600);
 
-        cursor.glideAndSelect(page.locator("#select-product"), "GREEN-AUTO-LOAN");
+        cursor.glideAndSelect(page.locator("#select-product"), "PLATINUM-CREDIT");
         cursor.glideAndClick(page.locator("#btn-submit-application"));
         page.waitForSelector("#offer-panel:not(.hidden)");
         assertThat(page.locator("#offer-case-id").textContent()).isEqualTo("CASE-1001");
