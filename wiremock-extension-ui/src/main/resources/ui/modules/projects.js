@@ -4,61 +4,20 @@
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { getStubUrl, getCatalogCounts } from './stubs.js';
+import { getCatalogCounts } from './stubs.js';
 import { setProjectMode, snapshotProjectRecordings } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
+import { stubCatalog, getStubProject, getStubApi, extractBaseSegment, getStubUrl } from './stub-catalog.js';
 
-export function extractBaseSegment(path) {
-  if (!path || path === '/') return 'Root';
-  const clean = path.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
-  const parts = clean.split('/').filter(Boolean);
-  if (parts.length === 0) return 'Root';
-  // If first segment is 'api', check second segment (e.g. /api/v1/orders -> orders)
-  if (parts[0].toLowerCase() === 'api' && parts.length > 1) {
-    if (/^v\d+$/i.test(parts[1]) && parts.length > 2) {
-      return parts[2].toLowerCase();
-    }
-    return parts[1].toLowerCase();
-  }
-  return parts[0].toLowerCase();
-}
-
-export function getStubProject(stub) {
-  if (stub.metadata && stub.metadata.project) {
-    return String(stub.metadata.project);
-  }
-  const url = getStubUrl(stub.request);
-  const base = extractBaseSegment(url);
-  return base ? `api-${base}` : 'Ungrouped';
-}
-
-export function getStubApi(stub) {
-  if (stub.metadata && stub.metadata.api) {
-    return String(stub.metadata.api);
-  }
-  if (stub.metadata && Array.isArray(stub.metadata.tags) && stub.metadata.tags.length > 0) {
-    return String(stub.metadata.tags[0]);
-  }
-  return 'General';
-}
+export { getStubProject, getStubApi, extractBaseSegment };
 
 export function computeProjects() {
-  const all = [...state.currentStubs, ...state.disabledStubs];
-  const projectsMap = new Map();
-
-  all.forEach(stub => {
-    const proj = getStubProject(stub);
-    const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
-    if (!projectsMap.has(proj)) {
-      projectsMap.set(proj, { name: proj, total: 0, active: 0, disabled: 0 });
-    }
-    const entry = projectsMap.get(proj);
-    entry.total++;
-    if (isDisabled) entry.disabled++;
-    else entry.active++;
+  stubCatalog.setRawCollections({
+    active: state.currentStubs,
+    disabled: state.disabledStubs,
+    statefulModels: state.statefulModels
   });
-
-  return Array.from(projectsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  return stubCatalog.getProjects();
 }
 
 export function renderProjectSelector() {
