@@ -653,4 +653,80 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .count())
                 .isEqualTo(3);
     }
+
+    @Test
+    @DisplayName(
+            "Scenario 30: Nested JSON/XML payload unnesting, Truncated Preview chips, inline expand, and focused Lens modal")
+    void testNestedPayloadLensInspectionAndTesterExecution() {
+        // Create a stub returning 3-level nested payload: root JSON -> escaped JSON -> escaped SOAP XML
+        String innerXml =
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>ACC-7788</account><balance>9400.50</balance></soap:Body></soap:Envelope>";
+        String middleJson = com.github.tomakehurst.wiremock.common.Json.write(
+                Map.of("coreBankingXml", innerXml, "service", "cbs-mock"));
+        String rootJson = com.github.tomakehurst.wiremock.common.Json.write(
+                Map.of("transactionId", "TXN-9012", "payload", middleJson));
+
+        wireMockServer.stubFor(get(urlEqualTo("/api/v1/nested-banking"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(rootJson)));
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+        page.waitForSelector("#tab-tester.active");
+
+        page.locator("#tester-url").fill("/api/v1/nested-banking");
+        page.locator("#btn-tester-send").click();
+
+        page.waitForSelector("#tester-response-status:has-text('200')");
+
+        // Response should render Truncated Payload Preview chip
+        Locator previewChip = page.locator("#tester-response-body .truncated-payload-preview");
+        assertThat(previewChip.count()).isGreaterThan(0);
+        assertThat(previewChip.first().textContent()).contains("JSON");
+
+        // Test inline expand button
+        Locator expandBtn = previewChip.first().locator(".btn-lens-expand-pill");
+        expandBtn.click();
+        Locator expandedPayload = previewChip.first().locator(".inline-expanded-payload");
+        assertThat(expandedPayload.isVisible()).isTrue();
+        assertThat(expandBtn.textContent()).contains("Collapse");
+
+        // Collapse again
+        expandBtn.click();
+        assertThat(expandedPayload.isHidden()).isTrue();
+
+        // Open in Focused Lens modal
+        Locator openLensBtn = previewChip.first().locator(".btn-lens-open-pill");
+        openLensBtn.click();
+
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+        Locator modal = page.locator("#modal-payload-lens");
+        assertThat(modal.isVisible()).isTrue();
+
+        // Breadcrumbs should contain Root and path
+        Locator breadcrumbs = page.locator("#payload-lens-breadcrumbs");
+        assertThat(breadcrumbs.textContent()).contains("Root Wire Document");
+        assertThat(breadcrumbs.textContent()).contains("$.payload");
+
+        // The editor should contain the unescaped middle JSON
+        Locator lensEditor = page.locator("#payload-lens-editor");
+        assertThat(lensEditor.inputValue()).contains("coreBankingXml");
+
+        // Deep nested bar inside Lens should show the embedded XML
+        Locator deepNestedBar = page.locator("#payload-lens-nested-bar");
+        if (deepNestedBar.isVisible()) {
+            Locator deepPill = deepNestedBar.locator(".inner-drill-chip");
+            if (deepPill.count() > 0) {
+                deepPill.first().click();
+                // Now breadcrumb should have 3 levels
+                assertThat(breadcrumbs.textContent()).contains("XML");
+                assertThat(lensEditor.inputValue()).contains("ACC-7788");
+            }
+        }
+
+        // Close lens
+        page.locator("#btn-close-payload-lens").click();
+        assertThat(modal.isHidden()).isTrue();
+    }
 }

@@ -415,6 +415,7 @@
                       <button id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
                     </div>
                     <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
+                    <div id="tester-body-embedded-bar" data-testid="tester-body-embedded-bar" class="hidden"></div>
                   </div>
                 </div>
 
@@ -559,6 +560,7 @@
                       </div>
                     </div>
                     <textarea id="casual-request-payload" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
+                    <div id="casual-payload-embedded-bar" data-testid="casual-payload-embedded-bar" class="hidden"></div>
                   </div>
                 </div>
 
@@ -971,6 +973,7 @@
               <button type="button" id="btn-editor-format-request-json" class="btn btn-tiny hidden" data-testid="btn-editor-format-request-json">Format JSON</button>
             </div>
             <textarea id="editor-body-match-pattern" class="code-input" rows="5" placeholder="Expected pattern or substring..."></textarea>
+            <div id="editor-pattern-embedded-bar" data-testid="editor-pattern-embedded-bar" class="hidden"></div>
             <div id="editor-json-match-options" class="form-row hidden" style="display: flex; gap: 16px; margin-top: 6px; font-size: 0.85rem;" data-testid="editor-json-match-options">
               <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
                 <input type="checkbox" id="editor-json-ignore-extra" data-testid="editor-json-ignore-extra" checked> Ignore extra elements (relaxed match)
@@ -1004,6 +1007,7 @@
               <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
             </div>
             <textarea id="editor-body" class="code-input" rows="7" placeholder="{ &quot;key&quot;: &quot;value&quot; }"></textarea>
+            <div id="editor-body-embedded-bar" data-testid="editor-body-embedded-bar" class="hidden"></div>
           </div>
           </div><!-- end #editor-form-panel -->
 
@@ -1015,6 +1019,7 @@
                 <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny" data-testid="btn-editor-raw-format-json">Format JSON</button>
               </div>
               <textarea id="editor-raw-json" class="code-input" rows="20" style="font-family: monospace; font-size: 0.85rem; width: 100%; min-height: 380px;" placeholder="{ &quot;request&quot;: { ... }, &quot;response&quot;: { ... } }" data-testid="editor-raw-json"></textarea>
+              <div id="editor-raw-embedded-bar" data-testid="editor-raw-embedded-bar" class="hidden"></div>
               <div id="editor-raw-json-error" class="text-error hidden" style="margin-top: 6px; font-size: 0.82rem;" data-testid="editor-raw-json-error"></div>
             </div>
           </div>
@@ -1287,6 +1292,65 @@
         <div style="display: flex; gap: 8px;">
           <button id="btn-cancel-local-headers" class="btn btn-secondary" data-testid="btn-cancel-local-headers">Cancel</button>
           <button id="btn-save-local-headers" class="btn btn-primary" data-testid="btn-save-local-headers">💾 Save to Browser</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Nested Payload Lens (Round-trip editor for embedded JSON/XML/Base64) -->
+  <div id="modal-payload-lens" class="modal-backdrop hidden" data-testid="modal-payload-lens">
+    <div class="modal modal-large">
+      <div class="modal-header">
+        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 id="payload-lens-title" style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+              <span>🔍</span> Nested Payload Lens
+            </h2>
+            <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Lens">&times;</button>
+          </div>
+          <!-- Stacked Breadcrumb Trail -->
+          <div id="payload-lens-breadcrumbs" data-testid="payload-lens-breadcrumbs" class="payload-lens-breadcrumbs">
+            <!-- Dynamically populated stack breadcrumbs: Root (JSON) ▸ $.payload (XML) -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-body" style="padding-top: 10px;">
+        <!-- Embedded child payloads bar if the current lens payload itself has nested escaped payloads -->
+        <div id="payload-lens-nested-bar" data-testid="payload-lens-nested-bar" class="hidden" style="margin-bottom: 8px;"></div>
+
+        <!-- Editor Toolbar -->
+        <div class="payload-lens-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" id="btn-lens-prettify" data-testid="btn-lens-prettify" class="btn btn-tiny btn-secondary" title="Format/Prettify Payload">✨ Prettify</button>
+            <button type="button" id="btn-lens-minify" data-testid="btn-lens-minify" class="btn btn-tiny btn-secondary" title="Minify Payload">Compact</button>
+            <span style="border-left: 1px solid var(--border-color); height: 16px; margin: 0 4px;"></span>
+            <button type="button" id="btn-lens-copy-raw" data-testid="btn-lens-copy-raw" class="btn btn-tiny btn-secondary" title="Copy raw escaped wire representation">📋 Copy Raw</button>
+            <button type="button" id="btn-lens-copy-formatted" data-testid="btn-lens-copy-formatted" class="btn btn-tiny btn-secondary" title="Copy formatted payload">✨ Copy Formatted</button>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
+            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+              <input type="checkbox" id="chk-lens-minify-on-save" data-testid="chk-lens-minify-on-save">
+              <span>Minify before re-escaping</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Lens Textarea Editor -->
+        <div class="code-editor-wrapper" style="position: relative;">
+          <textarea id="payload-lens-editor" data-testid="payload-lens-editor" class="code-input" rows="18" spellcheck="false" style="font-family: monospace; font-size: 0.85rem; width: 100%; resize: vertical;"></textarea>
+        </div>
+
+        <!-- Live Validation Error / Alert Box -->
+        <div id="payload-lens-validation-error" data-testid="payload-lens-validation-error" class="validation-error hidden" style="margin-top: 8px; padding: 6px 10px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; font-size: 0.82rem; color: #ef4444;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-lens-force-apply" data-testid="btn-lens-force-apply" class="btn btn-small btn-danger hidden" title="Force apply invalid payload for negative testing">⚠️ Force Apply Unvalidated</button>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-cancel-payload-lens" data-testid="btn-cancel-payload-lens" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="btn-lens-apply-parent" data-testid="btn-lens-apply-parent" class="btn btn-secondary" style="display: none;" title="Apply changes to immediate parent payload layer">Apply to Parent Layer</button>
+          <button type="button" id="btn-lens-save-root" data-testid="btn-lens-save-root" class="btn btn-primary" title="Re-escape and cascade changes all the way to root wire payload">💾 Save All to Root</button>
         </div>
       </div>
     </div>

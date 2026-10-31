@@ -1355,4 +1355,213 @@ public class UiModuleUnitTest {
                     .isEqualTo(javaOutcome);
         }
     }
+
+    @Test
+    @DisplayName("Nested Payload Lens: XML formatting, minification, and token highlighting")
+    void testXmlFormattingAndHighlighting() {
+        String script =
+                """
+            async () => {
+                const { formatXml, minifyXml, highlightXml, detectFormat } = await import('./modules/highlighter.js');
+                const rawXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><m:GetQuote xmlns:m="http://services.samples"><m:symbol>GOOG</m:symbol><!-- Test Comment --><m:data><![CDATA[Some CData Text]]></m:data></m:GetQuote></soap:Body></soap:Envelope>';
+
+                const formatted = formatXml(rawXml, '  ');
+                const minified = minifyXml(formatted);
+                const highlighted = highlightXml(formatted);
+                const detected = detectFormat(rawXml);
+
+                return {
+                    detected,
+                    isFormattedIndented: formatted.includes('\\n  <soap:Body>'),
+                    minifiedMatchesOriginal: minified.includes('<soap:Envelope xmlns:soap=') && !minified.includes('\\n'),
+                    hasTagToken: highlighted.includes('class="xml-tag"'),
+                    hasPrefixToken: highlighted.includes('class="xml-prefix"'),
+                    hasAttrNameToken: highlighted.includes('class="xml-attr-name"'),
+                    hasAttrValToken: highlighted.includes('class="xml-attr-val"'),
+                    hasCDataToken: highlighted.includes('class="xml-cdata"'),
+                    hasCommentToken: highlighted.includes('class="xml-comment"')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("detected")).isEqualTo("xml");
+        assertThat(result.get("isFormattedIndented")).isEqualTo(true);
+        assertThat(result.get("minifiedMatchesOriginal")).isEqualTo(true);
+        assertThat(result.get("hasTagToken")).isEqualTo(true);
+        assertThat(result.get("hasPrefixToken")).isEqualTo(true);
+        assertThat(result.get("hasAttrNameToken")).isEqualTo(true);
+        assertThat(result.get("hasAttrValToken")).isEqualTo(true);
+        assertThat(result.get("hasCDataToken")).isEqualTo(true);
+        assertThat(result.get("hasCommentToken")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("Nested Payload Lens: Deep multi-layer payload discovery across JSON, XML, CDATA, and Base64")
+    void testDeepPayloadUnnestingDiscovery() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads, utf8ToBase64 } = await import('./modules/payload-lens.js');
+
+                // 3-level payload: JSON -> escaped JSON string -> escaped SOAP XML
+                const innerSoapXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><id>12345</id></soap:Body></soap:Envelope>';
+                const middleJson = JSON.stringify({ innerXml: innerSoapXml, status: "OK" });
+                const rootJson = JSON.stringify({
+                    requestId: "req-99",
+                    payload: middleJson,
+                    b64Report: utf8ToBase64('<report><score>850</score></report>')
+                });
+
+                const discovered = discoverEmbeddedPayloads(rootJson);
+
+                return {
+                    count: discovered.length,
+                    firstPath: discovered[0] ? discovered[0].path : null,
+                    firstFormat: discovered[0] ? discovered[0].format : null,
+                    firstEncoding: discovered[0] ? discovered[0].encoding : null,
+                    firstHasChildren: discovered[0] && discovered[0].children && discovered[0].children.length > 0,
+                    firstGrandchildPath: (discovered[0] && discovered[0].children && discovered[0].children[0]) ? discovered[0].children[0].path : null,
+                    firstGrandchildFormat: (discovered[0] && discovered[0].children && discovered[0].children[0]) ? discovered[0].children[0].format : null,
+                    secondPath: discovered[1] ? discovered[1].path : null,
+                    secondFormat: discovered[1] ? discovered[1].format : null,
+                    secondEncoding: discovered[1] ? discovered[1].encoding : null
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("count")).isEqualTo(2);
+        assertThat(result.get("firstPath")).isEqualTo("$.payload");
+        assertThat(result.get("firstFormat")).isEqualTo("json");
+        assertThat(result.get("firstEncoding")).isEqualTo("JSON_STRING");
+        assertThat(result.get("firstHasChildren")).isEqualTo(true);
+        assertThat(result.get("firstGrandchildPath")).isEqualTo("$.payload.innerXml");
+        assertThat(result.get("firstGrandchildFormat")).isEqualTo("xml");
+        assertThat(result.get("secondPath")).isEqualTo("$.b64Report");
+        assertThat(result.get("secondFormat")).isEqualTo("xml");
+        assertThat(result.get("secondEncoding")).isEqualTo("BASE64_UTF8");
+    }
+
+    @Test
+    @DisplayName(
+            "Nested Payload Lens: Cascading round-trip re-escaping fidelity from leaf XML through middle JSON to root JSON")
+    void testRoundTripReEscapingFidelity() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot, applyNestedPayloadEdit } = await import('./modules/payload-lens.js');
+
+                // Initial 3-level document
+                const innerSoapXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><id>OLD_ID</id></soap:Body></soap:Envelope>';
+                const middleJson = JSON.stringify({ innerXml: innerSoapXml, notes: "Original" });
+                const rootJson = JSON.stringify({
+                    requestId: "REQ-001",
+                    data: middleJson
+                }, null, 2);
+
+                const rootDiscovered = discoverEmbeddedPayloads(rootJson);
+                const middleNode = rootDiscovered[0];
+                const xmlNode = middleNode.children[0];
+
+                // Build a 3-frame lens stack
+                const stack = [
+                    { text: rootJson, descriptor: null, title: 'Root', format: 'json' },
+                    { text: middleNode.unescapedValue, descriptor: middleNode, title: middleNode.path, format: 'json' },
+                    { text: xmlNode.unescapedValue, descriptor: xmlNode, title: xmlNode.path, format: 'xml' }
+                ];
+
+                // Edit the leaf XML
+                const editedLeafXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><id>NEW_CASE_9999</id><status>APPROVED</status></soap:Body></soap:Envelope>';
+
+                // Save and cascade to root
+                const newRootJson = cascadeLensStackToRoot(stack, editedLeafXml, { minifyOnSave: false });
+
+                // Verify wire fidelity: parse the root JSON and read middle JSON
+                const parsedRoot = JSON.parse(newRootJson);
+                const parsedMiddle = JSON.parse(parsedRoot.data);
+
+                return {
+                    requestId: parsedRoot.requestId,
+                    middleNotes: parsedMiddle.notes,
+                    updatedXmlContainsNewId: parsedMiddle.innerXml.includes('NEW_CASE_9999'),
+                    updatedXmlContainsApproved: parsedMiddle.innerXml.includes('APPROVED'),
+                    isMiddleJsonValid: typeof parsedMiddle === 'object'
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("requestId")).isEqualTo("REQ-001");
+        assertThat(result.get("middleNotes")).isEqualTo("Original");
+        assertThat(result.get("updatedXmlContainsNewId")).isEqualTo(true);
+        assertThat(result.get("updatedXmlContainsApproved")).isEqualTo(true);
+        assertThat(result.get("isMiddleJsonValid")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
+            "Nested Payload Lens: Syntax validation blocks invalid payload while forceInvalid allows negative testing")
+    void testValidationAndForceApplyOverride() {
+        String script =
+                """
+            async () => {
+                const { validatePayload, applyNestedPayloadEdit } = await import('./modules/payload-lens.js');
+
+                const validJsonVal = validatePayload('{"valid": true}', 'json');
+                const invalidJsonVal = validatePayload('{"bad": }', 'json');
+
+                const validXmlVal = validatePayload('<root><child>OK</child></root>', 'xml');
+                const invalidXmlVal = validatePayload('<root><mismatch></root>', 'xml');
+
+                const parentJson = '{"embedded": "{\\\\"a\\\\": 1}"}';
+                const nodeDescriptor = {
+                    path: '$.embedded',
+                    format: 'json',
+                    encoding: 'JSON_STRING',
+                    wasCompact: true
+                };
+
+                let errorThrown = false;
+                try {
+                    applyNestedPayloadEdit(parentJson, nodeDescriptor, '{"malformed": }', { forceInvalid: false });
+                } catch (err) {
+                    errorThrown = true;
+                }
+
+                // Force apply invalid payload
+                const forcedParent = applyNestedPayloadEdit(parentJson, nodeDescriptor, '{"malformed": }', { forceInvalid: true });
+                const parsedForced = JSON.parse(forcedParent);
+
+                return {
+                    validJsonValid: validJsonVal.valid,
+                    invalidJsonValid: invalidJsonVal.valid,
+                    invalidJsonHasError: typeof invalidJsonVal.errorMessage === 'string',
+                    validXmlValid: validXmlVal.valid,
+                    invalidXmlValid: invalidXmlVal.valid,
+                    invalidXmlHasError: typeof invalidXmlVal.errorMessage === 'string',
+                    errorThrownOnInvalidApply: errorThrown,
+                    forcedAppliedValue: parsedForced.embedded
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("validJsonValid")).isEqualTo(true);
+        assertThat(result.get("invalidJsonValid")).isEqualTo(false);
+        assertThat(result.get("invalidJsonHasError")).isEqualTo(true);
+        assertThat(result.get("validXmlValid")).isEqualTo(true);
+        assertThat(result.get("invalidXmlValid")).isEqualTo(false);
+        assertThat(result.get("invalidXmlHasError")).isEqualTo(true);
+        assertThat(result.get("errorThrownOnInvalidApply")).isEqualTo(true);
+        assertThat(result.get("forcedAppliedValue")).isEqualTo("{\"malformed\": }");
+    }
 }

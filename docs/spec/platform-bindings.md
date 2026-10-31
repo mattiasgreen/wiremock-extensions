@@ -54,6 +54,19 @@
 | **Tester Tab: Sent Request** | `#btn-tester-tab-request` | `"btn-tester-tab-request"` | Tab displaying the final resolved outgoing HTTP request and headers. |
 | **Tester Tab: Response Body** | `#btn-tester-tab-response` | `"btn-tester-tab-response"` | Tab displaying the received HTTP response body. |
 | **Tester Sent Headers View** | `#tester-sent-headers` | `"tester-sent-headers"` | Inspection pre element containing final resolved outgoing HTTP headers. |
+| **Modal: Payload Lens** | `#modal-payload-lens` | `"modal-payload-lens"` | Focused sub-editor modal for unnested embedded JSON/XML payloads. |
+| **Payload Lens Breadcrumbs** | `#payload-lens-breadcrumbs` | `"payload-lens-breadcrumbs"` | Stacked breadcrumb trail indicating active drill-down path. |
+| **Payload Lens Editor** | `#payload-lens-editor` | `"payload-lens-editor"` | Focused text editor for the active nested JSON/XML payload layer. |
+| **Payload Lens Preview** | `#payload-lens-preview` | `"payload-lens-preview"` | Formatted and syntax-highlighted preview of the active payload layer. |
+| **Payload Lens Error** | `#payload-lens-validation-error` | `"payload-lens-validation-error"` | Banner indicating JSON/XML syntax validation error. |
+| **Payload Lens Minify Toggle** | `#chk-lens-minify-on-save` | `"chk-lens-minify-on-save"` | Checkbox to compact/minify nested payload when re-escaping. |
+| **Payload Lens Prettify Action** | `#btn-lens-prettify` | `"btn-lens-prettify"` | Pretty-prints the active payload in the lens. |
+| **Payload Lens Minify Action** | `#btn-lens-minify` | `"btn-lens-minify"` | Minifies/compacts the active payload in the lens. |
+| **Payload Lens Copy Raw Action** | `#btn-lens-copy-raw` | `"btn-lens-copy-raw"` | Copies the raw wire representation of the active node. |
+| **Payload Lens Copy Formatted Action** | `#btn-lens-copy-formatted` | `"btn-lens-copy-formatted"` | Copies the pretty-formatted representation of the active node. |
+| **Payload Lens Apply Parent** | `#btn-lens-apply-parent` | `"btn-lens-apply-parent"` | Re-escapes and applies changes to the immediate parent layer. |
+| **Payload Lens Save Root** | `#btn-lens-save-root` | `"btn-lens-save-root"` | Cascades re-escaping up all stack frames and saves to root editor. |
+| **Payload Lens Force Apply** | `#btn-lens-force-apply` | `"btn-lens-force-apply"` | Forces application of unvalidated/malformed payloads for negative testing. |
 | **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
 | **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
 | **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |

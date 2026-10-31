@@ -5,7 +5,8 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson } from './highlighter.js';
+import { highlightJson, highlightPayload, formatPayload } from './highlighter.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64 } from './router.js';
 import { doFetch } from './api.js';
 
@@ -144,6 +145,10 @@ export function initCasualTester() {
   [elements.casualServiceName, elements.casualBufferType, elements.casualTargetHost, elements.casualTargetPort, elements.casualRequestPayload].forEach(el => {
     if (el) el.addEventListener('change', () => updateCasualRoute(true));
   });
+
+  if (elements.casualRequestPayload && elements.casualPayloadEmbeddedBar) {
+    attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
+  }
 }
 
 export function fetchCasualConfig() {
@@ -330,13 +335,8 @@ export function formatCasualJsonPayload() {
   if (!elements.casualRequestPayload) return;
   const raw = elements.casualRequestPayload.value.trim();
   if (!raw) return;
-  try {
-    const parsed = JSON.parse(raw);
-    elements.casualRequestPayload.value = JSON.stringify(parsed, null, 2);
-    updateCasualRoute(true);
-  } catch (err) {
-    // Leave intact if unparseable
-  }
+  elements.casualRequestPayload.value = formatPayload(raw);
+  updateCasualRoute(true);
 }
 
 export function syncDefaultCasualHeaders() {
@@ -449,7 +449,12 @@ export function renderCasualResponseBody(bodyText, hexText) {
     if (lastCasualResponseData && lastCasualResponseData.isBinary) {
       elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
     } else {
-      elements.casualResponseBody.innerHTML = highlightJson(lastRawCasualResponse);
+      const discovered = discoverEmbeddedPayloads(lastRawCasualResponse);
+      if (discovered.length > 0) {
+        elements.casualResponseBody.innerHTML = renderFormattedWithNestedPreviews(lastRawCasualResponse, discovered, 'casual_res');
+      } else {
+        elements.casualResponseBody.innerHTML = highlightPayload(lastRawCasualResponse);
+      }
     }
   }
 }

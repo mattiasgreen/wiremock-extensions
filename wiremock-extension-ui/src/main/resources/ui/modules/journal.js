@@ -4,7 +4,8 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson } from './highlighter.js';
+import { highlightJson, highlightPayload } from './highlighter.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } from './payload-lens.js';
 import {
   decodeBase64Payload,
   normalizeJsonPayload,
@@ -174,15 +175,35 @@ function buildRowHtml(req) {
     const reqHeadersHtml = highlightJson(reqHeaders);
     const reqBodyRaw = (req.request && (req.request.body || req.request.bodyAsBase64)) || '';
     const reqB64 = decodeBase64Payload(reqBodyRaw);
-    const reqBodyHtml = reqBodyRaw ? highlightJson(reqBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
-    const reqBodyDecodedHtml = reqB64.hasBase64 ? highlightJson(reqB64.decodedFormatted) : '';
+    const reqDiscovered = reqBodyRaw ? discoverEmbeddedPayloads(reqBodyRaw) : [];
+    const reqBodyHtml = reqBodyRaw
+      ? (reqDiscovered.length > 0
+          ? renderFormattedWithNestedPreviews(reqBodyRaw, reqDiscovered, `jrn_req_${req.id}`)
+          : highlightPayload(reqBodyRaw))
+      : '<span style="color: var(--text-muted);">(empty)</span>';
+    const reqB64Discovered = reqB64.hasBase64 ? discoverEmbeddedPayloads(reqB64.decodedFormatted) : [];
+    const reqBodyDecodedHtml = reqB64.hasBase64
+      ? (reqB64Discovered.length > 0
+          ? renderFormattedWithNestedPreviews(reqB64.decodedFormatted, reqB64Discovered, `jrn_req_b64_${req.id}`)
+          : highlightPayload(reqB64.decodedFormatted))
+      : '';
 
     const resHeadersHtml = highlightJson(resHeaders);
     const resBodyRaw = (req.response && (req.response.body || req.response.base64Body))
       || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '';
     const resB64 = decodeBase64Payload(resBodyRaw);
-    const resBodyHtml = resBodyRaw ? highlightJson(resBodyRaw) : '<span style="color: var(--text-muted);">(empty)</span>';
-    const resBodyDecodedHtml = resB64.hasBase64 ? highlightJson(resB64.decodedFormatted) : '';
+    const resDiscovered = resBodyRaw ? discoverEmbeddedPayloads(resBodyRaw) : [];
+    const resBodyHtml = resBodyRaw
+      ? (resDiscovered.length > 0
+          ? renderFormattedWithNestedPreviews(resBodyRaw, resDiscovered, `jrn_res_${req.id}`)
+          : highlightPayload(resBodyRaw))
+      : '<span style="color: var(--text-muted);">(empty)</span>';
+    const resB64Discovered = resB64.hasBase64 ? discoverEmbeddedPayloads(resB64.decodedFormatted) : [];
+    const resBodyDecodedHtml = resB64.hasBase64
+      ? (resB64Discovered.length > 0
+          ? renderFormattedWithNestedPreviews(resB64.decodedFormatted, resB64Discovered, `jrn_res_b64_${req.id}`)
+          : highlightPayload(resB64.decodedFormatted))
+      : '';
     const stubId = req.stubMapping && req.stubMapping.id;
     const stubName = verdict.stubDetail;
 
@@ -240,7 +261,7 @@ function buildRowHtml(req) {
                 </div>
                 ${reqB64.hasBase64 ? `
                   <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${reqBodyHtml}</pre>
+                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
                     <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
                   </div>
                 ` : `
@@ -280,7 +301,7 @@ function buildRowHtml(req) {
                 </div>
                 ${resB64.hasBase64 ? `
                   <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${resBodyHtml}</pre>
+                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
                     <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
                   </div>
                 ` : `

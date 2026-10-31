@@ -229,3 +229,16 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **And** if the user specifies an identical header key in the per-request textarea, the local header chip shows an `(overridden)` visual state and the textarea header takes precedence.
 - **When** the user dispatches the request or clicks "Copy as cURL".
 - **Then** the resolved headers (combining enabled local persistent headers and per-request headers) are sent and included in the cURL command and Sent Request inspector.
+
+### Story 16: Nested JSON/XML Payload Unnesting, Truncated Previews, and Stacked Lens Round-Tripping
+- **Given** an API request or response payload contains escaped or encoded nested structures (e.g., escaped JSON inside JSON, XML inside an escaped JSON string, JSON inside XML CDATA, or Base64-encoded UTF-8 payloads).
+- **When** inspecting traffic in the Request Journal, HTTP Tester (Sent Request or Response Body), or Casual Tester.
+- **Then** the viewer provides a dual `Raw (Wire)` vs. `Unescaped (Nested)` toggle, with dedicated `Copy Raw` and `Copy Formatted` actions.
+- **When** `Unescaped (Nested)` is active.
+- **Then** the engine automatically detects and formats embedded structures, truncating large single-line escaped strings (>80 characters) into an inline **Truncated Payload Preview** with interactive `Open in Lens` and `Expand Inline` actions.
+- **When** viewing or editing payloads in the Stub Editor (Response Body, Request Matcher, or Raw Stub JSON), HTTP Tester, or Casual Tester.
+- **Then** a live **Detected Embedded Payloads Bar** displays actionable chips for each discovered nested payload.
+- **When** the user clicks any embedded payload chip or lens button.
+- **Then** the **Nested Payload Lens** opens in a focused sub-editor with stacked breadcrumb drill-down (`Root ▸ $.node1 ▸ $.node2`), allowing independent pretty-printing, minification, node-scoped copying, and syntax validation.
+- **When** the user modifies the nested payload and clicks "Apply" or "Save All to Root".
+- **Then** the engine validates syntax (with a secondary `Force Apply Unvalidated` override for negative-testing stubs) and safely re-escapes the changes back through each layer's **Container Encoding Envelope** into the root wire payload without corrupting sibling fields or outer quotes.

@@ -294,7 +294,30 @@ export const elements = {
   casualResponseBody: document.getElementById('casual-response-body'),
   casualSentHeaders: document.getElementById('casual-sent-headers'),
   casualSentBody: document.getElementById('casual-sent-body'),
-  casualSentServiceSummary: document.getElementById('casual-sent-service-summary')
+  casualSentServiceSummary: document.getElementById('casual-sent-service-summary'),
+
+  // Nested Payload Lens & Embedded Bars
+  modalPayloadLens: document.getElementById('modal-payload-lens'),
+  payloadLensTitle: document.getElementById('payload-lens-title'),
+  payloadLensBreadcrumbs: document.getElementById('payload-lens-breadcrumbs'),
+  payloadLensNestedBar: document.getElementById('payload-lens-nested-bar'),
+  payloadLensEditor: document.getElementById('payload-lens-editor'),
+  payloadLensValidationError: document.getElementById('payload-lens-validation-error'),
+  btnClosePayloadLens: document.getElementById('btn-close-payload-lens'),
+  btnCancelPayloadLens: document.getElementById('btn-cancel-payload-lens'),
+  btnLensPrettify: document.getElementById('btn-lens-prettify'),
+  btnLensMinify: document.getElementById('btn-lens-minify'),
+  btnLensCopyRaw: document.getElementById('btn-lens-copy-raw'),
+  btnLensCopyFormatted: document.getElementById('btn-lens-copy-formatted'),
+  chkLensMinifyOnSave: document.getElementById('chk-lens-minify-on-save'),
+  btnLensForceApply: document.getElementById('btn-lens-force-apply'),
+  btnLensApplyParent: document.getElementById('btn-lens-apply-parent'),
+  btnLensSaveRoot: document.getElementById('btn-lens-save-root'),
+  testerBodyEmbeddedBar: document.getElementById('tester-body-embedded-bar'),
+  casualPayloadEmbeddedBar: document.getElementById('casual-payload-embedded-bar'),
+  editorBodyEmbeddedBar: document.getElementById('editor-body-embedded-bar'),
+  editorPatternEmbeddedBar: document.getElementById('editor-pattern-embedded-bar'),
+  editorRawEmbeddedBar: document.getElementById('editor-raw-embedded-bar')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */
