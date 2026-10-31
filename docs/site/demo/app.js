@@ -126,7 +126,8 @@ import {
   loadScenarios,
   loadData,
   executeTesterRequest,
-  snapshotFilteredRecordings
+  snapshotFilteredRecordings,
+  demoBackend
 } from './modules/api.js';
 import {
   setupDynamicStubModal,
@@ -194,7 +195,8 @@ export {
   minifyXml,
   highlightXml,
   highlightPayload,
-  detectFormat
+  detectFormat,
+  demoBackend
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)

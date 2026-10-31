@@ -11,6 +11,7 @@ export const elements = {
   statScenarios: document.getElementById('stat-scenarios'),
   stubsCountLabel: document.getElementById('stubs-count-label'),
   journalCount: document.getElementById('journal-count'),
+  demoModeBadge: document.getElementById('demo-mode-badge'),
 
   // Stubs Tab
   searchBox: document.getElementById('search-box'),
@@ -212,6 +213,7 @@ export const elements = {
   radioStrategyDirect: document.getElementById('radio-strategy-direct'),
   btnSaveTargetHost: document.getElementById('btn-save-target-host'),
   btnResetTargetHost: document.getElementById('btn-reset-target-host'),
+  btnDemoTargetHost: document.getElementById('btn-demo-target-host'),
   btnCancelTargetHost: document.getElementById('btn-cancel-target-host'),
   btnCloseTargetHost: document.getElementById('btn-close-target-host'),
   targetHostStatus: document.getElementById('target-host-status'),

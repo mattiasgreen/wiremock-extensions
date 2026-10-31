@@ -20,6 +20,8 @@ import {
 } from './tester.js';
 import { applyRouteFromUrl } from './router.js';
 import { detectCapabilities } from './capabilities.js';
+import { demoBackend } from './demo-backend.js';
+import { updateTargetHostDisplay } from './settings.js';
 
 export function apiUrl(endpoint) {
   if (!endpoint) return '';
@@ -34,6 +36,9 @@ export function apiUrl(endpoint) {
 }
 
 export function doFetch(url, options = {}) {
+  if (demoBackend.isDemoMode()) {
+    return demoBackend.handleRequest(url, options);
+  }
   const targetUrl = apiUrl(url);
   const headers = Object.assign({}, options.headers || {});
   if (state.connectionStrategy === 'proxy' && state.targetConfig) {
@@ -46,7 +51,23 @@ export function doFetch(url, options = {}) {
   const fetchOptions = Object.assign({}, options, { headers });
 
   if (typeof fetch !== 'undefined') {
-    return fetch(targetUrl, fetchOptions);
+    return fetch(targetUrl, fetchOptions)
+      .then(res => {
+        if (!state.targetConfig && res.status === 404 && url === '/__admin/mappings') {
+          demoBackend.setDemoMode(true);
+          updateTargetHostDisplay();
+          return demoBackend.handleRequest(url, options);
+        }
+        return res;
+      })
+      .catch(err => {
+        if (!state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
+          demoBackend.setDemoMode(true);
+          updateTargetHostDisplay();
+          return demoBackend.handleRequest(url, options);
+        }
+        throw err;
+      });
   }
   return new Promise((resolve, reject) => {
     try {
@@ -56,6 +77,11 @@ export function doFetch(url, options = {}) {
         Object.entries(fetchOptions.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
       }
       xhr.onload = () => {
+        if (!state.targetConfig && xhr.status === 404 && url === '/__admin/mappings') {
+          demoBackend.setDemoMode(true);
+          updateTargetHostDisplay();
+          return resolve(demoBackend.handleRequest(url, options));
+        }
         const respHeaders = {
           forEach(cb) {
             const raw = xhr.getAllResponseHeaders() || '';
@@ -74,9 +100,21 @@ export function doFetch(url, options = {}) {
           ok: xhr.status >= 200 && xhr.status < 300
         });
       };
-      xhr.onerror = () => reject(new Error('Network error from ' + targetUrl));
+      xhr.onerror = () => {
+        if (!state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
+          demoBackend.setDemoMode(true);
+          updateTargetHostDisplay();
+          return resolve(demoBackend.handleRequest(url, options));
+        }
+        reject(new Error('Network error from ' + targetUrl));
+      };
       xhr.send(fetchOptions.body || null);
     } catch (err) {
+      if (!state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
+        demoBackend.setDemoMode(true);
+        updateTargetHostDisplay();
+        return resolve(demoBackend.handleRequest(url, options));
+      }
       reject(err);
     }
   });
@@ -495,4 +533,4 @@ export function setProjectMode(project, mode) {
   return apiPost(`/__admin/projects/${enc}/mode`, { mode });
 }
 
-export { detectCapabilities };
+export { detectCapabilities, demoBackend };
