@@ -16,8 +16,6 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import se.laz.casual.client.CasualCallResult;
-import se.laz.casual.client.CasualClient;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 
@@ -94,7 +92,7 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                     : "";
 
             if ("hex".equals(encoding) && !payload.isBlank()) {
-                byte[] hexBytes = se.laz.casual.api.buffer.CasualBufferUtils.fromHex(payload);
+                byte[] hexBytes = CasualBufferUtils.fromHex(payload);
                 payload = java.util.Base64.getEncoder().encodeToString(hexBytes);
                 if (bufferType.equalsIgnoreCase("JSON")) {
                     bufferType = "X_OCTET";
@@ -148,7 +146,7 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                         "Content-Type",
                         result.isJson()
                                 ? "application/json"
-                                : (se.laz.casual.api.buffer.CasualBufferUtils.isCStringType(result.bufferType())
+                                : (CasualBufferUtils.isCStringType(result.bufferType())
                                         ? "text/plain; charset=UTF-8"
                                         : "application/octet-stream"));
                 responseHeaders.put("X-Casual-Error-State", result.errorState().name());
@@ -164,9 +162,9 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                 Map<String, String> requestHeaders = new LinkedHashMap<>();
                 requestHeaders.put(
                         "Content-Type",
-                        se.laz.casual.api.buffer.CasualBufferUtils.isJsonType(bufferType)
+                        CasualBufferUtils.isJsonType(bufferType)
                                 ? "application/json"
-                                : (se.laz.casual.api.buffer.CasualBufferUtils.isCStringType(bufferType)
+                                : (CasualBufferUtils.isCStringType(bufferType)
                                         ? "text/plain; charset=UTF-8"
                                         : "application/octet-stream"));
                 requestHeaders.put("X-Casual-Service", service);

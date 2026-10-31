@@ -3,6 +3,8 @@ package com.github.mattiasgreen.wiremock.examples.banking;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.casual.CasualBufferUtils;
+import com.github.mattiasgreen.wiremock.casual.CasualServer;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -17,7 +19,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.transaction.xa.Xid;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
@@ -35,15 +36,13 @@ import se.laz.casual.network.protocol.messages.transaction.CasualTransactionReso
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackReplyMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceRollbackRequestMessage;
-import se.laz.casual.server.CasualServer;
-import se.laz.casual.server.CasualTransactionHandler;
 
 /**
  * Node 3 (Server B — All-in-One Upstream Backend):
  * Hosts both the live HTTP backend services (Case Management API and CRM API)
  * and the live Casual XATMI + 2PC/XA Billing Platform server ({@code billing/charge}).
  */
-public final class UpstreamBackendServer implements CasualTransactionHandler, AutoCloseable {
+public final class UpstreamBackendServer implements CasualServer.TransactionHandler, AutoCloseable {
 
     private final HttpServer httpServer;
     private final CasualServer casualServer;

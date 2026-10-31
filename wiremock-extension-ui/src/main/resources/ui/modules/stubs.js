@@ -8,10 +8,14 @@ import { highlightJson } from './highlighter.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
-import { handleStubCheckboxClick, updateBulkToolbar } from './bulk-actions.js';
+import { handleStubCheckboxClick, updateBulkToolbar, handleSelectAllToggle } from './bulk-actions.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
 import { matchesStub } from './filter.js';
 import { normalizeJsonPayload } from './base64.js';
+import { exportStubs } from './import-export.js';
+import { updateFilterCounts } from './projects.js';
+import { loadData } from './api.js';
+import { renderJournal } from './journal.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -149,14 +153,35 @@ export function generateJavaStubFor(stub) {
   return lines.join('\n');
 }
 
-export function renderStubList() {
-  const filter = (elements.searchBox && elements.searchBox.value || '').trim();
+export function getAllCatalogStubs() {
   const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
-  const allStubs = [...state.currentStubs, ...state.disabledStubs, ...dynamicStubs];
+  const active = (state.currentStubs || []).map(s => ({ ...s, _disabled: false, _dynamic: false }));
+  const disabled = (state.disabledStubs || []).map(s => ({ ...s, _disabled: true, _dynamic: false }));
+  const dynamic = dynamicStubs.map(s => ({ ...s, _disabled: false, _dynamic: true }));
 
-  const filtered = allStubs.filter(s => {
-    const isDynamic = !!s.isDynamic;
-    const isDisabled = state.disabledStubs.some(d => d.id === s.id);
+  const seen = new Set();
+  const result = [];
+  for (const s of [...active, ...disabled, ...dynamic]) {
+    if (s && s.id && !seen.has(s.id)) {
+      seen.add(s.id);
+      result.push(s);
+    }
+  }
+  return result;
+}
+
+export function findCatalogStubById(id) {
+  if (!id) return null;
+  return getAllCatalogStubs().find(s => s.id === id) || null;
+}
+
+export function getVisibleCatalogStubs(searchQuery) {
+  const filter = (searchQuery !== undefined ? searchQuery : (elements.searchBox && elements.searchBox.value || '')).trim();
+  const allStubs = getAllCatalogStubs();
+
+  return allStubs.filter(s => {
+    const isDynamic = !!s.isDynamic || !!s._dynamic;
+    const isDisabled = !!s._disabled || state.disabledStubs.some(d => d.id === s.id);
 
     if (state.statusFilter === 'active' && (isDisabled || isDynamic)) return false;
     if (state.statusFilter === 'disabled' && (!isDisabled || isDynamic)) return false;
@@ -172,6 +197,31 @@ export function renderStubList() {
     const proj = isDynamic ? (s.metadata && s.metadata.project || '') : getStubProject(s);
     return matchesStub(s, filter, url, proj);
   });
+}
+
+export function getCatalogCounts(projectFilter = state.selectedProject) {
+  let activeList = state.currentStubs || [];
+  let disabledList = state.disabledStubs || [];
+  const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
+  let dynamicList = dynamicStubs;
+
+  if (projectFilter) {
+    activeList = activeList.filter(s => getStubProject(s) === projectFilter);
+    disabledList = disabledList.filter(s => getStubProject(s) === projectFilter);
+    dynamicList = dynamicList.filter(s => (s.metadata && s.metadata.project) === projectFilter);
+  }
+
+  return {
+    all: activeList.length + disabledList.length + dynamicList.length,
+    active: activeList.length,
+    disabled: disabledList.length,
+    dynamic: dynamicList.length
+  };
+}
+
+export function renderStubList() {
+  const allStubs = getAllCatalogStubs();
+  const filtered = getVisibleCatalogStubs();
 
   if (allStubs.length === 0) {
     elements.stubList.innerHTML = `
@@ -569,4 +619,123 @@ export function sendStubToTester(stub, switchTab = true) {
     h: headerLines.length ? toBase64(headerLines.join('\n')) : null,
     b: body ? toBase64(body) : null
   }, false);
+}
+
+export function initStubsTab() {
+  if (elements.searchBox) {
+    elements.searchBox.addEventListener('input', () => {
+      renderStubList();
+      updateBulkToolbar();
+      setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
+    });
+  }
+  if (elements.projectFilterSelect) {
+    elements.projectFilterSelect.addEventListener('change', (e) => {
+      state.selectedProject = e.target.value || null;
+      renderStubList();
+      updateFilterCounts();
+      updateBulkToolbar();
+    });
+  }
+  ['all', 'active', 'disabled', 'dynamic'].forEach(filter => {
+    const btn = document.getElementById(`btn-filter-${filter}`);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        state.statusFilter = filter;
+        renderStubList();
+        updateBulkToolbar();
+      });
+    }
+  });
+
+  if (elements.chkSelectAll) {
+    elements.chkSelectAll.addEventListener('change', (e) => {
+      handleSelectAllToggle(e.target.checked);
+    });
+  }
+  if (elements.btnExportStubs) {
+    elements.btnExportStubs.addEventListener('click', () => {
+      exportStubs(state.selectedProject ? 'project' : 'all');
+    });
+  }
+  if (elements.btnRefresh) {
+    elements.btnRefresh.addEventListener('click', loadData);
+  }
+  if (elements.btnRefreshStubs) {
+    elements.btnRefreshStubs.addEventListener('click', () => {
+      elements.btnRefreshStubs.disabled = true;
+      loadData().finally(() => {
+        elements.btnRefreshStubs.disabled = false;
+      });
+    });
+  }
+
+  // Stubs Detail Actions
+  if (elements.btnTestStub) {
+    elements.btnTestStub.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      const stub = findCatalogStubById(state.selectedStubId);
+      if (stub) sendStubToTester(stub);
+    });
+  }
+  if (elements.btnViewStubInJournal) {
+    elements.btnViewStubInJournal.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      const stub = findCatalogStubById(state.selectedStubId);
+      if (!stub) return;
+      const path = getStubUrl(stub.request);
+      state.journalCurrentPage = 1;
+      activateTab('tab-journal', false);
+      if (elements.journalSearch) {
+        elements.journalSearch.value = path;
+      }
+      if (elements.journalContextBanner) {
+        elements.journalContextBanner.classList.remove('hidden');
+        if (elements.journalFilterChipText) {
+          elements.journalFilterChipText.textContent = `Filtered by Stub: ${path}`;
+        }
+      }
+      renderJournal();
+      setRoute('journal', { q: path }, false);
+    });
+  }
+  if (elements.btnCopyJson) {
+    elements.btnCopyJson.addEventListener('click', () => {
+      if (elements.stubJsonViewer && elements.stubJsonViewer.textContent) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(elements.stubJsonViewer.textContent).catch(() => {});
+        }
+        elements.btnCopyJson.textContent = '✅ Copied!';
+        setTimeout(() => elements.btnCopyJson.textContent = '📋 Copy JSON', 1500);
+      }
+    });
+  }
+  if (elements.btnCopyCurl) {
+    elements.btnCopyCurl.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      const stub = findCatalogStubById(state.selectedStubId);
+      if (!stub) return;
+      const cmd = generateCreateStubCurl(stub);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).catch(() => {});
+      }
+      elements.btnCopyCurl.textContent = '✅ Copied!';
+      setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
+    });
+  }
+  if (elements.btnCopyJava) {
+    elements.btnCopyJava.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      const stub = findCatalogStubById(state.selectedStubId);
+      if (!stub) return;
+      const snippet = generateJavaStubFor(stub);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(snippet).catch(() => {});
+      }
+      elements.btnCopyJava.textContent = '✅ Copied!';
+      setTimeout(() => elements.btnCopyJava.textContent = '☕ Copy Java', 1500);
+    });
+  }
 }

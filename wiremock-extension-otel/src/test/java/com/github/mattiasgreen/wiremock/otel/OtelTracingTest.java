@@ -90,6 +90,29 @@ public class OtelTracingTest {
                 .isEqualTo("stubbed");
         assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.protocol")))
                 .isEqualTo("http");
+        assertThat(span.getEndEpochNanos()).isGreaterThanOrEqualTo(span.getStartEpochNanos());
+    }
+
+    @Test
+    void testSpanDurationReflectsRequestExecutionTime() throws Exception {
+        server.stubFor(get(urlEqualTo("/api/v1/delayed"))
+                .willReturn(ok("delayed-response").withFixedDelay(100)));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/api/v1/delayed"))
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        List<SpanData> finishedSpans = awaitFinishedSpans(1);
+        assertThat(finishedSpans).hasSize(1);
+
+        SpanData span = finishedSpans.get(0);
+        long durationNanos = span.getEndEpochNanos() - span.getStartEpochNanos();
+        long durationMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(durationNanos);
+        assertThat(durationMillis).isGreaterThanOrEqualTo(90L);
     }
 
     @Test
@@ -180,7 +203,12 @@ public class OtelTracingTest {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(server.baseUrl() + "/__casual/services/order_service"))
+                .header("X-WireMock-Protocol", "casual")
                 .header("X-Casual-Service", "order_service")
+                .header("X-Casual-Xid", "42:aabbcc:ddeeff")
+                .header("X-Casual-Gtrid", "aabbcc")
+                .header("X-Casual-Bqual", "ddeeff")
+                .header("X-Casual-Format-Id", "42")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString("{\"amount\":100}"))
                 .build();
@@ -192,14 +220,26 @@ public class OtelTracingTest {
         assertThat(finishedSpans).hasSize(1);
 
         SpanData span = finishedSpans.get(0);
+        assertThat(span.getName()).isEqualTo("casual.order_service");
+        assertThat(span.getKind()).isEqualTo(SpanKind.SERVER);
         assertThat(span.getAttributes().get(AttributeKey.stringKey("wiremock.protocol")))
                 .isEqualTo("casual");
         assertThat(span.getAttributes().get(AttributeKey.stringKey("rpc.system")))
                 .isEqualTo("casual");
         assertThat(span.getAttributes().get(AttributeKey.stringKey("rpc.service")))
                 .isEqualTo("order_service");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("rpc.method")))
+                .isEqualTo("tpcall");
         assertThat(span.getAttributes().get(AttributeKey.stringKey("casual.error_state")))
                 .isEqualTo("OK");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("casual.xid")))
+                .isEqualTo("42:aabbcc:ddeeff");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("casual.xid.gtrid")))
+                .isEqualTo("aabbcc");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("casual.xid.bqual")))
+                .isEqualTo("ddeeff");
+        assertThat(span.getAttributes().get(AttributeKey.longKey("casual.xid.format_id")))
+                .isEqualTo(42L);
     }
 
     @Test

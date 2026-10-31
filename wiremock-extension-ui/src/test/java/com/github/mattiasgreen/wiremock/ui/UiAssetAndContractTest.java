@@ -14,7 +14,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -236,20 +238,65 @@ public class UiAssetAndContractTest {
             }
         }
 
-        // Verify all static getElementById(...) lookups in modules/dom.js exist in index.html
+        // Verify all static getElementById(...) lookups in dom.js exist in index.html
         Path domJs = uiRoot.resolve("modules/dom.js");
         if (Files.isRegularFile(domJs)) {
             String domJsContent = Files.readString(domJs, StandardCharsets.UTF_8);
             Matcher idMatcher = DOM_ID_LOOKUP_PATTERN.matcher(domJsContent);
-            int checkedIds = 0;
+            int checkedDomIds = 0;
             while (idMatcher.find()) {
                 String domId = idMatcher.group(1);
                 assertThat(indexHtml)
                         .as("DOM element id='%s' referenced in modules/dom.js must exist in index.html", domId)
                         .contains("id=\"" + domId + "\"");
-                checkedIds++;
+                checkedDomIds++;
             }
-            assertThat(checkedIds).isGreaterThan(10);
+            assertThat(checkedDomIds).isGreaterThan(10);
         }
+
+        // Collect all declared IDs in index.html and dynamic template IDs in JS modules
+        Set<String> declaredIds = new HashSet<>();
+        Matcher indexIdMatcher =
+                Pattern.compile("id=[\"']([a-zA-Z0-9_-]+)[\"']").matcher(indexHtml);
+        while (indexIdMatcher.find()) {
+            declaredIds.add(indexIdMatcher.group(1));
+        }
+
+        try (Stream<Path> paths = Files.walk(uiRoot)) {
+            List<Path> jsFiles = paths.filter(p -> p.toString().endsWith(".js")).toList();
+            for (Path jsFile : jsFiles) {
+                String content = Files.readString(jsFile, StandardCharsets.UTF_8);
+                Matcher templateIdMatcher =
+                        Pattern.compile("id=['\"]([a-zA-Z0-9_-]+)['\"]").matcher(content);
+                while (templateIdMatcher.find()) {
+                    declaredIds.add(templateIdMatcher.group(1));
+                }
+                Matcher idAssignmentMatcher = Pattern.compile("\\.id\\s*=\\s*['\"]([a-zA-Z0-9_-]+)['\"]")
+                        .matcher(content);
+                while (idAssignmentMatcher.find()) {
+                    declaredIds.add(idAssignmentMatcher.group(1));
+                }
+            }
+        }
+
+        // Verify all getElementById(...) lookups across all JS modules resolve to a declared ID
+        int checkedIds = 0;
+        try (Stream<Path> paths = Files.walk(uiRoot)) {
+            List<Path> jsFiles = paths.filter(p -> p.toString().endsWith(".js")).toList();
+            for (Path jsFile : jsFiles) {
+                String content = Files.readString(jsFile, StandardCharsets.UTF_8);
+                Matcher idMatcher = DOM_ID_LOOKUP_PATTERN.matcher(content);
+                while (idMatcher.find()) {
+                    String domId = idMatcher.group(1);
+                    assertThat(declaredIds)
+                            .as(
+                                    "DOM element id='%s' referenced in %s must be declared in index.html or JS templates",
+                                    domId, jsFile.getFileName())
+                            .contains(domId);
+                    checkedIds++;
+                }
+            }
+        }
+        assertThat(checkedIds).isGreaterThan(50);
     }
 }

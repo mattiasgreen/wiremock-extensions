@@ -50,13 +50,15 @@ Incoming Request ─────────┼──► Proxied (Forwarded to u
 - **Runtime Capacity & Health Gauges**:
   - `wiremock_journal_size_requests`: Active in-memory request journal count.
   - `wiremock_journal_capacity`: Configured journal limit (`-1` if unbounded).
-  - `wiremock_stubs_total{status="active"}`: Total registered active stub mappings.
-- **Distributed Tracing (W3C & OTLP)**:
-  - Automatically extracts incoming W3C `traceparent` and `tracestate` headers to preserve parent-child trace context.
-  - Generates OpenTelemetry `SERVER` spans with standard HTTP semantic conventions (`http.request.method`, `http.response.status_code`, `url.path`, `url.query`, `client.address`).
+  - `wiremock_stubs{status="active"}`: Total registered active stub mappings.
+- **Distributed Tracing (W3C, Casual RPC & OTLP)**:
+  - Automatically extracts incoming W3C `traceparent` and `tracestate` headers to preserve parent-child trace context across both HTTP and Casual JSON requests.
+  - Generates OpenTelemetry `SERVER` spans:
+    - **HTTP Spans**: Standard HTTP semantic conventions (`http.request.method`, `http.response.status_code`, `url.path`, `url.query`, `client.address`).
+    - **Casual RPC Spans**: Standard RPC semantic conventions with span name `casual.<service>` (e.g. `casual.order_service`), `rpc.system="casual"`, `rpc.service="<service>"`, `rpc.method="tpcall"`, `casual.error_state="<status>"`, and XA transaction correlation (`casual.xid`, `casual.xid.gtrid`, `casual.xid.bqual`, `casual.xid.format_id`).
   - Enriches spans with `wiremock.traffic_type`, `wiremock.protocol`, `wiremock.target_upstream`, `wiremock.matched`, `wiremock.stub_id`, `wiremock.stub_name`, `wiremock.scenario_name`, `wiremock.scenario_state`.
-  - Automatically mirrors active `trace_id` and `span_id` into SLF4J MDC for unified structured JSON log correlation.
-  - Marks spans as `ERROR` for HTTP 5xx responses, fault injections, or unmatched requests.
+  - Automatically mirrors active `trace_id` and `span_id` into SLF4J MDC for unified structured JSON log correlation, with scoped cleanup preventing Netty worker/virtual thread leaks.
+  - Marks spans as `ERROR` for HTTP 5xx responses, Casual error states (`!OK`), fault injections, or unmatched requests.
   - Optional OTLP gRPC export (`OTEL_EXPORTER_OTLP_ENDPOINT` or `-Dwiremock.otel.exporter.otlp.endpoint=http://localhost:4317`).
 - **Zero External Infrastructure**: Uses an in-process OpenTelemetry registry and embedded Prometheus exporter with minimal overhead.
 
@@ -93,9 +95,9 @@ wiremock_journal_size_requests 67
 # TYPE wiremock_journal_capacity gauge
 wiremock_journal_capacity -1
 
-# HELP wiremock_stubs_total Total number of stub mappings in WireMock
-# TYPE wiremock_stubs_total gauge
-wiremock_stubs_total{status="active"} 12
+# HELP wiremock_stubs Total number of stub mappings in WireMock
+# TYPE wiremock_stubs gauge
+wiremock_stubs{status="active"} 12
 ```
 
 ## OTLP Exporter Configuration & Deployment Options

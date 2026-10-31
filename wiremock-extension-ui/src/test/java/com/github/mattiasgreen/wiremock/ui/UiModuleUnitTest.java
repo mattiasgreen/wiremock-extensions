@@ -6,6 +6,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.Page;
+import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -1187,5 +1188,171 @@ public class UiModuleUnitTest {
         assertThat(result.get("omittedCorrelationId")).isEqualTo(true);
         assertThat(result.get("omittedRequestTimestamp")).isEqualTo(true);
         assertThat(result.get("omittedEphemeralToken")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
+            "StubCatalog: getVisibleCatalogStubs and getCurrentlyVisibleStubs unify filtering, projects, and selection")
+    void testStubCatalogFilteringAndCounts() {
+        String script =
+                """
+            async () => {
+                const { state } = await import('./modules/state.js');
+                const { getVisibleCatalogStubs, getCatalogCounts, findCatalogStubById } = await import('./modules/stubs.js');
+                const { getCurrentlyVisibleStubs } = await import('./modules/bulk-actions.js');
+
+                // Seed test state
+                state.currentStubs = [
+                    {
+                        id: "active-1",
+                        name: "Get Orders",
+                        request: { method: "GET", url: "/api/v1/orders" },
+                        response: { status: 200 }
+                    },
+                    {
+                        id: "active-2",
+                        name: "Create User",
+                        request: { method: "POST", url: "/api/v1/users" },
+                        response: { status: 201 }
+                    }
+                ];
+                state.disabledStubs = [
+                    {
+                        id: "disabled-1",
+                        name: "Get Single Order",
+                        request: { method: "GET", url: "/api/v1/orders/123" },
+                        response: { status: 200 }
+                    }
+                ];
+                state.statefulModels = [
+                    {
+                        entity: "cases",
+                        rules: [
+                            {
+                                route: { method: "POST", pathPattern: "/api/v1/cases" },
+                                response: { statusCode: 201 }
+                            }
+                        ]
+                    }
+                ];
+                state.selectedProject = null;
+                state.statusFilter = "all";
+
+                const allVisible = getVisibleCatalogStubs("");
+                const bulkVisible = getCurrentlyVisibleStubs();
+
+                // Project filtering check (inferred 'api-orders')
+                state.selectedProject = "api-orders";
+                const ordersVisible = getVisibleCatalogStubs("");
+                const ordersBulk = getCurrentlyVisibleStubs();
+                const ordersCounts = getCatalogCounts("api-orders");
+
+                // Status filter checks
+                state.selectedProject = null;
+                state.statusFilter = "active";
+                const activeOnly = getVisibleCatalogStubs("");
+
+                state.statusFilter = "disabled";
+                const disabledOnly = getVisibleCatalogStubs("");
+
+                state.statusFilter = "dynamic";
+                const dynamicOnly = getVisibleCatalogStubs("");
+
+                // Query filter checks with boolean AND
+                state.statusFilter = "all";
+                const andQuery = getVisibleCatalogStubs("GET AND /orders");
+
+                const foundActive = findCatalogStubById("active-1");
+                const foundDisabled = findCatalogStubById("disabled-1");
+                const foundDynamic = findCatalogStubById("dynamic-cases-0");
+
+                // Reset state
+                state.selectedProject = null;
+                state.statusFilter = "all";
+                state.currentStubs = [];
+                state.disabledStubs = [];
+                state.statefulModels = [];
+
+                return {
+                    allVisibleCount: allVisible.length,
+                    bulkVisibleCount: bulkVisible.length,
+                    bulkExcludesDynamic: !bulkVisible.some(s => s.isDynamic || s._dynamic),
+                    ordersVisibleCount: ordersVisible.length,
+                    ordersBulkCount: ordersBulk.length,
+                    ordersCountsAll: ordersCounts.all,
+                    ordersCountsActive: ordersCounts.active,
+                    ordersCountsDisabled: ordersCounts.disabled,
+                    activeOnlyCount: activeOnly.length,
+                    disabledOnlyCount: disabledOnly.length,
+                    dynamicOnlyCount: dynamicOnly.length,
+                    andQueryCount: andQuery.length,
+                    foundActive: foundActive !== null && foundActive.id === "active-1",
+                    foundDisabled: foundDisabled !== null && foundDisabled.id === "disabled-1",
+                    foundDynamic: foundDynamic !== null && foundDynamic.id === "dynamic-cases-0"
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("allVisibleCount")).isEqualTo(4); // 2 active + 1 disabled + 1 dynamic
+        assertThat(result.get("bulkVisibleCount")).isEqualTo(3); // excludes dynamic
+        assertThat(result.get("bulkExcludesDynamic")).isEqualTo(true);
+        assertThat(result.get("ordersVisibleCount")).isEqualTo(2); // active-1 and disabled-1
+        assertThat(result.get("ordersBulkCount")).isEqualTo(2);
+        assertThat(result.get("ordersCountsAll")).isEqualTo(2);
+        assertThat(result.get("ordersCountsActive")).isEqualTo(1);
+        assertThat(result.get("ordersCountsDisabled")).isEqualTo(1);
+        assertThat(result.get("activeOnlyCount")).isEqualTo(2);
+        assertThat(result.get("disabledOnlyCount")).isEqualTo(1);
+        assertThat(result.get("dynamicOnlyCount")).isEqualTo(1);
+        assertThat(result.get("andQueryCount")).isEqualTo(2); // active-1 and disabled-1
+        assertThat(result.get("foundActive")).isEqualTo(true);
+        assertThat(result.get("foundDisabled")).isEqualTo(true);
+        assertThat(result.get("foundDynamic")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
+            "Dual-Implementation Parity: Java JournalQueryMatcher vs ES6 filter.js evaluateQuery produce identical results")
+    void testDualImplementationQueryMatcherParity() {
+        String corpus = "get /api/v1/orders 200 customer-42 corp-tenant happy";
+        List<String> queryMatrix = List.of(
+                "orders",
+                "orders AND 200",
+                "orders AND 500",
+                "orders OR 500",
+                "users OR cases",
+                "orders 200",
+                "orders 500",
+                "orders AND 500 OR 200",
+                "500 OR orders AND 200",
+                "orders and 200 or 500",
+                "missing OR nonexistent",
+                "corp-tenant AND customer-42",
+                "not-found AND happy");
+
+        for (String query : queryMatrix) {
+            boolean javaOutcome = JournalQueryMatcher.evaluateExpression(
+                    query, token -> corpus.contains(token.toLowerCase(java.util.Locale.ROOT)));
+
+            String script = String.format(
+                    """
+                async () => {
+                    const { evaluateQuery } = await import('./modules/filter.js');
+                    const corpus = %s;
+                    return evaluateQuery(%s, token => corpus.includes(token.toLowerCase()));
+                }
+            """,
+                    com.github.tomakehurst.wiremock.common.Json.write(corpus),
+                    com.github.tomakehurst.wiremock.common.Json.write(query));
+
+            boolean es6Outcome = Boolean.TRUE.equals(evalJs(script));
+
+            assertThat(es6Outcome)
+                    .as("ES6 and Java query matching parity failed for query: '%s'", query)
+                    .isEqualTo(javaOutcome);
+        }
     }
 }

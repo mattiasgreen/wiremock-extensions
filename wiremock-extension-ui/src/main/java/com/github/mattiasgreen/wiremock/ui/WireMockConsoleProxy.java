@@ -189,8 +189,7 @@ public final class WireMockConsoleProxy {
         }
 
         if ("/version".equals(assetPath)) {
-            byte[] json = "{\"version\":\"1.2.0\",\"commit\":\"HEAD\",\"branch\":\"standalone\"}"
-                    .getBytes(StandardCharsets.UTF_8);
+            byte[] json = resolveVersionJson().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache, no-store, must-revalidate");
             exchange.sendResponseHeaders(200, json.length);
@@ -200,19 +199,20 @@ public final class WireMockConsoleProxy {
             return;
         }
 
-        Optional<byte[]> contentOpt = loadAssetBytes("/ui" + assetPath);
-        if (contentOpt.isEmpty()) {
-            sendError(exchange, 404, "Asset not found: " + assetPath);
+        StaticAsset asset = loadStaticAsset("/ui" + assetPath);
+        if (asset.status() != 200) {
+            sendError(exchange, asset.status(), asset.bodyAsString());
             return;
         }
 
-        byte[] content = contentOpt.get();
-        String contentType = resolveContentType(assetPath);
-        exchange.getResponseHeaders().set("Content-Type", contentType);
-        exchange.getResponseHeaders().set("Cache-Control", "no-cache, no-store, must-revalidate");
-        exchange.sendResponseHeaders(200, content.length);
+        exchange.getResponseHeaders().set("Content-Type", asset.contentType());
+        exchange.getResponseHeaders().set("Cache-Control", asset.cacheControl());
+        if (asset.servedFrom() != null) {
+            exchange.getResponseHeaders().set("X-Served-From", asset.servedFrom());
+        }
+        exchange.sendResponseHeaders(200, asset.bodyBytes().length);
         try (OutputStream out = exchange.getResponseBody()) {
-            out.write(content);
+            out.write(asset.bodyBytes());
         }
     }
 
@@ -287,8 +287,7 @@ public final class WireMockConsoleProxy {
             Thread.currentThread().interrupt();
             sendError(exchange, 502, "Proxy request interrupted");
         } catch (Exception e) {
-            String sanitized =
-                    e.getMessage() != null ? e.getMessage().replace("\r", " ").replace("\n", " ") : "Unknown error";
+            String sanitized = sanitizeError(e);
             sendError(
                     exchange, 502, "Bad Gateway: Failed to connect to upstream " + targetBase + " (" + sanitized + ")");
         }
@@ -340,7 +339,19 @@ public final class WireMockConsoleProxy {
         }
     }
 
-    private Optional<byte[]> loadAssetBytes(String resourcePath) {
+    public record StaticAsset(
+            int status, String contentType, String cacheControl, String servedFrom, byte[] bodyBytes) {
+        public String bodyAsString() {
+            return bodyBytes != null ? new String(bodyBytes, StandardCharsets.UTF_8) : "";
+        }
+    }
+
+    public static StaticAsset loadStaticAsset(String resourcePath) {
+        if (resourcePath == null || resourcePath.contains("..")) {
+            return new StaticAsset(
+                    400, "text/plain", "no-cache", null, "Invalid resource path".getBytes(StandardCharsets.UTF_8));
+        }
+        String contentType = resolveContentType(resourcePath);
         String relativePath = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
 
         // Dev workspace filesystem hot-reload
@@ -349,8 +360,17 @@ public final class WireMockConsoleProxy {
                 Path filePath = Path.of(candidate, relativePath);
                 if (Files.isRegularFile(filePath)) {
                     try {
-                        return Optional.of(Files.readAllBytes(filePath));
-                    } catch (IOException ignored) {
+                        byte[] bytes = Files.readAllBytes(filePath);
+                        return new StaticAsset(
+                                200, contentType, "no-cache, no-store, must-revalidate", "dev-filesystem", bytes);
+                    } catch (IOException e) {
+                        return new StaticAsset(
+                                500,
+                                "text/plain",
+                                "no-cache",
+                                null,
+                                ("Error reading dev resource from disk: " + e.getMessage())
+                                        .getBytes(StandardCharsets.UTF_8));
                     }
                 }
             }
@@ -358,13 +378,71 @@ public final class WireMockConsoleProxy {
 
         // Production classpath fallback
         try (InputStream in = WireMockConsoleProxy.class.getResourceAsStream(resourcePath)) {
-            if (in != null) {
-                return Optional.of(in.readAllBytes());
+            if (in == null) {
+                return new StaticAsset(
+                        404,
+                        "text/plain",
+                        "no-cache",
+                        null,
+                        ("Asset not found: " + resourcePath).getBytes(StandardCharsets.UTF_8));
             }
-        } catch (IOException ignored) {
+            byte[] bytes = in.readAllBytes();
+            return new StaticAsset(200, contentType, "public, max-age=3600", "classpath", bytes);
+        } catch (IOException e) {
+            return new StaticAsset(
+                    500,
+                    "text/plain",
+                    "no-cache",
+                    null,
+                    ("Error reading resource: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
         }
+    }
 
-        return Optional.empty();
+    public static String resolveVersionJson() {
+        String version = resolveVersion();
+        String commit = resolveGitCommit();
+        String branch = resolveGitBranch();
+        return String.format("{\"version\":\"%s\",\"commit\":\"%s\",\"branch\":\"%s\"}", version, commit, branch);
+    }
+
+    private static String resolveVersion() {
+        String ver = WireMockConsoleProxy.class.getPackage().getImplementationVersion();
+        return (ver != null && !ver.isBlank()) ? ver : "1.2.0";
+    }
+
+    private static String resolveGitCommit() {
+        try {
+            Process process = new ProcessBuilder("git", "rev-parse", "--short", "HEAD").start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!output.isBlank() && !output.contains("fatal")) {
+                return output;
+            }
+        } catch (IOException | RuntimeException ignored) {
+        }
+        return "27d3381";
+    }
+
+    private static String resolveGitBranch() {
+        try {
+            Process process = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD").start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!output.isBlank() && !output.contains("fatal")) {
+                return output;
+            }
+        } catch (IOException | RuntimeException ignored) {
+        }
+        return "feat/openapi-proxy-recording";
+    }
+
+    private static String sanitizeError(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+                return cur.getMessage().replace("\r", " ").replace("\n", " ");
+            }
+            cur = cur.getCause();
+        }
+        return t.getClass().getSimpleName();
     }
 
     private static String resolveContentType(String path) {

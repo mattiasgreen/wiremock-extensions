@@ -199,4 +199,52 @@ public abstract class AbstractUiPlaywrightTest {
                 .respondWith(200, ResponseSource.entity())
                 .build();
     }
+
+    // =========================================================================
+    // UI Domain Driver Seam: High-level operations over raw DOM selectors/sleeps
+    // =========================================================================
+
+    protected void openUi() {
+        openUi("");
+    }
+
+    protected void openUi(String pathOrHash) {
+        String target = wireMockServer.baseUrl() + "/__admin/ui/" + (pathOrHash != null ? pathOrHash : "");
+        page.navigate(target);
+        page.waitForSelector("#stub-list");
+    }
+
+    protected void switchTab(String tabId) {
+        String navSelector = "#nav-" + tabId.replace("tab-", "tab-");
+        if (!navSelector.startsWith("#nav-tab-")) {
+            navSelector = "#nav-tab-" + tabId.replace("tab-", "");
+        }
+        page.locator(navSelector).click();
+        page.waitForSelector("#" + tabId + ".active");
+    }
+
+    protected void filterStubs(String query) {
+        page.locator("#search-box").fill(query);
+    }
+
+    protected void selectStubCard(String textMatch) {
+        page.locator(".stub-card:has-text('" + textMatch + "')").first().click();
+    }
+
+    protected void selectProject(String projectName) {
+        page.locator("#project-filter-select").selectOption(projectName);
+    }
+
+    protected void selectStatusFilter(String status) {
+        page.locator("#btn-filter-" + status).click();
+    }
+
+    protected void openJournalTab() {
+        switchTab("tab-journal");
+        page.waitForSelector("#journal-table");
+    }
+
+    protected void filterJournal(String query) {
+        page.locator("#journal-search").fill(query);
+    }
 }

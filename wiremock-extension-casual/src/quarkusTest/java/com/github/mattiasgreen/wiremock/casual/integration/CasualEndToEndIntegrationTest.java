@@ -9,6 +9,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.casual.CasualBufferUtils;
 import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.ClientInitiatorNode;
 import com.github.mattiasgreen.wiremock.casual.integration.CasualIntegrationTestHarness.TransactionOutcome;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -26,7 +27,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.AtmiFlags;
@@ -350,9 +350,13 @@ class CasualEndToEndIntegrationTest {
             assertThat(faultOutcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_RBROLLBACK);
             assertThat(faultOutcome.committed()).isFalse();
 
-            // Verify gateway override maps are completely clean
-            assertThat(harness.getMitmGateway().getPrepareVoteOverridesSize()).isEqualTo(0);
-            assertThat(harness.getMitmGateway().getCommitVoteOverridesSize()).isEqualTo(0);
+            // Verify clean transaction isolation: subsequent transaction on happy branch commits cleanly without
+            // lingering overrides
+            TransactionOutcome subsequentOutcome =
+                    happyClient.executeInTransaction("casual/example", "{\"client\":\"happy\"}");
+            assertThat(subsequentOutcome.committed()).isTrue();
+            assertThat(subsequentOutcome.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+            assertThat(subsequentOutcome.commitReturnCode()).isEqualTo(XAReturnCode.XA_OK);
         }
     }
 

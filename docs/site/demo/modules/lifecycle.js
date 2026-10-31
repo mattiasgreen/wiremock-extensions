@@ -12,8 +12,10 @@ import {
   createStubMapping,
   loadData
 } from './api.js';
-import { selectStub, renderStubList } from './stubs.js';
+import { selectStub, renderStubList, findCatalogStubById } from './stubs.js';
 import { renderProjectSelector } from './projects.js';
+import { executeBulkAction } from './bulk-actions.js';
+import { switchImportTab, handleBundleImport } from './import-export.js';
 
 let activeEditingStub = null;
 let isCloneMode = false;
@@ -30,7 +32,7 @@ export function handleToggleStub(stubId) {
     .then(() => {
       // Re-select if it was currently selected
       if (state.selectedStubId === stubId) {
-        const found = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === stubId);
+        const found = findCatalogStubById(stubId);
         if (found) selectStub(found, false);
       }
     })
@@ -41,7 +43,7 @@ export function handleToggleStub(stubId) {
 
 export function handleDeleteStub(stubId) {
   if (!stubId) return;
-  const found = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === stubId);
+  const found = findCatalogStubById(stubId);
   const name = found ? (found.name || stubId) : stubId;
   if (!confirm(`Are you sure you want to permanently delete stub "${name}"?`)) {
     return;
@@ -654,8 +656,8 @@ export function openStubEditor(stub, clone = false) {
   const templateSelect = document.getElementById('editor-template-select');
   const projectInput = document.getElementById('editor-project');
 
-  const activeProj = (state.activeProjectFilter && state.activeProjectFilter !== '*' && state.activeProjectFilter !== '_all')
-    ? state.activeProjectFilter
+  const activeProj = (state.selectedProject && state.selectedProject !== '*' && state.selectedProject !== '_all')
+    ? state.selectedProject
     : '';
 
   if (!stub) {
@@ -771,5 +773,174 @@ export function saveStubEditor() {
     .catch(err => {
       alert('Failed to save stub mapping: ' + err.message);
     });
+}
+
+export function initStubLifecycleHandlers() {
+  if (elements.btnCreateStub) {
+    elements.btnCreateStub.addEventListener('click', () => openStubEditor(null, false));
+  }
+  if (elements.btnEditStub) {
+    elements.btnEditStub.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      const stub = findCatalogStubById(state.selectedStubId);
+      if (stub) openStubEditor(stub, false);
+    });
+  }
+  if (elements.btnCloneStub) {
+    elements.btnCloneStub.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      const stub = findCatalogStubById(state.selectedStubId);
+      if (stub) openStubEditor(stub, true);
+    });
+  }
+  if (elements.btnToggleStub) {
+    elements.btnToggleStub.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      handleToggleStub(state.selectedStubId);
+    });
+  }
+  if (elements.btnDeleteStub) {
+    elements.btnDeleteStub.addEventListener('click', () => {
+      if (!state.selectedStubId) return;
+      handleDeleteStub(state.selectedStubId);
+    });
+  }
+
+  // Modal close/save buttons
+  if (elements.btnCloseEditorModal) {
+    elements.btnCloseEditorModal.addEventListener('click', closeStubEditor);
+  }
+  if (elements.btnCancelEditor) {
+    elements.btnCancelEditor.addEventListener('click', closeStubEditor);
+  }
+  if (elements.btnSaveEditor) {
+    elements.btnSaveEditor.addEventListener('click', saveStubEditor);
+  }
+
+  // Form / JSON mode toggles
+  if (elements.btnEditorModeForm) {
+    elements.btnEditorModeForm.addEventListener('click', () => setEditorMode('form'));
+  }
+  if (elements.btnEditorModeJson) {
+    elements.btnEditorModeJson.addEventListener('click', () => setEditorMode('json'));
+  }
+  if (elements.btnEditorRawFormatJson) {
+    elements.btnEditorRawFormatJson.addEventListener('click', formatRawEditorJson);
+  }
+  if (elements.btnEditorFormatJson) {
+    elements.btnEditorFormatJson.addEventListener('click', formatResponseBodyJson);
+  }
+  if (elements.btnEditorFormatRequestJson) {
+    elements.btnEditorFormatRequestJson.addEventListener('click', formatRequestBodyJson);
+  }
+
+  // Template / OpenAPI triggers
+  if (elements.btnEditorOpenOpenApi) {
+    elements.btnEditorOpenOpenApi.addEventListener('click', () => {
+      closeStubEditor();
+      if (elements.btnOpenOpenApiModal) {
+        elements.btnOpenOpenApiModal.click();
+      }
+    });
+  }
+  if (elements.editorTemplateSelect) {
+    elements.editorTemplateSelect.addEventListener('change', () => {
+      const val = elements.editorTemplateSelect.value;
+      if (val && val !== 'custom') {
+        applyStubTemplate(val);
+      }
+    });
+  }
+  if (elements.btnApplyTemplate) {
+    elements.btnApplyTemplate.addEventListener('click', () => {
+      if (elements.editorTemplateSelect && elements.editorTemplateSelect.value !== 'custom') {
+        applyStubTemplate(elements.editorTemplateSelect.value);
+      }
+    });
+  }
+  if (elements.editorBodyMatchType) {
+    elements.editorBodyMatchType.addEventListener('change', () => {
+      const val = elements.editorBodyMatchType.value;
+      if (elements.editorBodyMatchContainer) {
+        if (val === 'none') {
+          elements.editorBodyMatchContainer.classList.add('hidden');
+        } else {
+          elements.editorBodyMatchContainer.classList.remove('hidden');
+        }
+      }
+      updateBodyMatchLabel(val);
+    });
+  }
+  if (elements.btnWelcomeOpenApi) {
+    elements.btnWelcomeOpenApi.addEventListener('click', () => {
+      if (elements.btnOpenOpenApiModal) {
+        elements.btnOpenOpenApiModal.click();
+      }
+    });
+  }
+  if (elements.btnWelcomeCreate) {
+    elements.btnWelcomeCreate.addEventListener('click', () => {
+      openStubEditor(null, false);
+    });
+  }
+
+  // Bulk actions
+  if (elements.btnBulkEnable) {
+    elements.btnBulkEnable.addEventListener('click', () => executeBulkAction('enable'));
+  }
+  if (elements.btnBulkDisable) {
+    elements.btnBulkDisable.addEventListener('click', () => executeBulkAction('disable'));
+  }
+  if (elements.btnBulkExport) {
+    elements.btnBulkExport.addEventListener('click', () => executeBulkAction('export'));
+  }
+  if (elements.btnBulkDelete) {
+    elements.btnBulkDelete.addEventListener('click', () => executeBulkAction('delete'));
+  }
+
+  // Import Modal bindings
+  if (elements.importTabOpenApi) {
+    elements.importTabOpenApi.addEventListener('click', () => switchImportTab('openapi'));
+  }
+  if (elements.importTabBundle) {
+    elements.importTabBundle.addEventListener('click', () => switchImportTab('bundle'));
+  }
+  if (elements.btnSubmitBundleImport) {
+    elements.btnSubmitBundleImport.addEventListener('click', handleBundleImport);
+  }
+  if (elements.btnBrowseBundleFile && elements.bundleFileInput) {
+    elements.btnBrowseBundleFile.addEventListener('click', () => elements.bundleFileInput.click());
+    elements.bundleFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (elements.bundleContent) elements.bundleContent.value = event.target.result;
+        };
+        reader.readAsText(file);
+      }
+    });
+  }
+  if (elements.bundleDropzone) {
+    elements.bundleDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      elements.bundleDropzone.classList.add('dragover');
+    });
+    elements.bundleDropzone.addEventListener('dragleave', () => {
+      elements.bundleDropzone.classList.remove('dragover');
+    });
+    elements.bundleDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      elements.bundleDropzone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (elements.bundleContent) elements.bundleContent.value = event.target.result;
+        };
+        reader.readAsText(file);
+      }
+    });
+  }
 }
 

@@ -4,7 +4,7 @@
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { getStubUrl } from './stubs.js';
+import { getStubUrl, getCatalogCounts } from './stubs.js';
 import { setProjectMode, snapshotProjectRecordings } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
 
@@ -86,19 +86,12 @@ export function updateFilterCounts() {
   const countDisabled = document.getElementById('count-filter-disabled');
   const countDynamic = document.getElementById('count-filter-dynamic');
 
-  let activeList = state.currentStubs;
-  let disabledList = state.disabledStubs;
-  const dynamicRulesCount = (state.statefulModels || []).reduce((acc, m) => acc + ((m.rules && m.rules.length) || 0), 0);
+  const counts = getCatalogCounts(state.selectedProject);
 
-  if (state.selectedProject) {
-    activeList = activeList.filter(s => getStubProject(s) === state.selectedProject);
-    disabledList = disabledList.filter(s => getStubProject(s) === state.selectedProject);
-  }
-
-  if (countAll) countAll.textContent = activeList.length + disabledList.length + (state.selectedProject ? 0 : dynamicRulesCount);
-  if (countActive) countActive.textContent = activeList.length;
-  if (countDisabled) countDisabled.textContent = disabledList.length;
-  if (countDynamic) countDynamic.textContent = dynamicRulesCount;
+  if (countAll) countAll.textContent = counts.all;
+  if (countActive) countActive.textContent = counts.active;
+  if (countDisabled) countDisabled.textContent = counts.disabled;
+  if (countDynamic) countDynamic.textContent = counts.dynamic;
 
   updateProjectLifecycleBar();
 }

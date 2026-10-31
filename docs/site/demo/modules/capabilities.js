@@ -196,8 +196,8 @@ export function applyCapabilityVisibility() {
       caps.stateful,
       'Dynamic stateful simulation requires wiremock-extension-stateful'
     );
-    if (!caps.stateful && state.activeFilter === 'dynamic') {
-      state.activeFilter = 'all';
+    if (!caps.stateful && state.statusFilter === 'dynamic') {
+      state.statusFilter = 'all';
       if (elements.btnFilterAll) {
         document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
         elements.btnFilterAll.classList.add('active');
@@ -212,8 +212,8 @@ export function applyCapabilityVisibility() {
       caps.lifecycle,
       'Disabled stub store requires wiremock-extension-ui lifecycle endpoint (/__admin/stubs/disabled)'
     );
-    if (!caps.lifecycle && state.activeFilter === 'disabled') {
-      state.activeFilter = 'all';
+    if (!caps.lifecycle && state.statusFilter === 'disabled') {
+      state.statusFilter = 'all';
       if (elements.btnFilterAll) {
         document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
         elements.btnFilterAll.classList.add('active');

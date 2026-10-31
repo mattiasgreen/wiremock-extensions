@@ -476,6 +476,10 @@ public final class WireMockCli {
                 File candidate1 = new File("wiremock-cli/WireMockConsoleProxy.java");
                 File candidate2 = new File("WireMockConsoleProxy.java");
                 File candidate3 = new File("../wiremock-cli/WireMockConsoleProxy.java");
+                File candidate4 = new File(
+                        "wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java");
+                File candidate5 = new File(
+                        "../wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java");
 
                 if (candidate1.isFile()) {
                     cmd.add(candidate1.getPath());
@@ -483,6 +487,10 @@ public final class WireMockCli {
                     cmd.add(candidate2.getPath());
                 } else if (candidate3.isFile()) {
                     cmd.add(candidate3.getPath());
+                } else if (candidate4.isFile()) {
+                    cmd.add(candidate4.getPath());
+                } else if (candidate5.isFile()) {
+                    cmd.add(candidate5.getPath());
                 } else {
                     err.println("Could not locate WireMockConsoleProxy.java. Ensure it exists in wiremock-cli/.");
                     return 1;

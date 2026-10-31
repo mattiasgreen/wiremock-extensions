@@ -3,6 +3,8 @@ package com.github.mattiasgreen.wiremock.examples.banking;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.casual.CasualBufferUtils;
+import com.github.mattiasgreen.wiremock.casual.CasualClient;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -19,12 +21,10 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.transaction.xa.Xid;
-import se.laz.casual.api.buffer.CasualBufferUtils;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
-import se.laz.casual.client.CasualTcpClient;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourcePrepareReplyMessage;
@@ -92,7 +92,7 @@ public final class ProductPortalServer implements AutoCloseable {
     private final String wireMockBaseUrl;
     private final HttpServer portalServer;
     private final HttpClient httpClient;
-    private final CasualTcpClient casualClient;
+    private final CasualClient casualClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AtomicInteger txSequence = new AtomicInteger(1);
 
@@ -156,8 +156,8 @@ public final class ProductPortalServer implements AutoCloseable {
         this.wireMockBaseUrl = wireMockBaseUrl.replaceAll("/+$", "");
         this.httpClient =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
-        this.casualClient = new CasualTcpClient(
-                casualGatewayHost, casualGatewayPort, UUID.randomUUID(), "banking-product-portal-domain");
+        this.casualClient = new CasualClient(
+                casualGatewayHost, casualGatewayPort, UUID.randomUUID(), "banking-product-portal-domain", 5);
         this.portalServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         this.portalServer.setExecutor(Executors.newCachedThreadPool());
         registerPortalRoutes();
