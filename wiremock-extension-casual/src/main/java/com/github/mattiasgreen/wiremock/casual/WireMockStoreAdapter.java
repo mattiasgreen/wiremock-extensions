@@ -3,12 +3,15 @@ package com.github.mattiasgreen.wiremock.casual;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.admin.model.ListStubMappingsResult;
 import com.github.tomakehurst.wiremock.common.Json;
+import com.github.tomakehurst.wiremock.extension.Parameters;
+import com.github.tomakehurst.wiremock.extension.ServeEventListener;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,7 +20,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,6 +191,11 @@ public class WireMockStoreAdapter implements CasualStorePort {
 
     @Override
     public void recordServeEvent(ServeEvent serveEvent) {
+        recordServeEventInJournal(serveEvent);
+        notifyServeEventListeners(serveEvent);
+    }
+
+    private void recordServeEventInJournal(ServeEvent serveEvent) {
         if (wireMockServices != null) {
             try {
                 wireMockServices.getStores().getRequestJournalStore().add(serveEvent);
@@ -220,6 +230,58 @@ public class WireMockStoreAdapter implements CasualStorePort {
                 servicesOpt.get().getStores().getRequestJournalStore().add(serveEvent);
             } catch (Exception e) {
                 LOG.debug("Could not add ServeEvent to RequestJournalStore: {}", e.getMessage());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void notifyServeEventListeners(ServeEvent serveEvent) {
+        Map<String, ServeEventListener> listeners = new LinkedHashMap<>();
+        if (wireMockServer != null) {
+            try {
+                Field appField = WireMockServer.class.getDeclaredField("wireMockApp");
+                appField.setAccessible(true);
+                Object wireMockApp = appField.get(wireMockServer);
+                if (wireMockApp != null) {
+                    try {
+                        Method getExtensions = wireMockApp.getClass().getMethod("getExtensions");
+                        com.github.tomakehurst.wiremock.extension.Extensions exts =
+                                (com.github.tomakehurst.wiremock.extension.Extensions)
+                                        getExtensions.invoke(wireMockApp);
+                        if (exts != null) {
+                            listeners.putAll(exts.ofType(ServeEventListener.class));
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    if (listeners.isEmpty()) {
+                        Field listenersField = wireMockApp.getClass().getDeclaredField("serveEventListeners");
+                        listenersField.setAccessible(true);
+                        Map<String, ServeEventListener> map =
+                                (Map<String, ServeEventListener>) listenersField.get(wireMockApp);
+                        if (map != null) {
+                            listeners.putAll(map);
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                LOG.debug("Could not resolve ServeEventListeners from wireMockServer: {}", t.getMessage());
+            }
+        }
+        if (listeners.isEmpty() && wireMockServices != null && wireMockServices.getExtensions() != null) {
+            listeners.putAll(wireMockServices.getExtensions().ofType(ServeEventListener.class));
+        }
+        if (listeners.isEmpty()) {
+            Optional<WireMockServices> servicesOpt =
+                    CasualRegistry.getInstance().getWireMockServices();
+            if (servicesOpt.isPresent() && servicesOpt.get().getExtensions() != null) {
+                listeners.putAll(servicesOpt.get().getExtensions().ofType(ServeEventListener.class));
+            }
+        }
+        for (ServeEventListener listener : listeners.values()) {
+            try {
+                listener.afterComplete(serveEvent, Parameters.empty());
+            } catch (Throwable t) {
+                LOG.warn("Failed to notify ServeEventListener [{}]: {}", listener.getName(), t.getMessage());
             }
         }
     }

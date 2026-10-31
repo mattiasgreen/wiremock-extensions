@@ -1,7 +1,9 @@
 package com.github.mattiasgreen.wiremock.casual;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.DataTruncationSettings;
+import com.github.tomakehurst.wiremock.common.Json;
 import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.HttpHeaders;
 import com.github.tomakehurst.wiremock.http.ImmutableRequest;
@@ -15,10 +17,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import javax.transaction.xa.Xid;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.xa.XAReturnCode;
+import se.laz.casual.api.xa.XID;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
@@ -44,16 +48,39 @@ public final class CasualHttpMediation {
         String resolvedBase = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : "http://localhost:8080";
         String absoluteUrl = resolvedBase + "/__casual/services/" + serviceName;
 
-        return ImmutableRequest.create()
+        ImmutableRequest.Builder requestBuilder = ImmutableRequest.create()
                 .withMethod(RequestMethod.POST)
                 .withAbsoluteUrl(absoluteUrl)
                 .withHeader(
                         "Content-Type",
                         CasualBufferUtils.isJsonType(bufferType) ? "application/json" : "application/octet-stream")
+                .withHeader("X-WireMock-Protocol", "casual")
                 .withHeader("X-Casual-Service", serviceName)
                 .withHeader("X-Casual-Buffer-Type", bufferType)
-                .withHeader("X-Casual-Execution", executionId)
-                .withBody(requestPayload.getBytes(StandardCharsets.UTF_8))
+                .withHeader("X-Casual-Execution", executionId);
+
+        if (req.getXid() != null && !XID.NULL_XID.equals(req.getXid())) {
+            Xid xid = req.getXid();
+            requestBuilder.withHeader("X-Casual-Xid", formatXid(xid));
+            requestBuilder.withHeader("X-Casual-Gtrid", toHex(xid.getGlobalTransactionId()));
+            requestBuilder.withHeader("X-Casual-Bqual", toHex(xid.getBranchQualifier()));
+            requestBuilder.withHeader("X-Casual-Format-Id", String.valueOf(xid.getFormatId()));
+        }
+
+        try {
+            if (req.getParentSpan() != null) {
+                requestBuilder.withHeader(
+                        "X-Casual-Parent-Span", req.getParentSpan().toString());
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (requestPayload != null && requestPayload.trim().startsWith("{")) {
+            extractJsonTracingHeaders(requestPayload, requestBuilder);
+        }
+
+        return requestBuilder
+                .withBody(requestPayload != null ? requestPayload.getBytes(StandardCharsets.UTF_8) : new byte[0])
                 .build();
     }
 
@@ -187,10 +214,11 @@ public final class CasualHttpMediation {
         }
         Response response = responseBuilder.build();
 
-        return ServeEvent.of(wiremockRequest)
-                .withStubMapping(stub)
-                .withResponseDefinition(responseDef)
-                .complete(response, DataTruncationSettings.DEFAULTS);
+        ServeEvent serveEvent =
+                ServeEvent.of(wiremockRequest).withStubMapping(stub).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        return serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
     }
 
     public static ServeEvent buildProxiedServeEvent(
@@ -249,10 +277,11 @@ public final class CasualHttpMediation {
                 .body(bodyForResponse)
                 .build();
 
-        return ServeEvent.of(wiremockRequest)
-                .withStubMapping(stub)
-                .withResponseDefinition(responseDef)
-                .complete(response, DataTruncationSettings.DEFAULTS);
+        ServeEvent serveEvent =
+                ServeEvent.of(wiremockRequest).withStubMapping(stub).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        return serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
     }
 
     public static ServeEvent buildUnmatchedServeEvent(Request wiremockRequest, ErrorState errorState) {
@@ -270,9 +299,10 @@ public final class CasualHttpMediation {
                         "{\"error\": \"%s\", \"message\": \"Service unmatched in WireMock stubs\"}",
                         errName))
                 .build();
-        return ServeEvent.of(wiremockRequest)
-                .withResponseDefinition(responseDef)
-                .complete(response, DataTruncationSettings.DEFAULTS);
+        ServeEvent serveEvent = ServeEvent.of(wiremockRequest).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        return serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
     }
 
     public static CasualServiceCallReplyMessage buildErrorReply(
@@ -287,6 +317,53 @@ public final class CasualHttpMediation {
             replyBuilder.setXid(req.getXid());
         }
         return replyBuilder.build();
+    }
+
+    private static void extractJsonTracingHeaders(String json, ImmutableRequest.Builder requestBuilder) {
+        try {
+            JsonNode root = Json.read(json, JsonNode.class);
+            if (root != null) {
+                if (root.has("traceparent")) {
+                    requestBuilder.withHeader(
+                            "traceparent", root.get("traceparent").asText());
+                }
+                if (root.has("tracestate")) {
+                    requestBuilder.withHeader(
+                            "tracestate", root.get("tracestate").asText());
+                }
+                if (root.has("X-Correlation-Id")) {
+                    requestBuilder.withHeader(
+                            "X-Correlation-Id", root.get("X-Correlation-Id").asText());
+                } else if (root.has("CORRELATION_ID")) {
+                    requestBuilder.withHeader(
+                            "X-Correlation-Id", root.get("CORRELATION_ID").asText());
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static String formatXid(Xid xid) {
+        if (xid == null || XID.NULL_XID.equals(xid)) {
+            return null;
+        }
+        return String.format(
+                Locale.ROOT,
+                "%d:%s:%s",
+                xid.getFormatId(),
+                toHex(xid.getGlobalTransactionId()),
+                toHex(xid.getBranchQualifier()));
+    }
+
+    private static String toHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format(Locale.ROOT, "%02x", b));
+        }
+        return sb.toString();
     }
 
     private static Optional<XAReturnCode> extractVoteOverride(HttpHeaders headers, String headerName) {

@@ -552,4 +552,105 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             upstreamOrders.stop();
         }
     }
+
+    @Test
+    @DisplayName(
+            "Scenario 12: Tester persistent corporate headers in browser localStorage, visual chips, macro expansion, and precedence")
+    void testTesterPersistentLocalHeaders() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+        page.waitForSelector("#tab-tester.active");
+
+        // Verify local headers container is visible
+        Locator container = page.locator("#tester-local-headers-container");
+        assertThat(container.isVisible()).isTrue();
+
+        // Initially 2 default corporate headers configured
+        Locator countEl = page.locator("#tester-local-headers-count");
+        assertThat(countEl.textContent().trim()).isEqualTo("2");
+
+        // Open Manage Local Headers modal
+        page.locator("#btn-manage-local-headers").click();
+        page.waitForSelector("#modal-local-headers:not(.hidden)");
+
+        // Table body
+        Locator tbody = page.locator("#local-headers-tbody");
+        Locator rows = tbody.locator(".local-header-row");
+        // Ensure we have at least 3 rows
+        while (rows.count() < 3) {
+            page.locator("#btn-add-local-header-row").click();
+        }
+
+        // Fill row 0: X-Tenant-Id: corp-dev-tenant
+        rows.nth(0).locator(".header-row-name").fill("X-Tenant-Id");
+        rows.nth(0).locator(".header-row-value").fill("corp-dev-tenant");
+
+        // Fill row 1: X-Correlation-Id: {{uuid}}
+        rows.nth(1).locator(".header-row-name").fill("X-Correlation-Id");
+        rows.nth(1).locator(".header-row-value").fill("{{uuid}}");
+
+        // Fill row 2: X-User-Role: Developer
+        rows.nth(2).locator(".header-row-name").fill("X-User-Role");
+        rows.nth(2).locator(".header-row-value").fill("Developer");
+
+        // Save
+        page.locator("#btn-save-local-headers").click();
+        page.waitForFunction(
+                "() => document.getElementById('modal-local-headers') && document.getElementById('modal-local-headers').classList.contains('hidden')");
+
+        // Verify count and chips
+        assertThat(countEl.textContent().trim()).isEqualTo("3");
+        Locator chips = page.locator("#tester-local-headers-chips .local-header-chip");
+        assertThat(chips.count()).isEqualTo(3);
+        assertThat(page.locator("#tester-local-headers-chips").textContent()).contains("X-Tenant-Id");
+        assertThat(page.locator("#tester-local-headers-chips").textContent()).contains("corp-dev-tenant");
+        assertThat(page.locator("#tester-local-headers-chips").textContent()).contains("X-Correlation-Id");
+        assertThat(page.locator("#tester-local-headers-chips").textContent()).contains("{{uuid}}");
+        assertThat(page.locator("#tester-local-headers-chips").textContent()).contains("X-User-Role");
+
+        // Send request
+        page.locator("#tester-url").fill("/api/v1/users");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('200')");
+
+        // Inspect Sent Request pane
+        page.locator("#btn-tester-tab-request").click();
+        Locator sentHeaders = page.locator("#tester-sent-headers");
+        assertThat(sentHeaders.textContent()).contains("X-Tenant-Id: corp-dev-tenant");
+        assertThat(sentHeaders.textContent()).contains("X-User-Role: Developer");
+        // Verify {{uuid}} was resolved to a valid UUID
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("X-Correlation-Id:\\s+([0-9a-fA-F-]+)")
+                .matcher(sentHeaders.textContent());
+        assertThat(m.find()).as("Resolved UUID in sent headers").isTrue();
+        assertThat(m.group(1)).matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+        // Now test override: type into textarea #tester-headers: "X-Tenant-Id: overridden-tenant"
+        page.locator("#tester-headers").fill("X-Tenant-Id: overridden-tenant");
+        // Chip should now show overridden state
+        Locator tenantChip = page.locator(".local-header-chip[data-header-name='X-Tenant-Id']");
+        assertThat(tenantChip.getAttribute("class")).contains("overridden");
+        assertThat(tenantChip.textContent()).contains("(overridden)");
+
+        // Send request again with override
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('200')");
+        assertThat(page.locator("#tester-sent-headers").textContent()).contains("X-Tenant-Id: overridden-tenant");
+        assertThat(page.locator("#tester-sent-headers").textContent()).doesNotContain("X-Tenant-Id: corp-dev-tenant");
+
+        // Test toggle persistent headers off
+        page.locator("#tester-local-headers-toggle").uncheck();
+        assertThat(page.locator("#tester-local-headers-chips").textContent()).contains("Persistent headers paused");
+
+        // Clear textarea and send request: no persistent headers should be sent
+        page.locator("#tester-headers").fill("");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector("#tester-response-status:has-text('200')");
+        assertThat(page.locator("#tester-sent-headers").textContent()).doesNotContain("X-User-Role");
+        assertThat(page.locator("#tester-sent-headers").textContent()).doesNotContain("X-Tenant-Id");
+
+        // Re-enable toggle
+        page.locator("#tester-local-headers-toggle").check();
+        assertThat(page.locator("#tester-local-headers-chips .local-header-chip")
+                        .count())
+                .isEqualTo(3);
+    }
 }

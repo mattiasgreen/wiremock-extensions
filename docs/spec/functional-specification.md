@@ -220,3 +220,12 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the gateway forwards the request natively over TCP socket-to-socket to the designated upstream domain, enlists the connection for multi-upstream 2PC transaction stickiness (`Xid`), records human-readable request/response events into WireMock's Request Journal (enabling native WireMock snapshot recording), and fails fast with actionable diagnostic hints if the upstream call exceeds the timeout (default 4s).
 - **When** an unsupported frame or connection drop occurs.
 - **Then** the gateway fails fast and closes the TCP channel immediately (`ctx.close()`) to avoid client-side hangs.
+
+### Story 15: Persistent Local Browser Headers in HTTP Tester
+- **Given** an engineer is testing services requiring mandatory corporate headers (`X-Correlation-Id`, `X-Tenant-Id`, `Authorization`).
+- **When** the user configures local persistent headers in the tester and enables them.
+- **Then** the headers are stored exclusively in browser `localStorage` and never transmitted to or stored in server-side stub files.
+- **And** the headers are rendered visibly in the Request Headers section as distinctive chips displaying key-value pairs (with dynamic macros like `{{uuid}}`, `{{now}}`, `{{timestamp}}` supported).
+- **And** if the user specifies an identical header key in the per-request textarea, the local header chip shows an `(overridden)` visual state and the textarea header takes precedence.
+- **When** the user dispatches the request or clicks "Copy as cURL".
+- **Then** the resolved headers (combining enabled local persistent headers and per-request headers) are sent and included in the cURL command and Sent Request inspector.

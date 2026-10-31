@@ -145,6 +145,13 @@ The Casual extension uses standard **SLF4J** logging. For inbound requests, outb
 * **`DEBUG`**: Logs connection events, inbound frame headers (service name, buffer type, payload size, XID, execution UUID), WireMock stub match/unmatch status, upstream proxy forwarding, and stub recordings.
 * **`TRACE`**: Guarded payload logging including canonical 128-byte hex dumps (`CasualBufferUtils.toHexDump(...)`) for diagnosing byte-level protocol mismatches.
 
+### OpenTelemetry Tracing & Prometheus Metrics Integration
+When used alongside `wiremock-extension-otel`, `CasualWireMockGateway` automatically publishes OpenTelemetry telemetry for all TCP XATMI calls:
+* **Prometheus Metrics**: Request counters (`wiremock_requests_total{protocol="casual",rpc_service="<service>",casual_error_state="OK"}`) and execution latency distributions (`wiremock_request_duration_ms`).
+* **OpenTelemetry SERVER Spans**: Emits standard RPC spans named `casual.<service>` with `rpc.system="casual"`, `rpc.service="<service>"`, `rpc.method="tpcall"`, and `casual.error_state`.
+* **XA Transaction & W3C Trace Correlation**: Propagates incoming W3C `traceparent` headers from JSON payloads, and attaches XA transaction identifiers (`casual.xid`, `casual.xid.gtrid`) for distributed trace correlation across 2PC phases.
+* **MDC Context Propagation**: Injects `trace_id` and `span_id` into SLF4J MDC with scoped cleanup across Netty virtual threads.
+
 ### How to Enable Debug Logging
 
 #### 1. In `StandaloneDevServer` (Gradle)

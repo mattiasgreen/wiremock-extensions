@@ -82,7 +82,12 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
             AttributeKey.stringKey("wiremock.target_upstream");
     private static final AttributeKey<String> TRACE_RPC_SYSTEM = AttributeKey.stringKey("rpc.system");
     private static final AttributeKey<String> TRACE_RPC_SERVICE = AttributeKey.stringKey("rpc.service");
+    private static final AttributeKey<String> TRACE_RPC_METHOD = AttributeKey.stringKey("rpc.method");
     private static final AttributeKey<String> TRACE_CASUAL_ERROR_STATE = AttributeKey.stringKey("casual.error_state");
+    private static final AttributeKey<String> TRACE_CASUAL_XID = AttributeKey.stringKey("casual.xid");
+    private static final AttributeKey<String> TRACE_CASUAL_XID_GTRID = AttributeKey.stringKey("casual.xid.gtrid");
+    private static final AttributeKey<String> TRACE_CASUAL_XID_BQUAL = AttributeKey.stringKey("casual.xid.bqual");
+    private static final AttributeKey<Long> TRACE_CASUAL_XID_FORMAT_ID = AttributeKey.longKey("casual.xid.format_id");
 
     private static final WireMockTelemetryEngine GLOBAL_INSTANCE = new WireMockTelemetryEngine();
 
@@ -455,7 +460,12 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 .extract(Context.current(), request, WireMockRequestTextMapGetter.INSTANCE);
 
         String method = tc.method() != null ? tc.method() : "HTTP";
-        String spanName = method + " " + tc.urlPath();
+        String spanName;
+        if ("casual".equals(tc.protocol())) {
+            spanName = "casual." + (tc.rpcService() != null ? tc.rpcService() : "unknown");
+        } else {
+            spanName = method + " " + tc.urlPath();
+        }
 
         Span span = tracer.spanBuilder(spanName)
                 .setParent(extractedContext)
@@ -523,8 +533,35 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 if (tc.rpcService() != null) {
                     span.setAttribute(TRACE_RPC_SERVICE, tc.rpcService());
                 }
+                span.setAttribute(TRACE_RPC_METHOD, "tpcall");
                 if (tc.rpcStatus() != null) {
                     span.setAttribute(TRACE_CASUAL_ERROR_STATE, tc.rpcStatus());
+                    if (!"OK".equalsIgnoreCase(tc.rpcStatus())) {
+                        span.setStatus(StatusCode.ERROR, "Casual error: " + tc.rpcStatus());
+                    }
+                }
+                if (request.header("X-Casual-Xid").isPresent()) {
+                    span.setAttribute(
+                            TRACE_CASUAL_XID, request.header("X-Casual-Xid").firstValue());
+                }
+                if (request.header("X-Casual-Gtrid").isPresent()) {
+                    span.setAttribute(
+                            TRACE_CASUAL_XID_GTRID,
+                            request.header("X-Casual-Gtrid").firstValue());
+                }
+                if (request.header("X-Casual-Bqual").isPresent()) {
+                    span.setAttribute(
+                            TRACE_CASUAL_XID_BQUAL,
+                            request.header("X-Casual-Bqual").firstValue());
+                }
+                if (request.header("X-Casual-Format-Id").isPresent()) {
+                    try {
+                        span.setAttribute(
+                                TRACE_CASUAL_XID_FORMAT_ID,
+                                Long.parseLong(
+                                        request.header("X-Casual-Format-Id").firstValue()));
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
             }
         } finally {
