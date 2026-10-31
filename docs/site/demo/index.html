@@ -38,6 +38,7 @@
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
         <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions Version and Git Branch">v1.2.0</span>
+        <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
         <button class="tab nav-tab active" data-tab="tab-stub-detail" role="tab" id="nav-tab-stubs" data-testid="nav-tab-stubs">
@@ -1087,7 +1088,10 @@
         <div id="target-host-status" class="hidden" style="margin-top: 12px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
+          <button id="btn-demo-target-host" class="btn btn-secondary" data-testid="btn-demo-target-host" title="Switch to In-Browser Showcase Demo">✨ Demo Mode</button>
+        </div>
         <div style="display: flex; gap: 8px;">
           <button id="btn-cancel-target-host" class="btn btn-secondary">Cancel</button>
           <button id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>

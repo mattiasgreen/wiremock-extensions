@@ -7,6 +7,7 @@ import { elements, escapeHtml } from './dom.js';
 import { state, setTargetUrlInLocation, getWireMockUri } from './state.js';
 import { renderTargetCapabilities } from './capabilities.js';
 import { renderLocalHeaderChips } from './tester.js';
+import { demoBackend } from './demo-backend.js';
 
 export const LOCAL_SETTINGS_KEY = 'wiremock_ui_preferences';
 export const LOCAL_HEADERS_KEY = 'wiremock_ui_local_headers';
@@ -480,8 +481,18 @@ export function updateTargetHostDisplay() {
     brandEl.title = `WMC - ${wiremockUri}`;
   }
 
+  if (elements.demoModeBadge) {
+    if (demoBackend.isDemoMode()) {
+      elements.demoModeBadge.classList.remove('hidden');
+    } else {
+      elements.demoModeBadge.classList.add('hidden');
+    }
+  }
+
   if (elements.targetHostLabel) {
-    if (state.targetConfig) {
+    if (demoBackend.isDemoMode()) {
+      elements.targetHostLabel.textContent = 'Target: ✨ Demo Mode (In-Browser)';
+    } else if (state.targetConfig) {
       const modeStr = state.connectionStrategy === 'direct' ? 'direct' : 'proxied';
       elements.targetHostLabel.textContent = `Target: ${state.targetConfig.fullUrl} (${modeStr})`;
     } else {
@@ -489,9 +500,13 @@ export function updateTargetHostDisplay() {
     }
   }
   if (elements.targetHostDot) {
-    elements.targetHostDot.className = state.targetConfig
-      ? 'target-host-dot remote'
-      : 'target-host-dot';
+    if (demoBackend.isDemoMode()) {
+      elements.targetHostDot.className = 'target-host-dot demo';
+    } else {
+      elements.targetHostDot.className = state.targetConfig
+        ? 'target-host-dot remote'
+        : 'target-host-dot';
+    }
   }
   const upstreamUrl = state.targetConfig ? state.targetConfig.fullUrl : '';
   if (elements.linkSwaggerUi) {
@@ -597,6 +612,9 @@ export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
 
   const applyTargetHost = (newTarget, strategy) => {
     state.capabilitiesDetected = false;
+    if (newTarget) {
+      demoBackend.setDemoMode(false);
+    }
     setTargetUrlInLocation(newTarget, strategy);
     updateTargetHostDisplay();
     renderTargetCapabilities();
@@ -619,6 +637,14 @@ export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
 
   if (elements.btnResetTargetHost) {
     elements.btnResetTargetHost.addEventListener('click', () => {
+      applyTargetHost('', 'proxy');
+    });
+  }
+
+  if (elements.btnDemoTargetHost) {
+    elements.btnDemoTargetHost.addEventListener('click', () => {
+      demoBackend.setDemoMode(true);
+      demoBackend.reset();
       applyTargetHost('', 'proxy');
     });
   }

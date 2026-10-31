@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.9.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.8.0...v1.9.0) (2026-10-31)
+
+
+### Features
+
+* **ui:** implement nested payload unnesting, truncated previews, and stacked lens round-tripping ([#62](https://github.com/mattiasgreen/wiremock-extensions/issues/62)) ([9d4fa81](https://github.com/mattiasgreen/wiremock-extensions/commit/9d4fa81405ede141d532daf9ce820bd5fa071ac3))
+
 ## [1.8.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.7.0...v1.8.0) (2026-10-31)
 
 
