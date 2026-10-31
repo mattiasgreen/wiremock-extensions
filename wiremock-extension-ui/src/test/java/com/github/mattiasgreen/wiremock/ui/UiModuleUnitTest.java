@@ -1564,4 +1564,103 @@ public class UiModuleUnitTest {
         assertThat(result.get("errorThrownOnInvalidApply")).isEqualTo(true);
         assertThat(result.get("forcedAppliedValue")).isEqualTo("{\"malformed\": }");
     }
+
+    @Test
+    @DisplayName("demoBackend: Preloaded showcase seeding, stub lifecycle, and state machine matching")
+    void testDemoBackendShowcaseAndMatching() {
+        String script =
+                """
+            async () => {
+                const { demoBackend } = await import('./modules/demo-backend.js');
+                demoBackend.reset();
+
+                // 1. Initial Seeding verification
+                const initialStubsCount = demoBackend.stubs.length;
+                const initialDisabledCount = demoBackend.disabledStubs.length;
+                const initialRequestsCount = demoBackend.requests.length;
+                const initialScenarios = demoBackend.scenarios;
+                const initialCasualServices = demoBackend.casualServices;
+
+                // 2. HTTP Request Simulation (Matched with Scenario progression)
+                // OrderLifecycle is currently in 'PROCESSING' state
+                const completeOrderResp = await demoBackend.handleRequest('/api/v1/orders/ORD-101/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const completeOrderBody = await completeOrderResp.json();
+                const scenarioAfterComplete = demoBackend.scenarios.find(s => s.name === 'OrderLifecycle').state;
+
+                // 3. HTTP Request Simulation (Matched Banking KYC with embedded audit report)
+                const kycResp = await demoBackend.handleRequest('/api/v1/kyc/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ caseId: 'KYC-9042', applicant: 'Alice Lindqvist' })
+                });
+                const kycBody = await kycResp.json();
+
+                // 4. Unmatched Request Simulation
+                const unmatchedResp = await demoBackend.handleRequest('/api/v1/non-existent-route', {
+                    method: 'GET'
+                });
+
+                // 5. Stub Lifecycle Toggle
+                const toggleResp = await demoBackend.handleRequest('/__admin/stubs/demo-stub-kyc-verify/toggle', {
+                    method: 'POST'
+                });
+                const toggleResult = await toggleResp.json();
+
+                // 6. Casual XATMI simulation
+                const casualResp = await demoBackend.handleRequest('/__admin/casual/call', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        service: 'echoService',
+                        bufferType: 'JSON',
+                        payload: '{"account": "ACC-101"}'
+                    })
+                });
+                const casualResult = await casualResp.json();
+
+                return {
+                    initialStubsCount,
+                    initialDisabledCount,
+                    initialRequestsCount,
+                    hasOrderLifecycle: initialScenarios.some(s => s.name === 'OrderLifecycle'),
+                    hasEchoService: initialCasualServices.some(s => s.name === 'echoService'),
+                    completeOrderStatus: completeOrderResp.status,
+                    completeOrderDelivered: completeOrderBody.state === 'COMPLETED',
+                    scenarioAfterComplete,
+                    kycStatus: kycResp.status,
+                    kycStatusApproved: kycBody.status === 'APPROVED',
+                    kycHasEmbeddedReport: kycBody.complianceAudit.includes('<report'),
+                    unmatchedStatus: unmatchedResp.status,
+                    toggleResultDisabled: toggleResult.disabled,
+                    stubsAfterToggle: demoBackend.stubs.length,
+                    disabledAfterToggle: demoBackend.disabledStubs.length,
+                    casualStatus: casualResult.status,
+                    casualHasEcho: casualResult.payload.includes('ACC-101')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("initialStubsCount")).intValue()).isGreaterThanOrEqualTo(5);
+        assertThat(((Number) result.get("initialDisabledCount")).intValue()).isGreaterThanOrEqualTo(2);
+        assertThat(((Number) result.get("initialRequestsCount")).intValue()).isGreaterThanOrEqualTo(4);
+        assertThat(result.get("hasOrderLifecycle")).isEqualTo(true);
+        assertThat(result.get("hasEchoService")).isEqualTo(true);
+        assertThat(((Number) result.get("completeOrderStatus")).intValue()).isEqualTo(200);
+        assertThat(result.get("completeOrderDelivered")).isEqualTo(true);
+        assertThat(result.get("scenarioAfterComplete")).isEqualTo("COMPLETED");
+        assertThat(((Number) result.get("kycStatus")).intValue()).isEqualTo(200);
+        assertThat(result.get("kycStatusApproved")).isEqualTo(true);
+        assertThat(result.get("kycHasEmbeddedReport")).isEqualTo(true);
+        assertThat(((Number) result.get("unmatchedStatus")).intValue()).isEqualTo(404);
+        assertThat(result.get("toggleResultDisabled")).isEqualTo(true);
+        assertThat(((Number) result.get("disabledAfterToggle")).intValue())
+                .isEqualTo(((Number) result.get("initialDisabledCount")).intValue() + 1);
+        assertThat(((Number) result.get("casualStatus")).intValue()).isEqualTo(0);
+        assertThat(result.get("casualHasEcho")).isEqualTo(true);
+    }
 }

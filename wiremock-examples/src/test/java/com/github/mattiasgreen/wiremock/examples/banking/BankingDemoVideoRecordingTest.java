@@ -242,7 +242,15 @@ class BankingDemoVideoRecordingTest {
 
         if (rawVideoPath != null && Files.exists(rawVideoPath)) {
             Files.move(rawVideoPath, finalVideoPath, StandardCopyOption.REPLACE_EXISTING);
-            Files.deleteIfExists(tempVideoDir);
+            try (var stream = Files.walk(tempVideoDir)) {
+                stream.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (Exception ignored) {
+                    }
+                });
+            } catch (Exception ignored) {
+            }
             assertThat(Files.exists(finalVideoPath)).isTrue();
             assertThat(Files.size(finalVideoPath)).isGreaterThan(10_000L);
         }
