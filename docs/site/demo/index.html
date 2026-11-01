@@ -236,7 +236,13 @@
             </div>
 
             <div class="code-viewer-container">
-              <div class="code-viewer-header">Stub Mapping JSON</div>
+              <div class="code-viewer-header">
+                <span class="code-viewer-title">Stub Mapping JSON</span>
+                <span class="preview-pill-group" id="stub-top-pill-group">
+                  <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
+                  <button type="button" id="btn-stub-open-lens-top" class="btn-lens-open-pill" title="Open full Stub in Focused Lens">🔍 Lens</button>
+                </span>
+              </div>
               <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
             </div>
           </div>
@@ -459,7 +465,15 @@
                       <pre id="tester-response-headers" class="code-block-mini">(no headers yet)</pre>
                     </div>
                     <div class="code-viewer-container" style="flex: 1;">
-                      <div class="headers-section-label">Response Body</div>
+                      <div class="headers-section-label" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>Response Body</span>
+                          <span class="preview-pill-group" id="tester-top-pill-group" style="display: none;">
+                            <span class="preview-pill-badge" id="tester-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
+                            <button type="button" id="btn-tester-open-lens-top" class="btn-lens-open-pill" title="Open Response Body in Focused Lens">🔍 Lens</button>
+                          </span>
+                        </div>
+                      </div>
                       <pre id="tester-response-body" class="code-block">(no response yet - press Send)</pre>
                     </div>
                   </div>

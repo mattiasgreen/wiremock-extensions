@@ -1810,7 +1810,7 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("Nested Payload Lens: renderFormattedWithNestedPreviews inline flow and floating action badges")
+    @DisplayName("Nested Payload Lens: renderFormattedWithNestedPreviews inline flow and hover pill group")
     void testRenderFormattedWithNestedPreviewsInlineFlow() {
         String script =
                 """
@@ -1828,7 +1828,7 @@ public class UiModuleUnitTest {
 
                 return {
                     hasInlineClass: html.includes('class="truncated-payload-preview'),
-                    hasFloatingActions: html.includes('class="preview-floating-actions"'),
+                    hasPillGroup: html.includes('class="preview-pill-group"'),
                     hasOpenPill: html.includes('btn-lens-open-pill'),
                     hasExpandPill: html.includes('btn-lens-expand-pill'),
                     hasExpandedDiv: html.includes('inline-expanded-payload'),
@@ -1841,7 +1841,7 @@ public class UiModuleUnitTest {
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
         assertThat(result.get("hasInlineClass")).isEqualTo(true);
-        assertThat(result.get("hasFloatingActions")).isEqualTo(true);
+        assertThat(result.get("hasPillGroup")).isEqualTo(true);
         assertThat(result.get("hasOpenPill")).isEqualTo(true);
         assertThat(result.get("hasExpandPill")).isEqualTo(true);
         assertThat(result.get("hasExpandedDiv")).isEqualTo(true);

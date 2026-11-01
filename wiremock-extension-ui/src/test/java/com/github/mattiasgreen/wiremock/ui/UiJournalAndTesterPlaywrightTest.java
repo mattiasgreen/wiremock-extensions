@@ -686,23 +686,23 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(previewChip.first().textContent()).contains("JSON");
 
         // It is expanded by default
-        Locator expandBtn = previewChip.first().locator("> .preview-floating-actions > .btn-lens-expand-pill");
+        Locator expandBtn = previewChip.first().locator("> .preview-pill-group > .btn-lens-expand-pill");
         Locator expandedPayload = previewChip.first().locator("> .inline-expanded-payload");
         assertThat(expandedPayload.isVisible()).isTrue();
-        assertThat(expandBtn.textContent()).contains("Collapse");
+        assertThat(expandBtn.getAttribute("title")).contains("Click to collapse");
 
-        // Test collapse button
+        // Test collapse button / badge toggle
         expandBtn.click();
         assertThat(expandedPayload.isHidden()).isTrue();
-        assertThat(expandBtn.textContent()).contains("Expand");
+        assertThat(expandBtn.getAttribute("title")).contains("Click to expand");
 
         // Expand again
         expandBtn.click();
         assertThat(expandedPayload.isVisible()).isTrue();
-        assertThat(expandBtn.textContent()).contains("Collapse");
+        assertThat(expandBtn.getAttribute("title")).contains("Click to collapse");
 
         // Open in Focused Lens modal
-        Locator openLensBtn = previewChip.first().locator("> .preview-floating-actions > .btn-lens-open-pill");
+        Locator openLensBtn = previewChip.first().locator("> .preview-pill-group > .btn-lens-open-pill");
         openLensBtn.click();
 
         page.waitForSelector("#modal-payload-lens:not(.hidden)");

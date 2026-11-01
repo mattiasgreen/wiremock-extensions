@@ -4,8 +4,8 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, highlightPayload } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } from './payload-lens.js';
+import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, openPayloadLens } from './payload-lens.js';
 import {
   decodeBase64Payload,
   normalizeJsonPayload,
@@ -173,6 +173,8 @@ function buildRowHtml(req) {
   if (isExpanded) {
     const reqHeadersHtml = highlightJson(reqHeaders);
     const reqBodyRaw = (req.request && (req.request.body || req.request.bodyAsBase64)) || '';
+    const reqFmt = reqBodyRaw ? detectFormat(reqBodyRaw) : 'text';
+    const reqSizeKb = reqBodyRaw ? (new Blob([reqBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const reqB64 = decodeBase64Payload(reqBodyRaw);
     const reqDiscovered = reqBodyRaw ? discoverEmbeddedPayloads(reqBodyRaw) : [];
     const reqBodyHtml = reqBodyRaw
@@ -190,6 +192,8 @@ function buildRowHtml(req) {
     const resHeadersHtml = highlightJson(resHeaders);
     const resBodyRaw = (req.response && (req.response.body || req.response.base64Body))
       || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '';
+    const resFmt = resBodyRaw ? detectFormat(resBodyRaw) : 'text';
+    const resSizeKb = resBodyRaw ? (new Blob([resBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const resB64 = decodeBase64Payload(resBodyRaw);
     const resDiscovered = resBodyRaw ? discoverEmbeddedPayloads(resBodyRaw) : [];
     const resBodyHtml = resBodyRaw
@@ -245,7 +249,15 @@ function buildRowHtml(req) {
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini code-block-headers">${reqHeadersHtml}</pre>
                 <div class="journal-section-header">
-                  <div class="journal-section-title">Body</div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="journal-section-title">Body</div>
+                    ${reqBodyRaw ? `
+                      <span class="preview-pill-group">
+                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqFmt.toUpperCase())} · ${reqSizeKb} KB</span>
+                        <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="req" data-id="${req.id}" title="Open full Request Body in Focused Lens">🔍 Lens</button>
+                      </span>
+                    ` : ''}
+                  </div>
                   ${reqB64.hasBase64 ? `
                     <div class="journal-b64-controls">
                       <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in request body">🔓 Base64 JSON</span>
@@ -257,14 +269,16 @@ function buildRowHtml(req) {
                     </div>
                   ` : ''}
                 </div>
-                ${reqB64.hasBase64 ? `
-                  <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
-                    <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
-                  </div>
-                ` : `
-                  <pre class="code-block-mini code-block-body">${reqBodyHtml}</pre>
-                `}
+                <div id="jrn-req-body-${req.id}">
+                  ${reqB64.hasBase64 ? `
+                    <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                      <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
+                      <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
+                    </div>
+                  ` : `
+                    <pre class="code-block-mini code-block-body">${reqBodyHtml}</pre>
+                  `}
+                </div>
               </div>
               <div class="journal-detail-card">
                 <div class="journal-card-header">
@@ -285,7 +299,15 @@ function buildRowHtml(req) {
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini code-block-headers">${resHeadersHtml}</pre>
                 <div class="journal-section-header">
-                  <div class="journal-section-title">Body</div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="journal-section-title">Body</div>
+                    ${resBodyRaw ? `
+                      <span class="preview-pill-group">
+                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resFmt.toUpperCase())} · ${resSizeKb} KB</span>
+                        <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="res" data-id="${req.id}" title="Open full Response Body in Focused Lens">🔍 Lens</button>
+                      </span>
+                    ` : ''}
+                  </div>
                   ${resB64.hasBase64 ? `
                     <div class="journal-b64-controls">
                       <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in response body">🔓 Base64 JSON</span>
@@ -297,14 +319,16 @@ function buildRowHtml(req) {
                     </div>
                   ` : ''}
                 </div>
-                ${resB64.hasBase64 ? `
-                  <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
-                    <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
-                  </div>
-                ` : `
-                  <pre class="code-block-mini code-block-body">${resBodyHtml}</pre>
-                `}
+                <div id="jrn-res-body-${req.id}">
+                  ${resB64.hasBase64 ? `
+                    <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                      <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
+                      <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
+                    </div>
+                  ` : `
+                    <pre class="code-block-mini code-block-body">${resBodyHtml}</pre>
+                  `}
+                </div>
               </div>
             </div>
           </div>
@@ -426,6 +450,42 @@ function setupEventDelegation() {
   eventsDelegated = true;
 
   elements.journalList.addEventListener('click', async (e) => {
+    const toggleBodyBtn = e.target.closest('.btn-journal-toggle-body');
+    if (toggleBodyBtn) {
+      e.stopPropagation();
+      const targetId = toggleBodyBtn.getAttribute('data-target');
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        const isHidden = targetEl.classList.toggle('hidden');
+        toggleBodyBtn.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+      return;
+    }
+
+    const topLensBtn = e.target.closest('.btn-journal-top-lens');
+    if (topLensBtn) {
+      e.stopPropagation();
+      const type = topLensBtn.getAttribute('data-type');
+      const reqId = topLensBtn.getAttribute('data-id');
+      const req = state.currentRequests.find(r => r.id === reqId);
+      if (req) {
+        const bodyRaw = type === 'req'
+          ? ((req.request && (req.request.body || req.request.bodyAsBase64)) || '')
+          : ((req.response && (req.response.body || req.response.base64Body)) || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '');
+        if (bodyRaw) {
+          const fmt = detectFormat(bodyRaw);
+          openPayloadLens(bodyRaw, {
+            path: '$',
+            key: type === 'req' ? 'requestBody' : 'responseBody',
+            format: fmt,
+            encoding: 'STRING',
+            unescapedValue: bodyRaw
+          }, null);
+        }
+      }
+      return;
+    }
+
     const toTesterBtn = e.target.closest('.btn-journal-to-tester');
     if (toTesterBtn) {
       e.stopPropagation();

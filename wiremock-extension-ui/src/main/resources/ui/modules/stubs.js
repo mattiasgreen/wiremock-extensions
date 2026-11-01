@@ -5,7 +5,7 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } from './payload-lens.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, openPayloadLens } from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
@@ -485,6 +485,41 @@ export function selectStub(stub, updateRoute = true) {
     elements.stubJsonViewer.innerHTML = renderFormattedWithNestedPreviews(rawStubJson, discovered, `stub_${stub.id}`);
   } else {
     elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
+  }
+
+  const topPillGroup = document.getElementById('stub-top-pill-group');
+  const topPill = document.getElementById('stub-top-pill');
+  const topLensBtn = document.getElementById('btn-stub-open-lens-top');
+  if (topPillGroup && topPill && topLensBtn) {
+    topPillGroup.style.display = 'inline-flex';
+    const sizeKb = (new Blob([rawStubJson]).size / 1024).toFixed(1);
+    topPill.textContent = `JSON · ${sizeKb} KB`;
+    topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+    topPill.onclick = () => {
+      const isHidden = elements.stubJsonViewer.classList.toggle('hidden');
+      topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+    };
+    topLensBtn.onclick = () => {
+      openPayloadLens(rawStubJson, {
+        path: '$',
+        key: 'stub',
+        format: 'json',
+        encoding: 'JSON_STRING',
+        unescapedValue: rawStubJson
+      }, (updatedJson) => {
+        try {
+          const parsed = JSON.parse(updatedJson);
+          if (isDynamic) {
+            stub.rule = parsed;
+          } else {
+            Object.assign(stub, parsed);
+          }
+          selectStub(stub.id);
+        } catch (e) {
+          console.error('Failed to parse updated stub JSON:', e);
+        }
+      });
+    };
   }
 
   if (updateRoute) {
