@@ -1827,11 +1827,11 @@ public class UiModuleUnitTest {
                 const html = renderFormattedWithNestedPreviews(rootJson, discovered, 'viewer_test_01');
 
                 return {
-                    hasInlineClass: html.includes('class="truncated-payload-preview"'),
+                    hasInlineClass: html.includes('class="truncated-payload-preview'),
                     hasFloatingActions: html.includes('class="preview-floating-actions"'),
                     hasOpenPill: html.includes('btn-lens-open-pill'),
                     hasExpandPill: html.includes('btn-lens-expand-pill'),
-                    hasExpandedDiv: html.includes('inline-expanded-payload hidden'),
+                    hasExpandedDiv: html.includes('inline-expanded-payload'),
                     snippetPreserved: html.includes('&lt;report')
                 };
             }
@@ -1846,5 +1846,44 @@ public class UiModuleUnitTest {
         assertThat(result.get("hasExpandPill")).isEqualTo(true);
         assertThat(result.get("hasExpandedDiv")).isEqualTo(true);
         assertThat(result.get("snippetPreserved")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("Nested Payload Lens: Recursive multi-level auto-unnesting renders child previews down AST hierarchy")
+    void testRecursiveMultiLevelAutoUnnesting() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } = await import('./modules/payload-lens.js');
+
+                // Level 1: body (JSON)
+                // Level 2: gatewayEnvelope (JSON)
+                // Level 3: messagePayload (XML)
+                const innerXml = '<swiftMessage xmlns="http://banking.corp"><id>SW-99</id></swiftMessage>';
+                const gatewayJson = JSON.stringify({ routing: "SWIFT_NET", messagePayload: innerXml });
+                const rootBodyJson = JSON.stringify({ transferId: "TX-1", gatewayEnvelope: gatewayJson });
+                const stubJson = JSON.stringify({ response: { body: rootBodyJson } }, null, 2);
+
+                const discovered = discoverEmbeddedPayloads(stubJson);
+                const html = renderFormattedWithNestedPreviews(stubJson, discovered, 'viewer_multi_01');
+
+                return {
+                    topDiscoveredCount: discovered.length,
+                    hasLevel1Preview: html.includes('data-node-id="viewer_multi_01_n0"'),
+                    hasLevel2ChildPreview: html.includes('data-node-id="viewer_multi_01_n0_c_n0"'),
+                    hasLevel3GrandchildPreview: html.includes('data-node-id="viewer_multi_01_n0_c_n0_c_n0"'),
+                    containsUnnestedXmlText: html.includes('swiftMessage')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("topDiscoveredCount")).isEqualTo(1);
+        assertThat(result.get("hasLevel1Preview")).isEqualTo(true);
+        assertThat(result.get("hasLevel2ChildPreview")).isEqualTo(true);
+        assertThat(result.get("hasLevel3GrandchildPreview")).isEqualTo(true);
+        assertThat(result.get("containsUnnestedXmlText")).isEqualTo(true);
     }
 }

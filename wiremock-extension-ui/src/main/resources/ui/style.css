@@ -3221,6 +3221,10 @@ a[disabled].cap-disabled,
   font-style: normal;
 }
 
+.truncated-payload-preview.auto-expanded > .preview-snippet {
+  display: none;
+}
+
 .preview-pill-badge {
   background: rgba(56, 189, 248, 0.2);
   color: #38bdf8;
@@ -3236,23 +3240,19 @@ a[disabled].cap-disabled,
 }
 
 .preview-floating-actions {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
   display: inline-flex;
+  align-items: center;
   gap: 4px;
-  z-index: 50;
-  opacity: 0;
-  pointer-events: auto;
-  transform: translateY(3px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  margin-left: 6px;
+  vertical-align: middle;
   white-space: nowrap;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
 }
 
 .truncated-payload-preview:hover .preview-floating-actions,
 .truncated-payload-preview:focus-within .preview-floating-actions {
   opacity: 1;
-  transform: translateY(0);
 }
 
 .btn-lens-open-pill, .btn-lens-expand-pill {
@@ -3288,6 +3288,10 @@ a[disabled].cap-disabled,
   border-left: 3px solid var(--accent-color, #38bdf8);
   border-radius: 0 6px 6px 0;
   overflow-x: auto;
+}
+
+.inline-expanded-payload.hidden {
+  display: none !important;
 }
 
 .inline-code {

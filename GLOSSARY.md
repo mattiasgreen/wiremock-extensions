@@ -48,8 +48,12 @@ _Avoid_: string unescaper, regex payload cleaner, nested parser
 A focused inspection and editing surface for a single unwrapped inner payload (with breadcrumb path context, syntax validation, and round-trip re-escaping back into its parent container).
 _Avoid_: popup editor, sub-modal, raw string editor
 
+**Auto-Unnested Payload**:
+An inline presentation of an escaped nested JSON, XML, or CDATA document rendered directly within the parent syntax flow, expanded and auto-indented by default with a format badge, subtle gutter marking, and floating actions (`Open in Lens`, `Collapse`) to allow immediate reading without manual unrolling.
+_Avoid_: auto-expanded string, unpacked blob, inlined object
+
 **Truncated Payload Preview**:
-An inline syntax-highlighted representation of an escaped nested JSON, XML, or CDATA document rendered directly within the parent syntax flow at the owning property's indentation depth. Displays a lightweight format badge and subtle floating action pills on hover/focus (`Open in Lens`, `Expand`) to inspect or edit without disrupting document geometry or introducing blocky wrappers.
+An inline syntax-highlighted representation of an escaped nested JSON, XML, or CDATA document rendered within the parent syntax flow when collapsed or folded, featuring a format badge and hover actions (`Open in Lens`, `Expand`) to inspect or unfold without disrupting document geometry.
 _Avoid_: string ellipsis, clipped text, collapsed string, block preview box
 
 **Detected Embedded Payloads Bar**:
