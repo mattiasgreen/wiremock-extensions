@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.11.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.10.1...v1.11.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** universal payload lens, recursive auto-unnesting, and casual buffer descriptors ([#69](https://github.com/mattiasgreen/wiremock-extensions/issues/69)) ([20bfbe8](https://github.com/mattiasgreen/wiremock-extensions/commit/20bfbe854a08ffbc771938f814dd08dd797bffcc))
+
 ## [1.10.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.10.0...v1.10.1) (2026-11-01)
 
 
