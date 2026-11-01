@@ -4,8 +4,13 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, highlightPayload } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } from './payload-lens.js';
+import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  openPayloadLens,
+  formatCasualBufferDescriptor
+} from './payload-lens.js';
 import {
   decodeBase64Payload,
   normalizeJsonPayload,
@@ -16,7 +21,7 @@ import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
-import { fetchCasualConfig, updateCasualRoute } from './casual-tester.js';
+import { fetchCasualConfig, updateCasualRoute, populateCasualTester } from './casual-tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
   getSnapshotStubTemplate,
@@ -163,7 +168,6 @@ function buildRowHtml(req) {
       <td><span class="http-badge badge-${displayMethod}" title="${isCasual ? 'Casual XATMI Service Call (tpcall)' : escapeHtml(method)}">${displayMethod}</span></td>
       <td title="${escapeHtml(url)}">
         ${escapeHtml(url)}
-        ${correlationId ? `<span class="journal-corr-chip" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 ${escapeHtml(correlationId)}</span>` : ''}
       </td>
       <td>${escapeHtml(String(displayStatus))}</td>
       <td class="${verdict.cssClass}" title="${escapeHtml(verdict.tooltip)}">${verdict.label}</td>
@@ -174,6 +178,8 @@ function buildRowHtml(req) {
   if (isExpanded) {
     const reqHeadersHtml = highlightJson(reqHeaders);
     const reqBodyRaw = (req.request && (req.request.body || req.request.bodyAsBase64)) || '';
+    const reqFmt = reqBodyRaw ? detectFormat(reqBodyRaw) : 'text';
+    const reqSizeKb = reqBodyRaw ? (new Blob([reqBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const reqB64 = decodeBase64Payload(reqBodyRaw);
     const reqDiscovered = reqBodyRaw ? discoverEmbeddedPayloads(reqBodyRaw) : [];
     const reqBodyHtml = reqBodyRaw
@@ -191,6 +197,8 @@ function buildRowHtml(req) {
     const resHeadersHtml = highlightJson(resHeaders);
     const resBodyRaw = (req.response && (req.response.body || req.response.base64Body))
       || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '';
+    const resFmt = resBodyRaw ? detectFormat(resBodyRaw) : 'text';
+    const resSizeKb = resBodyRaw ? (new Blob([resBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const resB64 = decodeBase64Payload(resBodyRaw);
     const resDiscovered = resBodyRaw ? discoverEmbeddedPayloads(resBodyRaw) : [];
     const resBodyHtml = resBodyRaw
@@ -204,6 +212,16 @@ function buildRowHtml(req) {
           ? renderFormattedWithNestedPreviews(resB64.decodedFormatted, resB64Discovered, `jrn_res_b64_${req.id}`)
           : highlightPayload(resB64.decodedFormatted))
       : '';
+
+    const reqBufferType = isCasual ? (getHeader(reqHeaders, 'x-casual-buffer-type') || 'JSON') : null;
+    const resBufferType = isCasual ? (getHeader(resHeaders, 'x-casual-buffer-type') || reqBufferType || 'JSON') : null;
+    const reqBadgeLabel = isCasual
+      ? formatCasualBufferDescriptor(reqBufferType, reqFmt, reqSizeKb)
+      : `${reqFmt.toUpperCase()} · ${reqSizeKb} KB`;
+    const resBadgeLabel = isCasual
+      ? formatCasualBufferDescriptor(resBufferType, resFmt, resSizeKb)
+      : `${resFmt.toUpperCase()} · ${resSizeKb} KB`;
+
     const stubId = req.stubMapping && req.stubMapping.id;
     const stubName = verdict.stubDetail;
 
@@ -238,16 +256,23 @@ function buildRowHtml(req) {
                 <div class="journal-card-header">
                   <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    ${correlationId ? `<button class="btn btn-small btn-journal-filter-corr" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 Corr: ${escapeHtml(correlationId)}</button>` : ''}
                     <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill ${isCasual ? 'Casual ' : 'HTTP '}Tester with this exact request">🚀 Replay in ${isCasual ? 'Casual ' : ''}Tester</button>
                     <button class="btn btn-small btn-journal-copy-curl" data-id="${req.id}" data-testid="btn-journal-copy-curl" title="Copy request as cURL command">📋 Copy cURL</button>
                     <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
                   </div>
                 </div>
                 <div class="journal-section-title">Headers</div>
-                <pre class="code-block-mini">${reqHeadersHtml}</pre>
+                <pre class="code-block-mini code-block-headers">${reqHeadersHtml}</pre>
                 <div class="journal-section-header">
-                  <div class="journal-section-title">Body</div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="journal-section-title">Body</div>
+                    ${reqBodyRaw ? `
+                      <span class="preview-pill-group">
+                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqBadgeLabel)}</span>
+                        <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="req" data-id="${req.id}" title="Open full Request Body in Focused Lens">🔍 Lens</button>
+                      </span>
+                    ` : ''}
+                  </div>
                   ${reqB64.hasBase64 ? `
                     <div class="journal-b64-controls">
                       <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in request body">🔓 Base64 JSON</span>
@@ -259,14 +284,16 @@ function buildRowHtml(req) {
                     </div>
                   ` : ''}
                 </div>
-                ${reqB64.hasBase64 ? `
-                  <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
-                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
-                  </div>
-                ` : `
-                  <pre class="code-block-mini">${reqBodyHtml}</pre>
-                `}
+                <div id="jrn-req-body-${req.id}">
+                  ${reqB64.hasBase64 ? `
+                    <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                      <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
+                      <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
+                    </div>
+                  ` : `
+                    <pre class="code-block-mini code-block-body">${reqBodyHtml}</pre>
+                  `}
+                </div>
               </div>
               <div class="journal-detail-card">
                 <div class="journal-card-header">
@@ -285,9 +312,17 @@ function buildRowHtml(req) {
                   </div>
                 </div>
                 <div class="journal-section-title">Headers</div>
-                <pre class="code-block-mini">${resHeadersHtml}</pre>
+                <pre class="code-block-mini code-block-headers">${resHeadersHtml}</pre>
                 <div class="journal-section-header">
-                  <div class="journal-section-title">Body</div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="journal-section-title">Body</div>
+                    ${resBodyRaw ? `
+                      <span class="preview-pill-group">
+                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resBadgeLabel)}</span>
+                        <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="res" data-id="${req.id}" title="Open full Response Body in Focused Lens">🔍 Lens</button>
+                      </span>
+                    ` : ''}
+                  </div>
                   ${resB64.hasBase64 ? `
                     <div class="journal-b64-controls">
                       <span class="badge-b64-detected" data-testid="b64-badge" title="Base64-encoded JSON detected in response body">🔓 Base64 JSON</span>
@@ -299,14 +334,16 @@ function buildRowHtml(req) {
                     </div>
                   ` : ''}
                 </div>
-                ${resB64.hasBase64 ? `
-                  <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
-                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
-                  </div>
-                ` : `
-                  <pre class="code-block-mini">${resBodyHtml}</pre>
-                `}
+                <div id="jrn-res-body-${req.id}">
+                  ${resB64.hasBase64 ? `
+                    <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
+                      <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
+                      <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
+                    </div>
+                  ` : `
+                    <pre class="code-block-mini code-block-body">${resBodyHtml}</pre>
+                  `}
+                </div>
               </div>
             </div>
           </div>
@@ -428,22 +465,39 @@ function setupEventDelegation() {
   eventsDelegated = true;
 
   elements.journalList.addEventListener('click', async (e) => {
-    const corrBtn = e.target.closest('.btn-journal-filter-corr');
-    if (corrBtn) {
+    const toggleBodyBtn = e.target.closest('.btn-journal-toggle-body');
+    if (toggleBodyBtn) {
       e.stopPropagation();
-      const corr = corrBtn.getAttribute('data-corr') || '';
-      if (elements.journalSearch) {
-        elements.journalSearch.value = corr;
+      const targetId = toggleBodyBtn.getAttribute('data-target');
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        const isHidden = targetEl.classList.toggle('hidden');
+        toggleBodyBtn.title = isHidden ? 'Click to expand' : 'Click to collapse';
       }
-      if (elements.journalContextBanner) {
-        elements.journalContextBanner.classList.remove('hidden');
-        if (elements.journalFilterChipText) {
-          elements.journalFilterChipText.textContent = `Correlation ID: ${corr}`;
+      return;
+    }
+
+    const topLensBtn = e.target.closest('.btn-journal-top-lens');
+    if (topLensBtn) {
+      e.stopPropagation();
+      const type = topLensBtn.getAttribute('data-type');
+      const reqId = topLensBtn.getAttribute('data-id');
+      const req = state.currentRequests.find(r => r.id === reqId);
+      if (req) {
+        const bodyRaw = type === 'req'
+          ? ((req.request && (req.request.body || req.request.bodyAsBase64)) || '')
+          : ((req.response && (req.response.body || req.response.base64Body)) || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '');
+        if (bodyRaw) {
+          const fmt = detectFormat(bodyRaw);
+          openPayloadLens(bodyRaw, {
+            path: '$',
+            key: type === 'req' ? 'requestBody' : 'responseBody',
+            format: fmt,
+            encoding: 'STRING',
+            unescapedValue: bodyRaw
+          }, null);
         }
       }
-      renderJournal();
-      setRoute('journal', { q: corr }, true);
-      if (loadJournalFn) loadJournalFn();
       return;
     }
 
@@ -460,33 +514,14 @@ function setupEventDelegation() {
         const isCasual = Boolean(casualService);
 
         if (isCasual) {
-          if (elements.casualServiceName) elements.casualServiceName.value = casualService;
           const rawBufferType = getHeader(reqHeaders, 'x-casual-buffer-type') || 'JSON';
-          let normBuffer = 'JSON';
-          const upper = rawBufferType.toUpperCase();
-          if (upper.includes('FIELD')) normBuffer = 'FIELDED';
-          else if (upper.includes('STRING')) normBuffer = 'CSTRING';
-          else if (upper.includes('OCTET')) normBuffer = 'X_OCTET';
-
-          if (elements.casualBufferType) elements.casualBufferType.value = normBuffer;
-          if (elements.casualRequestPayload) elements.casualRequestPayload.value = req.request.body || '';
-          if (elements.casualRequestHeaders && req.request.headers) {
-            const hLines = [];
-            for (const [k, v] of Object.entries(req.request.headers)) {
-              hLines.push(`${k}: ${v}`);
-            }
-            elements.casualRequestHeaders.value = hLines.join('\n');
-          }
-          if (elements.casualPayloadEncoding) {
-            elements.casualPayloadEncoding.value = normBuffer === 'X_OCTET' ? 'hex' : 'text';
-          }
-          if (typeof fetchCasualConfig === 'function') {
-            fetchCasualConfig();
-          }
-          activateTab('tab-casual', false);
-          if (typeof updateCasualRoute === 'function') {
-            updateCasualRoute(false);
-          }
+          populateCasualTester({
+            service: casualService,
+            payload: req.request.body || '',
+            bufferType: rawBufferType,
+            headers: req.request.headers || {},
+            switchTab: true
+          });
           return;
         }
 

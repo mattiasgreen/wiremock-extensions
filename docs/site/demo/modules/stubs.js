@@ -5,6 +5,12 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  openPayloadLens,
+  formatCasualBufferDescriptor
+} from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
@@ -16,6 +22,7 @@ import { exportStubs } from './import-export.js';
 import { updateFilterCounts } from './projects.js';
 import { loadData } from './api.js';
 import { renderJournal } from './journal.js';
+import { populateCasualTester } from './casual-tester.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -477,7 +484,32 @@ export function selectStub(stub, updateRoute = true) {
     }
   }
 
-  elements.stubJsonViewer.innerHTML = highlightJson(isDynamic ? (stub.rule || stub) : stub);
+  const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
+  const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
+  const discovered = discoverEmbeddedPayloads(rawStubJson);
+  if (discovered.length > 0) {
+    elements.stubJsonViewer.innerHTML = renderFormattedWithNestedPreviews(rawStubJson, discovered, `stub_${stub.id}`);
+  } else {
+    elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
+  }
+
+  const topPillGroup = document.getElementById('stub-top-pill-group');
+  const topPill = document.getElementById('stub-top-pill');
+  if (topPillGroup && topPill) {
+    topPillGroup.style.display = 'inline-flex';
+    const sizeKb = (new Blob([rawStubJson]).size / 1024).toFixed(1);
+    if (isCasual) {
+      const bufferType = (stub.metadata && stub.metadata.bufferType)
+        || (resHeaders['X-Casual-Buffer-Type'] || resHeaders['x-casual-buffer-type'])
+        || (stub.request && stub.request.headers && (stub.request.headers['x-casual-buffer-type'] || stub.request.headers['X-Casual-Buffer-Type']))
+        || 'JSON';
+      const normBuf = typeof bufferType === 'object' && bufferType.equalTo ? bufferType.equalTo : String(bufferType);
+      topPill.textContent = formatCasualBufferDescriptor(normBuf, 'JSON', sizeKb);
+    } else {
+      topPill.textContent = `JSON · ${sizeKb} KB`;
+    }
+    topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+  }
 
   if (updateRoute) {
     setRoute('stubs', { stubId: stub.id });
@@ -501,6 +533,33 @@ export function sendStubToTester(stub, switchTab = true) {
   const example = stub.metadata && stub.metadata.exampleRequest;
 
   let path = example && example.path ? example.path : getStubUrl(stub.request);
+  const isCasual = path.startsWith('/__casual/services/') || Boolean(stub.metadata && stub.metadata.protocol === 'casual');
+
+  if (isCasual) {
+    const casualService = (stub.metadata && stub.metadata.service)
+      || (path.startsWith('/__casual/services/') ? path.substring('/__casual/services/'.length) : 'echoService');
+    const bufferType = (stub.metadata && stub.metadata.bufferType) || 'JSON';
+    let body = '';
+    if (example && example.body) {
+      body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
+    } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+      const bp = stub.request.bodyPatterns[0];
+      if (bp.equalToJson) {
+        const normalized = normalizeJsonPayload(bp.equalToJson);
+        body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
+      } else if (bp.equalTo) {
+        body = bp.equalTo;
+      }
+    }
+    populateCasualTester({
+      service: casualService,
+      payload: body,
+      bufferType,
+      switchTab
+    });
+    return;
+  }
+
   if (stub.isDynamic) {
     const idPrefix = (stub.model && stub.model.idPrefix) || (stub.entity ? stub.entity + '-' : 'item-');
     path = path.replace(/\{([^}]+)\}/g, () => `${idPrefix}100`);
@@ -713,6 +772,46 @@ export function initStubsTab() {
       }
       elements.btnCopyJava.textContent = '✅ Copied!';
       setTimeout(() => elements.btnCopyJava.textContent = '☕ Copy Java', 1500);
+    });
+  }
+
+  const topPill = document.getElementById('stub-top-pill');
+  if (topPill) {
+    topPill.addEventListener('click', () => {
+      if (elements.stubJsonViewer) {
+        const isHidden = elements.stubJsonViewer.classList.toggle('hidden');
+        topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const topLensBtn = document.getElementById('btn-stub-open-lens-top');
+  if (topLensBtn) {
+    topLensBtn.addEventListener('click', () => {
+      const stub = state.contextStub || (state.selectedStubId ? findCatalogStubById(state.selectedStubId) : null);
+      if (!stub) return;
+      const isDynamic = stub.isDynamic || (stub.metadata && stub.metadata.mode === 'dynamic');
+      const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
+      const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
+      openPayloadLens(rawStubJson, {
+        path: '$',
+        key: 'stub',
+        format: 'json',
+        encoding: 'JSON_STRING',
+        unescapedValue: rawStubJson
+      }, (updatedJson) => {
+        try {
+          const parsed = JSON.parse(updatedJson);
+          if (isDynamic) {
+            stub.rule = parsed;
+          } else {
+            Object.assign(stub, parsed);
+          }
+          selectStub(stub.id);
+        } catch (e) {
+          console.error('Failed to parse updated stub JSON:', e);
+        }
+      });
     });
   }
 }

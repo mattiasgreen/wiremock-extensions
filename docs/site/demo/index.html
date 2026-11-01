@@ -236,7 +236,13 @@
             </div>
 
             <div class="code-viewer-container">
-              <div class="code-viewer-header">Stub Mapping JSON</div>
+              <div class="code-viewer-header">
+                <span class="code-viewer-title">Stub Mapping JSON</span>
+                <span class="preview-pill-group" id="stub-top-pill-group">
+                  <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
+                  <button type="button" id="btn-stub-open-lens-top" class="btn-lens-open-pill" title="Open full Stub in Focused Lens">🔍 Lens</button>
+                </span>
+              </div>
               <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
             </div>
           </div>
@@ -257,7 +263,7 @@
 
         <div class="journal-controls">
           <div class="journal-controls-top">
-            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, header, body, or X-Correlation-Id (supports AND, OR)..." autocomplete="off">
+            <input type="text" id="journal-search" data-testid="journal-search" placeholder="Filter journal by URL, method, header, or body (supports AND, OR)..." autocomplete="off">
           </div>
           <div class="journal-controls-bottom">
             <div class="journal-filters-group">
@@ -459,7 +465,15 @@
                       <pre id="tester-response-headers" class="code-block-mini">(no headers yet)</pre>
                     </div>
                     <div class="code-viewer-container" style="flex: 1;">
-                      <div class="headers-section-label">Response Body</div>
+                      <div class="headers-section-label" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>Response Body</span>
+                          <span class="preview-pill-group" id="tester-top-pill-group" style="display: none;">
+                            <span class="preview-pill-badge" id="tester-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
+                            <button type="button" id="btn-tester-open-lens-top" class="btn-lens-open-pill" title="Open Response Body in Focused Lens">🔍 Lens</button>
+                          </span>
+                        </div>
+                      </div>
                       <pre id="tester-response-body" class="code-block">(no response yet - press Send)</pre>
                     </div>
                   </div>
@@ -539,7 +553,6 @@
                     <div class="tester-section-header">
                       <span>Request Headers</span>
                       <div class="preset-badges">
-                        <span class="preset-badge" id="btn-casual-preset-corr" title="Add X-Correlation-Id header">+ Corr ID</span>
                         <span class="preset-badge" id="btn-casual-preset-tx" title="Add X-Casual-Transaction-State header">+ TX State</span>
                       </div>
                     </div>
@@ -548,7 +561,13 @@
 
                   <div class="tester-section" id="casual-payload-section">
                     <div class="tester-section-header">
-                      <span>Request Payload</span>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span>Request Payload</span>
+                        <span class="preview-pill-group" id="casual-request-top-pill-group">
+                          <span class="preview-pill-badge" id="casual-request-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
+                          <button type="button" id="btn-casual-request-open-lens-top" class="btn-lens-open-pill" title="Open Request Payload in Focused Lens">🔍 Lens</button>
+                        </span>
+                      </div>
                       <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
                         <select id="casual-payload-encoding" class="preset-badge" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 2px 6px; font-size: 0.75rem; border-radius: 4px;" title="Payload format encoding">
                           <option value="text">JSON / Text</option>
@@ -604,7 +623,15 @@
                       <pre id="casual-response-headers" class="code-block-mini" data-testid="casual-response-headers">(no headers yet)</pre>
                     </div>
                     <div class="code-viewer-container" style="flex: 1;">
-                      <div class="headers-section-label">Response Body</div>
+                      <div class="headers-section-label" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>Response Body</span>
+                          <span class="preview-pill-group" id="casual-response-top-pill-group" style="display: none;">
+                            <span class="preview-pill-badge" id="casual-response-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
+                            <button type="button" id="btn-casual-response-open-lens-top" class="btn-lens-open-pill" title="Open response body in Focused Lens">🔍 Lens</button>
+                          </span>
+                        </div>
+                      </div>
                       <pre id="casual-response-body" class="code-block" data-testid="casual-response-body">(no response yet - execute tpcall)</pre>
                     </div>
                   </div>

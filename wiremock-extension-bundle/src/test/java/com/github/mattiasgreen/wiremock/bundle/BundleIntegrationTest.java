@@ -47,14 +47,22 @@ public class BundleIntegrationTest {
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         assertThat(resp.statusCode()).isEqualTo(200);
 
-        // 2. Test Prometheus Metrics route
-        HttpRequest metricsReq = HttpRequest.newBuilder()
-                .uri(URI.create(server.baseUrl() + "/__admin/metrics/prometheus"))
-                .GET()
-                .build();
-        HttpResponse<String> metricsResp = httpClient.send(metricsReq, HttpResponse.BodyHandlers.ofString());
-        assertThat(metricsResp.statusCode()).isEqualTo(200);
-        assertThat(metricsResp.body()).contains("wiremock_requests_total");
+        // 2. Test Prometheus Metrics route (allow brief async serve event processing)
+        String metricsBody = "";
+        for (int i = 0; i < 30; i++) {
+            HttpRequest metricsReq = HttpRequest.newBuilder()
+                    .uri(URI.create(server.baseUrl() + "/__admin/metrics/prometheus"))
+                    .GET()
+                    .build();
+            HttpResponse<String> metricsResp = httpClient.send(metricsReq, HttpResponse.BodyHandlers.ofString());
+            assertThat(metricsResp.statusCode()).isEqualTo(200);
+            metricsBody = metricsResp.body();
+            if (metricsBody.contains("wiremock_requests_total")) {
+                break;
+            }
+            Thread.sleep(50);
+        }
+        assertThat(metricsBody).contains("wiremock_requests_total");
 
         // 3. Test UI route
         HttpRequest uiReq = HttpRequest.newBuilder()

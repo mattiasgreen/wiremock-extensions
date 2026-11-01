@@ -5,9 +5,15 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, highlightPayload, formatPayload } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar } from './payload-lens.js';
-import { setRoute, toBase64, fromBase64 } from './router.js';
+import { highlightJson, highlightPayload, formatPayload, detectFormat } from './highlighter.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  attachEmbeddedPayloadsBar,
+  openPayloadLens,
+  formatCasualBufferDescriptor
+} from './payload-lens.js';
+import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
 
 const CASUAL_HISTORY_KEY = 'wiremock_ui_casual_history';
@@ -125,9 +131,6 @@ export function initCasualTester() {
   if (elements.btnCasualTabBoth) {
     elements.btnCasualTabBoth.addEventListener('click', () => setCasualInspectorTab('both'));
   }
-  if (elements.btnCasualPresetCorr) {
-    elements.btnCasualPresetCorr.addEventListener('click', () => appendCasualHeader('X-Correlation-Id', crypto.randomUUID()));
-  }
   if (elements.btnCasualPresetTx) {
     elements.btnCasualPresetTx.addEventListener('click', () => appendCasualHeader('X-Casual-Transaction-State', 'TX_ACTIVE'));
   }
@@ -149,6 +152,120 @@ export function initCasualTester() {
   if (elements.casualRequestPayload && elements.casualPayloadEmbeddedBar) {
     attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
   }
+
+  const reqTopPill = document.getElementById('casual-request-top-pill');
+  if (reqTopPill) {
+    reqTopPill.addEventListener('click', () => {
+      if (elements.casualRequestPayload) {
+        const isHidden = elements.casualRequestPayload.classList.toggle('hidden');
+        reqTopPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const reqTopLensBtn = document.getElementById('btn-casual-request-open-lens-top');
+  if (reqTopLensBtn) {
+    reqTopLensBtn.addEventListener('click', () => {
+      const raw = elements.casualRequestPayload ? elements.casualRequestPayload.value || '' : '';
+      const fmt = detectFormat(raw);
+      openPayloadLens(raw, {
+        path: '$',
+        key: 'casualRequest',
+        format: fmt,
+        encoding: 'STRING',
+        unescapedValue: raw
+      }, (updatedText) => {
+        if (elements.casualRequestPayload) {
+          elements.casualRequestPayload.value = updatedText;
+        }
+        updateCasualRequestPill();
+        updateCasualRoute(true);
+      });
+    });
+  }
+
+  const resTopPill = document.getElementById('casual-response-top-pill');
+  if (resTopPill) {
+    resTopPill.addEventListener('click', () => {
+      if (elements.casualResponseBody) {
+        const isHidden = elements.casualResponseBody.classList.toggle('hidden');
+        resTopPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const resTopLensBtn = document.getElementById('btn-casual-response-open-lens-top');
+  if (resTopLensBtn) {
+    resTopLensBtn.addEventListener('click', () => {
+      if (!lastRawCasualResponse) return;
+      const fmt = detectFormat(lastRawCasualResponse);
+      openPayloadLens(lastRawCasualResponse, {
+        path: '$',
+        key: 'casualResponse',
+        format: fmt,
+        encoding: 'STRING',
+        unescapedValue: lastRawCasualResponse
+      }, null);
+    });
+  }
+
+  updateCasualRequestPill();
+  if (elements.casualRequestPayload) {
+    elements.casualRequestPayload.addEventListener('input', updateCasualRequestPill);
+  }
+  if (elements.casualBufferType) {
+    elements.casualBufferType.addEventListener('change', updateCasualRequestPill);
+  }
+}
+
+export function populateCasualTester({ service, payload, bufferType = 'JSON', headers = null, switchTab = true } = {}) {
+  if (service && elements.casualServiceName) {
+    elements.casualServiceName.value = service;
+  }
+  if (bufferType && elements.casualBufferType) {
+    let normBuffer = String(bufferType).toUpperCase();
+    if (normBuffer.includes('FIELD')) normBuffer = 'FIELDED';
+    else if (normBuffer.includes('STRING')) normBuffer = 'CSTRING';
+    else if (normBuffer.includes('OCTET')) normBuffer = 'X_OCTET';
+    elements.casualBufferType.value = normBuffer;
+  }
+  if (elements.casualRequestPayload) {
+    elements.casualRequestPayload.value = payload || '{\n  \n}';
+  }
+  if (elements.casualRequestHeaders && headers) {
+    const hLines = [];
+    for (const [k, v] of Object.entries(headers)) {
+      hLines.push(`${k}: ${v}`);
+    }
+    elements.casualRequestHeaders.value = hLines.join('\n');
+  }
+  if (elements.casualPayloadEncoding) {
+    elements.casualPayloadEncoding.value = (elements.casualBufferType && elements.casualBufferType.value === 'X_OCTET') ? 'hex' : 'text';
+  }
+  if (typeof fetchCasualConfig === 'function') {
+    fetchCasualConfig();
+  }
+  updateCasualRequestPill();
+  if (switchTab) {
+    activateTab('tab-casual', false);
+    if (typeof updateCasualRoute === 'function') {
+      updateCasualRoute(false);
+    }
+  }
+}
+
+export function updateCasualRequestPill() {
+  const topPillGroup = document.getElementById('casual-request-top-pill-group');
+  const topPill = document.getElementById('casual-request-top-pill');
+  if (!topPillGroup || !topPill || !elements.casualRequestPayload) return;
+
+  const raw = elements.casualRequestPayload.value || '';
+  const bufferType = elements.casualBufferType ? elements.casualBufferType.value : 'JSON';
+  const fmt = detectFormat(raw);
+  const sizeKb = (new Blob([raw]).size / 1024).toFixed(1);
+
+  topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
+  topPill.title = elements.casualRequestPayload.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
 }
 
 export function fetchCasualConfig() {
@@ -457,6 +574,23 @@ export function renderCasualResponseBody(bodyText, hexText) {
       }
     }
   }
+
+  const topPillGroup = document.getElementById('casual-response-top-pill-group');
+  const topPill = document.getElementById('casual-response-top-pill');
+  if (topPillGroup && topPill) {
+    if (lastRawCasualResponse && lastRawCasualResponse.trim()) {
+      topPillGroup.style.display = 'inline-flex';
+      const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
+        || (lastCasualResponseHeaders && (lastCasualResponseHeaders['X-Casual-Buffer-Type'] || lastCasualResponseHeaders['x-casual-buffer-type']))
+        || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
+      const fmt = detectFormat(lastRawCasualResponse);
+      const sizeKb = (new Blob([lastRawCasualResponse]).size / 1024).toFixed(1);
+      topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
+      topPill.title = elements.casualResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+    } else {
+      topPillGroup.style.display = 'none';
+    }
+  }
 }
 
 export function displayCasualResponseResult(
@@ -511,7 +645,17 @@ export function displayCasualResponseResult(
     elements.casualSentHeaders.textContent = formatHeadersBlock(requestHeaders);
   }
   if (elements.casualSentBody) {
-    elements.casualSentBody.textContent = sentPayload || '(empty body)';
+    const rawTrimmed = (sentPayload || '').trim();
+    if (!rawTrimmed) {
+      elements.casualSentBody.textContent = '(empty body)';
+    } else {
+      const discovered = discoverEmbeddedPayloads(rawTrimmed);
+      if (discovered.length > 0) {
+        elements.casualSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'casual_sent_req');
+      } else {
+        elements.casualSentBody.innerHTML = highlightPayload(rawTrimmed);
+      }
+    }
   }
   if (elements.casualSentServiceSummary) {
     elements.casualSentServiceSummary.textContent = sentService || 'tpcall';

@@ -5,7 +5,7 @@
 import { state } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
 import { highlightJson, highlightPayload, formatXml, detectFormat } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar } from './payload-lens.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar, openPayloadLens } from './payload-lens.js';
 import { setRoute, toBase64 } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
 import { executeTesterRequest } from './api.js';
@@ -245,7 +245,17 @@ export function displaySentRequest(method, url, headersText, bodyText) {
     elements.testerSentHeaders.textContent = headersText.trim() || '(no headers sent)';
   }
   if (elements.testerSentBody) {
-    elements.testerSentBody.textContent = bodyText.trim() || '(empty body)';
+    const rawTrimmed = (bodyText || '').trim();
+    if (!rawTrimmed) {
+      elements.testerSentBody.textContent = '(empty body)';
+    } else {
+      const discovered = discoverEmbeddedPayloads(rawTrimmed);
+      if (discovered.length > 0) {
+        elements.testerSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'tester_sent_req');
+      } else {
+        elements.testerSentBody.innerHTML = highlightPayload(rawTrimmed);
+      }
+    }
   }
 }
 
@@ -287,6 +297,20 @@ export function renderTesterResponse(bodyText) {
       elements.testerResponseBody.innerHTML = renderFormattedWithNestedPreviews(bodyText, discovered, 'tester_res');
     } else {
       elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
+    }
+  }
+
+  const topPillGroup = document.getElementById('tester-top-pill-group');
+  const topPill = document.getElementById('tester-top-pill');
+  if (topPillGroup && topPill) {
+    if (bodyText && bodyText.trim()) {
+      topPillGroup.style.display = 'inline-flex';
+      const fmt = detectFormat(bodyText);
+      const sizeKb = (new Blob([bodyText]).size / 1024).toFixed(1);
+      topPill.textContent = `${fmt.toUpperCase()} · ${sizeKb} KB`;
+      topPill.title = elements.testerResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+    } else {
+      topPillGroup.style.display = 'none';
     }
   }
 }
@@ -507,5 +531,31 @@ export function initTesterTab() {
 
   if (elements.testerBody && elements.testerBodyEmbeddedBar) {
     attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
+  }
+
+  const topPill = document.getElementById('tester-top-pill');
+  if (topPill) {
+    topPill.addEventListener('click', () => {
+      if (elements.testerResponseBody) {
+        const isHidden = elements.testerResponseBody.classList.toggle('hidden');
+        topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const topLensBtn = document.getElementById('btn-tester-open-lens-top');
+  if (topLensBtn) {
+    topLensBtn.addEventListener('click', () => {
+      const bodyText = state.lastRawResponseBody;
+      if (!bodyText) return;
+      const fmt = detectFormat(bodyText);
+      openPayloadLens(bodyText, {
+        path: '$',
+        key: 'response',
+        format: fmt,
+        encoding: 'STRING',
+        unescapedValue: bodyText
+      }, null);
+    });
   }
 }

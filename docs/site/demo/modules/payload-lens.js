@@ -17,6 +17,28 @@ import {
 import { decodeBase64ToUtf8, tryDecodeBase64Json } from './base64.js';
 
 /**
+ * Formats a composite Casual Buffer Descriptor badge string combining
+ * transport buffer type and concrete payload document syntax.
+ * Deduplicates identical names (e.g. JSON + JSON -> CASUAL JSON).
+ *
+ * @param {string} bufferType Casual buffer type (JSON, FIELDED, CSTRING, FLAT, X_OCTET)
+ * @param {string} syntaxFormat Document syntax (JSON, XML, TEXT, HEX)
+ * @param {string|number} [sizeKb] Byte size in kilobytes
+ * @returns {string} Formatted label, e.g. "FIELDED · JSON · 0.4 KB" or "CASUAL JSON · 0.4 KB"
+ */
+export function formatCasualBufferDescriptor(bufferType, syntaxFormat, sizeKb) {
+  let normBuffer = (bufferType || 'JSON').toUpperCase().trim();
+  if (normBuffer === 'FML') normBuffer = 'FIELDED';
+  const normFormat = (syntaxFormat || 'JSON').toUpperCase().trim();
+  const sizePart = sizeKb !== undefined && sizeKb !== null ? ` · ${sizeKb} KB` : '';
+
+  if (normBuffer === normFormat) {
+    return `CASUAL ${normBuffer}${sizePart}`;
+  }
+  return `${normBuffer} · ${normFormat}${sizePart}`;
+}
+
+/**
  * Validates payload syntax for JSON or XML.
  *
  * @param {string} text
@@ -422,13 +444,16 @@ export function cascadeLensStackToRoot(stackFrames, deepestEditedText, options =
   for (let i = stackFrames.length - 1; i > 0; i--) {
     const childFrame = stackFrames[i];
     const parentFrame = stackFrames[i - 1];
+    const parentText = parentFrame.text !== undefined ? parentFrame.text : parentFrame.payload;
+    const descriptor = childFrame.descriptor || childFrame.targetNode;
     currentText = applyNestedPayloadEdit(
-      parentFrame.text,
-      childFrame.descriptor,
+      parentText,
+      descriptor,
       currentText,
       options
     );
-    parentFrame.text = currentText;
+    if (parentFrame.text !== undefined) parentFrame.text = currentText;
+    if (parentFrame.payload !== undefined) parentFrame.payload = currentText;
   }
 
   return currentText;
@@ -540,47 +565,64 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
 }
 
 const viewerRegistry = new Map();
+const nodeRegistry = new Map();
 
 export function registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot = null) {
   viewerRegistry.set(viewerId, { rawText, discovered, onSaveRoot });
 }
 
-export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId, onSaveRoot = null) {
+export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId, onSaveRoot = null, ancestorFrames = null, rootText = null) {
+  const actualRootText = rootText !== null ? rootText : rawText;
+  const currentAncestorFrames = ancestorFrames !== null ? ancestorFrames : [
+    { text: rawText, descriptor: null, title: 'Root Wire Document', format: detectFormat(rawText) }
+  ];
+
   registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot);
   let formatted = formatPayload(rawText);
   const replacements = [];
 
-  // Replace large escaped strings with Truncated Payload Previews
+  // Replace escaped strings with Auto-Unnested Previews (recursive descent)
   for (let i = 0; i < discovered.length; i++) {
     const node = discovered[i];
-    if (node.rawValue.length > 80 || node.wasCompact) {
-      const previewSnippet = node.unescapedValue.substring(0, 60).replace(/\s+/g, ' ');
-      const sizeKb = (node.byteLength / 1024).toFixed(1);
-      const previewHtml = `
-        <span class="truncated-payload-preview" data-node-idx="${i}" data-viewer-id="${viewerId}">
-          <span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span>
-          <span class="preview-pill-badge">${escapeHtml(node.format.toUpperCase())} · ${sizeKb} KB</span>
-          <button type="button" class="btn-lens-open-pill" data-node-idx="${i}" title="Open focused Nested Payload Lens">
-            🔍 Open in Lens
-          </button>
-          <button type="button" class="btn-lens-expand-pill" data-node-idx="${i}" title="Expand pretty-printed inline">
-            ▾ Expand
-          </button>
-          <div class="inline-expanded-payload hidden" id="${viewerId}_expanded_${i}">
-            <pre class="inline-code"><code>${highlightPayload(node.unescapedValue)}</code></pre>
-          </div>
-        </span>
-      `;
+    const fullNodeId = `${viewerId}_n${i}`;
+    nodeRegistry.set(fullNodeId, {
+      node,
+      rootText: actualRootText,
+      ancestorFrames: currentAncestorFrames,
+      onSaveRoot
+    });
 
-      const token = `__LENS_TOKEN_${i}__`;
-      const escapedInJson = JSON.stringify(node.rawValue);
-      if (formatted.includes(escapedInJson)) {
-        formatted = formatted.replace(escapedInJson, JSON.stringify(token));
-        replacements.push({ token, html: previewHtml });
-      } else if (formatted.includes(node.rawValue)) {
-        formatted = formatted.replace(node.rawValue, token);
-        replacements.push({ token, html: previewHtml });
-      }
+    // Recursively render child payloads if discovered has children
+    let innerHtml = '';
+    if (node.children && node.children.length > 0) {
+      const childAncestorFrames = [
+        ...currentAncestorFrames,
+        { text: node.unescapedValue, descriptor: node, title: node.path, format: node.format }
+      ];
+      innerHtml = renderFormattedWithNestedPreviews(
+        node.unescapedValue,
+        node.children,
+        `${fullNodeId}_c`,
+        onSaveRoot,
+        childAncestorFrames,
+        actualRootText
+      );
+    } else {
+      innerHtml = highlightPayload(node.unescapedValue);
+    }
+
+    const previewSnippet = node.unescapedValue.substring(0, 60).replace(/\s+/g, ' ');
+    const sizeKb = (node.byteLength / 1024).toFixed(1);
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(node.format.toUpperCase())} · ${sizeKb} KB</span><button type="button" class="btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Open focused Nested Payload Lens">🔍 Lens</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+
+    const token = `__LENS_TOKEN_${i}__`;
+    const escapedInJson = JSON.stringify(node.rawValue);
+    if (formatted.includes(escapedInJson)) {
+      formatted = formatted.replace(escapedInJson, JSON.stringify(token));
+      replacements.push({ token, html: previewHtml });
+    } else if (formatted.includes(node.rawValue)) {
+      formatted = formatted.replace(node.rawValue, token);
+      replacements.push({ token, html: previewHtml });
     }
   }
 
@@ -606,17 +648,19 @@ if (typeof document !== 'undefined') {
     if (expandBtn) {
       e.stopPropagation();
       const parentPreview = expandBtn.closest('.truncated-payload-preview');
-      if (parentPreview) {
-        const expandedDiv = parentPreview.querySelector('.inline-expanded-payload');
-        if (expandedDiv) {
-          const isHidden = expandedDiv.classList.contains('hidden');
-          if (isHidden) {
-            expandedDiv.classList.remove('hidden');
-            expandBtn.textContent = '▴ Collapse';
-          } else {
-            expandedDiv.classList.add('hidden');
-            expandBtn.textContent = '▾ Expand';
-          }
+      const expandedDiv = parentPreview
+        ? (parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload'))
+        : null;
+      if (expandedDiv) {
+        const isHidden = expandedDiv.classList.contains('hidden');
+        if (isHidden) {
+          expandedDiv.classList.remove('hidden');
+          parentPreview.classList.add('auto-expanded');
+          expandBtn.title = 'Click to collapse';
+        } else {
+          expandedDiv.classList.add('hidden');
+          parentPreview.classList.remove('auto-expanded');
+          expandBtn.title = 'Click to expand';
         }
       }
       return;
@@ -625,15 +669,30 @@ if (typeof document !== 'undefined') {
     const openBtn = e.target.closest('.btn-lens-open-pill');
     if (openBtn) {
       e.stopPropagation();
-      const parentPreview = openBtn.closest('.truncated-payload-preview');
-      if (parentPreview) {
-        const viewerId = parentPreview.getAttribute('data-viewer-id');
-        const nodeIdx = parseInt(openBtn.getAttribute('data-node-idx'), 10);
-        const stored = viewerRegistry.get(viewerId);
-        if (stored && stored.discovered && stored.discovered[nodeIdx]) {
-          openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot);
+      const nodeId = openBtn.getAttribute('data-node-id');
+      const entry = nodeRegistry.get(nodeId);
+      if (entry) {
+        openPayloadLens(entry.rootText, entry.node, entry.onSaveRoot, entry.ancestorFrames);
+      } else {
+        const parentPreview = openBtn.closest('.truncated-payload-preview');
+        if (parentPreview) {
+          const viewerId = parentPreview.getAttribute('data-viewer-id');
+          const nodeIdx = parseInt(openBtn.getAttribute('data-node-idx'), 10);
+          const stored = viewerRegistry.get(viewerId);
+          if (stored && stored.discovered && stored.discovered[nodeIdx]) {
+            openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot);
+          }
         }
       }
+      return;
+    }
+
+    const snippetSpan = e.target.closest('.preview-snippet');
+    if (snippetSpan) {
+      const parentPreview = snippetSpan.closest('.truncated-payload-preview');
+      const badge = parentPreview ? parentPreview.querySelector('.btn-lens-expand-pill') : null;
+      if (badge) badge.click();
+      return;
     }
   });
 }
@@ -745,25 +804,37 @@ let lensState = {
   onSaveRootCallback: null
 };
 
-export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback) {
+export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null) {
   const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
   if (!modal) return;
 
+  const stack = ancestorFrames && ancestorFrames.length > 0
+    ? [
+        ...ancestorFrames,
+        {
+          text: initialNodeDescriptor.unescapedValue,
+          descriptor: initialNodeDescriptor,
+          title: initialNodeDescriptor.path,
+          format: initialNodeDescriptor.format
+        }
+      ]
+    : [
+        {
+          text: rootText,
+          descriptor: null,
+          title: 'Root Wire Document',
+          format: detectFormat(rootText)
+        },
+        {
+          text: initialNodeDescriptor.unescapedValue,
+          descriptor: initialNodeDescriptor,
+          title: initialNodeDescriptor.path,
+          format: initialNodeDescriptor.format
+        }
+      ];
+
   lensState = {
-    stack: [
-      {
-        text: rootText,
-        descriptor: null,
-        title: 'Root Wire Document',
-        format: detectFormat(rootText)
-      },
-      {
-        text: initialNodeDescriptor.unescapedValue,
-        descriptor: initialNodeDescriptor,
-        title: initialNodeDescriptor.path,
-        format: initialNodeDescriptor.format
-      }
-    ],
+    stack,
     onSaveRootCallback
   };
 
