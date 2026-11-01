@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.10.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.9.0...v1.10.0) (2026-11-01)
+
+
+### Features
+
+* **ui:** in-browser mock backend and preloaded interactive showcase for static hosting ([#64](https://github.com/mattiasgreen/wiremock-extensions/issues/64)) ([e782849](https://github.com/mattiasgreen/wiremock-extensions/commit/e782849814f6c482320072593fbd3b5b8962efe7))
+* **ui:** nested payload lens round-tripping & architectural deepening ([#66](https://github.com/mattiasgreen/wiremock-extensions/issues/66)) ([019d107](https://github.com/mattiasgreen/wiremock-extensions/commit/019d10795fe94de5a4eca86d241792dbfb80be3c))
+
 ## [1.9.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.8.0...v1.9.0) (2026-10-31)
 
 
