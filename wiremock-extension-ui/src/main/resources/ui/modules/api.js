@@ -39,6 +39,7 @@ export function doFetch(url, options = {}) {
   if (demoBackend.isDemoMode()) {
     return demoBackend.handleRequest(url, options);
   }
+  const isTargetingRemote = Boolean(state.targetConfig);
   const targetUrl = apiUrl(url);
   const headers = Object.assign({}, options.headers || {});
   if (state.connectionStrategy === 'proxy' && state.targetConfig) {
@@ -53,7 +54,7 @@ export function doFetch(url, options = {}) {
   if (typeof fetch !== 'undefined') {
     return fetch(targetUrl, fetchOptions)
       .then(res => {
-        if (!state.targetConfig && res.status === 404 && url === '/__admin/mappings') {
+        if (!isTargetingRemote && !state.targetConfig && res.status === 404 && url === '/__admin/mappings') {
           demoBackend.setDemoMode(true);
           updateTargetHostDisplay();
           return demoBackend.handleRequest(url, options);
@@ -61,7 +62,7 @@ export function doFetch(url, options = {}) {
         return res;
       })
       .catch(err => {
-        if (!state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
+        if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
           demoBackend.setDemoMode(true);
           updateTargetHostDisplay();
           return demoBackend.handleRequest(url, options);
@@ -77,7 +78,7 @@ export function doFetch(url, options = {}) {
         Object.entries(fetchOptions.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
       }
       xhr.onload = () => {
-        if (!state.targetConfig && xhr.status === 404 && url === '/__admin/mappings') {
+        if (!isTargetingRemote && !state.targetConfig && xhr.status === 404 && url === '/__admin/mappings') {
           demoBackend.setDemoMode(true);
           updateTargetHostDisplay();
           return resolve(demoBackend.handleRequest(url, options));
@@ -101,7 +102,7 @@ export function doFetch(url, options = {}) {
         });
       };
       xhr.onerror = () => {
-        if (!state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
+        if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
           demoBackend.setDemoMode(true);
           updateTargetHostDisplay();
           return resolve(demoBackend.handleRequest(url, options));
@@ -110,7 +111,7 @@ export function doFetch(url, options = {}) {
       };
       xhr.send(fetchOptions.body || null);
     } catch (err) {
-      if (!state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
+      if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
         demoBackend.setDemoMode(true);
         updateTargetHostDisplay();
         return resolve(demoBackend.handleRequest(url, options));

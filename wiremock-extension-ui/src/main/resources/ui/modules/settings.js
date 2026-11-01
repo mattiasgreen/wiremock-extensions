@@ -637,6 +637,7 @@ export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
 
   if (elements.btnResetTargetHost) {
     elements.btnResetTargetHost.addEventListener('click', () => {
+      demoBackend.setDemoMode(false);
       applyTargetHost('', 'proxy');
     });
   }
