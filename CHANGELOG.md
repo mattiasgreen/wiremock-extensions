@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.12.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.11.0...v1.12.0) (2026-11-01)
+
+
+### Features
+
+* **ui,casual:** character encoding detection, badge presentation, and round-trip wire fidelity ([#72](https://github.com/mattiasgreen/wiremock-extensions/issues/72)) ([dca53f0](https://github.com/mattiasgreen/wiremock-extensions/commit/dca53f0fcae52a0c8c5015dd7aee805ffe26e80e))
+
 ## [1.11.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.10.1...v1.11.0) (2026-11-01)
 
 
