@@ -80,3 +80,19 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - **`casual-upstream-sync`**: Activate when modifying `se.laz.casual.*` protocol classes in `wiremock-extension-casual`.
   - **`codebase-design` & `improve-codebase-architecture`**: Activate when assessing module depth, restructuring interfaces/seams/adapters, reducing shallow modules, or generating visual architecture reports.
   - **`domain-modeling` & `to-spec`**: Activate when defining ubiquitous domain language, drafting specifications, or setting up testing seams.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (`mattiasgreen/wiremock-extensions`) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical triage roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`GLOSSARY.md` + `docs/adr/` at the repo root). See `docs/agents/domain.md`.

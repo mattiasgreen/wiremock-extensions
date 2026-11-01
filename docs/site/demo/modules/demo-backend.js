@@ -347,7 +347,7 @@ const SEED_STUBS = [
           xatmiReturnCode: 0,
           clearingReference: 'CLR-2026-9901',
           auditTrail:
-            '{"auditor":"casual-xatmi-monitor","auditXml":"<settlementReport id=\\"SR-8819\\"><status>SETTLED</status><clearingTime>2026-11-01T05:30:00Z</clearingTime><ledgerId>LEDG-0021</ledgerId></settlementReport>"}'
+            '{"auditor":"casual-xatmi-monitor","auditXml":"<?xml version=\\"1.0\\" encoding=\\"ISO-8859-1\\"?><settlementReport id=\\"SR-8819\\"><status>SETTLED</status><beneficiary>Åke Söderström</beneficiary><clearingTime>2026-11-01T05:30:00Z</clearingTime><ledgerId>LEDG-0021</ledgerId></settlementReport>"}'
         },
         null,
         2
@@ -838,7 +838,7 @@ const SEED_REQUESTS = [
           xatmiReturnCode: 0,
           clearingReference: 'CLR-2026-9901',
           auditTrail:
-            '{"auditor":"casual-xatmi-monitor","auditXml":"<settlementReport id=\\"SR-8819\\"><status>SETTLED</status><clearingTime>2026-11-01T05:30:00Z</clearingTime><ledgerId>LEDG-0021</ledgerId></settlementReport>"}'
+            '{"auditor":"casual-xatmi-monitor","auditXml":"<?xml version=\\"1.0\\" encoding=\\"ISO-8859-1\\"?><settlementReport id=\\"SR-8819\\"><status>SETTLED</status><beneficiary>Åke Söderström</beneficiary><clearingTime>2026-11-01T05:30:00Z</clearingTime><ledgerId>LEDG-0021</ledgerId></settlementReport>"}'
         },
         null,
         2

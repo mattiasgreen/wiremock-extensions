@@ -11,7 +11,8 @@ import {
   renderFormattedWithNestedPreviews,
   attachEmbeddedPayloadsBar,
   openPayloadLens,
-  formatCasualBufferDescriptor
+  formatCasualBufferDescriptor,
+  detectCharset
 } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
@@ -213,6 +214,9 @@ export function initCasualTester() {
   if (elements.casualRequestPayload) {
     elements.casualRequestPayload.addEventListener('input', updateCasualRequestPill);
   }
+  if (elements.casualRequestHeaders) {
+    elements.casualRequestHeaders.addEventListener('input', updateCasualRequestPill);
+  }
   if (elements.casualBufferType) {
     elements.casualBufferType.addEventListener('change', updateCasualRequestPill);
   }
@@ -263,8 +267,10 @@ export function updateCasualRequestPill() {
   const bufferType = elements.casualBufferType ? elements.casualBufferType.value : 'JSON';
   const fmt = detectFormat(raw);
   const sizeKb = (new Blob([raw]).size / 1024).toFixed(1);
+  const rawHeaders = (elements.casualRequestHeaders && elements.casualRequestHeaders.value) || '';
+  const charset = detectCharset(raw, rawHeaders);
 
-  topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
+  topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, charset);
   topPill.title = elements.casualRequestPayload.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
 }
 
@@ -585,7 +591,8 @@ export function renderCasualResponseBody(bodyText, hexText) {
         || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
       const fmt = detectFormat(lastRawCasualResponse);
       const sizeKb = (new Blob([lastRawCasualResponse]).size / 1024).toFixed(1);
-      topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
+      const charset = detectCharset(lastRawCasualResponse, lastCasualResponseHeaders);
+      topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, charset);
       topPill.title = elements.casualResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
     } else {
       topPillGroup.style.display = 'none';

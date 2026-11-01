@@ -42,7 +42,8 @@ public final class CasualHttpMediation {
         String serviceName = req.getServiceName();
         ServiceBuffer requestBuffer = req.getServiceBuffer();
         String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
-        String requestPayload = CasualBufferUtils.extractPayload(requestBuffer);
+        java.nio.charset.Charset requestCharset = CasualBufferUtils.detectBufferCharset(requestBuffer);
+        String requestPayload = CasualBufferUtils.extractPayload(requestBuffer, requestCharset);
         String executionId = (req.getExecution() != null ? req.getExecution() : UUID.randomUUID()).toString();
 
         String resolvedBase = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : "http://localhost:8080";
@@ -58,6 +59,9 @@ public final class CasualHttpMediation {
                 .withHeader("X-Casual-Service", serviceName)
                 .withHeader("X-Casual-Buffer-Type", bufferType)
                 .withHeader("X-Casual-Execution", executionId);
+        if (!StandardCharsets.UTF_8.equals(requestCharset)) {
+            requestBuilder.withHeader("X-Casual-Charset", requestCharset.name());
+        }
 
         if (req.getXid() != null && !XID.NULL_XID.equals(req.getXid())) {
             Xid xid = req.getXid();
@@ -179,8 +183,17 @@ public final class CasualHttpMediation {
                 ? headers.getHeader("X-Casual-Buffer-Type").firstValue()
                 : requestBufferType;
 
+        java.nio.charset.Charset replyCharset = StandardCharsets.UTF_8;
+        if (headers != null) {
+            HttpHeader charsetHeader = headers.getHeader("X-Casual-Charset");
+            HttpHeader contentTypeHeader = headers.getHeader("Content-Type");
+            replyCharset = CasualBufferUtils.resolveCharset(
+                    charsetHeader != null && charsetHeader.isPresent() ? charsetHeader.firstValue() : null,
+                    contentTypeHeader != null && contentTypeHeader.isPresent() ? contentTypeHeader.firstValue() : null);
+        }
+
         if (respBody != null && !respBody.isBlank()) {
-            replyBuffer = CasualBufferUtils.wrapPayload(replyBufferType, respBody);
+            replyBuffer = CasualBufferUtils.wrapPayload(replyBufferType, respBody, replyCharset);
         } else if (rawByteBody != null && rawByteBody.length > 0) {
             replyBuffer = CasualBufferUtils.wrapPayload(replyBufferType, rawByteBody);
         }

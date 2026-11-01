@@ -120,8 +120,29 @@ public class CasualAdminEndpoint implements AdminApiExtension {
                 timeout = CasualClient.DEFAULT_TIMEOUT_SECONDS;
             }
 
+            String explicitCharset =
+                    root.hasNonNull("charset") ? root.get("charset").asText() : "";
+            String contentTypeCharset = "";
+            if (explicitCharset.isBlank()
+                    && root.has("headers")
+                    && root.get("headers").isObject()) {
+                JsonNode hdrs = root.get("headers");
+                java.util.Iterator<Map.Entry<String, JsonNode>> it = hdrs.fields();
+                while (it.hasNext()) {
+                    Map.Entry<String, JsonNode> entry = it.next();
+                    String k = entry.getKey();
+                    if ("x-casual-charset".equalsIgnoreCase(k)) {
+                        explicitCharset = entry.getValue().asText();
+                    } else if ("content-type".equalsIgnoreCase(k)) {
+                        contentTypeCharset = entry.getValue().asText();
+                    }
+                }
+            }
+            java.nio.charset.Charset callCharset =
+                    CasualBufferUtils.resolveCharset(explicitCharset, contentTypeCharset);
+
             try (CasualClient client = new CasualClient(host, port, timeout)) {
-                CasualCallResult result = client.call(service, bufferType, payload);
+                CasualCallResult result = client.call(service, bufferType, payload, callCharset);
 
                 Map<String, Object> respMap = new LinkedHashMap<>();
                 respMap.put("service", result.serviceName());

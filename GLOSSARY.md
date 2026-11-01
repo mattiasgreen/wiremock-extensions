@@ -23,7 +23,7 @@ The module that tracks transactional `Xid` enlistment across upstream Casual dom
 _Avoid_: XA bridge, transaction manager, Xid tracker
 
 **Casual Buffer Descriptor**:
-The composite domain descriptor coupling a Casual transport buffer type (`FIELDED`, `JSON`, `CSTRING`, `FLAT`, `X_OCTET`) with its encapsulated payload syntax (`JSON`, `XML`, `TEXT`, `HEX`), presenting transport wire constraints and inner document formatting as a unified inspectable badge.
+The composite domain descriptor coupling a Casual transport buffer type (`FIELDED`, `JSON`, `CSTRING`, `FLAT`, `X_OCTET`) with its encapsulated payload syntax (`JSON`, `XML`, `TEXT`, `HEX`) and optional non-UTF-8 character encoding (`ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`), presenting transport wire constraints, character encoding, and inner document formatting as a unified inspectable badge.
 _Avoid_: buffer label, casual type tag, payload info
 
 ### Web Console & Developer UI
@@ -65,7 +65,7 @@ A live overlay toolbar attached to editable JSON/XML textareas that surfaces act
 _Avoid_: helper bar, payload banner, editor chips
 
 **Container Encoding Envelope**:
-The structural metadata recorded when unnesting an inner payload (`JSON_STRING`, `XML_ENTITY_TEXT`, `XML_CDATA`, `BASE64_UTF8`, plus original compactness), governing how an edited child payload is re-encoded into its parent layer during round-tripping.
+The structural metadata recorded when unnesting an inner payload (`JSON_STRING`, `XML_ENTITY_TEXT`, `XML_CDATA`, `BASE64_UTF8`, `BASE64`, plus detected character encoding such as `UTF-8`, `ISO-8859-1`, or `KOI8-R`, and original compactness), governing how an edited child payload is re-encoded into its parent layer during round-tripping.
 _Avoid_: escape mode, encoding flag, wrapper type
 
 ### Observability & Telemetry

@@ -1920,4 +1920,203 @@ public class UiModuleUnitTest {
         assertThat(result.get("cstringText")).isEqualTo("CSTRING · TEXT · 0.1 KB");
         assertThat(result.get("noSize")).isEqualTo("FIELDED · JSON");
     }
+
+    @Test
+    @DisplayName(
+            "Character Encoding: Detects charset from XML prolog and headers, and formats descriptor badges with encoding and charset")
+    void testCharsetDetectionAndDescriptorFormatting() {
+        String script =
+                """
+            async () => {
+                const {
+                    detectCharset,
+                    formatPayloadDescriptor,
+                    formatCasualBufferDescriptor
+                } = await import('./modules/payload-lens.js');
+
+                const xmlIso = '<?xml version="1.0" encoding="ISO-8859-1"?><note><to>Åke</to></note>';
+                const xmlKoi8 = "<?xml version='1.0' encoding='koi8-r'?><msg>Привет</msg>";
+                const plainJson = '{"hello":"world"}';
+
+                return {
+                    detectedXmlIso: detectCharset(xmlIso),
+                    detectedXmlKoi8: detectCharset(xmlKoi8),
+                    detectedHeaderWin1252: detectCharset(plainJson, { 'Content-Type': 'application/json; charset=cp1252' }),
+                    detectedCasualHeader: detectCharset(plainJson, { 'x-casual-charset': 'latin1' }),
+                    detectedDefaultUtf8: detectCharset(plainJson),
+
+                    stdJsonLabel: formatPayloadDescriptor({ format: 'json', encoding: 'JSON_STRING', charset: 'UTF-8', sizeKb: '0.4' }),
+                    isoXmlLabel: formatPayloadDescriptor({ format: 'xml', encoding: 'JSON_STRING', charset: 'ISO-8859-1', sizeKb: '0.2' }),
+                    b64JsonLabel: formatPayloadDescriptor({ format: 'json', encoding: 'BASE64_UTF8', charset: 'UTF-8', sizeKb: '0.4' }),
+                    b64Koi8XmlLabel: formatPayloadDescriptor({ format: 'xml', encoding: 'BASE64', charset: 'KOI8-R', sizeKb: '0.3' }),
+                    cdataIsoXmlLabel: formatPayloadDescriptor({ format: 'xml', encoding: 'XML_CDATA', charset: 'ISO-8859-1', sizeKb: '0.2' }),
+                    entityXmlLabel: formatPayloadDescriptor({ format: 'xml', encoding: 'XML_ENTITY_TEXT', charset: 'UTF-8', sizeKb: '0.1' }),
+
+                    casualFieldedIso: formatCasualBufferDescriptor('FIELDED', 'JSON', '0.4', 'ISO-8859-1'),
+                    casualCstringIso: formatCasualBufferDescriptor('CSTRING', 'TEXT', '0.1', 'ISO-8859-1'),
+                    casualJsonUtf8: formatCasualBufferDescriptor('JSON', 'JSON', '0.4', 'UTF-8')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("detectedXmlIso")).isEqualTo("ISO-8859-1");
+        assertThat(result.get("detectedXmlKoi8")).isEqualTo("KOI8-R");
+        assertThat(result.get("detectedHeaderWin1252")).isEqualTo("WINDOWS-1252");
+        assertThat(result.get("detectedCasualHeader")).isEqualTo("ISO-8859-1");
+        assertThat(result.get("detectedDefaultUtf8")).isEqualTo("UTF-8");
+
+        assertThat(result.get("stdJsonLabel")).isEqualTo("JSON · 0.4 KB");
+        assertThat(result.get("isoXmlLabel")).isEqualTo("XML · ISO-8859-1 · 0.2 KB");
+        assertThat(result.get("b64JsonLabel")).isEqualTo("BASE64 · JSON · 0.4 KB");
+        assertThat(result.get("b64Koi8XmlLabel")).isEqualTo("BASE64 · XML · KOI8-R · 0.3 KB");
+        assertThat(result.get("cdataIsoXmlLabel")).isEqualTo("CDATA · XML · ISO-8859-1 · 0.2 KB");
+        assertThat(result.get("entityXmlLabel")).isEqualTo("ENTITY · XML · 0.1 KB");
+
+        assertThat(result.get("casualFieldedIso")).isEqualTo("FIELDED · JSON · ISO-8859-1 · 0.4 KB");
+        assertThat(result.get("casualCstringIso")).isEqualTo("CSTRING · TEXT · ISO-8859-1 · 0.1 KB");
+        assertThat(result.get("casualJsonUtf8")).isEqualTo("CASUAL JSON · 0.4 KB");
+    }
+
+    @Test
+    @DisplayName(
+            "Character Encoding: Discovers non-UTF-8 Base64 payloads (ISO-8859-1, KOI8-R), renders charset pills, and preserves single-byte wire encoding on round-trip")
+    void testNonUtf8Base64DiscoveryPillLabelsAndRoundTripFidelity() {
+        String script =
+                """
+            async () => {
+                const {
+                    discoverEmbeddedPayloads,
+                    renderFormattedWithNestedPreviews,
+                    cascadeLensStackToRoot,
+                    encodeToBase64
+                } = await import('./modules/payload-lens.js');
+
+                // 1. Construct raw ISO-8859-1 Base64 (Å = 0xC5, ö = 0xF6 — invalid UTF-8 sequences)
+                const isoXmlText = '<?xml version="1.0" encoding="ISO-8859-1"?><customer><name>Åke Söderström</name><status>PENDING</status></customer>';
+                const isoB64 = encodeToBase64(isoXmlText, 'ISO-8859-1');
+
+                // 2. Construct raw KOI8-R Base64 (Привет = [0xF0, 0xD2, 0xC9, 0xD7, 0xC5, 0xD4] in KOI8-R)
+                const koi8XmlText = '<?xml version="1.0" encoding="KOI8-R"?><msg><text>Привет</text></msg>';
+                const koi8B64 = encodeToBase64(koi8XmlText, 'KOI8-R');
+
+                // 3. Construct CDATA XML with ISO-8859-1 prolog
+                const outerXmlWithCdata = `<envelope><payload><![CDATA[${isoXmlText}]]></payload></envelope>`;
+
+                const rootJson = JSON.stringify({
+                    isoField: isoB64,
+                    koi8Field: koi8B64,
+                    cdataEnvelope: outerXmlWithCdata
+                }, null, 2);
+
+                const discovered = discoverEmbeddedPayloads(rootJson);
+                const isoNode = discovered.find(d => d.key === 'isoField');
+                const koi8Node = discovered.find(d => d.key === 'koi8Field');
+                const cdataOuterNode = discovered.find(d => d.key === 'cdataEnvelope');
+                const cdataInnerNode = cdataOuterNode && cdataOuterNode.children ? cdataOuterNode.children[0] : null;
+
+                const renderedHtml = renderFormattedWithNestedPreviews(rootJson, discovered, 'viewer_charset_01');
+
+                // 4. Round-trip edit ISO-8859-1 payload
+                const editedIsoXml = isoXmlText.replace('PENDING', 'APPROVED');
+                const updatedRootAfterIso = cascadeLensStackToRoot([
+                    { text: rootJson, descriptor: null },
+                    { text: isoNode.unescapedValue, descriptor: isoNode }
+                ], editedIsoXml, { minifyOnSave: true });
+                const parsedAfterIso = JSON.parse(updatedRootAfterIso);
+                const rawBytesAfterIso = Uint8Array.from(atob(parsedAfterIso.isoField), c => c.charCodeAt(0));
+
+                // 5. Round-trip edit KOI8-R payload
+                const editedKoi8Xml = koi8XmlText.replace('Привет', 'Привет!');
+                const updatedRootAfterKoi8 = cascadeLensStackToRoot([
+                    { text: rootJson, descriptor: null },
+                    { text: koi8Node.unescapedValue, descriptor: koi8Node }
+                ], editedKoi8Xml, { minifyOnSave: true });
+                const parsedAfterKoi8 = JSON.parse(updatedRootAfterKoi8);
+                const rawBytesAfterKoi8 = Uint8Array.from(atob(parsedAfterKoi8.koi8Field), c => c.charCodeAt(0));
+
+                return {
+                    discoveredCount: discovered.length,
+                    isoCharset: isoNode ? isoNode.charset : null,
+                    isoUnescapedHasNordic: isoNode ? isoNode.unescapedValue.includes('Åke Söderström') : false,
+                    koi8Charset: koi8Node ? koi8Node.charset : null,
+                    koi8UnescapedHasCyrillic: koi8Node ? koi8Node.unescapedValue.includes('Привет') : false,
+                    cdataInnerCharset: cdataInnerNode ? cdataInnerNode.charset : null,
+                    htmlHasIsoBadge: renderedHtml.includes('BASE64 · XML · ISO-8859-1'),
+                    htmlHasKoi8Badge: renderedHtml.includes('BASE64 · XML · KOI8-R'),
+                    htmlHasCdataIsoBadge: renderedHtml.includes('CDATA · XML · ISO-8859-1'),
+                    isoHasSingleByteAring: rawBytesAfterIso.includes(0xC5) && !rawBytesAfterIso.includes(0x85),
+                    isoHasSingleByteOuml: rawBytesAfterIso.includes(0xF6) && !rawBytesAfterIso.includes(0xB6),
+                    koi8HasCyrillicBytes: rawBytesAfterKoi8.includes(0xF0) && rawBytesAfterKoi8.includes(0xD2) && rawBytesAfterKoi8.includes(0x21)
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("discoveredCount")).isEqualTo(3);
+        assertThat(result.get("isoCharset")).isEqualTo("ISO-8859-1");
+        assertThat(result.get("isoUnescapedHasNordic")).isEqualTo(true);
+        assertThat(result.get("koi8Charset")).isEqualTo("KOI8-R");
+        assertThat(result.get("koi8UnescapedHasCyrillic")).isEqualTo(true);
+        assertThat(result.get("cdataInnerCharset")).isEqualTo("ISO-8859-1");
+        assertThat(result.get("htmlHasIsoBadge")).isEqualTo(true);
+        assertThat(result.get("htmlHasKoi8Badge")).isEqualTo(true);
+        assertThat(result.get("htmlHasCdataIsoBadge")).isEqualTo(true);
+        assertThat(result.get("isoHasSingleByteAring")).isEqualTo(true);
+        assertThat(result.get("isoHasSingleByteOuml")).isEqualTo(true);
+        assertThat(result.get("koi8HasCyrillicBytes")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
+            "Character Encoding: Top-level viewer badges in Casual Tester, HTTP Tester, Journal, and Demo showcase reflect non-UTF-8 charsets")
+    void testTopLevelViewerAndCasualCharsetBadgesInDom() {
+        String script =
+                """
+            async () => {
+                const { elements } = await import('./modules/dom.js');
+                const { updateCasualRequestPill, initCasualTester } = await import('./modules/casual-tester.js');
+                const { displayResponseResult } = await import('./modules/tester.js');
+                const { demoBackend } = await import('./modules/demo-backend.js');
+
+                // 1. Casual Request Pill with ISO-8859-1 header
+                if (elements.casualBufferType) elements.casualBufferType.value = 'CSTRING';
+                if (elements.casualRequestHeaders) elements.casualRequestHeaders.value = 'Content-Type: text/plain; charset=ISO-8859-1\\nX-Casual-Service: echoService';
+                if (elements.casualRequestPayload) elements.casualRequestPayload.value = 'Åke Söderström';
+                updateCasualRequestPill();
+                const casualReqPillText = document.getElementById('casual-request-top-pill')?.textContent || '';
+
+                // 2. HTTP Tester Response Pill with KOI8-R header
+                displayResponseResult(
+                    200,
+                    'OK',
+                    12,
+                    ['Content-Type: text/xml; charset=KOI8-R'],
+                    '<?xml version="1.0" encoding="KOI8-R"?><msg>Привет</msg>'
+                );
+                const testerResPillText = document.getElementById('tester-top-pill')?.textContent || '';
+
+                // 3. Demo Backend settlePayment showcase has ISO-8859-1 XML prolog
+                const settleStub = demoBackend.stubs.find(s => s.id === 'demo-stub-casual-settle-payment');
+                const settleHasIsoProlog = settleStub && settleStub.response && settleStub.response.body.includes('ISO-8859-1');
+
+                return {
+                    casualReqPillText,
+                    testerResPillText,
+                    settleHasIsoProlog: Boolean(settleHasIsoProlog)
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat((String) result.get("casualReqPillText")).contains("CSTRING · TEXT · ISO-8859-1");
+        assertThat((String) result.get("testerResPillText")).contains("XML · KOI8-R");
+        assertThat(result.get("settleHasIsoProlog")).isEqualTo(true);
+    }
 }

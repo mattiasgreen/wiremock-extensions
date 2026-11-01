@@ -230,15 +230,14 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** the user dispatches the request or clicks "Copy as cURL".
 - **Then** the resolved headers (combining enabled local persistent headers and per-request headers) are sent and included in the cURL command and Sent Request inspector.
 
-### Story 16: Nested JSON/XML Payload Unnesting, Truncated Previews, and Stacked Lens Round-Tripping
-- **Given** an API request or response payload contains escaped or encoded nested structures (e.g., escaped JSON inside JSON, XML inside an escaped JSON string, JSON inside XML CDATA, or Base64-encoded UTF-8 payloads).
-- **When** inspecting traffic in the Request Journal, HTTP Tester (Sent Request or Response Body), or Casual Tester.
-- **Then** the viewer provides a dual `Raw (Wire)` vs. `Unescaped (Nested)` toggle, with dedicated `Copy Raw` and `Copy Formatted` actions.
-- **When** `Unescaped (Nested)` is active.
-- **Then** the engine automatically detects and formats embedded structures, truncating large single-line escaped strings (>80 characters) into an inline **Truncated Payload Preview** with interactive `Open in Lens` and `Expand Inline` actions.
+### Story 16: Nested JSON/XML Payload Unnesting, Character Encoding Detection, and Stacked Lens Round-Tripping
+- **Given** an API request or response payload contains escaped or encoded nested structures (e.g., escaped JSON inside JSON, XML inside an escaped JSON string, JSON inside XML CDATA, or Base64-encoded UTF-8 and single-byte non-UTF-8 payloads like ISO-8859-1 or KOI8-R).
+- **When** inspecting traffic in the Stub Catalog, Request Journal, HTTP Tester, or Casual Tester.
+- **Then** the engine automatically detects document syntax and character encoding (from XML prologs like `<?xml version="1.0" encoding="ISO-8859-1"?>`, `X-Casual-Charset`, or `Content-Type`), displaying concise descriptors (`JSON · 0.4 KB`, `XML · ISO-8859-1 · 0.2 KB`, `BASE64 · XML · KOI8-R · 0.3 KB`, `FIELDED · JSON · ISO-8859-1 · 0.4 KB`).
+- **And** the viewer auto-unnests embedded payloads inline by default with format badges and `Open in Lens` actions.
 - **When** viewing or editing payloads in the Stub Editor (Response Body, Request Matcher, or Raw Stub JSON), HTTP Tester, or Casual Tester.
-- **Then** a live **Detected Embedded Payloads Bar** displays actionable chips for each discovered nested payload.
+- **Then** a live **Detected Embedded Payloads Bar** displays actionable chips for each discovered nested payload with its format, container encoding, and detected charset.
 - **When** the user clicks any embedded payload chip or lens button.
 - **Then** the **Nested Payload Lens** opens in a focused sub-editor with stacked breadcrumb drill-down (`Root ▸ $.node1 ▸ $.node2`), allowing independent pretty-printing, minification, node-scoped copying, and syntax validation.
 - **When** the user modifies the nested payload and clicks "Apply" or "Save All to Root".
-- **Then** the engine validates syntax (with a secondary `Force Apply Unvalidated` override for negative-testing stubs) and safely re-escapes the changes back through each layer's **Container Encoding Envelope** into the root wire payload without corrupting sibling fields or outer quotes.
+- **Then** the engine validates syntax (with a secondary `Force Apply Unvalidated` override for negative-testing stubs) and safely re-escapes and re-encodes the changes back through each layer's **Container Encoding Envelope** into the root wire payload—preserving exact single-byte character encoding on wire round-trips without corrupting sibling fields or outer quotes.

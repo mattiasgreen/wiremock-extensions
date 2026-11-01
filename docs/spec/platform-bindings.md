@@ -67,6 +67,9 @@
 | **Payload Lens Apply Parent** | `#btn-lens-apply-parent` | `"btn-lens-apply-parent"` | Re-escapes and applies changes to the immediate parent layer. |
 | **Payload Lens Save Root** | `#btn-lens-save-root` | `"btn-lens-save-root"` | Cascades re-escaping up all stack frames and saves to root editor. |
 | **Payload Lens Force Apply** | `#btn-lens-force-apply` | `"btn-lens-force-apply"` | Forces application of unvalidated/malformed payloads for negative testing. |
+| **Top-Level Viewer Badge (Stub)** | `#stub-top-pill` | `"stub-top-pill"` | Badge presenting payload format, non-UTF-8 charset, and size (e.g. `XML · ISO-8859-1 · 0.2 KB`). |
+| **Top-Level Viewer Badge (HTTP Tester)** | `#tester-top-pill` | `"tester-top-pill"` | Badge presenting HTTP tester response format, charset, and size. |
+| **Top-Level Viewer Badge (Casual Tester)** | `#casual-request-top-pill` | `"casual-request-top-pill"` | Composite Casual buffer descriptor badge (e.g. `FIELDED · JSON · ISO-8859-1 · 0.4 KB`). |
 | **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
 | **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
 | **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |

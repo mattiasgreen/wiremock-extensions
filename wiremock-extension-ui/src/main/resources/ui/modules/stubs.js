@@ -4,12 +4,14 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson } from './highlighter.js';
+import { highlightJson, detectFormat } from './highlighter.js';
 import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
   openPayloadLens,
-  formatCasualBufferDescriptor
+  formatCasualBufferDescriptor,
+  formatPayloadDescriptor,
+  detectCharset
 } from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
@@ -497,16 +499,19 @@ export function selectStub(stub, updateRoute = true) {
   const topPill = document.getElementById('stub-top-pill');
   if (topPillGroup && topPill) {
     topPillGroup.style.display = 'inline-flex';
-    const sizeKb = (new Blob([rawStubJson]).size / 1024).toFixed(1);
+    const resBody = (stub.response && stub.response.body) || '';
+    const bodyFormat = resBody ? detectFormat(resBody).toUpperCase() : 'JSON';
+    const sizeKb = (new Blob([resBody || rawStubJson]).size / 1024).toFixed(1);
+    const stubCharset = detectCharset(resBody, resHeaders);
     if (isCasual) {
       const bufferType = (stub.metadata && stub.metadata.bufferType)
         || (resHeaders['X-Casual-Buffer-Type'] || resHeaders['x-casual-buffer-type'])
         || (stub.request && stub.request.headers && (stub.request.headers['x-casual-buffer-type'] || stub.request.headers['X-Casual-Buffer-Type']))
         || 'JSON';
       const normBuf = typeof bufferType === 'object' && bufferType.equalTo ? bufferType.equalTo : String(bufferType);
-      topPill.textContent = formatCasualBufferDescriptor(normBuf, 'JSON', sizeKb);
+      topPill.textContent = formatCasualBufferDescriptor(normBuf, bodyFormat, sizeKb, stubCharset);
     } else {
-      topPill.textContent = `JSON · ${sizeKb} KB`;
+      topPill.textContent = formatPayloadDescriptor({ format: bodyFormat, charset: stubCharset, sizeKb });
     }
     topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
   }
