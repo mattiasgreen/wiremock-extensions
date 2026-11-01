@@ -13,7 +13,7 @@ import {
   openPayloadLens,
   formatCasualBufferDescriptor
 } from './payload-lens.js';
-import { setRoute, toBase64, fromBase64 } from './router.js';
+import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
 
 const CASUAL_HISTORY_KEY = 'wiremock_ui_casual_history';
@@ -153,6 +153,62 @@ export function initCasualTester() {
     attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
   }
 
+  const reqTopPill = document.getElementById('casual-request-top-pill');
+  if (reqTopPill) {
+    reqTopPill.addEventListener('click', () => {
+      if (elements.casualRequestPayload) {
+        const isHidden = elements.casualRequestPayload.classList.toggle('hidden');
+        reqTopPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const reqTopLensBtn = document.getElementById('btn-casual-request-open-lens-top');
+  if (reqTopLensBtn) {
+    reqTopLensBtn.addEventListener('click', () => {
+      const raw = elements.casualRequestPayload ? elements.casualRequestPayload.value || '' : '';
+      const fmt = detectFormat(raw);
+      openPayloadLens(raw, {
+        path: '$',
+        key: 'casualRequest',
+        format: fmt,
+        encoding: 'STRING',
+        unescapedValue: raw
+      }, (updatedText) => {
+        if (elements.casualRequestPayload) {
+          elements.casualRequestPayload.value = updatedText;
+        }
+        updateCasualRequestPill();
+        updateCasualRoute(true);
+      });
+    });
+  }
+
+  const resTopPill = document.getElementById('casual-response-top-pill');
+  if (resTopPill) {
+    resTopPill.addEventListener('click', () => {
+      if (elements.casualResponseBody) {
+        const isHidden = elements.casualResponseBody.classList.toggle('hidden');
+        resTopPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const resTopLensBtn = document.getElementById('btn-casual-response-open-lens-top');
+  if (resTopLensBtn) {
+    resTopLensBtn.addEventListener('click', () => {
+      if (!lastRawCasualResponse) return;
+      const fmt = detectFormat(lastRawCasualResponse);
+      openPayloadLens(lastRawCasualResponse, {
+        path: '$',
+        key: 'casualResponse',
+        format: fmt,
+        encoding: 'STRING',
+        unescapedValue: lastRawCasualResponse
+      }, null);
+    });
+  }
+
   updateCasualRequestPill();
   if (elements.casualRequestPayload) {
     elements.casualRequestPayload.addEventListener('input', updateCasualRequestPill);
@@ -162,11 +218,46 @@ export function initCasualTester() {
   }
 }
 
+export function populateCasualTester({ service, payload, bufferType = 'JSON', headers = null, switchTab = true } = {}) {
+  if (service && elements.casualServiceName) {
+    elements.casualServiceName.value = service;
+  }
+  if (bufferType && elements.casualBufferType) {
+    let normBuffer = String(bufferType).toUpperCase();
+    if (normBuffer.includes('FIELD')) normBuffer = 'FIELDED';
+    else if (normBuffer.includes('STRING')) normBuffer = 'CSTRING';
+    else if (normBuffer.includes('OCTET')) normBuffer = 'X_OCTET';
+    elements.casualBufferType.value = normBuffer;
+  }
+  if (elements.casualRequestPayload) {
+    elements.casualRequestPayload.value = payload || '{\n  \n}';
+  }
+  if (elements.casualRequestHeaders && headers) {
+    const hLines = [];
+    for (const [k, v] of Object.entries(headers)) {
+      hLines.push(`${k}: ${v}`);
+    }
+    elements.casualRequestHeaders.value = hLines.join('\n');
+  }
+  if (elements.casualPayloadEncoding) {
+    elements.casualPayloadEncoding.value = (elements.casualBufferType && elements.casualBufferType.value === 'X_OCTET') ? 'hex' : 'text';
+  }
+  if (typeof fetchCasualConfig === 'function') {
+    fetchCasualConfig();
+  }
+  updateCasualRequestPill();
+  if (switchTab) {
+    activateTab('tab-casual', false);
+    if (typeof updateCasualRoute === 'function') {
+      updateCasualRoute(false);
+    }
+  }
+}
+
 export function updateCasualRequestPill() {
   const topPillGroup = document.getElementById('casual-request-top-pill-group');
   const topPill = document.getElementById('casual-request-top-pill');
-  const topLensBtn = document.getElementById('btn-casual-request-open-lens-top');
-  if (!topPillGroup || !topPill || !topLensBtn || !elements.casualRequestPayload) return;
+  if (!topPillGroup || !topPill || !elements.casualRequestPayload) return;
 
   const raw = elements.casualRequestPayload.value || '';
   const bufferType = elements.casualBufferType ? elements.casualBufferType.value : 'JSON';
@@ -175,23 +266,6 @@ export function updateCasualRequestPill() {
 
   topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
   topPill.title = elements.casualRequestPayload.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
-  topPill.onclick = () => {
-    const isHidden = elements.casualRequestPayload.classList.toggle('hidden');
-    topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
-  };
-  topLensBtn.onclick = () => {
-    openPayloadLens(raw, {
-      path: '$',
-      key: 'casualRequest',
-      format: fmt,
-      encoding: 'STRING',
-      unescapedValue: raw
-    }, (updatedText) => {
-      elements.casualRequestPayload.value = updatedText;
-      updateCasualRequestPill();
-      updateCasualRoute(true);
-    });
-  };
 }
 
 export function fetchCasualConfig() {
@@ -503,8 +577,7 @@ export function renderCasualResponseBody(bodyText, hexText) {
 
   const topPillGroup = document.getElementById('casual-response-top-pill-group');
   const topPill = document.getElementById('casual-response-top-pill');
-  const topLensBtn = document.getElementById('btn-casual-response-open-lens-top');
-  if (topPillGroup && topPill && topLensBtn) {
+  if (topPillGroup && topPill) {
     if (lastRawCasualResponse && lastRawCasualResponse.trim()) {
       topPillGroup.style.display = 'inline-flex';
       const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
@@ -514,19 +587,6 @@ export function renderCasualResponseBody(bodyText, hexText) {
       const sizeKb = (new Blob([lastRawCasualResponse]).size / 1024).toFixed(1);
       topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
       topPill.title = elements.casualResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
-      topPill.onclick = () => {
-        const isHidden = elements.casualResponseBody.classList.toggle('hidden');
-        topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
-      };
-      topLensBtn.onclick = () => {
-        openPayloadLens(lastRawCasualResponse, {
-          path: '$',
-          key: 'casualResponse',
-          format: fmt,
-          encoding: 'STRING',
-          unescapedValue: lastRawCasualResponse
-        }, null);
-      };
     } else {
       topPillGroup.style.display = 'none';
     }

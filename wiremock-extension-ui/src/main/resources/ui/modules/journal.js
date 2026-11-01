@@ -21,7 +21,7 @@ import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
-import { fetchCasualConfig, updateCasualRoute } from './casual-tester.js';
+import { fetchCasualConfig, updateCasualRoute, populateCasualTester } from './casual-tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
   getSnapshotStubTemplate,
@@ -514,33 +514,14 @@ function setupEventDelegation() {
         const isCasual = Boolean(casualService);
 
         if (isCasual) {
-          if (elements.casualServiceName) elements.casualServiceName.value = casualService;
           const rawBufferType = getHeader(reqHeaders, 'x-casual-buffer-type') || 'JSON';
-          let normBuffer = 'JSON';
-          const upper = rawBufferType.toUpperCase();
-          if (upper.includes('FIELD')) normBuffer = 'FIELDED';
-          else if (upper.includes('STRING')) normBuffer = 'CSTRING';
-          else if (upper.includes('OCTET')) normBuffer = 'X_OCTET';
-
-          if (elements.casualBufferType) elements.casualBufferType.value = normBuffer;
-          if (elements.casualRequestPayload) elements.casualRequestPayload.value = req.request.body || '';
-          if (elements.casualRequestHeaders && req.request.headers) {
-            const hLines = [];
-            for (const [k, v] of Object.entries(req.request.headers)) {
-              hLines.push(`${k}: ${v}`);
-            }
-            elements.casualRequestHeaders.value = hLines.join('\n');
-          }
-          if (elements.casualPayloadEncoding) {
-            elements.casualPayloadEncoding.value = normBuffer === 'X_OCTET' ? 'hex' : 'text';
-          }
-          if (typeof fetchCasualConfig === 'function') {
-            fetchCasualConfig();
-          }
-          activateTab('tab-casual', false);
-          if (typeof updateCasualRoute === 'function') {
-            updateCasualRoute(false);
-          }
+          populateCasualTester({
+            service: casualService,
+            payload: req.request.body || '',
+            bufferType: rawBufferType,
+            headers: req.request.headers || {},
+            switchTab: true
+          });
           return;
         }
 

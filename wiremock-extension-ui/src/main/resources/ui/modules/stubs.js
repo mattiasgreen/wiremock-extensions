@@ -22,7 +22,7 @@ import { exportStubs } from './import-export.js';
 import { updateFilterCounts } from './projects.js';
 import { loadData } from './api.js';
 import { renderJournal } from './journal.js';
-import { fetchCasualConfig, updateCasualRoute } from './casual-tester.js';
+import { populateCasualTester } from './casual-tester.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -495,8 +495,7 @@ export function selectStub(stub, updateRoute = true) {
 
   const topPillGroup = document.getElementById('stub-top-pill-group');
   const topPill = document.getElementById('stub-top-pill');
-  const topLensBtn = document.getElementById('btn-stub-open-lens-top');
-  if (topPillGroup && topPill && topLensBtn) {
+  if (topPillGroup && topPill) {
     topPillGroup.style.display = 'inline-flex';
     const sizeKb = (new Blob([rawStubJson]).size / 1024).toFixed(1);
     if (isCasual) {
@@ -510,31 +509,6 @@ export function selectStub(stub, updateRoute = true) {
       topPill.textContent = `JSON · ${sizeKb} KB`;
     }
     topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
-    topPill.onclick = () => {
-      const isHidden = elements.stubJsonViewer.classList.toggle('hidden');
-      topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
-    };
-    topLensBtn.onclick = () => {
-      openPayloadLens(rawStubJson, {
-        path: '$',
-        key: 'stub',
-        format: 'json',
-        encoding: 'JSON_STRING',
-        unescapedValue: rawStubJson
-      }, (updatedJson) => {
-        try {
-          const parsed = JSON.parse(updatedJson);
-          if (isDynamic) {
-            stub.rule = parsed;
-          } else {
-            Object.assign(stub, parsed);
-          }
-          selectStub(stub.id);
-        } catch (e) {
-          console.error('Failed to parse updated stub JSON:', e);
-        }
-      });
-    };
   }
 
   if (updateRoute) {
@@ -564,9 +538,7 @@ export function sendStubToTester(stub, switchTab = true) {
   if (isCasual) {
     const casualService = (stub.metadata && stub.metadata.service)
       || (path.startsWith('/__casual/services/') ? path.substring('/__casual/services/'.length) : 'echoService');
-    if (casualService && elements.casualServiceName) {
-      elements.casualServiceName.value = casualService;
-    }
+    const bufferType = (stub.metadata && stub.metadata.bufferType) || 'JSON';
     let body = '';
     if (example && example.body) {
       body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
@@ -579,18 +551,12 @@ export function sendStubToTester(stub, switchTab = true) {
         body = bp.equalTo;
       }
     }
-    if (elements.casualRequestPayload) {
-      elements.casualRequestPayload.value = body || '{\n  \n}';
-    }
-    if (typeof fetchCasualConfig === 'function') {
-      fetchCasualConfig();
-    }
-    if (switchTab) {
-      activateTab('tab-casual', false);
-      if (typeof updateCasualRoute === 'function') {
-        updateCasualRoute(false);
-      }
-    }
+    populateCasualTester({
+      service: casualService,
+      payload: body,
+      bufferType,
+      switchTab
+    });
     return;
   }
 
@@ -806,6 +772,46 @@ export function initStubsTab() {
       }
       elements.btnCopyJava.textContent = '✅ Copied!';
       setTimeout(() => elements.btnCopyJava.textContent = '☕ Copy Java', 1500);
+    });
+  }
+
+  const topPill = document.getElementById('stub-top-pill');
+  if (topPill) {
+    topPill.addEventListener('click', () => {
+      if (elements.stubJsonViewer) {
+        const isHidden = elements.stubJsonViewer.classList.toggle('hidden');
+        topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    });
+  }
+
+  const topLensBtn = document.getElementById('btn-stub-open-lens-top');
+  if (topLensBtn) {
+    topLensBtn.addEventListener('click', () => {
+      const stub = state.contextStub || (state.selectedStubId ? findCatalogStubById(state.selectedStubId) : null);
+      if (!stub) return;
+      const isDynamic = stub.isDynamic || (stub.metadata && stub.metadata.mode === 'dynamic');
+      const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
+      const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
+      openPayloadLens(rawStubJson, {
+        path: '$',
+        key: 'stub',
+        format: 'json',
+        encoding: 'JSON_STRING',
+        unescapedValue: rawStubJson
+      }, (updatedJson) => {
+        try {
+          const parsed = JSON.parse(updatedJson);
+          if (isDynamic) {
+            stub.rule = parsed;
+          } else {
+            Object.assign(stub, parsed);
+          }
+          selectStub(stub.id);
+        } catch (e) {
+          console.error('Failed to parse updated stub JSON:', e);
+        }
+      });
     });
   }
 }
