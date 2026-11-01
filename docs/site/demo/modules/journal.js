@@ -163,7 +163,6 @@ function buildRowHtml(req) {
       <td><span class="http-badge badge-${displayMethod}" title="${isCasual ? 'Casual XATMI Service Call (tpcall)' : escapeHtml(method)}">${displayMethod}</span></td>
       <td title="${escapeHtml(url)}">
         ${escapeHtml(url)}
-        ${correlationId ? `<span class="journal-corr-chip" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 ${escapeHtml(correlationId)}</span>` : ''}
       </td>
       <td>${escapeHtml(String(displayStatus))}</td>
       <td class="${verdict.cssClass}" title="${escapeHtml(verdict.tooltip)}">${verdict.label}</td>
@@ -238,14 +237,13 @@ function buildRowHtml(req) {
                 <div class="journal-card-header">
                   <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    ${correlationId ? `<button class="btn btn-small btn-journal-filter-corr" data-corr="${escapeHtml(correlationId)}" title="Filter Journal by X-Correlation-Id: ${escapeHtml(correlationId)}">🔗 Corr: ${escapeHtml(correlationId)}</button>` : ''}
                     <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill ${isCasual ? 'Casual ' : 'HTTP '}Tester with this exact request">🚀 Replay in ${isCasual ? 'Casual ' : ''}Tester</button>
                     <button class="btn btn-small btn-journal-copy-curl" data-id="${req.id}" data-testid="btn-journal-copy-curl" title="Copy request as cURL command">📋 Copy cURL</button>
                     <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
                   </div>
                 </div>
                 <div class="journal-section-title">Headers</div>
-                <pre class="code-block-mini">${reqHeadersHtml}</pre>
+                <pre class="code-block-mini code-block-headers">${reqHeadersHtml}</pre>
                 <div class="journal-section-header">
                   <div class="journal-section-title">Body</div>
                   ${reqB64.hasBase64 ? `
@@ -261,11 +259,11 @@ function buildRowHtml(req) {
                 </div>
                 ${reqB64.hasBase64 ? `
                   <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
-                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
+                    <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
+                    <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
                   </div>
                 ` : `
-                  <pre class="code-block-mini">${reqBodyHtml}</pre>
+                  <pre class="code-block-mini code-block-body">${reqBodyHtml}</pre>
                 `}
               </div>
               <div class="journal-detail-card">
@@ -285,7 +283,7 @@ function buildRowHtml(req) {
                   </div>
                 </div>
                 <div class="journal-section-title">Headers</div>
-                <pre class="code-block-mini">${resHeadersHtml}</pre>
+                <pre class="code-block-mini code-block-headers">${resHeadersHtml}</pre>
                 <div class="journal-section-header">
                   <div class="journal-section-title">Body</div>
                   ${resB64.hasBase64 ? `
@@ -301,11 +299,11 @@ function buildRowHtml(req) {
                 </div>
                 ${resB64.hasBase64 ? `
                   <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
-                    <pre class="code-block-mini journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
-                    <pre class="code-block-mini journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
+                    <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
+                    <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
                   </div>
                 ` : `
-                  <pre class="code-block-mini">${resBodyHtml}</pre>
+                  <pre class="code-block-mini code-block-body">${resBodyHtml}</pre>
                 `}
               </div>
             </div>
@@ -428,25 +426,6 @@ function setupEventDelegation() {
   eventsDelegated = true;
 
   elements.journalList.addEventListener('click', async (e) => {
-    const corrBtn = e.target.closest('.btn-journal-filter-corr');
-    if (corrBtn) {
-      e.stopPropagation();
-      const corr = corrBtn.getAttribute('data-corr') || '';
-      if (elements.journalSearch) {
-        elements.journalSearch.value = corr;
-      }
-      if (elements.journalContextBanner) {
-        elements.journalContextBanner.classList.remove('hidden');
-        if (elements.journalFilterChipText) {
-          elements.journalFilterChipText.textContent = `Correlation ID: ${corr}`;
-        }
-      }
-      renderJournal();
-      setRoute('journal', { q: corr }, true);
-      if (loadJournalFn) loadJournalFn();
-      return;
-    }
-
     const toTesterBtn = e.target.closest('.btn-journal-to-tester');
     if (toTesterBtn) {
       e.stopPropagation();

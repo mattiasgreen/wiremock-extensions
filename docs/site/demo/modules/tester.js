@@ -245,7 +245,17 @@ export function displaySentRequest(method, url, headersText, bodyText) {
     elements.testerSentHeaders.textContent = headersText.trim() || '(no headers sent)';
   }
   if (elements.testerSentBody) {
-    elements.testerSentBody.textContent = bodyText.trim() || '(empty body)';
+    const rawTrimmed = (bodyText || '').trim();
+    if (!rawTrimmed) {
+      elements.testerSentBody.textContent = '(empty body)';
+    } else {
+      const discovered = discoverEmbeddedPayloads(rawTrimmed);
+      if (discovered.length > 0) {
+        elements.testerSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'tester_sent_req');
+      } else {
+        elements.testerSentBody.innerHTML = highlightPayload(rawTrimmed);
+      }
+    }
   }
 }
 

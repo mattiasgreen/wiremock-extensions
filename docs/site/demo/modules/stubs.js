@@ -5,6 +5,7 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
+import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
@@ -477,7 +478,14 @@ export function selectStub(stub, updateRoute = true) {
     }
   }
 
-  elements.stubJsonViewer.innerHTML = highlightJson(isDynamic ? (stub.rule || stub) : stub);
+  const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
+  const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
+  const discovered = discoverEmbeddedPayloads(rawStubJson);
+  if (discovered.length > 0) {
+    elements.stubJsonViewer.innerHTML = renderFormattedWithNestedPreviews(rawStubJson, discovered, `stub_${stub.id}`);
+  } else {
+    elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
+  }
 
   if (updateRoute) {
     setRoute('stubs', { stubId: stub.id });

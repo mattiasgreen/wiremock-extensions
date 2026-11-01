@@ -271,7 +271,6 @@ export const elements = {
   casualFileInput: document.getElementById('casual-file-input'),
   btnCasualUploadFile: document.getElementById('btn-casual-upload-file'),
   casualRequestHeaders: document.getElementById('casual-request-headers'),
-  btnCasualPresetCorr: document.getElementById('btn-casual-preset-corr'),
   btnCasualPresetTx: document.getElementById('btn-casual-preset-tx'),
   casualRequestPayload: document.getElementById('casual-request-payload'),
   btnCasualReset: document.getElementById('btn-casual-reset'),

@@ -85,6 +85,41 @@ const SEED_STUBS = [
     }
   },
   {
+    id: 'demo-stub-multiformat-deep',
+    name: 'B2B SWIFT Transfer (Nested Multi-Format Showcase)',
+    request: {
+      method: 'POST',
+      urlPattern: '/api/v1/b2b/swift-transfer',
+      headers: {
+        'Content-Type': { contains: 'application/json' }
+      }
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          transferId: 'SWIFT-2026-X891',
+          status: 'SETTLED',
+          settledAt: '2026-11-01T05:00:00Z',
+          executionTrace: {
+            gatewayEnvelope:
+              '{"routing":{"network":"SWIFT_NET","bic":"NDEAFIHH"},"messagePayload":"<swiftMessage xmlns=\\"http://banking.corp/swift\\"><header><sender>SWIFT-EXT</sender></header><body><![CDATA[{\\"account\\":\\"ACC-112233\\",\\"auditTrail\\":\\"{\\\\\\"auditor\\\\\\\":\\\\\\"ISO20022-GATEWAY\\\\\\\",\\\\\\"passed\\\\\\\":true}\\"}]]></body></swiftMessage>"}'
+          }
+        },
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'B2B Payments',
+      tags: ['multiformat', 'cdata', 'swift', 'nested-payload']
+    }
+  },
+  {
     id: 'demo-stub-order-create',
     name: 'Create Order (FSM Start)',
     scenarioName: 'OrderLifecycle',
@@ -394,6 +429,53 @@ const SEED_REQUESTS = [
     wasMatched: true,
     timing: { serveTimeMillis: 14, totalTimeMillis: 18 },
     stubMapping: SEED_STUBS[0]
+  },
+  {
+    id: 'req-demo-multiformat-deep',
+    request: {
+      url: '/api/v1/b2b/swift-transfer',
+      absoluteUrl: 'http://localhost:8080/api/v1/b2b/swift-transfer',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': 'corp-b2b'
+      },
+      body: JSON.stringify(
+        {
+          transferId: 'SWIFT-2026-X891',
+          senderBic: 'NDEAFIHH',
+          receiverBic: 'HANDSEMM',
+          amount: 2500000.0,
+          currency: 'EUR'
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 25000
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          transferId: 'SWIFT-2026-X891',
+          status: 'SETTLED',
+          settledAt: '2026-11-01T05:00:00Z',
+          executionTrace: {
+            gatewayEnvelope:
+              '{"routing":{"network":"SWIFT_NET","bic":"NDEAFIHH"},"messagePayload":"<swiftMessage xmlns=\\"http://banking.corp/swift\\"><header><sender>SWIFT-EXT</sender></header><body><![CDATA[{\\"account\\\":\\"ACC-112233\\",\\"auditTrail\\\":\\"{\\\\\\"auditor\\\\\\\":\\\\\\"ISO20022-GATEWAY\\\\\\\",\\\\\\"passed\\\\\\\":true}\\"}]]></body></swiftMessage>"}'
+          }
+        },
+        null,
+        2
+      )
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 22, totalTimeMillis: 28 },
+    stubMapping: SEED_STUBS[2]
   },
   {
     id: 'req-demo-02',

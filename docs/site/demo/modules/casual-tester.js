@@ -125,9 +125,6 @@ export function initCasualTester() {
   if (elements.btnCasualTabBoth) {
     elements.btnCasualTabBoth.addEventListener('click', () => setCasualInspectorTab('both'));
   }
-  if (elements.btnCasualPresetCorr) {
-    elements.btnCasualPresetCorr.addEventListener('click', () => appendCasualHeader('X-Correlation-Id', crypto.randomUUID()));
-  }
   if (elements.btnCasualPresetTx) {
     elements.btnCasualPresetTx.addEventListener('click', () => appendCasualHeader('X-Casual-Transaction-State', 'TX_ACTIVE'));
   }
@@ -511,7 +508,17 @@ export function displayCasualResponseResult(
     elements.casualSentHeaders.textContent = formatHeadersBlock(requestHeaders);
   }
   if (elements.casualSentBody) {
-    elements.casualSentBody.textContent = sentPayload || '(empty body)';
+    const rawTrimmed = (sentPayload || '').trim();
+    if (!rawTrimmed) {
+      elements.casualSentBody.textContent = '(empty body)';
+    } else {
+      const discovered = discoverEmbeddedPayloads(rawTrimmed);
+      if (discovered.length > 0) {
+        elements.casualSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'casual_sent_req');
+      } else {
+        elements.casualSentBody.innerHTML = highlightPayload(rawTrimmed);
+      }
+    }
   }
   if (elements.casualSentServiceSummary) {
     elements.casualSentServiceSummary.textContent = sentService || 'tpcall';

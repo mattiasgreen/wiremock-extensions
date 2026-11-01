@@ -422,13 +422,16 @@ export function cascadeLensStackToRoot(stackFrames, deepestEditedText, options =
   for (let i = stackFrames.length - 1; i > 0; i--) {
     const childFrame = stackFrames[i];
     const parentFrame = stackFrames[i - 1];
+    const parentText = parentFrame.text !== undefined ? parentFrame.text : parentFrame.payload;
+    const descriptor = childFrame.descriptor || childFrame.targetNode;
     currentText = applyNestedPayloadEdit(
-      parentFrame.text,
-      childFrame.descriptor,
+      parentText,
+      descriptor,
       currentText,
       options
     );
-    parentFrame.text = currentText;
+    if (parentFrame.text !== undefined) parentFrame.text = currentText;
+    if (parentFrame.payload !== undefined) parentFrame.payload = currentText;
   }
 
   return currentText;
@@ -556,21 +559,7 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
     if (node.rawValue.length > 80 || node.wasCompact) {
       const previewSnippet = node.unescapedValue.substring(0, 60).replace(/\s+/g, ' ');
       const sizeKb = (node.byteLength / 1024).toFixed(1);
-      const previewHtml = `
-        <span class="truncated-payload-preview" data-node-idx="${i}" data-viewer-id="${viewerId}">
-          <span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span>
-          <span class="preview-pill-badge">${escapeHtml(node.format.toUpperCase())} · ${sizeKb} KB</span>
-          <button type="button" class="btn-lens-open-pill" data-node-idx="${i}" title="Open focused Nested Payload Lens">
-            🔍 Open in Lens
-          </button>
-          <button type="button" class="btn-lens-expand-pill" data-node-idx="${i}" title="Expand pretty-printed inline">
-            ▾ Expand
-          </button>
-          <div class="inline-expanded-payload hidden" id="${viewerId}_expanded_${i}">
-            <pre class="inline-code"><code>${highlightPayload(node.unescapedValue)}</code></pre>
-          </div>
-        </span>
-      `;
+      const previewHtml = `<span class="truncated-payload-preview" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-badge">${escapeHtml(node.format.toUpperCase())} · ${sizeKb} KB</span><span class="preview-floating-actions"><button type="button" class="btn-lens-open-pill" data-node-idx="${i}" title="Open focused Nested Payload Lens">🔍 Open in Lens</button><button type="button" class="btn-lens-expand-pill" data-node-idx="${i}" title="Expand pretty-printed inline">▾ Expand</button></span><div class="inline-expanded-payload hidden" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${highlightPayload(node.unescapedValue)}</code></pre></div></span>`;
 
       const token = `__LENS_TOKEN_${i}__`;
       const escapedInJson = JSON.stringify(node.rawValue);
@@ -605,18 +594,20 @@ if (typeof document !== 'undefined') {
     const expandBtn = e.target.closest('.btn-lens-expand-pill');
     if (expandBtn) {
       e.stopPropagation();
-      const parentPreview = expandBtn.closest('.truncated-payload-preview');
-      if (parentPreview) {
-        const expandedDiv = parentPreview.querySelector('.inline-expanded-payload');
-        if (expandedDiv) {
-          const isHidden = expandedDiv.classList.contains('hidden');
-          if (isHidden) {
-            expandedDiv.classList.remove('hidden');
-            expandBtn.textContent = '▴ Collapse';
-          } else {
-            expandedDiv.classList.add('hidden');
-            expandBtn.textContent = '▾ Expand';
-          }
+      const nodeIdx = expandBtn.getAttribute('data-node-idx');
+      const parentPreview = expandBtn.closest('.truncated-payload-preview') || document.querySelector(`[data-node-idx="${nodeIdx}"]`);
+      const viewerId = parentPreview ? parentPreview.getAttribute('data-viewer-id') : null;
+      const expandedDiv = (viewerId && nodeIdx !== null)
+        ? document.getElementById(`${viewerId}_expanded_${nodeIdx}`)
+        : (parentPreview ? parentPreview.querySelector('.inline-expanded-payload') : null);
+      if (expandedDiv) {
+        const isHidden = expandedDiv.classList.contains('hidden');
+        if (isHidden) {
+          expandedDiv.classList.remove('hidden');
+          expandBtn.textContent = '▴ Collapse';
+        } else {
+          expandedDiv.classList.add('hidden');
+          expandBtn.textContent = '▾ Expand';
         }
       }
       return;
@@ -633,6 +624,17 @@ if (typeof document !== 'undefined') {
         if (stored && stored.discovered && stored.discovered[nodeIdx]) {
           openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot);
         }
+      }
+      return;
+    }
+
+    const previewSpan = e.target.closest('.truncated-payload-preview');
+    if (previewSpan && !e.target.closest('button')) {
+      const viewerId = previewSpan.getAttribute('data-viewer-id');
+      const nodeIdx = parseInt(previewSpan.getAttribute('data-node-idx'), 10);
+      const stored = viewerRegistry.get(viewerId);
+      if (stored && stored.discovered && stored.discovered[nodeIdx]) {
+        openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot);
       }
     }
   });

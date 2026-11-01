@@ -111,8 +111,6 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                 .doesNotContain("both-mode");
 
         // Test Preset badges
-        page.locator("#btn-casual-preset-corr").click();
-        assertThat(page.locator("#casual-request-headers").inputValue()).contains("X-Correlation-Id:");
         page.locator("#btn-casual-preset-tx").click();
         assertThat(page.locator("#casual-request-headers").inputValue())
                 .contains("X-Casual-Transaction-State: TX_ACTIVE");

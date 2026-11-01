@@ -49,8 +49,8 @@ A focused inspection and editing surface for a single unwrapped inner payload (w
 _Avoid_: popup editor, sub-modal, raw string editor
 
 **Truncated Payload Preview**:
-An inline summary representation of a large escaped single-line XML/JSON blob in a parent viewer, displaying an interactive hint pill to open the **Nested Payload Lens** without flooding the viewport with horizontal scroll.
-_Avoid_: string ellipsis, clipped text, collapsed string
+An inline syntax-highlighted representation of an escaped nested JSON, XML, or CDATA document rendered directly within the parent syntax flow at the owning property's indentation depth. Displays a lightweight format badge and subtle floating action pills on hover/focus (`Open in Lens`, `Expand`) to inspect or edit without disrupting document geometry or introducing blocky wrappers.
+_Avoid_: string ellipsis, clipped text, collapsed string, block preview box
 
 **Detected Embedded Payloads Bar**:
 A live overlay toolbar attached to editable JSON/XML textareas that surfaces actionable pills for every nested escaped or Base64-encoded payload discovered in the current editor content.

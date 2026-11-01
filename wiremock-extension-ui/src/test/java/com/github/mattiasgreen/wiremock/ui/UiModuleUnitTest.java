@@ -1742,4 +1742,109 @@ public class UiModuleUnitTest {
         assertThat(result.get("inferredProject")).isEqualTo("api-payments");
         assertThat(result.get("baseSegment")).isEqualTo("customers");
     }
+
+    @Test
+    @DisplayName("Nested Payload Lens: Deep 4-level unnesting and round-tripping (cdata-json-in-xml-in-json-in-json)")
+    void testDeepMultiFormatUnnesting4Levels() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot, applyNestedPayloadEdit } = await import('./modules/payload-lens.js');
+
+                // 4-level deep payload: JSON -> JSON -> XML -> CDATA -> JSON
+                const innerAuditTrailJson = JSON.stringify({ auditor: "ISO20022-GATEWAY", passed: true });
+                const cdataJson = JSON.stringify({ account: "ACC-112233", auditTrail: innerAuditTrailJson });
+                const xmlDoc = `<swiftMessage xmlns="http://banking.corp/swift"><header><sender>SWIFT-EXT</sender></header><body><![CDATA[${cdataJson}]]></body></swiftMessage>`;
+                const middleGatewayJson = JSON.stringify({ routing: { network: "SWIFT_NET" }, messagePayload: xmlDoc });
+                const rootJson = JSON.stringify({ transferId: "SWIFT-2026-X891", gatewayEnvelope: middleGatewayJson });
+
+                const discovered = discoverEmbeddedPayloads(rootJson);
+
+                // Level 1: gatewayEnvelope (JSON_STRING)
+                const l1 = discovered[0];
+                // Level 2: messagePayload (XML in JSON)
+                const l2 = l1.children[0];
+                // Level 3: CDATA body (XML_CDATA)
+                const l3 = l2.children[0];
+                // Level 4: auditTrail (JSON_STRING in CDATA JSON)
+                const l4 = l3.children[0];
+
+                // Edit deepest leaf node: change passed to false
+                const editedL4 = innerAuditTrailJson.replace('true', 'false');
+
+                // Round-trip cascade edit back to root
+                const stack = [
+                    { text: rootJson, descriptor: null },
+                    { text: l1.unescapedValue, descriptor: l1 },
+                    { text: l2.unescapedValue, descriptor: l2 },
+                    { text: l3.unescapedValue, descriptor: l3 },
+                    { text: l4.unescapedValue, descriptor: l4 }
+                ];
+
+                const reEscapedRoot = cascadeLensStackToRoot(stack, editedL4);
+                const parsedRoot = JSON.parse(reEscapedRoot);
+                const parsedGateway = JSON.parse(parsedRoot.gatewayEnvelope);
+
+                return {
+                    l1Format: l1 ? l1.format : null,
+                    l2Format: l2 ? l2.format : null,
+                    l3Format: l3 ? l3.format : null,
+                    l3Encoding: l3 ? l3.encoding : null,
+                    l4Format: l4 ? l4.format : null,
+                    hasReEscapedAudit: parsedGateway.messagePayload.includes('false'),
+                    validJsonRoot: typeof parsedRoot === 'object'
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("l1Format")).isEqualTo("json");
+        assertThat(result.get("l2Format")).isEqualTo("xml");
+        assertThat(result.get("l3Format")).isEqualTo("json");
+        assertThat(result.get("l3Encoding")).isEqualTo("XML_CDATA");
+        assertThat(result.get("l4Format")).isEqualTo("json");
+        assertThat(result.get("hasReEscapedAudit")).isEqualTo(true);
+        assertThat(result.get("validJsonRoot")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("Nested Payload Lens: renderFormattedWithNestedPreviews inline flow and floating action badges")
+    void testRenderFormattedWithNestedPreviewsInlineFlow() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } = await import('./modules/payload-lens.js');
+
+                const innerXml = '<report xmlns="http://corp.audit"><score>98</score><passed>true</passed><details>Tier 1 verified</details></report>';
+                const rootJson = JSON.stringify({
+                    requestId: "REQ-101",
+                    complianceReport: innerXml
+                }, null, 2);
+
+                const discovered = discoverEmbeddedPayloads(rootJson);
+                const html = renderFormattedWithNestedPreviews(rootJson, discovered, 'viewer_test_01');
+
+                return {
+                    hasInlineClass: html.includes('class="truncated-payload-preview"'),
+                    hasFloatingActions: html.includes('class="preview-floating-actions"'),
+                    hasOpenPill: html.includes('btn-lens-open-pill'),
+                    hasExpandPill: html.includes('btn-lens-expand-pill'),
+                    hasExpandedDiv: html.includes('inline-expanded-payload hidden'),
+                    snippetPreserved: html.includes('&lt;report')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("hasInlineClass")).isEqualTo(true);
+        assertThat(result.get("hasFloatingActions")).isEqualTo(true);
+        assertThat(result.get("hasOpenPill")).isEqualTo(true);
+        assertThat(result.get("hasExpandPill")).isEqualTo(true);
+        assertThat(result.get("hasExpandedDiv")).isEqualTo(true);
+        assertThat(result.get("snippetPreserved")).isEqualTo(true);
+    }
 }
