@@ -5,7 +5,14 @@
 import { state } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
 import { highlightJson, highlightPayload, formatXml, detectFormat } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar, openPayloadLens } from './payload-lens.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  attachEmbeddedPayloadsBar,
+  openPayloadLens,
+  detectCharset,
+  formatPayloadDescriptor
+} from './payload-lens.js';
 import { setRoute, toBase64 } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
 import { executeTesterRequest } from './api.js';
@@ -282,6 +289,7 @@ export function displayResponseResult(status, statusText, elapsed, headerLines, 
   if (elements.testerResponseHeaders) {
     elements.testerResponseHeaders.textContent = headerLines.join('\n') || '(no headers)';
   }
+  state.lastResponseHeaders = headerLines;
   renderTesterResponse(responseBody);
 }
 
@@ -307,7 +315,8 @@ export function renderTesterResponse(bodyText) {
       topPillGroup.style.display = 'inline-flex';
       const fmt = detectFormat(bodyText);
       const sizeKb = (new Blob([bodyText]).size / 1024).toFixed(1);
-      topPill.textContent = `${fmt.toUpperCase()} · ${sizeKb} KB`;
+      const charset = detectCharset(bodyText, state.lastResponseHeaders);
+      topPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
       topPill.title = elements.testerResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
     } else {
       topPillGroup.style.display = 'none';

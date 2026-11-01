@@ -16,26 +16,159 @@ import {
 } from './highlighter.js';
 import { decodeBase64ToUtf8, tryDecodeBase64Json } from './base64.js';
 
+const CHARSET_ALIAS_MAP = {
+  'UTF8': 'UTF-8',
+  'UTF-8': 'UTF-8',
+  'LATIN1': 'ISO-8859-1',
+  'LATIN-1': 'ISO-8859-1',
+  'ISO8859-1': 'ISO-8859-1',
+  'ISO_8859-1': 'ISO-8859-1',
+  'ISO-8859-1': 'ISO-8859-1',
+  '8859_1': 'ISO-8859-1',
+  'CP1252': 'WINDOWS-1252',
+  'WIN1252': 'WINDOWS-1252',
+  'WIN-1252': 'WINDOWS-1252',
+  'WINDOWS1252': 'WINDOWS-1252',
+  'WINDOWS-1252': 'WINDOWS-1252',
+  'KOI8': 'KOI8-R',
+  'KOI8R': 'KOI8-R',
+  'KOI8-R': 'KOI8-R',
+  'ASCII': 'US-ASCII',
+  'US-ASCII': 'US-ASCII'
+};
+
+/**
+ * Normalizes a character encoding name to its canonical uppercase identifier.
+ *
+ * @param {string} [charset]
+ * @returns {string} Canonical uppercase charset (e.g. 'UTF-8', 'ISO-8859-1', 'WINDOWS-1252', 'KOI8-R')
+ */
+export function normalizeCharsetName(charset) {
+  if (!charset || typeof charset !== 'string') return 'UTF-8';
+  const raw = charset.trim().replace(/^["']|["']$/g, '').toUpperCase();
+  if (!raw) return 'UTF-8';
+  return CHARSET_ALIAS_MAP[raw] || raw;
+}
+
+/**
+ * Detects character encoding from XML prolog declaration or HTTP/Casual headers.
+ * Priority: 1. XML prolog encoding, 2. X-Casual-Charset header, 3. Content-Type charset.
+ *
+ * @param {string} [text] Payload text
+ * @param {object|string|string[]} [headers] Key-value map of headers, raw multi-line header text, or header line array
+ * @returns {string} Canonical uppercase charset (defaults to 'UTF-8')
+ */
+export function detectCharset(text, headers = null) {
+  if (typeof text === 'string' && text.length > 0) {
+    const xmlPrologMatch = text.match(/<\?xml[^>]+encoding\s*=\s*["']([^"']+)["'][^>]*\?>/i);
+    if (xmlPrologMatch && xmlPrologMatch[1]) {
+      return normalizeCharsetName(xmlPrologMatch[1]);
+    }
+  }
+
+  let headerEntries = [];
+  if (typeof headers === 'string') {
+    for (const line of headers.split(/\r?\n/)) {
+      const idx = line.indexOf(':');
+      if (idx > 0) headerEntries.push([line.substring(0, idx).trim(), line.substring(idx + 1).trim()]);
+    }
+  } else if (Array.isArray(headers)) {
+    for (const line of headers) {
+      const str = String(line || '');
+      const idx = str.indexOf(':');
+      if (idx > 0) headerEntries.push([str.substring(0, idx).trim(), str.substring(idx + 1).trim()]);
+    }
+  } else if (headers && typeof headers === 'object') {
+    headerEntries = Object.entries(headers);
+  }
+
+  if (headerEntries.length > 0) {
+    let contentTypeCharset = null;
+    for (const [k, v] of headerEntries) {
+      if (!v) continue;
+      const lowerKey = k.toLowerCase();
+      const valStr = Array.isArray(v) ? String(v[0] || '') : String(v);
+      if (lowerKey === 'x-casual-charset') {
+        return normalizeCharsetName(valStr);
+      }
+      if (lowerKey === 'content-type') {
+        const charsetMatch = valStr.match(/charset\s*=\s*([^\s;,"']+)/i);
+        if (charsetMatch && charsetMatch[1]) {
+          contentTypeCharset = normalizeCharsetName(charsetMatch[1]);
+        }
+      }
+    }
+    if (contentTypeCharset) {
+      return contentTypeCharset;
+    }
+  }
+
+  return 'UTF-8';
+}
+
+/**
+ * Formats a concise payload descriptor badge combining non-trivial container encoding,
+ * syntax format, non-UTF-8 character encoding, and byte size.
+ *
+ * @param {object} opts
+ * @param {string} [opts.format] Syntax format (JSON, XML, TEXT, HEX)
+ * @param {string} [opts.encoding] Container encoding envelope (JSON_STRING, BASE64, BASE64_UTF8, XML_CDATA, XML_ENTITY_TEXT)
+ * @param {string} [opts.charset] Character set (UTF-8, ISO-8859-1, KOI8-R, etc.)
+ * @param {string|number} [opts.sizeKb] Byte size in kilobytes
+ * @returns {string} Formatted badge text, e.g. "BASE64 · XML · KOI8-R · 0.3 KB" or "JSON · 0.4 KB"
+ */
+export function formatPayloadDescriptor({ format = 'TEXT', encoding = null, charset = 'UTF-8', sizeKb = null } = {}) {
+  const parts = [];
+  if (encoding) {
+    const upperEnc = String(encoding).toUpperCase().trim();
+    if (upperEnc === 'BASE64' || upperEnc === 'BASE64_UTF8') {
+      parts.push('BASE64');
+    } else if (upperEnc === 'XML_CDATA' || upperEnc === 'CDATA') {
+      parts.push('CDATA');
+    } else if (upperEnc === 'XML_ENTITY_TEXT' || upperEnc === 'ENTITY') {
+      parts.push('ENTITY');
+    }
+  }
+
+  const normFormat = (format || 'TEXT').toUpperCase().trim();
+  parts.push(normFormat);
+
+  const normCharset = normalizeCharsetName(charset);
+  if (normCharset && normCharset !== 'UTF-8') {
+    parts.push(normCharset);
+  }
+
+  if (sizeKb !== undefined && sizeKb !== null && sizeKb !== '') {
+    parts.push(`${sizeKb} KB`);
+  }
+
+  return parts.join(' · ');
+}
+
 /**
  * Formats a composite Casual Buffer Descriptor badge string combining
- * transport buffer type and concrete payload document syntax.
+ * transport buffer type, concrete payload document syntax, optional non-UTF-8 charset, and byte size.
  * Deduplicates identical names (e.g. JSON + JSON -> CASUAL JSON).
  *
  * @param {string} bufferType Casual buffer type (JSON, FIELDED, CSTRING, FLAT, X_OCTET)
  * @param {string} syntaxFormat Document syntax (JSON, XML, TEXT, HEX)
  * @param {string|number} [sizeKb] Byte size in kilobytes
- * @returns {string} Formatted label, e.g. "FIELDED · JSON · 0.4 KB" or "CASUAL JSON · 0.4 KB"
+ * @param {string} [charset] Character encoding (omitted if UTF-8)
+ * @returns {string} Formatted label, e.g. "FIELDED · JSON · ISO-8859-1 · 0.4 KB" or "CASUAL JSON · 0.4 KB"
  */
-export function formatCasualBufferDescriptor(bufferType, syntaxFormat, sizeKb) {
+export function formatCasualBufferDescriptor(bufferType, syntaxFormat, sizeKb, charset = 'UTF-8') {
   let normBuffer = (bufferType || 'JSON').toUpperCase().trim();
-  if (normBuffer === 'FML') normBuffer = 'FIELDED';
+  if (normBuffer === 'FML' || normBuffer === 'CFIELD/' || normBuffer === '.FIELDED') normBuffer = 'FIELDED';
+  else if (normBuffer === 'CSTRING/') normBuffer = 'CSTRING';
   const normFormat = (syntaxFormat || 'JSON').toUpperCase().trim();
-  const sizePart = sizeKb !== undefined && sizeKb !== null ? ` · ${sizeKb} KB` : '';
+  const normCharset = normalizeCharsetName(charset);
+  const charsetPart = normCharset && normCharset !== 'UTF-8' ? ` · ${normCharset}` : '';
+  const sizePart = sizeKb !== undefined && sizeKb !== null && sizeKb !== '' ? ` · ${sizeKb} KB` : '';
 
   if (normBuffer === normFormat) {
-    return `CASUAL ${normBuffer}${sizePart}`;
+    return `CASUAL ${normBuffer}${charsetPart}${sizePart}`;
   }
-  return `${normBuffer} · ${normFormat}${sizePart}`;
+  return `${normBuffer} · ${normFormat}${charsetPart}${sizePart}`;
 }
 
 /**
@@ -86,6 +219,78 @@ export function validatePayload(text, format) {
   return { valid: true };
 }
 
+const singleByteEncoderCache = new Map();
+
+function getSingleByteEncodeMap(normCharset) {
+  if (singleByteEncoderCache.has(normCharset)) {
+    return singleByteEncoderCache.get(normCharset);
+  }
+  const map = new Map();
+  try {
+    const dec = new TextDecoder(normCharset.toLowerCase());
+    const buf = new Uint8Array(256);
+    for (let b = 0; b < 256; b++) buf[b] = b;
+    const decoded = dec.decode(buf);
+    for (let b = 0; b < 256; b++) {
+      map.set(decoded.charCodeAt(b), b);
+    }
+  } catch (_) {
+    for (let b = 0; b < 256; b++) map.set(b, b);
+  }
+  singleByteEncoderCache.set(normCharset, map);
+  return map;
+}
+
+/**
+ * Encodes a string into a Uint8Array using the specified character encoding.
+ *
+ * @param {string} str
+ * @param {string} [charset='UTF-8']
+ * @returns {Uint8Array}
+ */
+export function encodeStringToBytes(str, charset = 'UTF-8') {
+  const norm = normalizeCharsetName(charset);
+  if (norm === 'UTF-8') {
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(str);
+    }
+    const unescaped = unescape(encodeURIComponent(str));
+    const out = new Uint8Array(unescaped.length);
+    for (let i = 0; i < unescaped.length; i++) out[i] = unescaped.charCodeAt(i);
+    return out;
+  }
+  if (norm === 'ISO-8859-1' || norm === 'US-ASCII') {
+    const out = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      out[i] = str.charCodeAt(i) & 0xFF;
+    }
+    return out;
+  }
+  const encodeMap = getSingleByteEncodeMap(norm);
+  const out = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    out[i] = encodeMap.has(code) ? encodeMap.get(code) : (code <= 0xFF ? code : 0x3F);
+  }
+  return out;
+}
+
+/**
+ * Encodes a string into Base64 using the specified character encoding.
+ *
+ * @param {string} str
+ * @param {string} [charset='UTF-8']
+ * @returns {string}
+ */
+export function encodeToBase64(str, charset = 'UTF-8') {
+  const bytes = encodeStringToBytes(str, charset);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 /**
  * Encodes a UTF-8 string into standard Base64.
  *
@@ -93,18 +298,80 @@ export function validatePayload(text, format) {
  * @returns {string}
  */
 export function utf8ToBase64(str) {
+  return encodeToBase64(str, 'UTF-8');
+}
+
+/**
+ * Decodes a Base64 string while respecting declared XML prolog charsets or non-UTF-8 single-byte encodings.
+ *
+ * @param {string} str
+ * @returns {{ text: string, charset: string } | null}
+ */
+export function decodeBase64WithCharset(str) {
+  if (typeof str !== 'string') return null;
+  const cleaned = str.trim().replace(/[\r\n\s]+/g, '');
+  if (cleaned.length < 4) return null;
+
+  let normalized = cleaned.replace(/-/g, '+').replace(/_/g, '/');
+  while (normalized.length % 4 !== 0) {
+    normalized += '=';
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    return null;
+  }
+
+  let bytes;
   try {
-    if (typeof TextEncoder !== 'undefined') {
-      const bytes = new TextEncoder().encode(str);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return btoa(binary);
+    const binary = atob(normalized);
+    if (!binary || binary.length === 0) return null;
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
     }
-    return btoa(unescape(encodeURIComponent(str)));
   } catch (_) {
-    return btoa(str);
+    return null;
+  }
+
+  // 1. Inspect ASCII prefix for explicit XML prolog encoding="..."
+  let asciiPrefix = '';
+  const prefixLen = Math.min(bytes.length, 200);
+  for (let i = 0; i < prefixLen; i++) {
+    asciiPrefix += String.fromCharCode(bytes[i]);
+  }
+  const prologMatch = asciiPrefix.match(/<\?xml[^>]+encoding\s*=\s*["']([^"']+)["'][^>]*\?>/i);
+  if (prologMatch && prologMatch[1]) {
+    const declaredCharset = normalizeCharsetName(prologMatch[1]);
+    if (declaredCharset !== 'UTF-8') {
+      try {
+        if (declaredCharset === 'ISO-8859-1') {
+          let isoText = '';
+          for (let i = 0; i < bytes.length; i++) {
+            isoText += String.fromCharCode(bytes[i]);
+          }
+          return { text: isoText, charset: 'ISO-8859-1' };
+        }
+        const decoded = new TextDecoder(declaredCharset.toLowerCase(), { fatal: false }).decode(bytes);
+        return { text: decoded, charset: declaredCharset };
+      } catch (_) {}
+    }
+  }
+
+  // 2. Try strict UTF-8
+  try {
+    const utf8Text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return { text: utf8Text, charset: detectCharset(utf8Text) };
+  } catch (_) {
+    // 3. Fallback: check if printable single-byte ISO-8859-1 text/XML/JSON
+    let isoText = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      if (b < 0x20 && b !== 0x09 && b !== 0x0A && b !== 0x0D) {
+        return null;
+      }
+      isoText += String.fromCharCode(b);
+    }
+    const detected = detectCharset(isoText);
+    return { text: isoText, charset: detected !== 'UTF-8' ? detected : 'ISO-8859-1' };
   }
 }
 
@@ -171,6 +438,7 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
           key,
           format: 'json',
           encoding: 'JSON_STRING',
+          charset: detectCharset(trimmedVal),
           wasCompact: !val.includes('\n'),
           rawValue: val,
           unescapedValue: trimmedVal,
@@ -193,6 +461,7 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
         key,
         format: 'xml',
         encoding: 'JSON_STRING',
+        charset: detectCharset(trimmedVal),
         wasCompact: !val.includes('\n'),
         rawValue: val,
         unescapedValue: trimmedVal,
@@ -203,23 +472,25 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
     }
   }
 
-  // 3. Check for Base64-encoded UTF-8 JSON or XML
-  const decodedUtf8 = decodeBase64ToUtf8(val);
-  if (decodedUtf8 && decodedUtf8.length > 3) {
-    const innerFormat = detectFormat(decodedUtf8);
+  // 3. Check for Base64-encoded JSON or XML (supporting UTF-8 and single-byte charsets)
+  const b64Decoded = decodeBase64WithCharset(val);
+  if (b64Decoded && b64Decoded.text && b64Decoded.text.length > 3) {
+    const decodedText = b64Decoded.text;
+    const innerFormat = detectFormat(decodedText);
     if (innerFormat === 'json' || innerFormat === 'xml') {
       const children = currentDepth + 1 < maxDepth
-        ? discoverEmbeddedPayloads(decodedUtf8, maxDepth, currentDepth + 1, childPath)
+        ? discoverEmbeddedPayloads(decodedText, maxDepth, currentDepth + 1, childPath)
         : [];
       return {
         path: childPath,
         key,
         format: innerFormat,
-        encoding: 'BASE64_UTF8',
-        wasCompact: !decodedUtf8.includes('\n'),
+        encoding: b64Decoded.charset === 'UTF-8' ? 'BASE64_UTF8' : 'BASE64',
+        charset: b64Decoded.charset,
+        wasCompact: !decodedText.includes('\n'),
         rawValue: val,
-        unescapedValue: decodedUtf8,
-        formattedValue: innerFormat === 'json' ? formatPayload(decodedUtf8) : formatXml(decodedUtf8),
+        unescapedValue: decodedText,
+        formattedValue: innerFormat === 'json' ? formatPayload(decodedText) : formatXml(decodedText),
         byteLength: typeof Blob !== 'undefined' ? new Blob([val]).size : val.length,
         children
       };
@@ -248,6 +519,7 @@ function inspectXmlText(xmlText, path, results, maxDepth, currentDepth) {
         key: tagName,
         format: innerFormat,
         encoding: 'XML_CDATA',
+        charset: detectCharset(cdataContent),
         wasCompact: !cdataContent.includes('\n'),
         rawValue: cdataContent,
         unescapedValue: cdataContent,
@@ -276,6 +548,7 @@ function inspectXmlText(xmlText, path, results, maxDepth, currentDepth) {
           key: tagName,
           format: innerFormat,
           encoding: 'XML_ENTITY_TEXT',
+          charset: detectCharset(unescaped),
           wasCompact: !unescaped.includes('\n'),
           rawValue: content,
           unescapedValue: unescaped,
@@ -379,8 +652,10 @@ export function applyNestedPayloadEdit(parentText, nodeDescriptor, editedChildTe
   }
 
   // 3. Re-encode according to Container Encoding Envelope
-  if (nodeDescriptor.encoding === 'BASE64_UTF8') {
-    const encoded = utf8ToBase64(processedText);
+  if (nodeDescriptor.encoding === 'BASE64_UTF8' || nodeDescriptor.encoding === 'BASE64') {
+    const editedPrologCharset = detectCharset(processedText);
+    const targetCharset = editedPrologCharset !== 'UTF-8' ? editedPrologCharset : (nodeDescriptor.charset || 'UTF-8');
+    const encoded = encodeToBase64(processedText, targetCharset);
     return replaceNodeValueInParent(parentText, nodeDescriptor, encoded);
   }
 
@@ -613,7 +888,13 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
 
     const previewSnippet = node.unescapedValue.substring(0, 60).replace(/\s+/g, ' ');
     const sizeKb = (node.byteLength / 1024).toFixed(1);
-    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(node.format.toUpperCase())} · ${sizeKb} KB</span><button type="button" class="btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Open focused Nested Payload Lens">🔍 Lens</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+    const pillLabel = formatPayloadDescriptor({
+      format: node.format,
+      encoding: node.encoding,
+      charset: node.charset,
+      sizeKb
+    });
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><button type="button" class="btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Open focused Nested Payload Lens">🔍 Lens</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
 
     const token = `__LENS_TOKEN_${i}__`;
     const escapedInJson = JSON.stringify(node.rawValue);
@@ -763,9 +1044,15 @@ export function attachEmbeddedPayloadsBar(textareaEl, barContainerEl, onTextarea
     for (let i = 0; i < discovered.length; i++) {
       const node = discovered[i];
       const sizeKb = (node.byteLength / 1024).toFixed(1);
+      const chipLabel = formatPayloadDescriptor({
+        format: node.format,
+        encoding: node.encoding,
+        charset: node.charset,
+        sizeKb
+      });
       pillsHtml += `
         <button type="button" class="btn btn-tiny embedded-node-chip" data-node-idx="${i}" title="Edit embedded ${node.format.toUpperCase()} in focused lens">
-          🔍 ${escapeHtml(node.path)} <span class="chip-badge">${escapeHtml(node.format.toUpperCase())} · ${sizeKb} KB</span>
+          🔍 ${escapeHtml(node.path)} <span class="chip-badge">${escapeHtml(chipLabel)}</span>
         </button>
       `;
     }
@@ -867,9 +1154,14 @@ function renderLensModal() {
     for (let i = 0; i < lensState.stack.length; i++) {
       const frame = lensState.stack[i];
       const isLast = i === lensState.stack.length - 1;
+      const frameTag = formatPayloadDescriptor({
+        format: frame.format,
+        encoding: frame.descriptor ? frame.descriptor.encoding : null,
+        charset: frame.descriptor ? frame.descriptor.charset : detectCharset(frame.text)
+      });
       bHtml += `
         <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-stack-idx="${i}">
-          ${escapeHtml(frame.title)} <span class="format-tag">(${frame.format.toUpperCase()})</span>
+          ${escapeHtml(frame.title)} <span class="format-tag">(${escapeHtml(frameTag)})</span>
         </span>
         ${!isLast ? '<span class="breadcrumb-sep">▸</span>' : ''}
       `;
@@ -901,9 +1193,14 @@ function renderLensModal() {
       let innerHtml = '<div class="embedded-payloads-bar"><span class="bar-title">✨ Deep Nested:</span>';
       for (let j = 0; j < innerDiscovered.length; j++) {
         const innerNode = innerDiscovered[j];
+        const innerTag = formatPayloadDescriptor({
+          format: innerNode.format,
+          encoding: innerNode.encoding,
+          charset: innerNode.charset
+        });
         innerHtml += `
           <button type="button" class="btn btn-tiny inner-drill-chip" data-inner-idx="${j}">
-            🔍 ${escapeHtml(innerNode.path)} (${escapeHtml(innerNode.format.toUpperCase())})
+            🔍 ${escapeHtml(innerNode.path)} (${escapeHtml(innerTag)})
           </button>
         `;
       }

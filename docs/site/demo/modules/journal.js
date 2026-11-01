@@ -9,7 +9,9 @@ import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
   openPayloadLens,
-  formatCasualBufferDescriptor
+  formatCasualBufferDescriptor,
+  formatPayloadDescriptor,
+  detectCharset
 } from './payload-lens.js';
 import {
   decodeBase64Payload,
@@ -213,14 +215,16 @@ function buildRowHtml(req) {
           : highlightPayload(resB64.decodedFormatted))
       : '';
 
+    const reqCharset = detectCharset(reqBodyRaw, reqHeaders);
+    const resCharset = detectCharset(resBodyRaw, resHeaders);
     const reqBufferType = isCasual ? (getHeader(reqHeaders, 'x-casual-buffer-type') || 'JSON') : null;
     const resBufferType = isCasual ? (getHeader(resHeaders, 'x-casual-buffer-type') || reqBufferType || 'JSON') : null;
     const reqBadgeLabel = isCasual
-      ? formatCasualBufferDescriptor(reqBufferType, reqFmt, reqSizeKb)
-      : `${reqFmt.toUpperCase()} · ${reqSizeKb} KB`;
+      ? formatCasualBufferDescriptor(reqBufferType, reqFmt, reqSizeKb, reqCharset)
+      : formatPayloadDescriptor({ format: reqFmt, charset: reqCharset, sizeKb: reqSizeKb });
     const resBadgeLabel = isCasual
-      ? formatCasualBufferDescriptor(resBufferType, resFmt, resSizeKb)
-      : `${resFmt.toUpperCase()} · ${resSizeKb} KB`;
+      ? formatCasualBufferDescriptor(resBufferType, resFmt, resSizeKb, resCharset)
+      : formatPayloadDescriptor({ format: resFmt, charset: resCharset, sizeKb: resSizeKb });
 
     const stubId = req.stubMapping && req.stubMapping.id;
     const stubName = verdict.stubDetail;

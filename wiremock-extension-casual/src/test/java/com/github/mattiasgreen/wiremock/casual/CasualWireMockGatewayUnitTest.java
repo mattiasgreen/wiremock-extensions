@@ -146,6 +146,59 @@ class CasualWireMockGatewayUnitTest {
         assertThat(subsequentCommit.getTransactionReturnCode()).isEqualTo(XAReturnCode.XA_OK);
     }
 
+    @Test
+    @DisplayName(
+            "Unit Test: XATMI-to-HTTP Mediation preserves non-UTF-8 charsets (ISO-8859-1, KOI8-R) for CSTRING and buffer wrapping")
+    void testNonUtf8CharsetRoundTripInCasualMediationAndBuffers() {
+        java.nio.charset.Charset iso88591 = java.nio.charset.StandardCharsets.ISO_8859_1;
+        java.nio.charset.Charset koi8r = java.nio.charset.Charset.forName("KOI8-R");
+
+        // 1. Stub returning CSTRING with ISO-8859-1 charset via Content-Type header
+        String nordicText = "Åke Söderström";
+        store.addStub(
+                "/__casual/services/legacy/nordic",
+                200,
+                nordicText,
+                Map.of(
+                        "Content-Type", "text/plain; charset=ISO-8859-1",
+                        "X-Casual-Buffer-Type", "CSTRING/"));
+
+        ServiceBuffer inboundCstring = CasualBufferUtils.wrapPayload("CSTRING/", "REQ-ÅÄÖ", iso88591);
+        CasualServiceCallRequestMessage req = CasualServiceCallRequestMessage.createBuilder()
+                .setProtocolVersion(ProtocolVersion.VERSION_1_0)
+                .setExecution(UUID.randomUUID())
+                .setServiceName("legacy/nordic")
+                .setServiceBuffer(inboundCstring)
+                .setXid(XID.NULL_XID)
+                .build();
+
+        CasualServiceCallReplyMessage reply = gateway.handleServiceCall(req);
+        assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+
+        byte[] replyBytes = CasualBufferUtils.toByteArray(reply.getServiceBuffer());
+        byte[] expectedIsoBytes = (nordicText + "\0").getBytes(iso88591);
+        assertThat(replyBytes).isEqualTo(expectedIsoBytes);
+        assertThat(CasualBufferUtils.extractPayload(reply.getServiceBuffer(), iso88591))
+                .isEqualTo(nordicText);
+
+        // 2. Stub returning CSTRING with KOI8-R charset via X-Casual-Charset header
+        String cyrillicText = "Привет";
+        store.addStub(
+                "/__casual/services/legacy/cyrillic",
+                200,
+                cyrillicText,
+                Map.of(
+                        "X-Casual-Charset", "KOI8-R",
+                        "X-Casual-Buffer-Type", "CSTRING/"));
+
+        CasualServiceCallReplyMessage koi8Reply = gateway.handleServiceCall(buildRequest("legacy/cyrillic", "{}"));
+        byte[] koi8ReplyBytes = CasualBufferUtils.toByteArray(koi8Reply.getServiceBuffer());
+        byte[] expectedKoi8Bytes = (cyrillicText + "\0").getBytes(koi8r);
+        assertThat(koi8ReplyBytes).isEqualTo(expectedKoi8Bytes);
+        assertThat(CasualBufferUtils.extractPayload(koi8Reply.getServiceBuffer(), koi8r))
+                .isEqualTo(cyrillicText);
+    }
+
     private CasualServiceCallRequestMessage buildRequest(String serviceName, String jsonPayload) {
         return buildTransactionalRequest(serviceName, jsonPayload, null);
     }

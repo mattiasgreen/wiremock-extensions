@@ -144,6 +144,7 @@ export const state = {
   testerHistoryCollapsed: false,
   testerViewMode: 'highlighted',
   lastRawResponseBody: '',
+  lastResponseHeaders: '',
   activeInspectorTab: 'response',
   activeTab: 'tab-stub-detail',
   isSyncingRoute: false,

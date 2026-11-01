@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -221,28 +222,110 @@ public final class CasualBufferUtils {
      *   <li>Base64 string for binary buffers (.X_OCTET)</li>
      * </ul>
      */
+    /**
+     * Resolves a {@link Charset} from an explicit charset name or HTTP Content-Type header value,
+     * defaulting to {@link StandardCharsets#UTF_8} if unspecified or unsupported.
+     */
+    public static Charset resolveCharset(String charsetOrContentType) {
+        if (charsetOrContentType == null || charsetOrContentType.isBlank()) {
+            return StandardCharsets.UTF_8;
+        }
+        String raw = charsetOrContentType.trim();
+        int idx = raw.toLowerCase(Locale.ROOT).indexOf("charset=");
+        if (idx >= 0) {
+            raw = raw.substring(idx + "charset=".length()).trim();
+            int semi = raw.indexOf(';');
+            if (semi >= 0) {
+                raw = raw.substring(0, semi).trim();
+            }
+        }
+        raw = raw.replace("\"", "").replace("'", "").trim();
+        if (raw.isEmpty()) {
+            return StandardCharsets.UTF_8;
+        }
+        try {
+            return Charset.forName(raw);
+        } catch (Exception ignored) {
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+    /**
+     * Resolves a {@link Charset} with precedence: explicit {@code X-Casual-Charset} over {@code Content-Type}.
+     */
+    public static Charset resolveCharset(String explicitCasualCharset, String contentTypeHeader) {
+        if (explicitCasualCharset != null && !explicitCasualCharset.isBlank()) {
+            return resolveCharset(explicitCasualCharset);
+        }
+        return resolveCharset(contentTypeHeader);
+    }
+
+    /**
+     * Detects the character set of a {@link ServiceBuffer} by inspecting XML prologs and validating
+     * UTF-8 byte sequences, falling back to {@code ISO-8859-1} when non-UTF-8 single-byte sequences are present.
+     */
+    public static Charset detectBufferCharset(ServiceBuffer buffer) {
+        if (buffer == null || buffer.isEmpty()) {
+            return StandardCharsets.UTF_8;
+        }
+        byte[] bytes = toByteArray(buffer);
+        if (bytes.length == 0) {
+            return StandardCharsets.UTF_8;
+        }
+        int probeLen = Math.min(bytes.length, 256);
+        String asciiProbe = new String(bytes, 0, probeLen, StandardCharsets.ISO_8859_1);
+        int prologEnd = asciiProbe.indexOf("?>");
+        if (asciiProbe.startsWith("<?xml") && prologEnd > 0) {
+            String prolog = asciiProbe.substring(0, prologEnd);
+            int encIdx = prolog.toLowerCase(Locale.ROOT).indexOf("encoding=");
+            if (encIdx > 0) {
+                String after = prolog.substring(encIdx + "encoding=".length()).trim();
+                if (!after.isEmpty() && (after.charAt(0) == '"' || after.charAt(0) == '\'')) {
+                    char quote = after.charAt(0);
+                    int closeIdx = after.indexOf(quote, 1);
+                    if (closeIdx > 1) {
+                        return resolveCharset(after.substring(1, closeIdx));
+                    }
+                }
+            }
+        }
+        try {
+            StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(bytes));
+            return StandardCharsets.UTF_8;
+        } catch (java.nio.charset.CharacterCodingException e) {
+            return StandardCharsets.ISO_8859_1;
+        }
+    }
+
+    private static String decodeBufferChunks(ServiceBuffer buffer, Charset charset) {
+        return new String(toByteArray(buffer), charset);
+    }
+
+    /**
+     * Extracts payload from a {@link ServiceBuffer} using UTF-8 default encoding.
+     */
     public static String extractPayload(ServiceBuffer buffer) {
+        return extractPayload(buffer, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Extracts payload from a {@link ServiceBuffer} using the specified {@link Charset}.
+     */
+    public static String extractPayload(ServiceBuffer buffer, Charset charset) {
         if (buffer == null || buffer.isEmpty()) {
             return "";
         }
+        Charset effectiveCharset = charset != null ? charset : StandardCharsets.UTF_8;
         String type = buffer.getType();
         if (isJsonType(type)) {
-            StringBuilder sb = new StringBuilder();
-            for (byte[] part : buffer.getBytes()) {
-                if (part != null) {
-                    sb.append(new String(part, StandardCharsets.UTF_8));
-                }
-            }
-            return sb.toString();
+            return decodeBufferChunks(buffer, effectiveCharset);
         }
         if (isCStringType(type)) {
-            StringBuilder sb = new StringBuilder();
-            for (byte[] part : buffer.getBytes()) {
-                if (part != null) {
-                    sb.append(new String(part, StandardCharsets.UTF_8));
-                }
-            }
-            String text = sb.toString();
+            String text = decodeBufferChunks(buffer, effectiveCharset);
             while (text.endsWith("\0")) {
                 text = text.substring(0, text.length() - 1);
             }
@@ -265,7 +348,7 @@ public final class CasualBufferUtils {
                         List<Object> values = new ArrayList<>();
                         for (FieldedData<?> item : list) {
                             Object data = item.getData();
-                            Object parsedJson = tryParseJsonPayload(data);
+                            Object parsedJson = tryParseJsonPayload(data, effectiveCharset);
                             if (parsedJson != null) {
                                 values.add(parsedJson);
                             } else if (data instanceof byte[] bytes) {
@@ -292,10 +375,24 @@ public final class CasualBufferUtils {
      * Decodes Base64 for non-JSON buffers, wraps UTF-8 for JSON and CSTRING,
      * or parses JSON object into a binary .FIELDED buffer.
      */
+    /**
+     * Wraps payload text back into a {@link ServiceBuffer} based on buffer type using UTF-8 default encoding.
+     */
     public static ServiceBuffer wrapPayload(String bufferType, String payload) {
+        return wrapPayload(bufferType, payload, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Wraps payload text back into a {@link ServiceBuffer} based on buffer type and {@link Charset}.
+     */
+    public static ServiceBuffer wrapPayload(String bufferType, String payload, Charset charset) {
+        Charset effectiveCharset = charset != null ? charset : StandardCharsets.UTF_8;
         String type = (bufferType != null && !bufferType.isBlank()) ? bufferType.trim() : "JSON";
         if (isJsonType(type)) {
             String json = (payload != null && !payload.isBlank()) ? payload : "{}";
+            if (!StandardCharsets.UTF_8.equals(effectiveCharset)) {
+                return ServiceBuffer.of(type, List.of(json.getBytes(effectiveCharset)));
+            }
             return ServiceBuffer.of(JsonBuffer.of(json));
         }
         if (payload == null || payload.isBlank()) {
@@ -303,7 +400,7 @@ public final class CasualBufferUtils {
         }
         if (isCStringType(type)) {
             String text = payload.endsWith("\0") ? payload : payload + "\0";
-            return ServiceBuffer.of("CSTRING/", List.of(text.getBytes(StandardCharsets.UTF_8)));
+            return ServiceBuffer.of("CSTRING/", List.of(text.getBytes(effectiveCharset)));
         }
         if (isFieldedType(type)) {
             String trimmed = payload.trim();
@@ -317,10 +414,10 @@ public final class CasualBufferUtils {
                             Object val = entry.getValue();
                             if (val instanceof List<?> list) {
                                 for (Object item : list) {
-                                    writeFieldedValue(fielded, key, item);
+                                    writeFieldedValue(fielded, key, item, effectiveCharset);
                                 }
                             } else {
-                                writeFieldedValue(fielded, key, val);
+                                writeFieldedValue(fielded, key, val, effectiveCharset);
                             }
                         }
                         return ServiceBuffer.of("CFIELD/", fielded.encode());
@@ -349,12 +446,11 @@ public final class CasualBufferUtils {
             byte[] decoded = Base64.getDecoder().decode(payload.trim());
             return ServiceBuffer.of(type, List.of(decoded));
         } catch (IllegalArgumentException e) {
-            // Fall back to UTF-8 raw bytes if not valid Base64
-            return ServiceBuffer.of(type, List.of(payload.getBytes(StandardCharsets.UTF_8)));
+            return ServiceBuffer.of(type, List.of(payload.getBytes(effectiveCharset)));
         }
     }
 
-    private static void writeFieldedValue(FieldedTypeBuffer fielded, String key, Object val) {
+    private static void writeFieldedValue(FieldedTypeBuffer fielded, String key, Object val, Charset effectiveCharset) {
         if (val == null) {
             return;
         }
@@ -377,12 +473,12 @@ public final class CasualBufferUtils {
                         try {
                             bytes = Base64.getDecoder().decode(s.trim());
                         } catch (IllegalArgumentException ignored) {
-                            bytes = s.getBytes(StandardCharsets.UTF_8);
+                            bytes = s.getBytes(effectiveCharset);
                         }
                     } else if (val instanceof Map || val instanceof List) {
-                        bytes = OBJECT_MAPPER.writeValueAsBytes(val);
+                        bytes = OBJECT_MAPPER.writeValueAsString(val).getBytes(effectiveCharset);
                     } else {
-                        bytes = String.valueOf(val).getBytes(StandardCharsets.UTF_8);
+                        bytes = String.valueOf(val).getBytes(effectiveCharset);
                     }
                     fielded.write(key, bytes);
                 }
@@ -552,14 +648,15 @@ public final class CasualBufferUtils {
         return sb.toString();
     }
 
-    private static Object tryParseJsonPayload(Object data) {
+    private static Object tryParseJsonPayload(Object data, Charset charset) {
         if (data == null) {
             return null;
         }
+        Charset effectiveCharset = charset != null ? charset : StandardCharsets.UTF_8;
         String str = null;
         if (data instanceof byte[] bytes) {
             if (bytes.length > 0) {
-                str = new String(bytes, StandardCharsets.UTF_8).trim();
+                str = new String(bytes, effectiveCharset).trim();
             }
         } else if (data instanceof String s) {
             str = s.trim();
@@ -579,7 +676,7 @@ public final class CasualBufferUtils {
         // 2. Base64-encoded JSON payload
         try {
             byte[] decoded = Base64.getDecoder().decode(str);
-            String decodedStr = new String(decoded, StandardCharsets.UTF_8).trim();
+            String decodedStr = new String(decoded, effectiveCharset).trim();
             if ((decodedStr.startsWith("{") && decodedStr.endsWith("}"))
                     || (decodedStr.startsWith("[") && decodedStr.endsWith("]"))) {
                 return OBJECT_MAPPER.readValue(decodedStr, Object.class);

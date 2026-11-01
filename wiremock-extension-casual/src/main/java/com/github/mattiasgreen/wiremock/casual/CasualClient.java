@@ -156,10 +156,16 @@ public class CasualClient implements AutoCloseable {
     }
 
     public CasualCallResult call(String serviceName, String bufferType, String payload) throws Exception {
+        return call(serviceName, bufferType, payload, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    public CasualCallResult call(
+            String serviceName, String bufferType, String payload, java.nio.charset.Charset charset) throws Exception {
         Objects.requireNonNull(serviceName, "serviceName must not be null");
         connect();
 
-        ServiceBuffer buffer = CasualBufferUtils.wrapPayload(bufferType, payload);
+        java.nio.charset.Charset effectiveCharset = charset != null ? charset : java.nio.charset.StandardCharsets.UTF_8;
+        ServiceBuffer buffer = CasualBufferUtils.wrapPayload(bufferType, payload, effectiveCharset);
         long startNanos = System.nanoTime();
         CasualServiceCallReplyMessage reply = tpcall(serviceName, buffer);
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
@@ -167,7 +173,7 @@ public class CasualClient implements AutoCloseable {
         String replyType = reply.getServiceBuffer() != null
                 ? reply.getServiceBuffer().getType()
                 : (bufferType != null ? bufferType : "JSON");
-        String replyPayload = CasualBufferUtils.extractPayload(reply.getServiceBuffer());
+        String replyPayload = CasualBufferUtils.extractPayload(reply.getServiceBuffer(), effectiveCharset);
 
         return new CasualCallResult(
                 serviceName,
