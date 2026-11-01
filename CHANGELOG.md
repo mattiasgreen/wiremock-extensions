@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.10.1](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.10.0...v1.10.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **ui:** eliminate remote target error fallback race in demo mode and stabilize target host test ([#67](https://github.com/mattiasgreen/wiremock-extensions/issues/67)) ([35abfd0](https://github.com/mattiasgreen/wiremock-extensions/commit/35abfd024caf1ff727f57de3df3efa771373b1dd))
+
 ## [1.10.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.9.0...v1.10.0) (2026-11-01)
 
 
