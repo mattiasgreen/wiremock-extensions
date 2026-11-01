@@ -331,6 +331,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         page.waitForSelector(
                 "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
+        page.waitForSelector("#target-host-label:has-text('(same-origin)')");
         assertThat(page.locator("#target-host-label").textContent()).contains("(same-origin)");
         assertThat(page.url()).doesNotContain("wiremock=");
         assertThat(page.url()).doesNotContain("strategy=");
