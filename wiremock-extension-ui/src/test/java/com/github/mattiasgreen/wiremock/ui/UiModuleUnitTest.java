@@ -1663,4 +1663,83 @@ public class UiModuleUnitTest {
         assertThat(((Number) result.get("casualStatus")).intValue()).isEqualTo(0);
         assertThat(result.get("casualHasEcho")).isEqualTo(true);
     }
+
+    @Test
+    @DisplayName("stub-catalog: Encapsulates active, disabled, dynamic stubs, queries, projects, and selection")
+    void testStubCatalogDomainModule() {
+        String script =
+                """
+            async () => {
+                const { StubCatalog, getStubProject, extractBaseSegment } = await import('./modules/stub-catalog.js');
+                const catalog = new StubCatalog();
+
+                const active = [
+                    { id: '1', request: { method: 'GET', url: '/api/v1/orders' }, metadata: { project: 'orders' } },
+                    { id: '2', request: { method: 'POST', url: '/api/v1/orders' }, metadata: { project: 'orders' } },
+                    { id: '3', request: { method: 'GET', url: '/payments/charge' } }
+                ];
+                const disabled = [
+                    { id: '4', request: { method: 'DELETE', url: '/api/v1/orders/1' }, metadata: { project: 'orders' } }
+                ];
+                const stateful = [
+                    {
+                        entity: 'Inventory',
+                        rules: [
+                            { id: 'inv-1', request: { method: 'GET', url: '/inventory/check' }, metadata: { project: 'inventory' } }
+                        ]
+                    }
+                ];
+
+                catalog.setRawCollections({ active, disabled, statefulModels: stateful });
+
+                const totalAll = catalog.getAll().length;
+                const counts = catalog.getCounts();
+                const ordersCounts = catalog.getCounts('orders');
+                const queryOrders = catalog.query({ search: 'orders', status: 'all' });
+                const queryActiveOnly = catalog.query({ status: 'active' });
+                const projects = catalog.getProjects();
+
+                catalog.select('1');
+                catalog.select('2');
+                const selectedBefore = catalog.getSelectedCount();
+                catalog.deselect('1');
+                const selectedAfter = catalog.getSelectedCount();
+                const isSelected2 = catalog.isSelected('2');
+
+                return {
+                    totalAll,
+                    countsAll: counts.all,
+                    countsActive: counts.active,
+                    countsDisabled: counts.disabled,
+                    countsDynamic: counts.dynamic,
+                    ordersTotal: ordersCounts.all,
+                    queryOrdersLen: queryOrders.length,
+                    queryActiveOnlyLen: queryActiveOnly.length,
+                    projectNames: projects.map(p => p.name),
+                    selectedBefore,
+                    selectedAfter,
+                    isSelected2,
+                    inferredProject: getStubProject({ request: { url: '/payments/charge' } }),
+                    baseSegment: extractBaseSegment('/api/v2/customers/profile')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("totalAll")).intValue()).isEqualTo(5);
+        assertThat(((Number) result.get("countsAll")).intValue()).isEqualTo(5);
+        assertThat(((Number) result.get("countsActive")).intValue()).isEqualTo(3);
+        assertThat(((Number) result.get("countsDisabled")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("countsDynamic")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("ordersTotal")).intValue()).isEqualTo(3);
+        assertThat(((Number) result.get("queryOrdersLen")).intValue()).isEqualTo(3);
+        assertThat(((Number) result.get("queryActiveOnlyLen")).intValue()).isEqualTo(3);
+        assertThat(((Number) result.get("selectedBefore")).intValue()).isEqualTo(2);
+        assertThat(((Number) result.get("selectedAfter")).intValue()).isEqualTo(1);
+        assertThat(result.get("isSelected2")).isEqualTo(true);
+        assertThat(result.get("inferredProject")).isEqualTo("api-payments");
+        assertThat(result.get("baseSegment")).isEqualTo("customers");
+    }
 }

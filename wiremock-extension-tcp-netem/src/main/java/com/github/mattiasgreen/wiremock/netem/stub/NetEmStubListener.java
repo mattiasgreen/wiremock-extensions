@@ -1,7 +1,6 @@
 package com.github.mattiasgreen.wiremock.netem.stub;
 
-import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy;
-import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
+import com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmPreset;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmStreamDirection;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicConfig;
@@ -11,9 +10,11 @@ import com.github.tomakehurst.wiremock.extension.Parameters;
 import com.github.tomakehurst.wiremock.extension.ServeEventListener;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -27,15 +28,24 @@ import java.util.concurrent.ConcurrentMap;
  *   <li>{@code metadata.netem.toxics}: List of custom toxic definitions</li>
  * </ul>
  * Impairments are scoped to the incoming request's {@code X-Correlation-Id} (if present),
- * ensuring zero blast radius to concurrent test sessions, and automatically cleaned up in {@link #afterComplete}.
+ * ensuring zero blast radius to concurrent test sessions, and automatically cleaned up via {@link NetEmEngine.ToxicLease}.
  */
 public class NetEmStubListener implements ServeEventListener {
 
     public static final String EXTENSION_NAME = "netem-stub-listener";
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
+    private static final Duration DEFAULT_TTL = Duration.ofMillis(2500);
 
-    // Maps serveEvent ID to list of added toxic names for auto-cleanup
-    private final ConcurrentMap<String, List<String>> activeStubToxics = new ConcurrentHashMap<>();
+    private final NetEmEngine engine;
+    private final ConcurrentMap<String, NetEmEngine.ToxicLease> activeStubLeases = new ConcurrentHashMap<>();
+
+    public NetEmStubListener() {
+        this(NetEmEngine.getDefault());
+    }
+
+    public NetEmStubListener(NetEmEngine engine) {
+        this.engine = Objects.requireNonNull(engine, "engine must not be null");
+    }
 
     @Override
     public String getName() {
@@ -108,32 +118,8 @@ public class NetEmStubListener implements ServeEventListener {
             return;
         }
 
-        List<String> addedNames = new ArrayList<>();
-        for (TcpNetEmProxy proxy : TcpNetEmRegistry.getInstance().list()) {
-            for (NetEmToxicConfig toxic : toxicsToApply) {
-                proxy.addToxic(toxic);
-                addedNames.add(toxic.getName());
-            }
-        }
-
-        activeStubToxics.put(serveEvent.getId().toString(), addedNames);
-
-        // Schedule guaranteed TTL cleanup in case Jetty aborts or fails to call afterComplete
-        // (e.g. during reset_peer or client disconnections where the servlet lifecycle aborts)
-        Thread.ofVirtual().name("netem-stub-ttl-" + serveEvent.getId()).start(() -> {
-            try {
-                Thread.sleep(1500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            activeStubToxics.remove(serveEvent.getId().toString());
-            for (TcpNetEmProxy proxy : TcpNetEmRegistry.getInstance().list()) {
-                for (String name : addedNames) {
-                    proxy.removeToxic(name);
-                }
-            }
-        });
+        NetEmEngine.ToxicLease lease = engine.applyTransientToxics(correlationId, toxicsToApply, DEFAULT_TTL);
+        activeStubLeases.put(serveEvent.getId().toString(), lease);
     }
 
     @Override
@@ -142,21 +128,10 @@ public class NetEmStubListener implements ServeEventListener {
             return;
         }
 
-        List<String> addedNames = activeStubToxics.remove(serveEvent.getId().toString());
-        if (addedNames != null && !addedNames.isEmpty()) {
-            Thread.ofVirtual().name("netem-stub-cleanup-" + serveEvent.getId()).start(() -> {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-                for (TcpNetEmProxy proxy : TcpNetEmRegistry.getInstance().list()) {
-                    for (String name : addedNames) {
-                        proxy.removeToxic(name);
-                    }
-                }
-            });
+        NetEmEngine.ToxicLease lease =
+                activeStubLeases.remove(serveEvent.getId().toString());
+        if (lease != null) {
+            lease.scheduleClose(Duration.ofMillis(1000));
         }
     }
 

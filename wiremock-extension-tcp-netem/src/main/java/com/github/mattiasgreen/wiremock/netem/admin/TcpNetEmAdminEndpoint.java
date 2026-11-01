@@ -2,6 +2,7 @@ package com.github.mattiasgreen.wiremock.netem.admin;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.mattiasgreen.wiremock.netem.journal.NetEmJournalEntry;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 public class TcpNetEmAdminEndpoint implements AdminApiExtension {
@@ -25,14 +27,18 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     public static final String EXTENSION_NAME = "tcp-netem-admin-endpoint";
     private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
-    private final TcpNetEmRegistry registry;
+    private final NetEmEngine engine;
 
     public TcpNetEmAdminEndpoint() {
-        this(TcpNetEmRegistry.getInstance());
+        this(NetEmEngine.getDefault());
+    }
+
+    public TcpNetEmAdminEndpoint(NetEmEngine engine) {
+        this.engine = Objects.requireNonNull(engine, "engine must not be null");
     }
 
     public TcpNetEmAdminEndpoint(TcpNetEmRegistry registry) {
-        this.registry = registry;
+        this(registry.getEngine());
     }
 
     @Override
@@ -113,7 +119,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     private ResponseDefinition listProxiesJson() {
         try {
             List<Map<String, Object>> result = new ArrayList<>();
-            for (TcpNetEmProxy proxy : registry.list()) {
+            for (TcpNetEmProxy proxy : engine.list()) {
                 result.add(proxyToMap(proxy));
             }
             return jsonResponse(200, MAPPER.writeValueAsString(result));
@@ -123,7 +129,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition getProxyJson(String name) {
-        Optional<TcpNetEmProxy> proxy = registry.get(name);
+        Optional<TcpNetEmProxy> proxy = engine.get(name);
         if (proxy.isEmpty()) {
             return errorResponse(404, "Proxy not found: " + name);
         }
@@ -137,7 +143,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     private ResponseDefinition createProxy(String body) {
         try {
             NetEmProxyConfig config = parseProxyConfig(body);
-            TcpNetEmProxy proxy = registry.register(config);
+            TcpNetEmProxy proxy = engine.register(config);
             return jsonResponse(201, MAPPER.writeValueAsString(proxyToMap(proxy)));
         } catch (IOException | IllegalArgumentException e) {
             return errorResponse(400, "Invalid proxy payload: " + e.getMessage());
@@ -148,7 +154,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
         if ("reset".equalsIgnoreCase(name)) {
             return resetAll();
         }
-        Optional<TcpNetEmProxy> opt = registry.get(name);
+        Optional<TcpNetEmProxy> opt = engine.get(name);
         if (opt.isEmpty()) {
             return errorResponse(404, "Proxy not found: " + name);
         }
@@ -164,7 +170,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition deleteProxy(String name) {
-        if (registry.remove(name)) {
+        if (engine.remove(name)) {
             return ResponseDefinitionBuilder.responseDefinition()
                     .withStatus(204)
                     .build();
@@ -173,7 +179,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition addToxic(String proxyName, String body) {
-        Optional<TcpNetEmProxy> opt = registry.get(proxyName);
+        Optional<TcpNetEmProxy> opt = engine.get(proxyName);
         if (opt.isEmpty()) {
             return errorResponse(404, "Proxy not found: " + proxyName);
         }
@@ -187,7 +193,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition deleteToxic(String proxyName, String toxicName) {
-        Optional<TcpNetEmProxy> opt = registry.get(proxyName);
+        Optional<TcpNetEmProxy> opt = engine.get(proxyName);
         if (opt.isEmpty()) {
             return errorResponse(404, "Proxy not found: " + proxyName);
         }
@@ -200,7 +206,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition applyPreset(String proxyName, String presetName) {
-        Optional<TcpNetEmProxy> opt = registry.get(proxyName);
+        Optional<TcpNetEmProxy> opt = engine.get(proxyName);
         if (opt.isEmpty()) {
             return errorResponse(404, "Proxy not found: " + proxyName);
         }
@@ -213,14 +219,14 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition resetAll() {
-        registry.resetAll();
+        engine.resetAll();
         return jsonResponse(200, "{\"status\":\"RESET_ALL_SUCCESS\"}");
     }
 
     private ResponseDefinition listToxiproxyMap() {
         try {
             Map<String, Object> map = new LinkedHashMap<>();
-            for (TcpNetEmProxy proxy : registry.list()) {
+            for (TcpNetEmProxy proxy : engine.list()) {
                 map.put(proxy.getConfig().getName(), proxyToToxiproxyMap(proxy));
             }
             return jsonResponse(200, MAPPER.writeValueAsString(map));
@@ -230,7 +236,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition getToxiproxyDetails(String name) {
-        Optional<TcpNetEmProxy> proxy = registry.get(name);
+        Optional<TcpNetEmProxy> proxy = engine.get(name);
         if (proxy.isEmpty()) {
             return errorResponse(404, "Proxy not found: " + name);
         }
@@ -326,7 +332,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
             impaired = Boolean.parseBoolean(request.queryParameter("impaired").firstValue());
         }
 
-        List<NetEmJournalEntry> entries = registry.getJournal().query(limit, proxy, scope, impaired);
+        List<NetEmJournalEntry> entries = engine.getJournal().query(limit, proxy, scope, impaired);
         try {
             return jsonResponse(200, MAPPER.writeValueAsString(entries));
         } catch (IOException e) {
@@ -335,7 +341,7 @@ public class TcpNetEmAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition clearJournal() {
-        registry.getJournal().clear();
+        engine.getJournal().clear();
         return jsonResponse(200, "{\"status\":\"cleared\"}");
     }
 

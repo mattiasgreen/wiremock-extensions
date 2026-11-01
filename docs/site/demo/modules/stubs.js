@@ -153,70 +153,47 @@ export function generateJavaStubFor(stub) {
   return lines.join('\n');
 }
 
-export function getAllCatalogStubs() {
-  const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
-  const active = (state.currentStubs || []).map(s => ({ ...s, _disabled: false, _dynamic: false }));
-  const disabled = (state.disabledStubs || []).map(s => ({ ...s, _disabled: true, _dynamic: false }));
-  const dynamic = dynamicStubs.map(s => ({ ...s, _disabled: false, _dynamic: true }));
+import { stubCatalog } from './stub-catalog.js';
 
-  const seen = new Set();
-  const result = [];
-  for (const s of [...active, ...disabled, ...dynamic]) {
-    if (s && s.id && !seen.has(s.id)) {
-      seen.add(s.id);
-      result.push(s);
-    }
-  }
-  return result;
+export function getAllCatalogStubs() {
+  stubCatalog.setRawCollections({
+    active: state.currentStubs,
+    disabled: state.disabledStubs,
+    statefulModels: state.statefulModels
+  });
+  return stubCatalog.getAll();
 }
 
 export function findCatalogStubById(id) {
-  if (!id) return null;
-  return getAllCatalogStubs().find(s => s.id === id) || null;
+  stubCatalog.setRawCollections({
+    active: state.currentStubs,
+    disabled: state.disabledStubs,
+    statefulModels: state.statefulModels
+  });
+  return stubCatalog.getById(id);
 }
 
 export function getVisibleCatalogStubs(searchQuery) {
+  stubCatalog.setRawCollections({
+    active: state.currentStubs,
+    disabled: state.disabledStubs,
+    statefulModels: state.statefulModels
+  });
   const filter = (searchQuery !== undefined ? searchQuery : (elements.searchBox && elements.searchBox.value || '')).trim();
-  const allStubs = getAllCatalogStubs();
-
-  return allStubs.filter(s => {
-    const isDynamic = !!s.isDynamic || !!s._dynamic;
-    const isDisabled = !!s._disabled || state.disabledStubs.some(d => d.id === s.id);
-
-    if (state.statusFilter === 'active' && (isDisabled || isDynamic)) return false;
-    if (state.statusFilter === 'disabled' && (!isDisabled || isDynamic)) return false;
-    if (state.statusFilter === 'dynamic' && !isDynamic) return false;
-
-    if (state.selectedProject) {
-      const proj = isDynamic ? (s.metadata && s.metadata.project) : getStubProject(s);
-      if (proj !== state.selectedProject) return false;
-    }
-
-    if (!filter) return true;
-    const url = getStubUrl(s.request);
-    const proj = isDynamic ? (s.metadata && s.metadata.project || '') : getStubProject(s);
-    return matchesStub(s, filter, url, proj);
+  return stubCatalog.query({
+    search: filter,
+    status: state.statusFilter,
+    project: state.selectedProject
   });
 }
 
 export function getCatalogCounts(projectFilter = state.selectedProject) {
-  let activeList = state.currentStubs || [];
-  let disabledList = state.disabledStubs || [];
-  const dynamicStubs = normalizeStatefulModelsToStubs(state.statefulModels || []);
-  let dynamicList = dynamicStubs;
-
-  if (projectFilter) {
-    activeList = activeList.filter(s => getStubProject(s) === projectFilter);
-    disabledList = disabledList.filter(s => getStubProject(s) === projectFilter);
-    dynamicList = dynamicList.filter(s => (s.metadata && s.metadata.project) === projectFilter);
-  }
-
-  return {
-    all: activeList.length + disabledList.length + dynamicList.length,
-    active: activeList.length,
-    disabled: disabledList.length,
-    dynamic: dynamicList.length
-  };
+  stubCatalog.setRawCollections({
+    active: state.currentStubs,
+    disabled: state.disabledStubs,
+    statefulModels: state.statefulModels
+  });
+  return stubCatalog.getCounts(projectFilter);
 }
 
 export function renderStubList() {

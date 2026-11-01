@@ -7,7 +7,6 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.Json;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
-import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.io.IOException;
 import java.net.URLDecoder;
@@ -17,15 +16,21 @@ import java.util.*;
 /**
  * Admin API Extension providing endpoints for stub lifecycle management:
  * enable, disable, toggle, bulk operations, snapshots, and querying disabled stubs.
+ *
+ * <p>Acts as a thin HTTP adapter mapping Admin API routes to {@link StubLifecycleService}.
  */
 public class StubLifecycleAdminEndpoint implements AdminApiExtension {
 
     public static final String EXTENSION_NAME = "stub-lifecycle-admin-endpoint";
-    private final DisabledStubStore disabledStubStore;
+    private final StubLifecycleService service;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    public StubLifecycleAdminEndpoint(StubLifecycleService service) {
+        this.service = Objects.requireNonNull(service, "service must not be null");
+    }
+
     public StubLifecycleAdminEndpoint(DisabledStubStore disabledStubStore) {
-        this.disabledStubStore = Objects.requireNonNull(disabledStubStore, "disabledStubStore must not be null");
+        this(new StubLifecycleService(disabledStubStore));
     }
 
     @Override
@@ -37,7 +42,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
     public void contributeAdminApiRoutes(Router router) {
         // Query all disabled stubs
         router.add(RequestMethod.GET, "/stubs/disabled", (admin, serveEvent, pathParams) -> {
-            List<StubMapping> disabledList = new ArrayList<>(disabledStubStore.getAll());
+            List<StubMapping> disabledList = new ArrayList<>(service.getAllDisabled());
             Map<String, Object> result = Map.of("mappings", disabledList, "meta", Map.of("total", disabledList.size()));
             return ok(result);
         });
@@ -47,7 +52,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             UUID id = parseUuid(pathParams.get("id"));
             if (id == null) return badRequest("Invalid UUID format");
 
-            DisabledStubStore.TransitionResult res = disabledStubStore.disable(admin, id);
+            StubLifecycleService.TransitionResult res = service.withAdmin(admin).disable(id);
             if (!res.found()) return notFound("Stub not found");
             return ok(Map.of("status", res.status(), "id", res.id().toString(), "name", res.name()));
         });
@@ -57,7 +62,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             UUID id = parseUuid(pathParams.get("id"));
             if (id == null) return badRequest("Invalid UUID format");
 
-            DisabledStubStore.TransitionResult res = disabledStubStore.enable(admin, id);
+            StubLifecycleService.TransitionResult res = service.withAdmin(admin).enable(id);
             if (!res.found()) return notFound("Disabled stub not found");
             return ok(Map.of("status", res.status(), "id", res.id().toString(), "name", res.name()));
         });
@@ -67,7 +72,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             UUID id = parseUuid(pathParams.get("id"));
             if (id == null) return badRequest("Invalid UUID format");
 
-            DisabledStubStore.TransitionResult res = disabledStubStore.toggle(admin, id);
+            StubLifecycleService.TransitionResult res = service.withAdmin(admin).toggle(id);
             if (!res.found()) return notFound("Stub not found");
             return ok(Map.of("status", res.status(), "id", res.id().toString(), "name", res.name()));
         });
@@ -87,7 +92,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 return badRequest("Failed to deserialize StubMapping: " + e.getMessage());
             }
 
-            return ok(disabledStubStore.upsert(admin, id, updatedStub));
+            return ok(service.withAdmin(admin).upsert(id, updatedStub));
         });
 
         // Delete a stub mapping by ID
@@ -95,7 +100,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             UUID id = parseUuid(pathParams.get("id"));
             if (id == null) return badRequest("Invalid UUID format");
 
-            disabledStubStore.delete(admin, id);
+            service.withAdmin(admin).delete(id);
             return ok(Map.of("status", "deleted", "id", id.toString()));
         });
 
@@ -118,7 +123,7 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                     }
                 }
 
-                int count = disabledStubStore.bulkApply(admin, action, ids);
+                int count = service.withAdmin(admin).bulkApply(action, ids);
                 return ok(Map.of("action", action, "processed", count));
             } catch (IllegalArgumentException e) {
                 return badRequest(e.getMessage());
@@ -131,14 +136,12 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
         router.add(RequestMethod.POST, "/projects/{project}/recordings/snapshot", (admin, serveEvent, pathParams) -> {
             String projectParam = pathParams.get("project");
             String targetProject = projectParam != null ? URLDecoder.decode(projectParam, StandardCharsets.UTF_8) : "";
-            boolean allProjects =
-                    targetProject.isBlank() || "*".equals(targetProject) || "_all".equalsIgnoreCase(targetProject);
 
             RecordedStubConverter.SnapshotOptions options =
                     parseSnapshotOptions(serveEvent.getRequest().getBodyAsString());
-            List<ServeEvent> serveEvents = admin.getServeEvents().getServeEvents();
-            List<StubMapping> createdStubs = disabledStubStore.snapshotServeEvents(
-                    admin, serveEvents, null, targetProject, allProjects, true, true, false, options);
+            StubLifecycleService.SnapshotCommand cmd =
+                    StubLifecycleService.SnapshotCommand.forProject(targetProject, options);
+            List<StubMapping> createdStubs = service.withAdmin(admin).snapshotRecordings(cmd);
 
             return ok(Map.of(
                     "project",
@@ -174,20 +177,11 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
 
             if (targetId == null || targetId.isBlank()) return badRequest("requestId is required");
 
-            ServeEvent foundEvent = null;
-            for (ServeEvent event : admin.getServeEvents().getServeEvents()) {
-                if (targetId.equals(event.getId().toString())) {
-                    foundEvent = event;
-                    break;
-                }
-            }
+            Optional<StubMapping> stub =
+                    service.withAdmin(admin).generateSnapshotTemplate(targetId, targetProject, options);
+            if (stub.isEmpty()) return notFound("Recorded request not found in journal for id: " + targetId);
 
-            if (foundEvent == null) return notFound("Recorded request not found in journal for id: " + targetId);
-
-            StubMapping stub = RecordedStubConverter.convert(foundEvent, targetProject, options);
-            if (stub == null) return badRequest("Failed to convert recorded event into stub mapping (empty response)");
-
-            return ok(stub);
+            return ok(stub.get());
         });
 
         // Filtered Request Snapshot: converts specific ServeEvents into stubs
@@ -225,9 +219,9 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 }
             }
 
-            List<ServeEvent> serveEvents = admin.getServeEvents().getServeEvents();
-            List<StubMapping> createdStubs = disabledStubStore.snapshotServeEvents(
-                    admin, serveEvents, targetIds, targetProject, false, false, onlyProxied, activate, options);
+            StubLifecycleService.SnapshotCommand cmd = StubLifecycleService.SnapshotCommand.forRequests(
+                    targetIds, targetProject, activate, onlyProxied, options);
+            List<StubMapping> createdStubs = service.withAdmin(admin).snapshotRecordings(cmd);
 
             return ok(Map.of(
                     "project",
@@ -259,8 +253,8 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             }
 
             try {
-                DisabledStubStore.ProjectModeResult res =
-                        disabledStubStore.switchProjectMode(admin, targetProject, requestedMode);
+                StubLifecycleService.ProjectModeResult res =
+                        service.withAdmin(admin).switchProjectMode(targetProject, requestedMode);
                 return ok(Map.of(
                         "project", res.project(),
                         "activeMode", res.activeMode(),

@@ -16,10 +16,14 @@
         <Bug pattern="UNENCRYPTED_SERVER_SOCKET,UNENCRYPTED_SOCKET,PREDICTABLE_RANDOM"/>
     </Match>
 
-    <!-- Exclude singleton instance exposure for registries -->
+    <!-- Exclude singleton instance exposure for registries and engines -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry"/>
         <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine"/>
+        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
     </Match>
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.casual.CasualRegistry"/>
@@ -36,9 +40,13 @@
         <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
     </Match>
 
-    <!-- Exclude CLI file reading operations for CasualClient -->
+    <!-- Exclude CLI file reading operations for CasualClient and CasualCli -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.casual.CasualClient"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.casual.CasualCli"/>
         <Bug pattern="PATH_TRAVERSAL_IN"/>
     </Match>
 

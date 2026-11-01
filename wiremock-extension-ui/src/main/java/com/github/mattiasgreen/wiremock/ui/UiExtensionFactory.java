@@ -11,6 +11,7 @@ public class UiExtensionFactory implements ExtensionFactory {
 
     @Override
     public List<Extension> create(WireMockServices services) {
-        return List.of(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(disabledStubStore));
+        StubLifecycleService service = new StubLifecycleService(services.getAdmin(), disabledStubStore);
+        return List.of(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(service));
     }
 }
