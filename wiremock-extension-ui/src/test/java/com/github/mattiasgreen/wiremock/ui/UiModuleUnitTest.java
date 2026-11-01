@@ -1637,7 +1637,9 @@ public class UiModuleUnitTest {
                     stubsAfterToggle: demoBackend.stubs.length,
                     disabledAfterToggle: demoBackend.disabledStubs.length,
                     casualStatus: casualResult.status,
-                    casualHasEcho: casualResult.payload.includes('ACC-101')
+                    casualHasEcho: casualResult.payload.includes('ACC-101'),
+                    hasCasualStub: demoBackend.stubs.some(s => s.id === 'demo-stub-casual-credit-inquiry'),
+                    hasCasualJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/services/creditScoreInquiry'))
                 };
             }
         """;
@@ -1650,6 +1652,8 @@ public class UiModuleUnitTest {
         assertThat(((Number) result.get("initialRequestsCount")).intValue()).isGreaterThanOrEqualTo(4);
         assertThat(result.get("hasOrderLifecycle")).isEqualTo(true);
         assertThat(result.get("hasEchoService")).isEqualTo(true);
+        assertThat(result.get("hasCasualStub")).isEqualTo(true);
+        assertThat(result.get("hasCasualJournalEntry")).isEqualTo(true);
         assertThat(((Number) result.get("completeOrderStatus")).intValue()).isEqualTo(200);
         assertThat(result.get("completeOrderDelivered")).isEqualTo(true);
         assertThat(result.get("scenarioAfterComplete")).isEqualTo("COMPLETED");

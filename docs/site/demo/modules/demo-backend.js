@@ -265,6 +265,156 @@ const SEED_STUBS = [
       project: 'Credit Bureau',
       tags: ['credit', 'finance']
     }
+  },
+  {
+    id: 'demo-stub-casual-credit-inquiry',
+    name: 'Casual XATMI: creditScoreInquiry',
+    request: {
+      method: 'POST',
+      urlPattern: '/__casual/services/creditScoreInquiry',
+      headers: {
+        'x-casual-service': { equalTo: 'creditScoreInquiry' }
+      }
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': 'creditScoreInquiry',
+        'X-Casual-Error-State': 'OK',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          service: 'creditScoreInquiry',
+          status: 'OK',
+          xatmiReturnCode: 0,
+          transactionId: 'XID-NORDIC-992144',
+          creditAssessment: {
+            score: 815,
+            rating: 'AAA',
+            authorizedLimit: 750000.0,
+            currency: 'EUR',
+            riskTier: 'MINIMAL'
+          }
+        },
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'Casual Gateway',
+      protocol: 'casual',
+      service: 'creditScoreInquiry',
+      exampleRequest: {
+        path: '/__casual/services/creditScoreInquiry',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-casual-service': 'creditScoreInquiry',
+          'x-casual-buffer-type': 'JSON'
+        },
+        body: {
+          customerId: 'CUST-8812',
+          requestedAmount: 150000.0,
+          currency: 'EUR'
+        }
+      },
+      tags: ['casual', 'xatmi', 'credit', 'rpc']
+    }
+  },
+  {
+    id: 'demo-stub-casual-settle-payment',
+    name: 'Casual XATMI: settlePayment (Nested XML Audit)',
+    request: {
+      method: 'POST',
+      urlPattern: '/__casual/services/settlePayment',
+      headers: {
+        'x-casual-service': { equalTo: 'settlePayment' }
+      }
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': 'settlePayment',
+        'X-Casual-Error-State': 'OK',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          service: 'settlePayment',
+          status: 'OK',
+          xatmiReturnCode: 0,
+          clearingReference: 'CLR-2026-9901',
+          auditTrail:
+            '{"auditor":"casual-xatmi-monitor","auditXml":"<settlementReport id=\\"SR-8819\\"><status>SETTLED</status><clearingTime>2026-11-01T05:30:00Z</clearingTime><ledgerId>LEDG-0021</ledgerId></settlementReport>"}'
+        },
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'Casual Gateway',
+      protocol: 'casual',
+      service: 'settlePayment',
+      exampleRequest: {
+        path: '/__casual/services/settlePayment',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-casual-service': 'settlePayment',
+          'x-casual-buffer-type': 'JSON'
+        },
+        body: {
+          transferId: 'TX-99012',
+          debtorAccount: 'ACC-SE-991823',
+          creditorAccount: 'ACC-DE-102938',
+          amount: 50000.0
+        }
+      },
+      tags: ['casual', 'xatmi', 'clearing', 'nested-payload']
+    }
+  },
+  {
+    id: 'demo-stub-casual-echo',
+    name: 'Casual XATMI: echoService (tpcall loopback)',
+    request: {
+      method: 'POST',
+      urlPattern: '/__casual/services/echoService'
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': 'echoService',
+        'X-Casual-Error-State': 'OK',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          service: 'echoService',
+          status: 'OK',
+          xatmiReturnCode: 0,
+          message: 'Casual service loopback operational'
+        },
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'Casual Gateway',
+      protocol: 'casual',
+      service: 'echoService',
+      exampleRequest: {
+        path: '/__casual/services/echoService',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-casual-service': 'echoService',
+          'x-casual-buffer-type': 'JSON'
+        },
+        body: { ping: 'pong', timestamp: 1730438400000 }
+      },
+      tags: ['casual', 'xatmi', 'echo']
+    }
   }
 ];
 
@@ -593,6 +743,113 @@ const SEED_REQUESTS = [
     },
     wasMatched: false,
     timing: { serveTimeMillis: 2, totalTimeMillis: 3 }
+  },
+  {
+    id: 'req-demo-casual-01',
+    request: {
+      url: '/__casual/services/creditScoreInquiry',
+      absoluteUrl: 'http://localhost:8080/__casual/services/creditScoreInquiry',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-casual-service': 'creditScoreInquiry',
+        'x-casual-buffer-type': 'JSON',
+        'X-Correlation-Id': '7c891102-12a4-4df1-bc99-234567890def'
+      },
+      body: JSON.stringify(
+        {
+          customerId: 'CUST-8812',
+          requestedAmount: 150000.0,
+          currency: 'EUR'
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 32000
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': 'creditScoreInquiry',
+        'X-Casual-Error-State': 'OK',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          service: 'creditScoreInquiry',
+          status: 'OK',
+          xatmiReturnCode: 0,
+          transactionId: 'XID-NORDIC-992144',
+          creditAssessment: {
+            score: 815,
+            rating: 'AAA',
+            authorizedLimit: 750000.0,
+            currency: 'EUR',
+            riskTier: 'MINIMAL'
+          }
+        },
+        null,
+        2
+      )
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 8, totalTimeMillis: 11 },
+    stubMapping: {
+      id: 'demo-stub-casual-credit-inquiry',
+      name: 'Casual XATMI: creditScoreInquiry'
+    }
+  },
+  {
+    id: 'req-demo-casual-02',
+    request: {
+      url: '/__casual/services/settlePayment',
+      absoluteUrl: 'http://localhost:8080/__casual/services/settlePayment',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-casual-service': 'settlePayment',
+        'x-casual-buffer-type': 'JSON'
+      },
+      body: JSON.stringify(
+        {
+          transferId: 'TX-99012',
+          debtorAccount: 'ACC-SE-991823',
+          creditorAccount: 'ACC-DE-102938',
+          amount: 50000.0
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 68000
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': 'settlePayment',
+        'X-Casual-Error-State': 'OK',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        {
+          service: 'settlePayment',
+          status: 'OK',
+          xatmiReturnCode: 0,
+          clearingReference: 'CLR-2026-9901',
+          auditTrail:
+            '{"auditor":"casual-xatmi-monitor","auditXml":"<settlementReport id=\\"SR-8819\\"><status>SETTLED</status><clearingTime>2026-11-01T05:30:00Z</clearingTime><ledgerId>LEDG-0021</ledgerId></settlementReport>"}'
+        },
+        null,
+        2
+      )
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 14, totalTimeMillis: 18 },
+    stubMapping: {
+      id: 'demo-stub-casual-settle-payment',
+      name: 'Casual XATMI: settlePayment (Nested XML Audit)'
+    }
   }
 ];
 
@@ -917,8 +1174,37 @@ class InMemoryDemoBackend {
       const bufferType = payload.bufferType || 'JSON';
       const reqData = payload.payload || '';
 
+      const matchedStub = this.stubs.find(s => {
+        const u = s.request && (s.request.url || s.request.urlPattern || s.request.urlPath);
+        return u === `/__casual/services/${service}` || (s.metadata && s.metadata.service === service);
+      });
+
       let replyPayload = reqData;
-      if (bufferType === 'JSON') {
+      let replyStatus = 200;
+      let replyHeaders = {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': service,
+        'X-Casual-Error-State': 'OK',
+        'X-Simulation-Engine': 'in-browser-demo'
+      };
+
+      if (matchedStub && matchedStub.response) {
+        replyStatus = matchedStub.response.status || 200;
+        replyPayload = matchedStub.response.body || '';
+        if (service === 'echoService' && reqData) {
+          try {
+            const parsed = JSON.parse(reqData);
+            const resObj = JSON.parse(replyPayload);
+            resObj.echoData = parsed;
+            replyPayload = JSON.stringify(resObj, null, 2);
+          } catch {
+            // retain static body
+          }
+        }
+        if (matchedStub.response.headers) {
+          Object.assign(replyHeaders, matchedStub.response.headers);
+        }
+      } else if (bufferType === 'JSON') {
         try {
           const parsed = JSON.parse(reqData);
           replyPayload = JSON.stringify(
@@ -938,8 +1224,34 @@ class InMemoryDemoBackend {
         }
       }
 
+      // Record in request journal so it appears immediately in the Request Journal view
+      const entry = {
+        id: generateUuid(),
+        request: {
+          url: `/__casual/services/${service}`,
+          absoluteUrl: `http://localhost:8080/__casual/services/${service}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-casual-service': service,
+            'x-casual-buffer-type': bufferType
+          },
+          body: reqData,
+          loggedDate: Date.now()
+        },
+        response: {
+          status: replyStatus,
+          headers: replyHeaders,
+          body: replyPayload
+        },
+        wasMatched: Boolean(matchedStub),
+        timing: { serveTimeMillis: 10, totalTimeMillis: 14 },
+        stubMapping: matchedStub || undefined
+      };
+      this.requests.unshift(entry);
+
       return responseJson(200, {
-        status: 0,
+        status: replyStatus >= 200 && replyStatus < 300 ? 0 : -1,
         service,
         bufferType,
         payload: replyPayload,

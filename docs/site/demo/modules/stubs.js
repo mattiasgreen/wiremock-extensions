@@ -17,6 +17,7 @@ import { exportStubs } from './import-export.js';
 import { updateFilterCounts } from './projects.js';
 import { loadData } from './api.js';
 import { renderJournal } from './journal.js';
+import { fetchCasualConfig, updateCasualRoute } from './casual-tester.js';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -544,6 +545,41 @@ export function sendStubToTester(stub, switchTab = true) {
   const example = stub.metadata && stub.metadata.exampleRequest;
 
   let path = example && example.path ? example.path : getStubUrl(stub.request);
+  const isCasual = path.startsWith('/__casual/services/') || Boolean(stub.metadata && stub.metadata.protocol === 'casual');
+
+  if (isCasual) {
+    const casualService = (stub.metadata && stub.metadata.service)
+      || (path.startsWith('/__casual/services/') ? path.substring('/__casual/services/'.length) : 'echoService');
+    if (casualService && elements.casualServiceName) {
+      elements.casualServiceName.value = casualService;
+    }
+    let body = '';
+    if (example && example.body) {
+      body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
+    } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+      const bp = stub.request.bodyPatterns[0];
+      if (bp.equalToJson) {
+        const normalized = normalizeJsonPayload(bp.equalToJson);
+        body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
+      } else if (bp.equalTo) {
+        body = bp.equalTo;
+      }
+    }
+    if (elements.casualRequestPayload) {
+      elements.casualRequestPayload.value = body || '{\n  \n}';
+    }
+    if (typeof fetchCasualConfig === 'function') {
+      fetchCasualConfig();
+    }
+    if (switchTab) {
+      activateTab('tab-casual', false);
+      if (typeof updateCasualRoute === 'function') {
+        updateCasualRoute(false);
+      }
+    }
+    return;
+  }
+
   if (stub.isDynamic) {
     const idPrefix = (stub.model && stub.model.idPrefix) || (stub.entity ? stub.entity + '-' : 'item-');
     path = path.replace(/\{([^}]+)\}/g, () => `${idPrefix}100`);
