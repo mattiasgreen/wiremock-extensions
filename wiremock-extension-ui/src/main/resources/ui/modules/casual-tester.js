@@ -5,8 +5,14 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, highlightPayload, formatPayload } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, attachEmbeddedPayloadsBar } from './payload-lens.js';
+import { highlightJson, highlightPayload, formatPayload, detectFormat } from './highlighter.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  attachEmbeddedPayloadsBar,
+  openPayloadLens,
+  formatCasualBufferDescriptor
+} from './payload-lens.js';
 import { setRoute, toBase64, fromBase64 } from './router.js';
 import { doFetch } from './api.js';
 
@@ -146,6 +152,46 @@ export function initCasualTester() {
   if (elements.casualRequestPayload && elements.casualPayloadEmbeddedBar) {
     attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
   }
+
+  updateCasualRequestPill();
+  if (elements.casualRequestPayload) {
+    elements.casualRequestPayload.addEventListener('input', updateCasualRequestPill);
+  }
+  if (elements.casualBufferType) {
+    elements.casualBufferType.addEventListener('change', updateCasualRequestPill);
+  }
+}
+
+export function updateCasualRequestPill() {
+  const topPillGroup = document.getElementById('casual-request-top-pill-group');
+  const topPill = document.getElementById('casual-request-top-pill');
+  const topLensBtn = document.getElementById('btn-casual-request-open-lens-top');
+  if (!topPillGroup || !topPill || !topLensBtn || !elements.casualRequestPayload) return;
+
+  const raw = elements.casualRequestPayload.value || '';
+  const bufferType = elements.casualBufferType ? elements.casualBufferType.value : 'JSON';
+  const fmt = detectFormat(raw);
+  const sizeKb = (new Blob([raw]).size / 1024).toFixed(1);
+
+  topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
+  topPill.title = elements.casualRequestPayload.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+  topPill.onclick = () => {
+    const isHidden = elements.casualRequestPayload.classList.toggle('hidden');
+    topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+  };
+  topLensBtn.onclick = () => {
+    openPayloadLens(raw, {
+      path: '$',
+      key: 'casualRequest',
+      format: fmt,
+      encoding: 'STRING',
+      unescapedValue: raw
+    }, (updatedText) => {
+      elements.casualRequestPayload.value = updatedText;
+      updateCasualRequestPill();
+      updateCasualRoute(true);
+    });
+  };
 }
 
 export function fetchCasualConfig() {
@@ -452,6 +498,37 @@ export function renderCasualResponseBody(bodyText, hexText) {
       } else {
         elements.casualResponseBody.innerHTML = highlightPayload(lastRawCasualResponse);
       }
+    }
+  }
+
+  const topPillGroup = document.getElementById('casual-response-top-pill-group');
+  const topPill = document.getElementById('casual-response-top-pill');
+  const topLensBtn = document.getElementById('btn-casual-response-open-lens-top');
+  if (topPillGroup && topPill && topLensBtn) {
+    if (lastRawCasualResponse && lastRawCasualResponse.trim()) {
+      topPillGroup.style.display = 'inline-flex';
+      const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
+        || (lastCasualResponseHeaders && (lastCasualResponseHeaders['X-Casual-Buffer-Type'] || lastCasualResponseHeaders['x-casual-buffer-type']))
+        || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
+      const fmt = detectFormat(lastRawCasualResponse);
+      const sizeKb = (new Blob([lastRawCasualResponse]).size / 1024).toFixed(1);
+      topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb);
+      topPill.title = elements.casualResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+      topPill.onclick = () => {
+        const isHidden = elements.casualResponseBody.classList.toggle('hidden');
+        topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      };
+      topLensBtn.onclick = () => {
+        openPayloadLens(lastRawCasualResponse, {
+          path: '$',
+          key: 'casualResponse',
+          format: fmt,
+          encoding: 'STRING',
+          unescapedValue: lastRawCasualResponse
+        }, null);
+      };
+    } else {
+      topPillGroup.style.display = 'none';
     }
   }
 }

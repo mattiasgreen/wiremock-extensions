@@ -5,7 +5,12 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, openPayloadLens } from './payload-lens.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  openPayloadLens,
+  formatCasualBufferDescriptor
+} from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
@@ -494,7 +499,16 @@ export function selectStub(stub, updateRoute = true) {
   if (topPillGroup && topPill && topLensBtn) {
     topPillGroup.style.display = 'inline-flex';
     const sizeKb = (new Blob([rawStubJson]).size / 1024).toFixed(1);
-    topPill.textContent = `JSON · ${sizeKb} KB`;
+    if (isCasual) {
+      const bufferType = (stub.metadata && stub.metadata.bufferType)
+        || (resHeaders['X-Casual-Buffer-Type'] || resHeaders['x-casual-buffer-type'])
+        || (stub.request && stub.request.headers && (stub.request.headers['x-casual-buffer-type'] || stub.request.headers['X-Casual-Buffer-Type']))
+        || 'JSON';
+      const normBuf = typeof bufferType === 'object' && bufferType.equalTo ? bufferType.equalTo : String(bufferType);
+      topPill.textContent = formatCasualBufferDescriptor(normBuf, 'JSON', sizeKb);
+    } else {
+      topPill.textContent = `JSON · ${sizeKb} KB`;
+    }
     topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
     topPill.onclick = () => {
       const isHidden = elements.stubJsonViewer.classList.toggle('hidden');

@@ -1890,4 +1890,34 @@ public class UiModuleUnitTest {
         assertThat(result.get("hasLevel3GrandchildPreview")).isEqualTo(true);
         assertThat(result.get("containsUnnestedXmlText")).isEqualTo(true);
     }
+
+    @Test
+    @DisplayName("Casual Buffer Descriptor: Formats buffer type, syntax format, and deduplicates identical labels")
+    void testCasualBufferDescriptorFormatting() {
+        String script =
+                """
+            async () => {
+                const { formatCasualBufferDescriptor } = await import('./modules/payload-lens.js');
+
+                return {
+                    jsonJson: formatCasualBufferDescriptor('JSON', 'JSON', '0.4'),
+                    fieldedJson: formatCasualBufferDescriptor('FIELDED', 'JSON', '1.2'),
+                    fmlJson: formatCasualBufferDescriptor('FML', 'JSON', '0.8'),
+                    xoctetXml: formatCasualBufferDescriptor('X_OCTET', 'XML', '2.5'),
+                    cstringText: formatCasualBufferDescriptor('CSTRING', 'TEXT', '0.1'),
+                    noSize: formatCasualBufferDescriptor('FIELDED', 'JSON')
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("jsonJson")).isEqualTo("CASUAL JSON · 0.4 KB");
+        assertThat(result.get("fieldedJson")).isEqualTo("FIELDED · JSON · 1.2 KB");
+        assertThat(result.get("fmlJson")).isEqualTo("FIELDED · JSON · 0.8 KB");
+        assertThat(result.get("xoctetXml")).isEqualTo("X_OCTET · XML · 2.5 KB");
+        assertThat(result.get("cstringText")).isEqualTo("CSTRING · TEXT · 0.1 KB");
+        assertThat(result.get("noSize")).isEqualTo("FIELDED · JSON");
+    }
 }

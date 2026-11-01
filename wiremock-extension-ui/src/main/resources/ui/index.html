@@ -561,7 +561,13 @@
 
                   <div class="tester-section" id="casual-payload-section">
                     <div class="tester-section-header">
-                      <span>Request Payload</span>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span>Request Payload</span>
+                        <span class="preview-pill-group" id="casual-request-top-pill-group">
+                          <span class="preview-pill-badge" id="casual-request-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
+                          <button type="button" id="btn-casual-request-open-lens-top" class="btn-lens-open-pill" title="Open Request Payload in Focused Lens">🔍 Lens</button>
+                        </span>
+                      </div>
                       <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
                         <select id="casual-payload-encoding" class="preset-badge" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 2px 6px; font-size: 0.75rem; border-radius: 4px;" title="Payload format encoding">
                           <option value="text">JSON / Text</option>
@@ -617,7 +623,15 @@
                       <pre id="casual-response-headers" class="code-block-mini" data-testid="casual-response-headers">(no headers yet)</pre>
                     </div>
                     <div class="code-viewer-container" style="flex: 1;">
-                      <div class="headers-section-label">Response Body</div>
+                      <div class="headers-section-label" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span>Response Body</span>
+                          <span class="preview-pill-group" id="casual-response-top-pill-group" style="display: none;">
+                            <span class="preview-pill-badge" id="casual-response-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
+                            <button type="button" id="btn-casual-response-open-lens-top" class="btn-lens-open-pill" title="Open response body in Focused Lens">🔍 Lens</button>
+                          </span>
+                        </div>
+                      </div>
                       <pre id="casual-response-body" class="code-block" data-testid="casual-response-body">(no response yet - execute tpcall)</pre>
                     </div>
                   </div>

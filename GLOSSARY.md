@@ -22,6 +22,10 @@ _Avoid_: frame downgrading, version rebuilding
 The module that tracks transactional `Xid` enlistment across upstream Casual domains and synthetic local XA vote overrides (`prepare`, `commit`, `rollback`), aggregating `XAReturnCode` outcomes across participants.
 _Avoid_: XA bridge, transaction manager, Xid tracker
 
+**Casual Buffer Descriptor**:
+The composite domain descriptor coupling a Casual transport buffer type (`FIELDED`, `JSON`, `CSTRING`, `FLAT`, `X_OCTET`) with its encapsulated payload syntax (`JSON`, `XML`, `TEXT`, `HEX`), presenting transport wire constraints and inner document formatting as a unified inspectable badge.
+_Avoid_: buffer label, casual type tag, payload info
+
 ### Web Console & Developer UI
 
 **Stub Catalog**:

@@ -5,7 +5,12 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
-import { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews, openPayloadLens } from './payload-lens.js';
+import {
+  discoverEmbeddedPayloads,
+  renderFormattedWithNestedPreviews,
+  openPayloadLens,
+  formatCasualBufferDescriptor
+} from './payload-lens.js';
 import {
   decodeBase64Payload,
   normalizeJsonPayload,
@@ -207,6 +212,16 @@ function buildRowHtml(req) {
           ? renderFormattedWithNestedPreviews(resB64.decodedFormatted, resB64Discovered, `jrn_res_b64_${req.id}`)
           : highlightPayload(resB64.decodedFormatted))
       : '';
+
+    const reqBufferType = isCasual ? (getHeader(reqHeaders, 'x-casual-buffer-type') || 'JSON') : null;
+    const resBufferType = isCasual ? (getHeader(resHeaders, 'x-casual-buffer-type') || reqBufferType || 'JSON') : null;
+    const reqBadgeLabel = isCasual
+      ? formatCasualBufferDescriptor(reqBufferType, reqFmt, reqSizeKb)
+      : `${reqFmt.toUpperCase()} · ${reqSizeKb} KB`;
+    const resBadgeLabel = isCasual
+      ? formatCasualBufferDescriptor(resBufferType, resFmt, resSizeKb)
+      : `${resFmt.toUpperCase()} · ${resSizeKb} KB`;
+
     const stubId = req.stubMapping && req.stubMapping.id;
     const stubName = verdict.stubDetail;
 
@@ -253,7 +268,7 @@ function buildRowHtml(req) {
                     <div class="journal-section-title">Body</div>
                     ${reqBodyRaw ? `
                       <span class="preview-pill-group">
-                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqFmt.toUpperCase())} · ${reqSizeKb} KB</span>
+                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqBadgeLabel)}</span>
                         <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="req" data-id="${req.id}" title="Open full Request Body in Focused Lens">🔍 Lens</button>
                       </span>
                     ` : ''}
@@ -303,7 +318,7 @@ function buildRowHtml(req) {
                     <div class="journal-section-title">Body</div>
                     ${resBodyRaw ? `
                       <span class="preview-pill-group">
-                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resFmt.toUpperCase())} · ${resSizeKb} KB</span>
+                        <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resBadgeLabel)}</span>
                         <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="res" data-id="${req.id}" title="Open full Response Body in Focused Lens">🔍 Lens</button>
                       </span>
                     ` : ''}

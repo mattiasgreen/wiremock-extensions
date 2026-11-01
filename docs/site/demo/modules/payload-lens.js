@@ -17,6 +17,28 @@ import {
 import { decodeBase64ToUtf8, tryDecodeBase64Json } from './base64.js';
 
 /**
+ * Formats a composite Casual Buffer Descriptor badge string combining
+ * transport buffer type and concrete payload document syntax.
+ * Deduplicates identical names (e.g. JSON + JSON -> CASUAL JSON).
+ *
+ * @param {string} bufferType Casual buffer type (JSON, FIELDED, CSTRING, FLAT, X_OCTET)
+ * @param {string} syntaxFormat Document syntax (JSON, XML, TEXT, HEX)
+ * @param {string|number} [sizeKb] Byte size in kilobytes
+ * @returns {string} Formatted label, e.g. "FIELDED · JSON · 0.4 KB" or "CASUAL JSON · 0.4 KB"
+ */
+export function formatCasualBufferDescriptor(bufferType, syntaxFormat, sizeKb) {
+  let normBuffer = (bufferType || 'JSON').toUpperCase().trim();
+  if (normBuffer === 'FML') normBuffer = 'FIELDED';
+  const normFormat = (syntaxFormat || 'JSON').toUpperCase().trim();
+  const sizePart = sizeKb !== undefined && sizeKb !== null ? ` · ${sizeKb} KB` : '';
+
+  if (normBuffer === normFormat) {
+    return `CASUAL ${normBuffer}${sizePart}`;
+  }
+  return `${normBuffer} · ${normFormat}${sizePart}`;
+}
+
+/**
  * Validates payload syntax for JSON or XML.
  *
  * @param {string} text
