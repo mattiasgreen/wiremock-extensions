@@ -5,8 +5,13 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { normalizeJsonPayload } from './base64.js';
-import { formatPayload } from './highlighter.js';
-import { attachEmbeddedPayloadsBar } from './payload-lens.js';
+import { formatPayload, detectFormat } from './highlighter.js';
+import {
+  attachEmbeddedPayloadsBar,
+  pushViewportLayer,
+  detectCharset,
+  formatPayloadDescriptor
+} from './payload-lens.js';
 import {
   toggleStubState,
   deleteStubMapping,
@@ -703,6 +708,81 @@ export function openStubEditor(stub, clone = false) {
   if (btnForm) btnForm.classList.add('active');
   if (btnJson) btnJson.classList.remove('active');
   activeEditorMode = 'form';
+
+  // Update Response Body Top Pill & Maximize
+  const bodyEl = document.getElementById('editor-body');
+  const bodyTopPill = document.getElementById('editor-body-top-pill');
+  const updateBodyPill = () => {
+    if (bodyEl && bodyTopPill) {
+      const val = bodyEl.value || '';
+      const fmt = detectFormat(val).toUpperCase();
+      const charset = detectCharset(val);
+      const sizeKb = (new Blob([val]).size / 1024).toFixed(1);
+      bodyTopPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
+    }
+  };
+  if (bodyEl) {
+    bodyEl.oninput = updateBodyPill;
+    updateBodyPill();
+  }
+
+  const btnBodyMax = document.getElementById('btn-editor-body-maximize');
+  if (btnBodyMax) {
+    btnBodyMax.onclick = (e) => {
+      e.preventDefault();
+      const val = bodyEl ? bodyEl.value : '';
+      pushViewportLayer({
+        title: 'Stub Response Body',
+        text: val,
+        format: detectFormat(val),
+        context: 'stub',
+        mode: 'editor',
+        onSave: (savedText) => {
+          if (bodyEl) {
+            bodyEl.value = savedText;
+            updateBodyPill();
+            bodyEl.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      });
+    };
+  }
+
+  // Update Raw JSON Top Pill & Maximize
+  const rawTopPill = document.getElementById('editor-raw-top-pill');
+  const updateRawPill = () => {
+    if (rawTextarea && rawTopPill) {
+      const val = rawTextarea.value || '';
+      const sizeKb = (new Blob([val]).size / 1024).toFixed(1);
+      rawTopPill.textContent = formatPayloadDescriptor({ format: 'JSON', sizeKb });
+    }
+  };
+  if (rawTextarea) {
+    rawTextarea.oninput = updateRawPill;
+    updateRawPill();
+  }
+
+  const btnRawMax = document.getElementById('btn-editor-raw-maximize');
+  if (btnRawMax) {
+    btnRawMax.onclick = (e) => {
+      e.preventDefault();
+      const val = rawTextarea ? rawTextarea.value : '';
+      pushViewportLayer({
+        title: 'Stub Raw JSON',
+        text: val,
+        format: 'json',
+        context: 'stub',
+        mode: 'editor',
+        onSave: (savedText) => {
+          if (rawTextarea) {
+            rawTextarea.value = savedText;
+            updateRawPill();
+            rawTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      });
+    };
+  }
 
   modal.classList.remove('hidden');
 }

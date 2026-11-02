@@ -12,7 +12,8 @@ import {
   attachEmbeddedPayloadsBar,
   openPayloadLens,
   formatCasualBufferDescriptor,
-  detectCharset
+  detectCharset,
+  pushViewportLayer
 } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
@@ -272,6 +273,28 @@ export function updateCasualRequestPill() {
 
   topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, charset);
   topPill.title = elements.casualRequestPayload.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+
+  const btnMax = document.getElementById('btn-casual-request-maximize');
+  if (btnMax) {
+    btnMax.onclick = (e) => {
+      e.stopPropagation();
+      pushViewportLayer({
+        title: 'Casual Request Payload',
+        text: raw,
+        format: fmt,
+        charset,
+        context: 'tester-request',
+        mode: 'editor',
+        onSave: (savedText) => {
+          if (elements.casualRequestPayload) {
+            elements.casualRequestPayload.value = savedText;
+            updateCasualRequestPill();
+            elements.casualRequestPayload.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      });
+    };
+  }
 }
 
 export function fetchCasualConfig() {

@@ -16,6 +16,8 @@ import {
 } from './highlighter.js';
 import { decodeBase64ToUtf8, tryDecodeBase64Json } from './base64.js';
 
+export { detectFormat };
+
 const CHARSET_ALIAS_MAP = {
   'UTF8': 'UTF-8',
   'UTF-8': 'UTF-8',
@@ -1084,83 +1086,289 @@ export function attachEmbeddedPayloadsBar(textareaEl, barContainerEl, onTextarea
 }
 
 /**
- * State and Controller for the Stacked Nested Payload Lens Modal (#modal-payload-lens).
+ * State and Controller for the Fullscreen Maximized Viewport & Stacked Lens Layers (#modal-payload-lens).
  */
+export const viewportStack = [];
+
 let lensState = {
-  stack: [], // Array<{ text: string, descriptor?: object, title: string, format: string }>
+  stack: [], // Legacy compatibility reference
   onSaveRootCallback: null
 };
 
-export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null) {
-  const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
-  if (!modal) return;
+export function getActiveViewportLayer() {
+  return viewportStack.length > 0 ? viewportStack[viewportStack.length - 1] : null;
+}
 
-  const stack = ancestorFrames && ancestorFrames.length > 0
-    ? [
-        ...ancestorFrames,
-        {
-          text: initialNodeDescriptor.unescapedValue,
-          descriptor: initialNodeDescriptor,
-          title: initialNodeDescriptor.path,
-          format: initialNodeDescriptor.format
-        }
-      ]
-    : [
-        {
-          text: rootText,
-          descriptor: null,
-          title: 'Root Wire Document',
-          format: detectFormat(rootText)
-        },
-        {
-          text: initialNodeDescriptor.unescapedValue,
-          descriptor: initialNodeDescriptor,
-          title: initialNodeDescriptor.path,
-          format: initialNodeDescriptor.format
-        }
-      ];
-
-  lensState = {
-    stack,
-    onSaveRootCallback
+export function pushViewportLayer({
+  title = 'Payload Viewport',
+  text = '',
+  format = null,
+  charset = null,
+  context = 'stub',
+  mode = 'editor',
+  descriptor = null,
+  onSave = null
+}) {
+  const cleanFormat = format || detectFormat(text);
+  const cleanCharset = charset || detectCharset(text);
+  const layer = {
+    id: `vp_${Date.now()}_${viewportStack.length}`,
+    title,
+    initialText: text,
+    currentText: text,
+    isDirty: false,
+    format: cleanFormat,
+    charset: cleanCharset,
+    context,
+    mode,
+    descriptor,
+    onSave
   };
+  viewportStack.push(layer);
 
-  renderLensModal();
-  modal.classList.remove('hidden');
+  // Sync legacy lensState stack for backward compatibility with nested cascade functions
+  lensState.stack = viewportStack.map(f => ({
+    text: f.currentText,
+    descriptor: f.descriptor,
+    title: f.title,
+    format: f.format
+  }));
+
+  renderViewportModal();
+  return layer;
 }
 
-export function closePayloadLens() {
-  const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
+export function popViewportLayer() {
+  if (viewportStack.length === 0) return null;
+  const popped = viewportStack.pop();
+
+  lensState.stack = viewportStack.map(f => ({
+    text: f.currentText,
+    descriptor: f.descriptor,
+    title: f.title,
+    format: f.format
+  }));
+
+  if (viewportStack.length === 0) {
+    closeViewportModal();
+  } else {
+    renderViewportModal();
+  }
+  return popped;
+}
+
+export function setViewportContent(text) {
+  const active = getActiveViewportLayer();
+  if (!active) return;
+  active.currentText = text;
+  active.isDirty = active.currentText !== active.initialText;
+  updateViewportDirtyIndicator();
+}
+
+export function updateViewportDirtyIndicator() {
+  const active = getActiveViewportLayer();
+  const dirtyIndicator = document.getElementById('payload-lens-dirty-indicator');
+  if (dirtyIndicator) {
+    if (active && active.isDirty) {
+      dirtyIndicator.classList.remove('hidden');
+      dirtyIndicator.textContent = '● Unsaved Changes';
+    } else {
+      dirtyIndicator.classList.add('hidden');
+    }
+  }
+}
+
+export function requestCloseViewport() {
+  const active = getActiveViewportLayer();
+  if (!active) return { closed: true, needsPrompt: false };
+  if (active.isDirty) {
+    showUnsavedChangesPrompt();
+    return { closed: false, needsPrompt: true };
+  }
+  popViewportLayer();
+  return { closed: true, needsPrompt: false };
+}
+
+export function showUnsavedChangesPrompt() {
+  const modal = document.getElementById('modal-unsaved-changes');
+  if (modal) modal.classList.remove('hidden');
+}
+
+export function closeUnsavedChangesPrompt() {
+  const modal = document.getElementById('modal-unsaved-changes');
   if (modal) modal.classList.add('hidden');
-  lensState.stack = [];
 }
 
-function renderLensModal() {
-  const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
-  if (!modal || lensState.stack.length === 0) return;
+export function saveActiveViewport() {
+  const active = getActiveViewportLayer();
+  if (!active) return;
+  const savedText = active.currentText;
 
-  const currentFrame = lensState.stack[lensState.stack.length - 1];
+  if (typeof active.onSave === 'function') {
+    active.onSave(savedText, active.context);
+  }
+
+  // If this was a nested lens layer with a parent layer below it in the stack
+  if (viewportStack.length > 1) {
+    const parent = viewportStack[viewportStack.length - 2];
+    if (parent && active.descriptor) {
+      try {
+        const updatedParent = applyNestedPayloadEdit(
+          parent.currentText,
+          active.descriptor,
+          savedText,
+          { forceInvalid: false, minifyOnSave: false }
+        );
+        parent.currentText = updatedParent;
+        parent.isDirty = parent.currentText !== parent.initialText;
+      } catch (_) {}
+    }
+  }
+
+  closeUnsavedChangesPrompt();
+  popViewportLayer();
+}
+
+export function discardActiveViewport() {
+  const active = getActiveViewportLayer();
+  if (!active) return;
+  active.currentText = active.initialText;
+  active.isDirty = false;
+  closeUnsavedChangesPrompt();
+  popViewportLayer();
+}
+
+export function saveActiveViewportInPlace() {
+  const active = getActiveViewportLayer();
+  if (!active) return;
+  const savedText = active.currentText;
+  if (typeof active.onSave === 'function') {
+    active.onSave(savedText, active.context);
+  }
+  active.initialText = savedText;
+  active.isDirty = false;
+  updateViewportDirtyIndicator();
+
+  const toast = document.createElement('div');
+  toast.className = 'save-toast';
+  toast.textContent = '✓ Saved';
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 1500);
+}
+
+export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null) {
+  // If ancestorFrames exist, seed the stack with ancestor frames
+  if (viewportStack.length === 0) {
+    if (ancestorFrames && ancestorFrames.length > 0) {
+      for (const frame of ancestorFrames) {
+        pushViewportLayer({
+          title: frame.title || 'Root Document',
+          text: frame.text,
+          format: frame.format,
+          context: 'nested',
+          descriptor: frame.descriptor,
+          onSave: onSaveRootCallback
+        });
+      }
+    } else {
+      pushViewportLayer({
+        title: 'Root Wire Document',
+        text: rootText,
+        format: detectFormat(rootText),
+        context: 'nested',
+        descriptor: null,
+        onSave: onSaveRootCallback
+      });
+    }
+  }
+
+  // Push the target node descriptor layer
+  pushViewportLayer({
+    title: initialNodeDescriptor.path,
+    text: initialNodeDescriptor.unescapedValue,
+    format: initialNodeDescriptor.format,
+    charset: initialNodeDescriptor.charset,
+    context: 'nested',
+    descriptor: initialNodeDescriptor,
+    onSave: (savedText) => {
+      if (typeof onSaveRootCallback === 'function') {
+        const finalRoot = cascadeLensStackToRoot(
+          viewportStack.map(f => ({
+            text: f.currentText,
+            descriptor: f.descriptor,
+            title: f.title,
+            format: f.format
+          })),
+          savedText,
+          { forceInvalid: false, minifyOnSave: false }
+        );
+        onSaveRootCallback(finalRoot);
+      }
+    }
+  });
+}
+
+export function closePayloadLens(force = false) {
+  const active = getActiveViewportLayer();
+  if (!force && active && active.isDirty) {
+    showUnsavedChangesPrompt();
+    return;
+  }
+  while (viewportStack.length > 0) {
+    viewportStack.pop();
+  }
+  lensState.stack = [];
+  closeViewportModal();
+}
+
+function closeViewportModal() {
+  const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('fullscreen-viewport');
+  }
+}
+
+export function renderViewportModal() {
+  const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
+  if (!modal || viewportStack.length === 0) {
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('fullscreen-viewport');
+    }
+    return;
+  }
+
+  modal.classList.add('fullscreen-viewport');
+  modal.style.zIndex = String(1100 + (viewportStack.length - 1) * 10);
+  modal.classList.remove('hidden');
+
+  const currentFrame = getActiveViewportLayer();
   const breadcrumbsEl = document.getElementById('payload-lens-breadcrumbs');
   const editorEl = document.getElementById('payload-lens-editor');
-  const errorEl = document.getElementById('payload-lens-validation-error');
-  const forceApplyBtn = document.getElementById('btn-lens-force-apply');
-  const applyParentBtn = document.getElementById('btn-lens-apply-parent');
-  const saveRootBtn = document.getElementById('btn-lens-save-root');
+  const titleEl = document.getElementById('payload-lens-title');
   const nestedBarEl = document.getElementById('payload-lens-nested-bar');
+  const saveRootBtn = document.getElementById('btn-lens-save-root');
 
-  // Render Breadcrumbs
+  if (titleEl) {
+    titleEl.innerHTML = `<span>🔍</span> ${escapeHtml(currentFrame.title)}`;
+  }
+
+  // Render Stacked Breadcrumbs
   if (breadcrumbsEl) {
     let bHtml = '';
-    for (let i = 0; i < lensState.stack.length; i++) {
-      const frame = lensState.stack[i];
-      const isLast = i === lensState.stack.length - 1;
+    for (let i = 0; i < viewportStack.length; i++) {
+      const frame = viewportStack[i];
+      const isLast = i === viewportStack.length - 1;
+      const sizeKb = (new Blob([frame.currentText]).size / 1024).toFixed(1);
       const frameTag = formatPayloadDescriptor({
         format: frame.format,
         encoding: frame.descriptor ? frame.descriptor.encoding : null,
-        charset: frame.descriptor ? frame.descriptor.charset : detectCharset(frame.text)
+        charset: frame.charset,
+        sizeKb
       });
       bHtml += `
-        <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-stack-idx="${i}">
+        <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-stack-idx="${i}" role="button" tabindex="0">
           ${escapeHtml(frame.title)} <span class="format-tag">(${escapeHtml(frameTag)})</span>
         </span>
         ${!isLast ? '<span class="breadcrumb-sep">▸</span>' : ''}
@@ -1171,23 +1379,45 @@ function renderLensModal() {
     breadcrumbsEl.querySelectorAll('.breadcrumb-item:not(.active)').forEach(item => {
       item.addEventListener('click', () => {
         const targetIdx = parseInt(item.getAttribute('data-stack-idx'), 10);
-        lensState.stack = lensState.stack.slice(0, targetIdx + 1);
-        renderLensModal();
+        while (viewportStack.length - 1 > targetIdx) {
+          const res = requestCloseViewport();
+          if (res.needsPrompt) break;
+        }
       });
     });
   }
 
-  // Populate Editor with formatted content
+  // Populate Editor Textarea
   if (editorEl) {
-    editorEl.value = formatPayload(currentFrame.text);
+    editorEl.value = currentFrame.currentText;
+    validateCurrentEditor();
   }
 
-  // Validate initially
-  validateCurrentEditor();
+  updateViewportDirtyIndicator();
+
+  // Dynamic context save button label
+  if (saveRootBtn) {
+    if (currentFrame.context === 'journal') {
+      saveRootBtn.textContent = '📸 Snapshot as Stub';
+      saveRootBtn.title = 'Snapshot this modified journal response as an active mock stub';
+    } else if (currentFrame.context === 'tester-request') {
+      saveRootBtn.textContent = '💾 Save to Request';
+      saveRootBtn.title = 'Apply modifications back to HTTP/Casual Tester request payload';
+    } else if (currentFrame.context === 'tester-response') {
+      saveRootBtn.textContent = '📸 Snapshot as Stub';
+      saveRootBtn.title = 'Snapshot response payload into an active WireMock stub';
+    } else if (currentFrame.context === 'stub') {
+      saveRootBtn.textContent = '💾 Save Mapping';
+      saveRootBtn.title = 'Commit modifications to in-memory stub definition';
+    } else {
+      saveRootBtn.textContent = viewportStack.length > 1 ? '💾 Save All to Root' : '💾 Save';
+      saveRootBtn.title = 'Re-escape and apply changes';
+    }
+  }
 
   // Check for even deeper nested payloads inside this active frame
   if (nestedBarEl) {
-    const innerDiscovered = discoverEmbeddedPayloads(currentFrame.text);
+    const innerDiscovered = discoverEmbeddedPayloads(currentFrame.currentText);
     if (innerDiscovered.length > 0) {
       nestedBarEl.classList.remove('hidden');
       let innerHtml = '<div class="embedded-payloads-bar"><span class="bar-title">✨ Deep Nested:</span>';
@@ -1212,13 +1442,15 @@ function renderLensModal() {
           const idx = parseInt(btn.getAttribute('data-inner-idx'), 10);
           const nextNode = innerDiscovered[idx];
           if (nextNode) {
-            lensState.stack.push({
-              text: nextNode.unescapedValue,
-              descriptor: nextNode,
+            pushViewportLayer({
               title: nextNode.path,
-              format: nextNode.format
+              text: nextNode.unescapedValue,
+              format: nextNode.format,
+              charset: nextNode.charset,
+              context: 'nested',
+              descriptor: nextNode,
+              onSave: currentFrame.onSave
             });
-            renderLensModal();
           }
         });
       });
@@ -1226,11 +1458,6 @@ function renderLensModal() {
       nestedBarEl.classList.add('hidden');
       nestedBarEl.innerHTML = '';
     }
-  }
-
-  // Single Frame vs Stack Footer Buttons
-  if (applyParentBtn) {
-    applyParentBtn.style.display = lensState.stack.length > 2 ? 'inline-block' : 'none';
   }
 }
 
@@ -1279,38 +1506,84 @@ export function initPayloadLensModal() {
   const applyParentBtn = document.getElementById('btn-lens-apply-parent');
   const saveRootBtn = document.getElementById('btn-lens-save-root');
 
+  // Unsaved Changes Confirmation Modal Elements
+  const unsavedModal = document.getElementById('modal-unsaved-changes');
+  const btnUnsavedSave = document.getElementById('btn-unsaved-save');
+  const btnUnsavedDiscard = document.getElementById('btn-unsaved-discard');
+  const btnUnsavedCancel = document.getElementById('btn-unsaved-cancel');
+  const btnCloseUnsaved = document.getElementById('btn-close-unsaved-modal');
+
+  if (btnUnsavedSave) btnUnsavedSave.addEventListener('click', saveActiveViewport);
+  if (btnUnsavedDiscard) btnUnsavedDiscard.addEventListener('click', discardActiveViewport);
+  if (btnUnsavedCancel) btnUnsavedCancel.addEventListener('click', closeUnsavedChangesPrompt);
+  if (btnCloseUnsaved) btnCloseUnsaved.addEventListener('click', closeUnsavedChangesPrompt);
+
   if (editorEl) {
-    editorEl.addEventListener('input', validateCurrentEditor);
+    editorEl.addEventListener('input', () => {
+      setViewportContent(editorEl.value);
+      validateCurrentEditor();
+    });
   }
 
   if (closeBtn) closeBtn.addEventListener('click', closePayloadLens);
-  if (cancelBtn) cancelBtn.addEventListener('click', closePayloadLens);
+  if (cancelBtn) cancelBtn.addEventListener('click', requestCloseViewport);
+
+  // Global Keyboard Navigation (Escape to pop, Ctrl+S to save in place)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('keydown', (e) => {
+      if (unsavedModal && !unsavedModal.classList.contains('hidden')) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeUnsavedChangesPrompt();
+        } else if (e.key === 's' || e.key === 'S') {
+          e.preventDefault();
+          saveActiveViewport();
+        } else if (e.key === 'd' || e.key === 'D') {
+          e.preventDefault();
+          discardActiveViewport();
+        }
+        return;
+      }
+
+      if (viewportStack.length > 0) {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+          e.preventDefault();
+          saveActiveViewportInPlace();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          requestCloseViewport();
+        }
+      }
+    });
+  }
 
   if (prettifyBtn && editorEl) {
     prettifyBtn.addEventListener('click', () => {
       editorEl.value = formatPayload(editorEl.value);
+      setViewportContent(editorEl.value);
       validateCurrentEditor();
     });
   }
 
   if (minifyBtn && editorEl) {
     minifyBtn.addEventListener('click', () => {
-      const currentFrame = lensState.stack[lensState.stack.length - 1];
-      if (currentFrame.format === 'json') {
+      const currentFrame = getActiveViewportLayer();
+      if (currentFrame && currentFrame.format === 'json') {
         try {
           editorEl.value = JSON.stringify(JSON.parse(editorEl.value));
         } catch (_) {}
-      } else if (currentFrame.format === 'xml') {
+      } else if (currentFrame && currentFrame.format === 'xml') {
         editorEl.value = minifyXml(editorEl.value);
       }
+      setViewportContent(editorEl.value);
       validateCurrentEditor();
     });
   }
 
   if (copyRawBtn && editorEl) {
     copyRawBtn.addEventListener('click', () => {
-      const currentFrame = lensState.stack[lensState.stack.length - 1];
-      const raw = currentFrame.descriptor ? currentFrame.descriptor.rawValue : editorEl.value;
+      const currentFrame = getActiveViewportLayer();
+      const raw = currentFrame && currentFrame.descriptor ? currentFrame.descriptor.rawValue : editorEl.value;
       navigator.clipboard.writeText(raw).then(() => {
         copyRawBtn.textContent = '✓ Copied';
         setTimeout(() => { copyRawBtn.textContent = '📋 Copy Raw'; }, 1500);
@@ -1329,19 +1602,17 @@ export function initPayloadLensModal() {
   }
 
   function handleSave(force = false) {
-    if (!editorEl || lensState.stack.length === 0) return;
+    if (!editorEl || viewportStack.length === 0) return;
     if (!force && !validateCurrentEditor()) return;
 
-    const minifyOnSave = minifyOnSaveChk ? minifyOnSaveChk.checked : false;
-    const finalRoot = cascadeLensStackToRoot(lensState.stack, editorEl.value, {
-      forceInvalid: force,
-      minifyOnSave
-    });
-
-    if (lensState.onSaveRootCallback) {
-      lensState.onSaveRootCallback(finalRoot);
+    const active = getActiveViewportLayer();
+    if (active) {
+      if (typeof active.onSave === 'function') {
+        active.onSave(editorEl.value);
+      }
+      active.isDirty = false;
     }
-    closePayloadLens();
+    closePayloadLens(true);
   }
 
   if (saveRootBtn) {
@@ -1354,18 +1625,21 @@ export function initPayloadLensModal() {
 
   if (applyParentBtn) {
     applyParentBtn.addEventListener('click', () => {
-      if (!editorEl || lensState.stack.length < 2) return;
+      if (!editorEl || viewportStack.length < 2) return;
       if (!validateCurrentEditor()) return;
 
       const minifyOnSave = minifyOnSaveChk ? minifyOnSaveChk.checked : false;
-      const childFrame = lensState.stack.pop();
-      const parentFrame = lensState.stack[lensState.stack.length - 1];
-      const updatedParent = applyNestedPayloadEdit(parentFrame.text, childFrame.descriptor, editorEl.value, {
-        forceInvalid: false,
-        minifyOnSave
-      });
-      parentFrame.text = updatedParent;
-      renderLensModal();
+      const childFrame = viewportStack.pop();
+      const parentFrame = getActiveViewportLayer();
+      if (parentFrame && childFrame && childFrame.descriptor) {
+        const updatedParent = applyNestedPayloadEdit(parentFrame.currentText, childFrame.descriptor, editorEl.value, {
+          forceInvalid: false,
+          minifyOnSave
+        });
+        parentFrame.currentText = updatedParent;
+        parentFrame.isDirty = true;
+      }
+      renderViewportModal();
     });
   }
 }

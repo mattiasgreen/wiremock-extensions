@@ -11,8 +11,10 @@ import {
   attachEmbeddedPayloadsBar,
   openPayloadLens,
   detectCharset,
-  formatPayloadDescriptor
+  formatPayloadDescriptor,
+  pushViewportLayer
 } from './payload-lens.js';
+import { openStubEditor } from './lifecycle.js';
 import { setRoute, toBase64 } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
 import { executeTesterRequest } from './api.js';
@@ -318,6 +320,38 @@ export function renderTesterResponse(bodyText) {
       const charset = detectCharset(bodyText, state.lastResponseHeaders);
       topPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
       topPill.title = elements.testerResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+
+      const btnMax = document.getElementById('btn-tester-response-maximize');
+      if (btnMax) {
+        btnMax.onclick = (e) => {
+          e.stopPropagation();
+          pushViewportLayer({
+            title: 'HTTP Tester Response',
+            text: bodyText,
+            format: fmt,
+            charset,
+            context: 'tester-response',
+            mode: 'viewer',
+            onSave: (savedText) => {
+              const reqMethod = elements.testerMethod ? elements.testerMethod.value : 'GET';
+              const reqUrl = elements.testerUrl ? elements.testerUrl.value : '/';
+              const syntheticStub = {
+                name: `${reqMethod} ${reqUrl}`,
+                request: {
+                  method: reqMethod,
+                  url: reqUrl
+                },
+                response: {
+                  status: parseInt(elements.testerResponseStatus?.textContent || '200', 10) || 200,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: savedText
+                }
+              };
+              openStubEditor(syntheticStub, false);
+            }
+          });
+        };
+      }
     } else {
       topPillGroup.style.display = 'none';
     }

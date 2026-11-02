@@ -48,8 +48,16 @@ export function detectFormat(input) {
 }
 
 /**
+ * Maximum character length of a payload to render with full tokenized HTML spans.
+ * Payloads exceeding this threshold (~20 KB / ~500 lines) are escaped as plain text
+ * to protect browser responsiveness, prevent DOM node explosion, and avoid UI thread freezes.
+ */
+export const MAX_HIGHLIGHT_PAYLOAD_CHARS = 20 * 1024;
+
+/**
  * High-speed JSON syntax highlighter using regex tokenization.
  * Produces color-coded HTML spans.
+ * Payloads larger than MAX_HIGHLIGHT_PAYLOAD_CHARS are safely escaped without span bloat.
  *
  * @param {any} input
  * @returns {string}
@@ -84,6 +92,10 @@ export function highlightJson(input) {
   }
 
   if (!isJson) {
+    return escapeHtml(jsonStr);
+  }
+
+  if (jsonStr.length > MAX_HIGHLIGHT_PAYLOAD_CHARS) {
     return escapeHtml(jsonStr);
   }
 
@@ -202,6 +214,9 @@ export function minifyXml(xmlStr) {
 export function highlightXml(xmlStr) {
   if (!xmlStr || typeof xmlStr !== 'string') return '';
   const formatted = formatXml(xmlStr);
+  if (formatted.length > MAX_HIGHLIGHT_PAYLOAD_CHARS) {
+    return escapeHtml(formatted);
+  }
 
   return formatted.replace(
     /(<!\[CDATA\[[\s\S]*?\]\]>)|(<!--[\s\S]*?-->)|(<\?[^?]*\?>)|(<\/?[a-zA-Z0-9_:-]+)|(\/?>)|([a-zA-Z0-9_:-]+)=("[^"]*"|'[^']*')/g,

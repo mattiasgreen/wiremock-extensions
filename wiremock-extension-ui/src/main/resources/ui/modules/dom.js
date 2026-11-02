@@ -318,7 +318,19 @@ export const elements = {
   casualPayloadEmbeddedBar: document.getElementById('casual-payload-embedded-bar'),
   editorBodyEmbeddedBar: document.getElementById('editor-body-embedded-bar'),
   editorPatternEmbeddedBar: document.getElementById('editor-pattern-embedded-bar'),
-  editorRawEmbeddedBar: document.getElementById('editor-raw-embedded-bar')
+  editorRawEmbeddedBar: document.getElementById('editor-raw-embedded-bar'),
+
+  // Fullscreen Viewport & Unsaved Changes Modal Elements
+  payloadLensDirtyIndicator: document.getElementById('payload-lens-dirty-indicator'),
+  modalUnsavedChanges: document.getElementById('modal-unsaved-changes'),
+  btnUnsavedSave: document.getElementById('btn-unsaved-save'),
+  btnUnsavedDiscard: document.getElementById('btn-unsaved-discard'),
+  btnUnsavedCancel: document.getElementById('btn-unsaved-cancel'),
+  btnStubMaximize: document.getElementById('btn-stub-maximize'),
+  btnEditorBodyMaximize: document.getElementById('btn-editor-body-maximize'),
+  btnEditorRawMaximize: document.getElementById('btn-editor-raw-maximize'),
+  btnTesterResponseMaximize: document.getElementById('btn-tester-response-maximize'),
+  btnCasualRequestMaximize: document.getElementById('btn-casual-request-maximize')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */
