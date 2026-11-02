@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.13.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.12.0...v1.13.0) (2026-11-02)
+
+
+### Features
+
+* **bundle:** provide fat-jar gradle task for standalone wiremock and extensions ([#74](https://github.com/mattiasgreen/wiremock-extensions/issues/74)) ([265d712](https://github.com/mattiasgreen/wiremock-extensions/commit/265d712ea5fc7d89e38b9843fd5b5f95e0c0dffc))
+* **ui:** canonical payload surface, fullscreen maximized viewport, and contextual save lifecycle ([#76](https://github.com/mattiasgreen/wiremock-extensions/issues/76)) ([8891dae](https://github.com/mattiasgreen/wiremock-extensions/commit/8891daee077823d29f0102544d37fe45e7a3b619))
+
 ## [1.12.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.11.0...v1.12.0) (2026-11-01)
 
 
