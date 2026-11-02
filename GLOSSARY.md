@@ -84,6 +84,10 @@ _Avoid_: modal history, lens queue, popup stack
 The strategy module dispatching unsaved edits in a Canonical Payload Surface to their domain destination based on origin context (updating in-memory stubs, prompting to snapshot historical journal entries as stubs, updating tester request editors, or re-escaping child nodes back into parent container envelopes).
 _Avoid_: save callback, custom save switch, submit router
 
+**UI Performance Quality Gate**:
+An automated outer loop verification seam in headless Chromium that instruments the Chrome DevTools Protocol (`Performance`, `Profiler`) and in-page `PerformanceObserver` to enforce strict client-side performance budgets: zero Long Tasks (>50ms) during user interactions, bounded DOM element generation, and isolated CSS layout containment.
+_Avoid_: UI benchmark, profiler test, speed check
+
 ### Observability & Telemetry
 
 **Telemetry Engine**:

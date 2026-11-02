@@ -549,6 +549,7 @@ body {
   overflow: auto;
   color: #e2e8f0;
   line-height: 1.4;
+  contain: content;
 }
 
 /* Journal Table & Controls */
@@ -819,6 +820,7 @@ body {
   flex: 1;
   min-height: 220px;
   max-height: calc(75vh - 80px);
+  contain: content;
 }
 
 .text-center {
