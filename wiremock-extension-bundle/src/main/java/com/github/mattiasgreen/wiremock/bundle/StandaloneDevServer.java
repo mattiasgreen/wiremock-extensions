@@ -15,6 +15,10 @@ public class StandaloneDevServer {
     public static final int DEFAULT_NETEM_PORT = 8081;
 
     public static void main(String[] args) {
+        if (hasHelpFlag(args)) {
+            printHelp();
+            return;
+        }
         int port = parseMainPort(args, 8080);
         WireMockServer server = startServer(port);
 
@@ -43,6 +47,35 @@ public class StandaloneDevServer {
         System.out.println("👉 Admin API:           http://localhost:" + server.port() + "/__admin/mappings");
         System.out.println("=================================================================");
         System.out.println("Press Ctrl+C to terminate the server.");
+    }
+
+    public static boolean hasHelpFlag(String[] args) {
+        if (args == null) {
+            return false;
+        }
+        for (String arg : args) {
+            if ("--help".equalsIgnoreCase(arg) || "-help".equalsIgnoreCase(arg) || "-h".equalsIgnoreCase(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static void printHelp() {
+        System.out.println("WireMock Standalone with All Extensions");
+        System.out.println("Usage: java -jar wiremock-extension-bundle-standalone.jar [options]");
+        System.out.println();
+        System.out.println("Options:");
+        System.out.println("  --port <port>             HTTP port to bind (default: 8080)");
+        System.out.println("  --help, -h                Show this help message");
+        System.out.println();
+        System.out.println("Environment Variables:");
+        System.out.println("  WIREMOCK_NETEM_PORT       Dedicated Layer 4 TCP proxy port (default: 8081)");
+        System.out.println("  WIREMOCK_CASUAL_PORT      Dedicated TCP port for Casual / XATMI gateway (default: 7772)");
+        System.out.println("  WIREMOCK_CASUAL_ENABLED   Enable/disable Casual TCP gateway (default: true)");
+        System.out.println();
+        System.out.println("For standard WireMock CLI options, run with WireMock runner:");
+        System.out.println("  java -cp wiremock-*-standalone.jar wiremock.Run --help");
     }
 
     public static int parseMainPort(String[] args, int defaultPort) {

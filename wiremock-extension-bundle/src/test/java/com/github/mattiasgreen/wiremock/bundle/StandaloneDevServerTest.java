@@ -72,4 +72,17 @@ class StandaloneDevServerTest {
             System.clearProperty(StandaloneDevServer.PROP_NETEM_PORT);
         }
     }
+
+    @Test
+    void testHasHelpFlag() {
+        assertThat(StandaloneDevServer.hasHelpFlag(null)).isFalse();
+        assertThat(StandaloneDevServer.hasHelpFlag(new String[0])).isFalse();
+        assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"--port", "8080"}))
+                .isFalse();
+        assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"--help"})).isTrue();
+        assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"-help"})).isTrue();
+        assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"-h"})).isTrue();
+        assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"--port", "8080", "--help"}))
+                .isTrue();
+    }
 }

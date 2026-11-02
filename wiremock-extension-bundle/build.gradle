@@ -1,4 +1,5 @@
 apply plugin: 'application'
+apply plugin: 'com.gradleup.shadow'
 
 configurations {
     standaloneRuntime {
@@ -42,4 +43,29 @@ tasks.register('runUpstream', JavaExec) {
     description = 'Runs simulated upstream mock service on port 8089 for live proxy testing'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.UpstreamMockServer'
+}
+
+shadowJar {
+    archiveClassifier.set('standalone')
+    mergeServiceFiles()
+    manifest {
+        attributes(
+            'Main-Class': 'com.github.tomakehurst.wiremock.standalone.WireMockServerRunner',
+            'Implementation-Title': 'WireMock Standalone with Extensions',
+            'Implementation-Version': project.version
+        )
+    }
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+}
+
+tasks.register('fatJar') {
+    group = 'build'
+    description = 'Builds the standalone executable fat-jar containing WireMock and all extensions'
+    dependsOn tasks.named('shadowJar')
+}
+
+tasks.named('test') {
+    dependsOn tasks.named('shadowJar')
 }

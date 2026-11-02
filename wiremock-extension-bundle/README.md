@@ -27,6 +27,54 @@ It re-exports all extensions under a single dependency coordinate and includes a
 
 ## Usage
 
+### Standalone Executable Fat-JAR
+
+Build a self-contained, executable fat-jar combining WireMock Standalone and all extensions:
+
+```bash
+# Build the standalone fat-jar
+./gradlew fatJar
+# Or specifically for this module
+./gradlew :wiremock-extension-bundle:fatJar
+```
+
+Artifact output: `wiremock-extension-bundle/build/libs/wiremock-extension-bundle-<version>-standalone.jar`
+
+#### Launch As-Is
+
+Run directly using standard `java -jar`:
+
+```bash
+java -jar wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar --port 8080
+```
+
+To run standard WireMock CLI options with `wiremock.Run`:
+
+```bash
+java -cp wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar wiremock.Run --port 8080 --verbose
+```
+
+#### Run in Docker
+
+Build and run using the root `Dockerfile`:
+
+```bash
+# 1. Build the fat-jar
+./gradlew fatJar
+
+# 2. Build the Docker image
+docker build -t wiremock-suite .
+
+# 3. Run container exposing HTTP (8080), NetEm (8081), and Casual (7772)
+docker run -it --rm -p 8080:8080 -p 8081:8081 -p 7772:7772 wiremock-suite
+
+# 4. Or mount local mappings and __files volumes
+docker run -it --rm -p 8080:8080 \
+  -v $(pwd)/mappings:/home/wiremock/mappings \
+  -v $(pwd)/__files:/home/wiremock/__files \
+  wiremock-suite --port 8080 --verbose
+```
+
 ### Dependency Coordinates
 
 **Gradle**:
