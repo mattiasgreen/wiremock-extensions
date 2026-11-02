@@ -11,7 +11,8 @@ import {
   openPayloadLens,
   formatCasualBufferDescriptor,
   formatPayloadDescriptor,
-  detectCharset
+  detectCharset,
+  pushViewportLayer
 } from './payload-lens.js';
 import {
   decodeBase64Payload,
@@ -274,6 +275,7 @@ function buildRowHtml(req) {
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqBadgeLabel)}</span>
                         <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="req" data-id="${req.id}" title="Open full Request Body in Focused Lens">🔍 Lens</button>
+                        <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="req" data-id="${req.id}" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
                       </span>
                     ` : ''}
                   </div>
@@ -324,6 +326,7 @@ function buildRowHtml(req) {
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resBadgeLabel)}</span>
                         <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="res" data-id="${req.id}" title="Open full Response Body in Focused Lens">🔍 Lens</button>
+                        <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="res" data-id="${req.id}" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
                       </span>
                     ` : ''}
                   </div>
@@ -481,7 +484,7 @@ function setupEventDelegation() {
       return;
     }
 
-    const topLensBtn = e.target.closest('.btn-journal-top-lens');
+    const topLensBtn = e.target.closest('.btn-journal-top-lens') || e.target.closest('.btn-journal-maximize');
     if (topLensBtn) {
       e.stopPropagation();
       const type = topLensBtn.getAttribute('data-type');
@@ -493,13 +496,33 @@ function setupEventDelegation() {
           : ((req.response && (req.response.body || req.response.base64Body)) || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '');
         if (bodyRaw) {
           const fmt = detectFormat(bodyRaw);
-          openPayloadLens(bodyRaw, {
-            path: '$',
-            key: type === 'req' ? 'requestBody' : 'responseBody',
+          pushViewportLayer({
+            title: `Journal ${type === 'req' ? 'Request' : 'Response'}: ${(req.request && req.request.url) || reqId}`,
+            text: bodyRaw,
             format: fmt,
-            encoding: 'STRING',
-            unescapedValue: bodyRaw
-          }, null);
+            context: 'journal',
+            mode: 'viewer',
+            onSave: (savedText) => {
+              const reqMethod = (req.request && req.request.method) || 'GET';
+              const reqUrl = (req.request && req.request.url) || '/';
+              const rawStatus = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
+              const status = rawStatus === 404 ? 200 : rawStatus;
+              const syntheticStub = {
+                name: `${reqMethod} ${reqUrl}`,
+                request: {
+                  method: reqMethod,
+                  url: reqUrl,
+                  bodyPatterns: (type === 'req' && savedText) ? [{ equalToJson: savedText }] : undefined
+                },
+                response: {
+                  status,
+                  headers: { 'Content-Type': 'application/json' },
+                  body: type === 'res' ? savedText : ((req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '{\n  "status": "ok"\n}')
+                }
+              };
+              openStubEditor(syntheticStub, false);
+            }
+          });
         }
       }
       return;

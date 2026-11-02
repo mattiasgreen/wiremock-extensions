@@ -241,6 +241,7 @@
                 <span class="preview-pill-group" id="stub-top-pill-group">
                   <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
                   <button type="button" id="btn-stub-open-lens-top" class="btn-lens-open-pill" title="Open full Stub in Focused Lens">🔍 Lens</button>
+                  <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
                 </span>
               </div>
               <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
@@ -471,6 +472,7 @@
                           <span class="preview-pill-group" id="tester-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="tester-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
                             <button type="button" id="btn-tester-open-lens-top" class="btn-lens-open-pill" title="Open Response Body in Focused Lens">🔍 Lens</button>
+                            <button type="button" id="btn-tester-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
                       </div>
@@ -566,6 +568,7 @@
                         <span class="preview-pill-group" id="casual-request-top-pill-group">
                           <span class="preview-pill-badge" id="casual-request-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
                           <button type="button" id="btn-casual-request-open-lens-top" class="btn-lens-open-pill" title="Open Request Payload in Focused Lens">🔍 Lens</button>
+                          <button type="button" id="btn-casual-request-maximize" class="btn-payload-maximize" title="Maximize Request Payload in Fullscreen Viewport">⛶ Maximize</button>
                         </span>
                       </div>
                       <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
@@ -1031,8 +1034,16 @@
 
           <div class="form-group" style="margin-top: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label for="editor-body">Response Body:</label>
-              <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="editor-body">Response Body:</label>
+                <span class="preview-pill-group" id="editor-body-top-pill-group" style="display: inline-flex;">
+                  <span class="preview-pill-badge" id="editor-body-top-pill" role="button" tabindex="0">JSON</span>
+                </span>
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
+                <button type="button" id="btn-editor-body-maximize" class="btn-payload-maximize" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
+              </div>
             </div>
             <textarea id="editor-body" class="code-input" rows="7" placeholder="{ &quot;key&quot;: &quot;value&quot; }"></textarea>
             <div id="editor-body-embedded-bar" data-testid="editor-body-embedded-bar" class="hidden"></div>
@@ -1043,8 +1054,16 @@
           <div id="editor-json-panel" class="hidden" data-testid="editor-json-panel">
             <div class="form-group">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <label for="editor-raw-json"><strong>Raw WireMock Stub JSON:</strong> <span class="muted-text">Directly edit full stub mapping JSON</span></label>
-                <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny" data-testid="btn-editor-raw-format-json">Format JSON</button>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <label for="editor-raw-json"><strong>Raw WireMock Stub JSON:</strong> <span class="muted-text">Directly edit full stub mapping JSON</span></label>
+                  <span class="preview-pill-group" id="editor-raw-top-pill-group" style="display: inline-flex;">
+                    <span class="preview-pill-badge" id="editor-raw-top-pill">JSON</span>
+                  </span>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny" data-testid="btn-editor-raw-format-json">Format JSON</button>
+                  <button type="button" id="btn-editor-raw-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
+                </div>
               </div>
               <textarea id="editor-raw-json" class="code-input" rows="20" style="font-family: monospace; font-size: 0.85rem; width: 100%; min-height: 380px;" placeholder="{ &quot;request&quot;: { ... }, &quot;response&quot;: { ... } }" data-testid="editor-raw-json"></textarea>
               <div id="editor-raw-embedded-bar" data-testid="editor-raw-embedded-bar" class="hidden"></div>
@@ -1328,16 +1347,19 @@
     </div>
   </div>
 
-  <!-- Modal: Nested Payload Lens (Round-trip editor for embedded JSON/XML/Base64) -->
+  <!-- Modal: Nested Payload Lens & Fullscreen Maximized Viewport -->
   <div id="modal-payload-lens" class="modal-backdrop hidden" data-testid="modal-payload-lens">
     <div class="modal modal-large">
       <div class="modal-header">
         <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h2 id="payload-lens-title" style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-              <span>🔍</span> Nested Payload Lens
-            </h2>
-            <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Lens">&times;</button>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h2 id="payload-lens-title" style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                <span>🔍</span> Payload Lens
+              </h2>
+              <span id="payload-lens-dirty-indicator" class="viewport-dirty-badge hidden" data-testid="payload-lens-dirty-indicator">● Unsaved Changes</span>
+            </div>
+            <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Viewport (Esc)">&times;</button>
           </div>
           <!-- Stacked Breadcrumb Trail -->
           <div id="payload-lens-breadcrumbs" data-testid="payload-lens-breadcrumbs" class="payload-lens-breadcrumbs">
@@ -1383,6 +1405,29 @@
           <button type="button" id="btn-lens-apply-parent" data-testid="btn-lens-apply-parent" class="btn btn-secondary" style="display: none;" title="Apply changes to immediate parent payload layer">Apply to Parent Layer</button>
           <button type="button" id="btn-lens-save-root" data-testid="btn-lens-save-root" class="btn btn-primary" title="Re-escape and cascade changes all the way to root wire payload">💾 Save All to Root</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Unsaved Changes Confirmation Dialog -->
+  <div id="modal-unsaved-changes" class="modal-backdrop hidden" data-testid="modal-unsaved-changes" style="z-index: 1000;">
+    <div class="modal modal-dialog-confirm" style="max-width: 440px; margin: auto;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">⚠️</span>
+          <h3>Unsaved Changes</h3>
+        </div>
+        <button id="btn-close-unsaved-modal" class="btn btn-tiny modal-close-btn" title="Cancel">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px;">
+        <p id="unsaved-changes-message" style="margin: 0; font-size: 0.9rem; color: var(--text-color);">
+          You have unsaved changes. Do you want to save them before closing?
+        </p>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-unsaved-cancel" class="btn btn-secondary" data-testid="btn-unsaved-cancel">Cancel</button>
+        <button id="btn-unsaved-discard" class="btn btn-danger" data-testid="btn-unsaved-discard">Discard Changes</button>
+        <button id="btn-unsaved-save" class="btn btn-primary" data-testid="btn-unsaved-save">Save Changes</button>
       </div>
     </div>
   </div>

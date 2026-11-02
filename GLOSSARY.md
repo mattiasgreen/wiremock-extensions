@@ -68,6 +68,22 @@ _Avoid_: helper bar, payload banner, editor chips
 The structural metadata recorded when unnesting an inner payload (`JSON_STRING`, `XML_ENTITY_TEXT`, `XML_CDATA`, `BASE64_UTF8`, `BASE64`, plus detected character encoding such as `UTF-8`, `ISO-8859-1`, or `KOI8-R`, and original compactness), governing how an edited child payload is re-encoded into its parent layer during round-tripping.
 _Avoid_: escape mode, encoding flag, wrapper type
 
+**Canonical Payload Surface**:
+The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and HTTP/Casual Testers), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
+_Avoid_: code box, custom textarea, raw editor pane
+
+**Fullscreen Maximized Viewport**:
+A full-window (100vw × 100vh) overlay viewport wrapping a Canonical Payload Surface with breadcrumb navigation, format descriptors, and action toolbars, providing distraction-free inspection and editing of root documents or unnested child payloads.
+_Avoid_: big modal, fullscreen dialog, zoom popup
+
+**Viewport Navigation Stack**:
+The LIFO (last-in, first-out) state container managing layered Fullscreen Maximized Viewports when drilling into nested payloads, where each nested lens stacks above its parent and pressing `Escape` pops only the topmost layer.
+_Avoid_: modal history, lens queue, popup stack
+
+**Contextual Save Handler**:
+The strategy module dispatching unsaved edits in a Canonical Payload Surface to their domain destination based on origin context (updating in-memory stubs, prompting to snapshot historical journal entries as stubs, updating tester request editors, or re-escaping child nodes back into parent container envelopes).
+_Avoid_: save callback, custom save switch, submit router
+
 ### Observability & Telemetry
 
 **Telemetry Engine**:

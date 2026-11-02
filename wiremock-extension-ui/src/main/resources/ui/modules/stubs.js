@@ -11,7 +11,8 @@ import {
   openPayloadLens,
   formatCasualBufferDescriptor,
   formatPayloadDescriptor,
-  detectCharset
+  detectCharset,
+  pushViewportLayer
 } from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
@@ -514,6 +515,27 @@ export function selectStub(stub, updateRoute = true) {
       topPill.textContent = formatPayloadDescriptor({ format: bodyFormat, charset: stubCharset, sizeKb });
     }
     topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+
+    const btnStubMaximize = document.getElementById('btn-stub-maximize');
+    if (btnStubMaximize) {
+      btnStubMaximize.onclick = (e) => {
+        e.stopPropagation();
+        pushViewportLayer({
+          title: `Stub: ${stub.name || stub.id}`,
+          text: rawStubJson,
+          format: 'json',
+          context: 'stub',
+          mode: 'editor',
+          onSave: (savedText) => {
+            try {
+              const parsed = JSON.parse(savedText);
+              Object.assign(stub, parsed);
+              renderStubDetails(stub, false);
+            } catch (_) {}
+          }
+        });
+      };
+    }
   }
 
   if (updateRoute) {

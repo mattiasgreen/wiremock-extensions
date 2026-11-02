@@ -2119,4 +2119,118 @@ public class UiModuleUnitTest {
         assertThat((String) result.get("testerResPillText")).contains("XML · KOI8-R");
         assertThat(result.get("settleHasIsoProlog")).isEqualTo(true);
     }
+
+    @Test
+    @DisplayName(
+            "Canonical Payload Surface & Viewport Navigation Stack: LIFO stacking, dirty detection, and contextual save")
+    void testViewportNavigationStackAndDirtyPrompt() {
+        String script =
+                """
+            async () => {
+                const {
+                    pushViewportLayer,
+                    popViewportLayer,
+                    getActiveViewportLayer,
+                    setViewportContent,
+                    requestCloseViewport,
+                    saveActiveViewport,
+                    discardActiveViewport,
+                    viewportStack
+                } = await import('./modules/payload-lens.js');
+
+                // Clear any prior stack
+                while (viewportStack.length > 0) {
+                    popViewportLayer();
+                }
+
+                let rootSavedValue = null;
+                // 1. Push root viewport layer (e.g. Stub mapping)
+                const rootJson = '{\\n  "name": "Original Stub"\\n}';
+                pushViewportLayer({
+                    title: 'Stub: Original Stub',
+                    text: rootJson,
+                    format: 'json',
+                    context: 'stub',
+                    onSave: (savedText) => {
+                        rootSavedValue = savedText;
+                    }
+                });
+
+                const initialDepth = viewportStack.length;
+                const rootLayer = getActiveViewportLayer();
+                const initialRootClean = !rootLayer.isDirty;
+
+                // 2. Modify root layer
+                setViewportContent('{\\n  "name": "Modified Stub"\\n}');
+                const rootDirtyAfterEdit = rootLayer.isDirty;
+
+                // 3. Push child viewport layer (Nested payload)
+                const childXml = '<msg>Original XML</msg>';
+                let childSavedValue = null;
+                pushViewportLayer({
+                    title: '$.payload.body',
+                    text: childXml,
+                    format: 'xml',
+                    context: 'nested',
+                    onSave: (savedText) => {
+                        childSavedValue = savedText;
+                    }
+                });
+
+                const stackedDepth = viewportStack.length;
+                const childLayer = getActiveViewportLayer();
+
+                // 4. Modify child layer
+                setViewportContent('<msg>Edited XML</msg>');
+                const childDirty = childLayer.isDirty;
+
+                // 5. Test request close on dirty child: should require prompt
+                const closeChildAttempt = requestCloseViewport();
+                const childNeedsPrompt = closeChildAttempt.needsPrompt;
+
+                // 6. Confirm Save on child
+                saveActiveViewport();
+                const childSaveCalled = childSavedValue === '<msg>Edited XML</msg>';
+                const depthAfterChildSave = viewportStack.length;
+
+                // 7. Test request close on dirty root
+                const closeRootAttempt = requestCloseViewport();
+                const rootNeedsPrompt = closeRootAttempt.needsPrompt;
+
+                // 8. Confirm Save on root
+                saveActiveViewport();
+                const rootSaveCalled = rootSavedValue === '{\\n  "name": "Modified Stub"\\n}';
+                const finalDepth = viewportStack.length;
+
+                return {
+                    initialDepth,
+                    initialRootClean,
+                    rootDirtyAfterEdit,
+                    stackedDepth,
+                    childDirty,
+                    childNeedsPrompt,
+                    childSaveCalled,
+                    depthAfterChildSave,
+                    rootNeedsPrompt,
+                    rootSaveCalled,
+                    finalDepth
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("initialDepth")).isEqualTo(1);
+        assertThat(result.get("initialRootClean")).isEqualTo(true);
+        assertThat(result.get("rootDirtyAfterEdit")).isEqualTo(true);
+        assertThat(result.get("stackedDepth")).isEqualTo(2);
+        assertThat(result.get("childDirty")).isEqualTo(true);
+        assertThat(result.get("childNeedsPrompt")).isEqualTo(true);
+        assertThat(result.get("childSaveCalled")).isEqualTo(true);
+        assertThat(result.get("depthAfterChildSave")).isEqualTo(1);
+        assertThat(result.get("rootNeedsPrompt")).isEqualTo(true);
+        assertThat(result.get("rootSaveCalled")).isEqualTo(true);
+        assertThat(result.get("finalDepth")).isEqualTo(0);
+    }
 }
