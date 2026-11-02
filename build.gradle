@@ -5,6 +5,7 @@ plugins {
     id 'com.diffplug.spotless' version '7.0.2'
     alias(libs.plugins.spotbugs) apply false
     id 'com.gradleup.nmcp.aggregation' version '1.6.2'
+    id 'com.gradleup.shadow' version '8.3.6' apply false
 }
 
 allprojects {
@@ -216,4 +217,10 @@ tasks.register('launchServer', JavaExec) {
     args = project.hasProperty('args') ?
         project.property('args').toString().split('\\s+') as List :
         ['--port', '8080', '--verbose']
+}
+
+tasks.register('fatJar') {
+    group = 'build'
+    description = 'Builds the standalone executable fat-jar containing WireMock and all extensions'
+    dependsOn ':wiremock-extension-bundle:shadowJar'
 }

@@ -65,6 +65,9 @@ Prerequisites: Java 21+ and Gradle (wrapper included).
 ./gradlew :wiremock-extension-ui:build
 ./gradlew :wiremock-extension-bundle:build
 
+# Build the all-in-one standalone executable fat-jar
+./gradlew fatJar
+
 # Run all tests across the suite
 ./gradlew test
 ```
@@ -141,9 +144,51 @@ Now build normally:
 
 ## Usage Options
 
-### 1. All-in-One Bundle
+### 1. Standalone Executable Fat-JAR & Docker
 
-If you want all extensions together, add `wiremock-extension-bundle` to your project or classpath:
+Build a self-contained executable JAR combining WireMock Standalone, all extensions, and auto-registration:
+
+```bash
+# Build fat-jar
+./gradlew fatJar
+```
+
+#### Launch Directly (As-Is)
+
+```bash
+java -jar wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar --port 8080
+```
+
+Or run standard WireMock CLI options via `wiremock.Run`:
+
+```bash
+java -cp wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar wiremock.Run --port 8080 --verbose
+```
+
+#### Launch with Docker
+
+Build and run with the included root `Dockerfile`:
+
+```bash
+# 1. Build the fat jar
+./gradlew fatJar
+
+# 2. Build image
+docker build -t wiremock-suite .
+
+# 3. Run container (HTTP 8080, NetEm 8081, Casual 7772)
+docker run -it --rm -p 8080:8080 -p 8081:8081 -p 7772:7772 wiremock-suite
+
+# 4. Or mount host directories for mappings and files
+docker run -it --rm -p 8080:8080 \
+  -v $(pwd)/mappings:/home/wiremock/mappings \
+  -v $(pwd)/__files:/home/wiremock/__files \
+  wiremock-suite --port 8080 --verbose
+```
+
+### 2. All-in-One Bundle Coordinate
+
+If you want all extensions together as a project dependency:
 
 **Gradle**:
 ```groovy

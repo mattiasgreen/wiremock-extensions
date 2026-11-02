@@ -1,0 +1,6 @@
+**/.git
+**/.gradle
+**/build
+!wiremock-extension-bundle/build/libs/*-standalone.jar
+.agents
+docs
