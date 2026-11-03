@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.14.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.13.0...v1.14.0) (2026-11-03)
+
+
+### Features
+
+* **casual:** support schema-less fielded buffer mediation and binary safety ([d981ad9](https://github.com/mattiasgreen/wiremock-extensions/commit/d981ad90da7c0c6d3e0f75bef3f3d7e5255afc85))
+* **casual:** support schema-less fielded buffer mediation and binary safety ([67df96e](https://github.com/mattiasgreen/wiremock-extensions/commit/67df96ea6f30cf43fd5450026a5843bea48ad09c))
+* **ui:** canonical payload surface, fullscreen maximized viewport, and lenient KV unnesting ([#79](https://github.com/mattiasgreen/wiremock-extensions/issues/79)) ([3e17770](https://github.com/mattiasgreen/wiremock-extensions/commit/3e17770024516bff8771b2bd2375d24e6f642c5c))
+
 ## [1.13.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.12.0...v1.13.0) (2026-11-02)
 
 
