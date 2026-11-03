@@ -164,7 +164,7 @@ class WireMockConsoleProxyTest {
     }
 
     @Test
-    @DisplayName("Serves version info endpoint at /__admin/ui/version with CORS headers")
+    @DisplayName("Serves version info endpoint at /__admin/ui/version with CORS headers and build metadata")
     void shouldServeVersionInfo() throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/version"))
@@ -174,6 +174,8 @@ class WireMockConsoleProxyTest {
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
         assertThat(resp.statusCode()).isEqualTo(200);
         assertThat(resp.body()).contains("version");
+        assertThat(resp.body()).contains("commit");
+        assertThat(resp.body()).contains("branch");
         assertThat(resp.headers().firstValue("Access-Control-Allow-Origin").orElse(""))
                 .contains("*");
     }

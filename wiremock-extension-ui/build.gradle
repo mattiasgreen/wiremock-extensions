@@ -56,9 +56,91 @@ tasks.register('runProxy', JavaExec) {
     args = [project.findProperty('wiremock.url') ?: 'http://localhost:8080']
 }
 
+tasks.register('updateUiVersion') {
+    group = 'build'
+    description = 'Updates version and git hash in UI resources and static demo assets'
+
+    def uiDir = file('src/main/resources/ui')
+    def versionJsonFile = new File(uiDir, 'version.json')
+    def indexHtmlFile = new File(uiDir, 'index.html')
+    def demoBackendFile = new File(uiDir, 'modules/demo-backend.js')
+
+    inputs.property('version', project.version.toString())
+    outputs.files(versionJsonFile, indexHtmlFile, demoBackendFile)
+
+    doLast {
+        def ver = project.version.toString()
+
+        def resolveGit = { List<String> gitArgs ->
+            try {
+                def isWindows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+                def cmd = isWindows ? (['cmd', '/c', 'git'] + gitArgs) : (['git'] + gitArgs)
+                def proc = new ProcessBuilder(cmd).directory(rootProject.projectDir).start()
+                def out = proc.inputStream.text.trim()
+                proc.waitFor()
+                return (proc.exitValue() == 0 && out && !out.contains('fatal')) ? out : null
+            } catch (Exception ignored) {
+                return null
+            }
+        }
+
+        // 1. Resolve Git Commit (short hash)
+        def commit = System.getenv('GITHUB_SHA') ? System.getenv('GITHUB_SHA').take(7) : null
+        if (!commit) {
+            commit = resolveGit(['rev-parse', '--short', 'HEAD'])
+        }
+        if (!commit) commit = 'unknown'
+
+        // 2. Resolve Git Branch
+        def branch = System.getenv('GITHUB_REF_NAME') ?: System.getenv('GITHUB_HEAD_REF')
+        if (!branch || branch == 'HEAD') {
+            def gitBranch = resolveGit(['rev-parse', '--abbrev-ref', 'HEAD'])
+            if (gitBranch && gitBranch != 'HEAD') {
+                branch = gitBranch
+            }
+        }
+        if (!branch || branch == 'HEAD') branch = 'main'
+
+        // 3. Write / update version.json
+        def versionJsonContent = "{\n  \"version\": \"${ver}\",\n  \"commit\": \"${commit}\",\n  \"branch\": \"${branch}\"\n}\n"
+        if (!versionJsonFile.exists() || versionJsonFile.text != versionJsonContent) {
+            versionJsonFile.text = versionJsonContent
+        }
+
+        // 4. Update index.html badge
+        if (indexHtmlFile.exists()) {
+            def html = indexHtmlFile.text
+            def updatedHtml = html.replaceAll(
+                /<span id="app-version-badge" class="brand-version-badge"[^>]*>.*?<\/span>/,
+                "<span id=\"app-version-badge\" class=\"brand-version-badge\" title=\"WireMock Extensions v${ver} | Branch: ${branch} | Commit: ${commit}\">v${ver} (${branch}@${commit})</span>"
+            )
+            if (html != updatedHtml) {
+                indexHtmlFile.text = updatedHtml
+            }
+        }
+
+        // 5. Update demo-backend.js mock version response
+        if (demoBackendFile.exists()) {
+            def js = demoBackendFile.text
+            def updatedJs = js.replaceAll(
+                /(pathname === '\/__admin\/ui\/version'[\s\S]*?version:\s*')[^']+('[\s\S]*?branch:\s*')[^']+('[\s\S]*?commit:\s*')[^']+(')/,
+                "\$1${ver}\$2${branch}\$3${commit}\$4"
+            )
+            if (js != updatedJs) {
+                demoBackendFile.text = updatedJs
+            }
+        }
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn 'updateUiVersion'
+}
+
 tasks.register('syncDemoSite', Copy) {
     group = 'documentation'
     description = 'Syncs single-source-of-truth UI assets into docs/site/demo for local static site preview'
+    dependsOn 'updateUiVersion'
     from('src/main/resources/ui') {
         exclude 'pitch/**'
     }
@@ -66,6 +148,7 @@ tasks.register('syncDemoSite', Copy) {
 }
 
 rootProject.tasks.matching { it.name.startsWith('spotless') }.configureEach {
+    mustRunAfter tasks.named('updateUiVersion')
     mustRunAfter tasks.named('syncDemoSite')
 }
 
