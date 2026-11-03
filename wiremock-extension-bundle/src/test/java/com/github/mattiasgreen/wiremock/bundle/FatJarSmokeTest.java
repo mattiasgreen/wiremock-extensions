@@ -205,6 +205,82 @@ class FatJarSmokeTest {
         }
     }
 
+    @Test
+    void testFatJarLoadsMappingsFromWorkingDirectory() throws Exception {
+        File fatJar = locateFatJar();
+        int httpPort = findFreePort();
+        Path tempDir = Files.createTempDirectory("wm-fatjar-mappings-test");
+        Path mappingsDir = tempDir.resolve("mappings");
+        Files.createDirectories(mappingsDir);
+
+        String sampleStub =
+                """
+                {
+                  "request": {
+                    "method": "GET",
+                    "url": "/hello-working-dir"
+                  },
+                  "response": {
+                    "status": 200,
+                    "body": "working-dir-mappings-verified"
+                  }
+                }
+                """;
+        Files.writeString(mappingsDir.resolve("test-stub.json"), sampleStub, StandardCharsets.UTF_8);
+
+        String javaBin = ProcessHandle.current().info().command().orElse("java");
+        ProcessBuilder pb =
+                new ProcessBuilder(javaBin, "-jar", fatJar.getAbsolutePath(), "--port", String.valueOf(httpPort));
+        pb.directory(tempDir.toFile());
+        pb.redirectErrorStream(true);
+
+        Process process = pb.start();
+        Thread logReader = new Thread(() -> {
+            try (BufferedReader reader =
+                    new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                while (reader.readLine() != null) {
+                    // discard output
+                }
+            } catch (IOException ignored) {
+            }
+        });
+        logReader.setDaemon(true);
+        logReader.start();
+
+        try {
+            waitForServerReady(httpPort, 25);
+
+            HttpResponse<String> stubResp = HTTP_CLIENT.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://127.0.0.1:" + httpPort + "/hello-working-dir"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(stubResp.statusCode()).isEqualTo(200);
+            assertThat(stubResp.body()).isEqualTo("working-dir-mappings-verified");
+
+            HttpResponse<String> adminResp = HTTP_CLIENT.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://127.0.0.1:" + httpPort + "/__admin/mappings"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(adminResp.statusCode()).isEqualTo(200);
+            assertThat(adminResp.body()).contains("/hello-working-dir");
+        } finally {
+            process.destroy();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+            }
+            try (Stream<Path> walk = Files.walk(tempDir)) {
+                walk.sorted(java.util.Comparator.reverseOrder())
+                        .map(Path::toFile)
+                        .forEach(File::delete);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
     private static File locateFatJar() {
         Path[] searchPaths = new Path[] {
             Paths.get("build", "libs"),
@@ -220,7 +296,8 @@ class FatJarSmokeTest {
                                 return name.startsWith("wiremock-extension-bundle-")
                                         && name.endsWith("-standalone.jar");
                             })
-                            .findFirst();
+                            .max(java.util.Comparator.comparingLong(
+                                    p -> p.toFile().lastModified()));
                     if (found.isPresent()) {
                         return found.get().toFile();
                     }

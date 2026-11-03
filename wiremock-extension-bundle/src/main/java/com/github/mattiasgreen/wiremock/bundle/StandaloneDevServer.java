@@ -20,7 +20,8 @@ public class StandaloneDevServer {
             return;
         }
         int port = parseMainPort(args, 8080);
-        WireMockServer server = startServer(port);
+        String rootDir = parseRootDir(args, ".");
+        WireMockServer server = startServer(port, rootDir);
 
         int netemPort = resolveNetEmPort(server.port());
         CasualConfiguration casualConfig = CasualRegistry.getInstance().getConfig();
@@ -28,6 +29,7 @@ public class StandaloneDevServer {
         System.out.println("=================================================================");
         System.out.println("🚀 WireMock Suite Server running at http://localhost:" + server.port());
         System.out.println("👉 WireMock Console UI: http://localhost:" + server.port() + "/__admin/ui");
+        System.out.println("👉 Root Directory:      " + rootDir);
         System.out.println(
                 "👉 TCP NetEm Ingress:   http://localhost:" + netemPort + " (dual-ingress -> :" + server.port() + ")");
         if (casualConfig.isEnabled()) {
@@ -67,6 +69,7 @@ public class StandaloneDevServer {
         System.out.println();
         System.out.println("Options:");
         System.out.println("  --port <port>             HTTP port to bind (default: 8080)");
+        System.out.println("  --root-dir <path>         Path for mappings and __files (default: .)");
         System.out.println("  --help, -h                Show this help message");
         System.out.println();
         System.out.println("Environment Variables:");
@@ -76,6 +79,25 @@ public class StandaloneDevServer {
         System.out.println();
         System.out.println("For standard WireMock CLI options, run with WireMock runner:");
         System.out.println("  java -cp wiremock-*-standalone.jar wiremock.Run --help");
+    }
+
+    public static String parseRootDir(String[] args, String defaultDir) {
+        if (args == null || args.length == 0) {
+            return defaultDir;
+        }
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if ("--root-dir".equals(arg) || "-root-dir".equals(arg)) {
+                if (i + 1 < args.length) {
+                    return args[i + 1];
+                }
+            } else if (arg.startsWith("--root-dir=")) {
+                return arg.substring("--root-dir=".length());
+            } else if (arg.startsWith("-root-dir=")) {
+                return arg.substring("-root-dir=".length());
+            }
+        }
+        return defaultDir;
     }
 
     public static int parseMainPort(String[] args, int defaultPort) {
@@ -133,10 +155,18 @@ public class StandaloneDevServer {
     }
 
     public static WireMockServer startServer(int port) {
+        return startServer(port, ".");
+    }
+
+    public static WireMockServer startServer(int port, String rootDir) {
         System.setProperty("wiremock.verbose.json", "true");
 
-        WireMockServer server =
-                new WireMockServer(WireMockConfiguration.options().port(port).extensionScanningEnabled(true));
+        String effectiveRootDir = (rootDir != null && !rootDir.isBlank()) ? rootDir : ".";
+        WireMockConfiguration options = WireMockConfiguration.options()
+                .port(port)
+                .usingFilesUnderDirectory(effectiveRootDir)
+                .extensionScanningEnabled(true);
+        WireMockServer server = new WireMockServer(options);
         server.start();
 
         int netemPort = resolveNetEmPort(server.port());
