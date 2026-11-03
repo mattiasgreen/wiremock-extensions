@@ -97,6 +97,42 @@ public class VerboseLoggingTest {
         assertThat(logJson.get("response").has("body")).isFalse();
     }
 
+    @Test
+    void testVerboseModeEncodesBinaryControlCharactersAsBase64() throws Exception {
+        System.setProperty("wiremock.verbose.json", "true");
+
+        server = new WireMockServer(
+                WireMockConfiguration.options().dynamicPort().extensions(new JsonLoggingListener(true)));
+        server.start();
+
+        byte[] binaryWithNulls = new byte[] {0x00, 0x00, 0x04, 0x00, 0x05, 0x00, 0x41, 0x42};
+        server.stubFor(post(urlEqualTo("/api/v1/binary"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/octet-stream")
+                        .withBody(binaryWithNulls)));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/api/v1/binary"))
+                .header("Content-Type", "application/octet-stream")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(new byte[] {0x00, 0x01, 0x02}))
+                .build();
+
+        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        JsonNode logJson = awaitTrafficLogJson();
+        assertThat(logJson).isNotNull();
+
+        assertThat(logJson.get("request").has("body")).isTrue();
+        assertThat(logJson.get("request").get("body").asText())
+                .isEqualTo(java.util.Base64.getEncoder().encodeToString(new byte[] {0x00, 0x01, 0x02}));
+
+        assertThat(logJson.get("response").has("body")).isTrue();
+        assertThat(logJson.get("response").get("body").asText())
+                .isEqualTo(java.util.Base64.getEncoder().encodeToString(binaryWithNulls));
+    }
+
     private JsonNode awaitTrafficLogJson() throws InterruptedException {
         long deadline = System.currentTimeMillis() + 2000;
         while (System.currentTimeMillis() < deadline) {

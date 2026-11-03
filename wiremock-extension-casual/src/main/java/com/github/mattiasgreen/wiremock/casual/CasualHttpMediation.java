@@ -54,7 +54,11 @@ public final class CasualHttpMediation {
                 .withAbsoluteUrl(absoluteUrl)
                 .withHeader(
                         "Content-Type",
-                        CasualBufferUtils.isJsonType(bufferType) ? "application/json" : "application/octet-stream")
+                        (CasualBufferUtils.isJsonType(bufferType)
+                                        || (CasualBufferUtils.isFieldedType(bufferType)
+                                                && requestPayload.trim().startsWith("{")))
+                                ? "application/json"
+                                : "application/octet-stream")
                 .withHeader("X-WireMock-Protocol", "casual")
                 .withHeader("X-Casual-Service", serviceName)
                 .withHeader("X-Casual-Buffer-Type", bufferType)

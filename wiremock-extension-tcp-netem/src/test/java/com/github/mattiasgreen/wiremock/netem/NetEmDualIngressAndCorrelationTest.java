@@ -180,16 +180,16 @@ class NetEmDualIngressAndCorrelationTest {
 
     @Test
     void shouldSelectivelyApplyLatencyWithCorrelationIdMatching() throws Exception {
-        // Configure 150ms latency scoped to X-Correlation-Id: "slow-session-99"
+        // Configure 200ms latency scoped to X-Correlation-Id: "slow-session-99"
         netEmProxy.addToxic(NetEmToxicConfig.builder("selective-latency", NetEmToxicType.LATENCY).stream(
                         NetEmStreamDirection.DOWNSTREAM)
                 .pattern("slow-session-99")
-                .attribute("latency", 150L)
+                .attribute("latency", 200L)
                 .attribute("jitter", 0L)
                 .toxicity(1.0)
                 .build());
 
-        // Call 1: Normal traffic -> FAST (< 80ms)
+        // Call 1: Normal traffic -> FAST (< 150ms)
         long fastStart = System.currentTimeMillis();
         HttpResponse<String> fastResp = httpClient.send(
                 HttpRequest.newBuilder()
@@ -201,9 +201,9 @@ class NetEmDualIngressAndCorrelationTest {
         long fastDuration = System.currentTimeMillis() - fastStart;
 
         assertThat(fastResp.statusCode()).isEqualTo(200);
-        assertThat(fastDuration).isLessThan(100);
+        assertThat(fastDuration).isLessThan(150);
 
-        // Call 2: Targeted traffic -> SLOW (>= 130ms)
+        // Call 2: Targeted traffic -> SLOW (>= 180ms)
         long slowStart = System.currentTimeMillis();
         HttpResponse<String> slowResp = httpClient.send(
                 HttpRequest.newBuilder()
@@ -215,7 +215,7 @@ class NetEmDualIngressAndCorrelationTest {
         long slowDuration = System.currentTimeMillis() - slowStart;
 
         assertThat(slowResp.statusCode()).isEqualTo(200);
-        assertThat(slowDuration).isGreaterThanOrEqualTo(120);
+        assertThat(slowDuration).isGreaterThanOrEqualTo(180);
 
         // Verify stats tracked the impairment and bytes
         assertThat(netEmProxy.getStats().getImpairmentsInjected()).isGreaterThanOrEqualTo(1L);

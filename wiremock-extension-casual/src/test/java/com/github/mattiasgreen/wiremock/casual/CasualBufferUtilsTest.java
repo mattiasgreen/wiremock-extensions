@@ -107,27 +107,93 @@ class CasualBufferUtilsTest {
     }
 
     @Test
-    @DisplayName("Should early exit to Base64 when field table is not available")
-    void shouldEarlyExitToBase64WhenFieldTableNotAvailable() {
-        // Construct a realistic 16-byte buffer with 8 bytes field id and 8 bytes length
-        byte[] realisticFielded = new byte[] {
-            0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x01, // 8-byte field ID
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, // 8-byte size
-            0x10, 0x20, 0x30, 0x40 // payload data
-        };
+    @DisplayName("Should decode to schema-less JSON when field table is not available and re-encode to binary")
+    void shouldDecodeToSchemaLessJsonWhenFieldTableNotAvailable() {
+        // Construct a realistic 18-byte buffer with 8 bytes field id (short type), 8 bytes size, and 2 bytes short
+        // value
+        long realId = (1L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE)
+                + 1L; // type 1 (SHORT), id 1
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(18);
+        bb.putLong(realId);
+        bb.putLong(2L);
+        bb.putShort((short) 4128);
+        byte[] realisticFielded = bb.array();
         ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", List.of(realisticFielded));
 
         // When casual-fields.json is not in classpath and env is not set/not found
         assertThat(CasualBufferUtils.isFieldTableAvailable()).isFalse();
 
-        // Must early exit to Base64 and not throw ExceptionInInitializerError
+        // Must decode to schema-less JSON with FLD_<realId>
         String extracted = CasualBufferUtils.extractPayload(buffer);
         assertThat(extracted).isNotNull();
-        assertThat(extracted).isEqualTo(Base64.getEncoder().encodeToString(realisticFielded));
+        assertThat(extracted).isEqualTo("{\"FLD_" + realId + "\":4128}");
 
-        // And wrapPayload must early exit to Base64 decoding
+        // And wrapPayload must re-encode back to the exact binary wire buffer
         ServiceBuffer wrapped = CasualBufferUtils.wrapPayload(".FIELDED", extracted);
+        assertThat(wrapped.getType()).isEqualTo("CFIELD/");
         assertThat(CasualBufferUtils.toByteArray(wrapped)).isEqualTo(realisticFielded);
+    }
+
+    @Test
+    @DisplayName("Should fall back to Base64 when fielded buffer payload is corrupt or truncated")
+    void shouldFallBackToBase64WhenFieldedBufferIsCorruptOrTruncated() {
+        byte[] corruptFielded = new byte[] {0x01, 0x02, 0x03, 0x04};
+        ServiceBuffer buffer = ServiceBuffer.of(".FIELDED", List.of(corruptFielded));
+
+        String extracted = CasualBufferUtils.extractPayload(buffer);
+        assertThat(extracted).isEqualTo(Base64.getEncoder().encodeToString(corruptFielded));
+    }
+
+    @Test
+    @DisplayName(
+            "Should decode schema-less fielded buffer with strings, longs, shorts, and embedded JSON in binary fields")
+    void shouldDecodeSchemaLessFieldedBufferWithEmbeddedJson() {
+        // Construct multi-field schema-less buffer with generic anonymized identifiers:
+        // Field 1: string (type 6)
+        long field1Id = (6L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 1929L;
+        byte[] strBytes = "sampleClientHost\0".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        // Field 2: long (type 2)
+        long field2Id = (2L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 1500L;
+
+        // Field 3: binary with embedded JSON (type 7)
+        long field3Id = (7L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 2010L;
+        byte[] jsonBytes = "{\"subEntityId\":\"sample-12345\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        // Field 4: short (type 1)
+        long field4Id = (1L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 1005L;
+
+        java.nio.ByteBuffer bb =
+                java.nio.ByteBuffer.allocate(16 + strBytes.length + 16 + 8 + 16 + jsonBytes.length + 16 + 2);
+        // Field 1
+        bb.putLong(field1Id);
+        bb.putLong(strBytes.length);
+        bb.put(strBytes);
+        // Field 2
+        bb.putLong(field2Id);
+        bb.putLong(8L);
+        bb.putLong(1001L);
+        // Field 3
+        bb.putLong(field3Id);
+        bb.putLong(jsonBytes.length);
+        bb.put(jsonBytes);
+        // Field 4
+        bb.putLong(field4Id);
+        bb.putLong(2L);
+        bb.putShort((short) 5);
+
+        ServiceBuffer buffer = ServiceBuffer.of("CFIELD/", List.of(bb.array()));
+        String extracted = CasualBufferUtils.extractPayload(buffer);
+
+        assertThat(extracted).contains("\"FLD_" + field1Id + "\":\"sampleClientHost\"");
+        assertThat(extracted).contains("\"FLD_" + field2Id + "\":1001");
+        assertThat(extracted).contains("\"FLD_" + field3Id + "\":{\"subEntityId\":\"sample-12345\"}");
+        assertThat(extracted).contains("\"FLD_" + field4Id + "\":5");
+
+        // Roundtrip wrap back to binary buffer
+        ServiceBuffer wrapped = CasualBufferUtils.wrapPayload("CFIELD/", extracted);
+        assertThat(wrapped.getType()).isEqualTo("CFIELD/");
+        assertThat(CasualBufferUtils.toByteArray(wrapped)).isEqualTo(bb.array());
     }
 
     @Test

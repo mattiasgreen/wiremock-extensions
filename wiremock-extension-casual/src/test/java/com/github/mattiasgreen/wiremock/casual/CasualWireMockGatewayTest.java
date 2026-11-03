@@ -1906,4 +1906,130 @@ class CasualWireMockGatewayTest {
             customServer.stop();
         }
     }
+
+    @Test
+    @DisplayName(
+            "Should proxy and record schema-less fielded buffers as structured JSON without field table and replay offline")
+    void shouldProxyAndRecordSchemaLessFieldedBufferAsStructuredJsonAndReplayOffline() throws Exception {
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
+        upstreamGateway.start();
+
+        try {
+            // Build a multi-field binary reply buffer without requiring any casual-fields.json
+            long statusFieldId = (2L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 500L;
+            long messageFieldId = (6L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 501L;
+            long archiveFieldId = (7L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 502L;
+
+            byte[] messageBytes = "user-123\u0001SampleError\u0001EntityNotFound\0".getBytes(StandardCharsets.UTF_8);
+            byte[] archiveBytes = "{\"subEntityId\":\"entity-8899\"}".getBytes(StandardCharsets.UTF_8);
+
+            java.nio.ByteBuffer replyBb =
+                    java.nio.ByteBuffer.allocate(16 + 8 + 16 + messageBytes.length + 16 + archiveBytes.length);
+            replyBb.putLong(statusFieldId).putLong(8L).putLong(536870915L);
+            replyBb.putLong(messageFieldId).putLong(messageBytes.length).put(messageBytes);
+            replyBb.putLong(archiveFieldId).putLong(archiveBytes.length).put(archiveBytes);
+            byte[] upstreamReplyBytes = replyBb.array();
+
+            String base64Reply = Base64.getEncoder().encodeToString(upstreamReplyBytes);
+
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/schemaLessService"))
+                    .willReturn(aResponse()
+                            .withStatus(500)
+                            .withHeader("Content-Type", "application/octet-stream")
+                            .withHeader("X-Casual-Error-State", "TPESVCFAIL")
+                            .withHeader("X-Casual-Buffer-Type", "CFIELD/")
+                            .withBody(base64Reply)));
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/schemaLessService"))
+                    .atPriority(10)
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(500)));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(wireMockServer)
+                    .build();
+            proxyGateway.start();
+
+            try (CasualClient proxyClient = new CasualClient("127.0.0.1", proxyGateway.getPort())) {
+                proxyClient.connect();
+
+                // Construct schema-less request buffer with 5 fields
+                long reqField1 = (6L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 101L;
+                long reqField2 = (2L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 102L;
+                long reqField3 = (7L * se.laz.casual.api.buffer.type.fielded.Constants.CASUAL_FIELD_TYPE_BASE) + 103L;
+                byte[] reqStrBytes = "clientHost99\0".getBytes(StandardCharsets.UTF_8);
+                byte[] reqJsonBytes = "{\"queryId\":\"q-4455\"}".getBytes(StandardCharsets.UTF_8);
+
+                java.nio.ByteBuffer reqBb =
+                        java.nio.ByteBuffer.allocate(16 + reqStrBytes.length + 16 + 8 + 16 + reqJsonBytes.length);
+                reqBb.putLong(reqField1).putLong(reqStrBytes.length).put(reqStrBytes);
+                reqBb.putLong(reqField2).putLong(8L).putLong(42L);
+                reqBb.putLong(reqField3).putLong(reqJsonBytes.length).put(reqJsonBytes);
+                byte[] requestBytes = reqBb.array();
+
+                ServiceBuffer requestBuffer = ServiceBuffer.of("CFIELD/", List.of(requestBytes));
+
+                // 1. Call via proxy gateway -> forwarded to upstream and recorded as structured JSON in Request Journal
+                CasualServiceCallReplyMessage reply1 = proxyClient.tpcall("schemaLessService", requestBuffer);
+                assertThat(reply1.getError()).isEqualTo(ErrorState.TPESVCFAIL);
+                assertThat(reply1.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+                assertThat(CasualBufferUtils.toByteArray(reply1.getServiceBuffer()))
+                        .isEqualTo(upstreamReplyBytes);
+
+                // Verify the ServeEvent recorded in WireMock's Request Journal
+                List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> events = wireMockServer.getAllServeEvents();
+                assertThat(events).isNotEmpty();
+                com.github.tomakehurst.wiremock.stubbing.ServeEvent served = events.get(0);
+
+                // Both request and response must have Content-Type: application/json and structured JSON bodies
+                assertThat(served.getRequest().getHeader("Content-Type")).isEqualTo("application/json");
+                String reqLoggedBody = served.getRequest().getBodyAsString();
+                assertThat(reqLoggedBody).contains("\"FLD_" + reqField1 + "\":\"clientHost99\"");
+                assertThat(reqLoggedBody).contains("\"FLD_" + reqField2 + "\":42");
+                assertThat(reqLoggedBody).contains("\"FLD_" + reqField3 + "\":{\"queryId\":\"q-4455\"}");
+
+                assertThat(served.getResponse()
+                                .getHeaders()
+                                .getHeader("Content-Type")
+                                .firstValue())
+                        .isEqualTo("application/json");
+                String respLoggedBody = served.getResponse().getBodyAsString();
+                assertThat(respLoggedBody).contains("\"FLD_" + statusFieldId + "\":536870915");
+                assertThat(respLoggedBody)
+                        .contains("\"FLD_" + messageFieldId + "\":\"user-123\\u0001SampleError\\u0001EntityNotFound\"");
+                assertThat(respLoggedBody).contains("\"FLD_" + archiveFieldId + "\":{\"subEntityId\":\"entity-8899\"}");
+
+                // 2. Snapshot record into offline stubs
+                wireMockServer.snapshotRecord(recordSpec().makeStubsPersistent(false));
+
+                // Stop upstream completely
+                upstreamGateway.close();
+                upstreamWireMock.stop();
+
+                // 3. Replay offline from the recorded JSON stub
+                CasualServiceCallReplyMessage reply2 = proxyClient.tpcall("schemaLessService", requestBuffer);
+                assertThat(reply2.getError()).isEqualTo(ErrorState.TPESVCFAIL);
+                assertThat(reply2.getServiceBuffer().getType()).isEqualTo("CFIELD/");
+                assertThat(CasualBufferUtils.toByteArray(reply2.getServiceBuffer()))
+                        .isEqualTo(upstreamReplyBytes);
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            if (upstreamGateway.isRunning()) {
+                upstreamGateway.close();
+            }
+            if (upstreamWireMock.isRunning()) {
+                upstreamWireMock.stop();
+            }
+        }
+    }
 }

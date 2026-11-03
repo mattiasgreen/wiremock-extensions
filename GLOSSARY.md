@@ -26,6 +26,10 @@ _Avoid_: XA bridge, transaction manager, Xid tracker
 The composite domain descriptor coupling a Casual transport buffer type (`FIELDED`, `JSON`, `CSTRING`, `FLAT`, `X_OCTET`) with its encapsulated payload syntax (`JSON`, `XML`, `TEXT`, `HEX`) and optional non-UTF-8 character encoding (`ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`), presenting transport wire constraints, character encoding, and inner document formatting as a unified inspectable badge.
 _Avoid_: buffer label, casual type tag, payload info
 
+**Schema-less Fielded Buffer Mediation**:
+The bidirectional translation of Casual FML/FML32 (`.FIELDED` / `CFIELD/`) binary buffers into structured JSON without requiring pre-registered field definitions in a field table (`casual-fields.json`). Derives concrete wire data types directly from the 64-bit real field ID bitmask (`type = realId / 0x2000000`), synthesizes deterministic `FLD_<realId>` JSON properties, auto-unnests embedded binary documents, and enables bidirectional wire re-encoding for offline stubs.
+_Avoid_: raw binary fallback, blind Base64 encoding, untyped fielded dump
+
 ### Web Console & Developer UI
 
 **Stub Catalog**:
