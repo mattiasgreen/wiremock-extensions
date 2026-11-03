@@ -5,6 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.15.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.14.0...v1.15.0) (2026-11-03)
+
+
+### Features
+
+* **ui:** update version and git hash in UI assets during build ([#80](https://github.com/mattiasgreen/wiremock-extensions/issues/80)) ([b8184c7](https://github.com/mattiasgreen/wiremock-extensions/commit/b8184c7d9a692eca7610eb57621b3040d6155e9e))
+
+
+### Bug Fixes
+
+* **bundle:** enable file-backed working directory mappings in StandaloneDevServer ([#82](https://github.com/mattiasgreen/wiremock-extensions/issues/82)) ([f49f67e](https://github.com/mattiasgreen/wiremock-extensions/commit/f49f67e39294489a9f08cb86af5328ad02e1fc7c))
+
 ## [1.14.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.13.0...v1.14.0) (2026-11-03)
 
 
