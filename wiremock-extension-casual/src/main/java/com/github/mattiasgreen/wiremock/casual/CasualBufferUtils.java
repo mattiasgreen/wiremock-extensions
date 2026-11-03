@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,13 +20,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
+import se.laz.casual.api.buffer.type.fielded.Constants;
 import se.laz.casual.api.buffer.type.fielded.FieldType;
-import se.laz.casual.api.buffer.type.fielded.FieldedData;
-import se.laz.casual.api.buffer.type.fielded.FieldedTypeBuffer;
 import se.laz.casual.api.buffer.type.fielded.json.CasualField;
 import se.laz.casual.api.buffer.type.fielded.json.CasualFielded;
 import se.laz.casual.api.buffer.type.fielded.json.CasualFieldedLookup;
@@ -38,6 +39,9 @@ import se.laz.casual.config.ConfigurationService;
  * binary encoding/decoding for raw octet buffers, and hex dumps.
  */
 public final class CasualBufferUtils {
+
+    public static final String FIELD_KEY_PREFIX = "FLD_";
+    public static final Pattern FIELD_KEY_PATTERN = Pattern.compile("^FLD_(\\d+)$");
 
     private static final Logger LOG = LoggerFactory.getLogger(CasualBufferUtils.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -332,42 +336,115 @@ public final class CasualBufferUtils {
             return text;
         }
         if (isFieldedType(type)) {
-            if (!isFieldTableAvailable()) {
-                return Base64.getEncoder().encodeToString(toByteArray(buffer));
+            byte[] bytes = toByteArray(buffer);
+            if (bytes.length == 0) {
+                return "{}";
             }
             try {
-                FieldedTypeBuffer fielded = FieldedTypeBuffer.create(buffer.getBytes());
-                Map<String, List<FieldedData<?>>> rawMap = fielded.extract();
-                if (!rawMap.isEmpty()) {
-                    Map<String, Object> jsonMap = new LinkedHashMap<>();
-                    for (Map.Entry<String, List<FieldedData<?>>> entry : rawMap.entrySet()) {
-                        List<FieldedData<?>> list = entry.getValue();
-                        if (list == null || list.isEmpty()) {
-                            continue;
-                        }
-                        List<Object> values = new ArrayList<>();
-                        for (FieldedData<?> item : list) {
-                            Object data = item.getData();
-                            Object parsedJson = tryParseJsonPayload(data, effectiveCharset);
-                            if (parsedJson != null) {
-                                values.add(parsedJson);
-                            } else if (data instanceof byte[] bytes) {
-                                values.add(Base64.getEncoder().encodeToString(bytes));
-                            } else if (data instanceof Character c) {
-                                values.add(String.valueOf(c));
-                            } else {
-                                values.add(data);
-                            }
-                        }
-                        jsonMap.put(entry.getKey(), values.size() == 1 ? values.get(0) : values);
-                    }
+                Map<String, Object> jsonMap = decodeFieldedBufferToJsonMap(bytes, effectiveCharset);
+                if (!jsonMap.isEmpty()) {
                     return OBJECT_MAPPER.writeValueAsString(jsonMap);
                 }
-            } catch (Throwable ignored) {
-                // Fall back to Base64 if not in CasualFieldedLookup, missing field table, or raw FML decode fails
+            } catch (Throwable t) {
+                LOG.debug(
+                        "[CASUAL-FIELDED-DECODE-FAIL] Failed to decode fielded buffer, falling back to Base64: {}",
+                        t.getMessage());
             }
+            return Base64.getEncoder().encodeToString(bytes);
         }
         return Base64.getEncoder().encodeToString(toByteArray(buffer));
+    }
+
+    /**
+     * Decodes binary fielded buffer bytes into a structured JSON map, utilizing CasualFieldedLookup for known
+     * fields and falling back to FLD_<realId> keys when field table lookups are absent or unmapped.
+     */
+    private static Map<String, Object> decodeFieldedBufferToJsonMap(byte[] bytes, Charset effectiveCharset) {
+        Map<String, List<Object>> multiMap = new LinkedHashMap<>();
+        int currentIndex = 0;
+        ByteBuffer buf = ByteBuffer.wrap(bytes);
+
+        while (currentIndex + 16 <= bytes.length) {
+            long realFieldId = buf.getLong(currentIndex);
+            currentIndex += 8;
+            long fieldSizeLong = buf.getLong(currentIndex);
+            currentIndex += 8;
+            if (fieldSizeLong < 0 || fieldSizeLong > (bytes.length - currentIndex)) {
+                throw new IllegalArgumentException("Invalid fielded buffer size: " + fieldSizeLong);
+            }
+            int fieldSize = (int) fieldSizeLong;
+            byte[] fieldData = new byte[fieldSize];
+            buf.position(currentIndex);
+            buf.get(fieldData);
+            currentIndex += fieldSize;
+
+            String fieldName;
+            FieldType fieldType;
+            Optional<CasualField> fieldOpt = Optional.empty();
+            if (isFieldTableAvailable()) {
+                try {
+                    fieldOpt = CasualFieldedLookup.forRealId(realFieldId);
+                } catch (Throwable ignored) {
+                }
+            }
+
+            if (fieldOpt.isPresent()) {
+                fieldName = fieldOpt.get().getName();
+                fieldType = fieldOpt.get().getType();
+            } else {
+                fieldName = FIELD_KEY_PREFIX + realFieldId;
+                int typeVal = (int) (realFieldId / Constants.CASUAL_FIELD_TYPE_BASE);
+                fieldType = FieldType.unmarshall(typeVal);
+            }
+
+            Object value = decodeFieldValue(fieldType, fieldData, effectiveCharset);
+            multiMap.computeIfAbsent(fieldName, k -> new ArrayList<>()).add(value);
+        }
+
+        Map<String, Object> jsonMap = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Object>> entry : multiMap.entrySet()) {
+            List<Object> list = entry.getValue();
+            jsonMap.put(entry.getKey(), list.size() == 1 ? list.get(0) : list);
+        }
+        return jsonMap;
+    }
+
+    private static Object decodeFieldValue(FieldType type, byte[] data, Charset charset) {
+        ByteBuffer bb = ByteBuffer.wrap(data);
+        switch (type) {
+            case CASUAL_FIELD_SHORT -> {
+                return bb.getShort();
+            }
+            case CASUAL_FIELD_LONG -> {
+                return bb.getLong();
+            }
+            case CASUAL_FIELD_CHAR -> {
+                return String.valueOf((char) Byte.toUnsignedInt(bb.get()));
+            }
+            case CASUAL_FIELD_FLOAT -> {
+                return bb.getFloat();
+            }
+            case CASUAL_FIELD_DOUBLE -> {
+                return bb.getDouble();
+            }
+            case CASUAL_FIELD_STRING -> {
+                int len = data.length;
+                while (len > 0 && data[len - 1] == 0) {
+                    len--;
+                }
+                return new String(data, 0, len, charset);
+            }
+            case CASUAL_FIELD_BINARY -> {
+                Object parsedJson = tryParseJsonPayload(data, charset);
+                if (parsedJson != null) {
+                    return parsedJson;
+                }
+                return Base64.getEncoder().encodeToString(data);
+            }
+            default -> {
+                return Base64.getEncoder().encodeToString(data);
+            }
+        }
     }
 
     /**
@@ -405,32 +482,15 @@ public final class CasualBufferUtils {
         if (isFieldedType(type)) {
             String trimmed = payload.trim();
             if (trimmed.startsWith("{")) {
-                if (isFieldTableAvailable()) {
-                    try {
-                        Map<?, ?> jsonMap = OBJECT_MAPPER.readValue(trimmed, Map.class);
-                        FieldedTypeBuffer fielded = FieldedTypeBuffer.create();
-                        for (Map.Entry<?, ?> entry : jsonMap.entrySet()) {
-                            String key = String.valueOf(entry.getKey());
-                            Object val = entry.getValue();
-                            if (val instanceof List<?> list) {
-                                for (Object item : list) {
-                                    writeFieldedValue(fielded, key, item, effectiveCharset);
-                                }
-                            } else {
-                                writeFieldedValue(fielded, key, val, effectiveCharset);
-                            }
-                        }
-                        return ServiceBuffer.of("CFIELD/", fielded.encode());
-                    } catch (Throwable t) {
-                        LOG.error(
-                                "[CASUAL-FIELDED-ENCODE-FAIL] Failed to encode JSON payload into .FIELDED (FML) buffer: {}",
-                                t.getMessage(),
-                                t);
-                    }
-                } else {
+                try {
+                    Map<?, ?> jsonMap = OBJECT_MAPPER.readValue(trimmed, Map.class);
+                    byte[] encoded = encodeJsonMapToFieldedBuffer(jsonMap, effectiveCharset);
+                    return ServiceBuffer.of("CFIELD/", List.of(encoded));
+                } catch (Throwable t) {
                     LOG.error(
-                            "[CASUAL-FIELDED-NO-TABLE] Cannot encode JSON object into binary CFIELD/ buffer because casual field table is not configured. Returning empty buffer.");
-                    return ServiceBuffer.of("CFIELD/", List.of(new byte[0]));
+                            "[CASUAL-FIELDED-ENCODE-FAIL] Failed to encode JSON payload into .FIELDED (FML) buffer: {}",
+                            t.getMessage(),
+                            t);
                 }
             }
             try {
@@ -450,109 +510,149 @@ public final class CasualBufferUtils {
         }
     }
 
-    private static void writeFieldedValue(FieldedTypeBuffer fielded, String key, Object val, Charset effectiveCharset) {
+    /**
+     * Encodes a JSON map into a binary fielded buffer byte array, resolving known fields through
+     * CasualFieldedLookup and schema-less FLD_<realId> keys directly from numeric field identifiers.
+     */
+    private static byte[] encodeJsonMapToFieldedBuffer(Map<?, ?> jsonMap, Charset effectiveCharset) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        for (Map.Entry<?, ?> entry : jsonMap.entrySet()) {
+            String key = String.valueOf(entry.getKey()).trim();
+            Object val = entry.getValue();
+            if (val == null) {
+                continue;
+            }
+
+            long realFieldId;
+            FieldType fieldType;
+
+            String suffix = key.startsWith(FIELD_KEY_PREFIX) ? key.substring(FIELD_KEY_PREFIX.length()) : "";
+            if (!suffix.isEmpty() && isDigitsOnly(suffix)) {
+                try {
+                    realFieldId = Long.parseLong(suffix);
+                    int typeVal = (int) (realFieldId / Constants.CASUAL_FIELD_TYPE_BASE);
+                    fieldType = FieldType.unmarshall(typeVal);
+                } catch (IllegalArgumentException e) {
+                    String sanitized = key.replace('\r', '_').replace('\n', '_');
+                    LOG.warn(
+                            "[CASUAL-FIELDED-UNKNOWN] Field [{}] has invalid numeric ID or type. Skipping.", sanitized);
+                    continue;
+                }
+            } else if (isFieldTableAvailable()) {
+                Optional<CasualField> fieldOpt = CasualFieldedLookup.forName(key);
+                if (fieldOpt.isPresent()) {
+                    realFieldId = fieldOpt.get().getRealId();
+                    fieldType = fieldOpt.get().getType();
+                } else {
+                    String sanitized = key.replace('\r', '_').replace('\n', '_');
+                    LOG.warn(
+                            "[CASUAL-FIELDED-UNKNOWN] Field [{}] not found in casual-fields definition table. Skipping.",
+                            sanitized);
+                    continue;
+                }
+            } else {
+                String sanitized = key.replace('\r', '_').replace('\n', '_');
+                LOG.warn(
+                        "[CASUAL-FIELDED-UNKNOWN] Field [{}] not recognized as FLD_<id> and no casual-fields definition table is available. Skipping.",
+                        sanitized);
+                continue;
+            }
+
+            if (val instanceof List<?> list) {
+                for (Object item : list) {
+                    writeFieldItem(baos, realFieldId, fieldType, item, effectiveCharset);
+                }
+            } else {
+                writeFieldItem(baos, realFieldId, fieldType, val, effectiveCharset);
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    private static void writeFieldItem(
+            ByteArrayOutputStream baos, long realFieldId, FieldType fieldType, Object val, Charset effectiveCharset)
+            throws IOException {
         if (val == null) {
             return;
         }
-        Optional<CasualField> fieldOpt = CasualFieldedLookup.forName(key);
-        if (fieldOpt.isEmpty()) {
-            String sanitizedKey = key.replace('\r', '_').replace('\n', '_');
-            LOG.warn(
-                    "[CASUAL-FIELDED-UNKNOWN] Field [{}] not found in casual-fields definition table. Skipping.",
-                    sanitizedKey);
-            return;
-        }
-        FieldType fieldType = fieldOpt.get().getType();
-        try {
-            switch (fieldType) {
-                case CASUAL_FIELD_BINARY -> {
-                    byte[] bytes;
-                    if (val instanceof byte[] b) {
-                        bytes = b;
-                    } else if (val instanceof String s) {
-                        try {
-                            bytes = Base64.getDecoder().decode(s.trim());
-                        } catch (IllegalArgumentException ignored) {
-                            bytes = s.getBytes(effectiveCharset);
-                        }
-                    } else if (val instanceof Map || val instanceof List) {
-                        bytes = OBJECT_MAPPER.writeValueAsString(val).getBytes(effectiveCharset);
-                    } else {
-                        bytes = String.valueOf(val).getBytes(effectiveCharset);
-                    }
-                    fielded.write(key, bytes);
+        byte[] valueBytes;
+        switch (fieldType) {
+            case CASUAL_FIELD_SHORT -> {
+                short s = (val instanceof Number n)
+                        ? n.shortValue()
+                        : Short.parseShort(String.valueOf(val).trim());
+                ByteBuffer b = ByteBuffer.allocate(2);
+                b.putShort(s);
+                valueBytes = b.array();
+            }
+            case CASUAL_FIELD_LONG -> {
+                long l = (val instanceof Number n)
+                        ? n.longValue()
+                        : Long.parseLong(String.valueOf(val).trim());
+                ByteBuffer b = ByteBuffer.allocate(8);
+                b.putLong(l);
+                valueBytes = b.array();
+            }
+            case CASUAL_FIELD_CHAR -> {
+                char c;
+                if (val instanceof Character ch) {
+                    c = ch.charValue();
+                } else if (val instanceof Number n) {
+                    c = (char) n.intValue();
+                } else {
+                    String str = String.valueOf(val);
+                    c = str.isEmpty() ? ' ' : str.charAt(0);
                 }
-                case CASUAL_FIELD_LONG -> {
-                    long l;
-                    if (val instanceof Number n) {
-                        l = n.longValue();
-                    } else {
-                        l = Long.parseLong(String.valueOf(val).trim());
+                valueBytes = new byte[] {(byte) c};
+            }
+            case CASUAL_FIELD_FLOAT -> {
+                float f = (val instanceof Number n)
+                        ? n.floatValue()
+                        : Float.parseFloat(String.valueOf(val).trim());
+                ByteBuffer b = ByteBuffer.allocate(4);
+                b.putFloat(f);
+                valueBytes = b.array();
+            }
+            case CASUAL_FIELD_DOUBLE -> {
+                double d = (val instanceof Number n)
+                        ? n.doubleValue()
+                        : Double.parseDouble(String.valueOf(val).trim());
+                ByteBuffer b = ByteBuffer.allocate(8);
+                b.putDouble(d);
+                valueBytes = b.array();
+            }
+            case CASUAL_FIELD_STRING -> {
+                String s = (val instanceof Map || val instanceof List)
+                        ? OBJECT_MAPPER.writeValueAsString(val)
+                        : String.valueOf(val);
+                byte[] sBytes = s.getBytes(effectiveCharset);
+                valueBytes = new byte[sBytes.length + 1];
+                System.arraycopy(sBytes, 0, valueBytes, 0, sBytes.length);
+                valueBytes[sBytes.length] = 0;
+            }
+            case CASUAL_FIELD_BINARY -> {
+                if (val instanceof byte[] b) {
+                    valueBytes = b;
+                } else if (val instanceof String s) {
+                    try {
+                        valueBytes = Base64.getDecoder().decode(s.trim());
+                    } catch (IllegalArgumentException ignored) {
+                        valueBytes = s.getBytes(effectiveCharset);
                     }
-                    fielded.write(key, l);
-                }
-                case CASUAL_FIELD_SHORT -> {
-                    short s;
-                    if (val instanceof Number n) {
-                        s = n.shortValue();
-                    } else {
-                        s = Short.parseShort(String.valueOf(val).trim());
-                    }
-                    fielded.write(key, s);
-                }
-                case CASUAL_FIELD_FLOAT -> {
-                    float f;
-                    if (val instanceof Number n) {
-                        f = n.floatValue();
-                    } else {
-                        f = Float.parseFloat(String.valueOf(val).trim());
-                    }
-                    fielded.write(key, f);
-                }
-                case CASUAL_FIELD_DOUBLE -> {
-                    double d;
-                    if (val instanceof Number n) {
-                        d = n.doubleValue();
-                    } else {
-                        d = Double.parseDouble(String.valueOf(val).trim());
-                    }
-                    fielded.write(key, d);
-                }
-                case CASUAL_FIELD_CHAR -> {
-                    char c;
-                    if (val instanceof Character ch) {
-                        c = ch;
-                    } else if (val instanceof Number n) {
-                        c = (char) n.intValue();
-                    } else {
-                        String str = String.valueOf(val);
-                        c = str.isEmpty() ? ' ' : str.charAt(0);
-                    }
-                    fielded.write(key, c);
-                }
-                case CASUAL_FIELD_STRING -> {
-                    String s;
-                    if (val instanceof String str) {
-                        s = str;
-                    } else if (val instanceof Map || val instanceof List) {
-                        s = OBJECT_MAPPER.writeValueAsString(val);
-                    } else {
-                        s = String.valueOf(val);
-                    }
-                    fielded.write(key, s);
+                } else if (val instanceof Map || val instanceof List) {
+                    valueBytes = OBJECT_MAPPER.writeValueAsString(val).getBytes(effectiveCharset);
+                } else {
+                    valueBytes = String.valueOf(val).getBytes(effectiveCharset);
                 }
             }
-        } catch (IllegalArgumentException
-                | IndexOutOfBoundsException
-                | com.fasterxml.jackson.core.JsonProcessingException
-                | se.laz.casual.api.buffer.type.fielded.json.CasualFieldedLookupException e) {
-            String sanitizedKey = key.replace('\r', '_').replace('\n', '_');
-            LOG.warn(
-                    "[CASUAL-FIELDED-WRITE-FAIL] Failed to write field [{}] as type [{}]: {}",
-                    sanitizedKey,
-                    fieldType,
-                    e.getMessage());
+            default -> throw new IllegalArgumentException("Unsupported field type: " + fieldType);
         }
+
+        ByteBuffer header = ByteBuffer.allocate(16 + valueBytes.length);
+        header.putLong(realFieldId);
+        header.putLong(valueBytes.length);
+        header.put(valueBytes);
+        baos.write(header.array());
     }
 
     /**
@@ -568,6 +668,17 @@ public final class CasualBufferUtils {
         }
         if (binaryData == null || binaryData.length == 0) {
             return ServiceBuffer.of(type, List.of());
+        }
+        if (isFieldedType(type)) {
+            String str = new String(binaryData, StandardCharsets.UTF_8).trim();
+            if (str.startsWith("{")) {
+                return wrapPayload(type, str, StandardCharsets.UTF_8);
+            }
+            try {
+                byte[] decoded = Base64.getDecoder().decode(str);
+                return ServiceBuffer.of("CFIELD/", List.of(decoded));
+            } catch (IllegalArgumentException ignored) {
+            }
         }
         return ServiceBuffer.of(type, List.of(binaryData));
     }
@@ -684,5 +795,17 @@ public final class CasualBufferUtils {
         } catch (IOException | IllegalArgumentException ignored) {
         }
         return null;
+    }
+
+    private static boolean isDigitsOnly(String str) {
+        if (str == null || str.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < str.length(); i++) {
+            if (!Character.isDigit(str.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 }

@@ -12,6 +12,7 @@ import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -169,7 +170,7 @@ public class JsonLoggingListener implements ServeEventListener {
 
             if (verbose) {
                 reqDetails.setHeaders(extractHeadersMap(request.getHeaders()));
-                reqDetails.setBody(request.getBodyAsString());
+                reqDetails.setBody(extractSafeBody(request.getBody(), request.getBodyAsString()));
             }
             event.setRequest(reqDetails);
         }
@@ -180,7 +181,7 @@ public class JsonLoggingListener implements ServeEventListener {
 
             if (verbose) {
                 respDetails.setHeaders(extractHeadersMap(response.getHeaders()));
-                respDetails.setBody(response.getBodyAsString());
+                respDetails.setBody(extractSafeBody(response.getBody(), response.getBodyAsString()));
             }
             event.setResponse(respDetails);
         }
@@ -201,6 +202,19 @@ public class JsonLoggingListener implements ServeEventListener {
             map.put(header.key(), header.firstValue());
         }
         return map;
+    }
+
+    private static String extractSafeBody(byte[] bytes, String bodyAsString) {
+        if (bytes == null || bytes.length == 0) {
+            return bodyAsString;
+        }
+        for (int i = 0; i < Math.min(bytes.length, 512); i++) {
+            byte b = bytes[i];
+            if (b == 0 || (b < 32 && b != '\t' && b != '\r' && b != '\n')) {
+                return Base64.getEncoder().encodeToString(bytes);
+            }
+        }
+        return bodyAsString;
     }
 
     public boolean isVerbose() {
