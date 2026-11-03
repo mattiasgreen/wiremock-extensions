@@ -1448,6 +1448,47 @@ public class UiModuleUnitTest {
     }
 
     @Test
+    @DisplayName("Payload Unnesting: Discovers and normalizes Base64-encoded Java Map toString and pseudo-JSON KV")
+    void testPseudoJsonAndBase64KvDiscovery() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads } = await import('./modules/payload-lens.js');
+                const { detectFormat, parsePseudoJson } = await import('./modules/highlighter.js');
+
+                const samplePayload = JSON.stringify({
+                    id: "tx-123",
+                    b5: "e2FiYz17YWJjPXtpZD0xMTExMTExMTExMTExfX19",
+                    b11: "e21lc3NhZ2VzPW51bGw7IGRldmlhdGlvbnM9W107IHBlcmlvZHM9W119"
+                });
+
+                const discovered = discoverEmbeddedPayloads(samplePayload);
+
+                return {
+                    count: discovered.length,
+                    firstPath: discovered[0] ? discovered[0].path : null,
+                    firstFormat: discovered[0] ? discovered[0].format : null,
+                    firstUnescaped: discovered[0] ? discovered[0].unescapedValue : null,
+                    secondPath: discovered[1] ? discovered[1].path : null,
+                    secondFormat: discovered[1] ? discovered[1].format : null,
+                    secondUnescaped: discovered[1] ? discovered[1].unescapedValue : null
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("count")).isEqualTo(2);
+        assertThat(result.get("firstPath")).isEqualTo("$.b5");
+        assertThat(result.get("firstFormat")).isEqualTo("kv");
+        assertThat(result.get("firstUnescaped")).isEqualTo("{abc={abc={id=1111111111111}}}");
+        assertThat(result.get("secondPath")).isEqualTo("$.b11");
+        assertThat(result.get("secondFormat")).isEqualTo("kv");
+        assertThat(result.get("secondUnescaped")).isEqualTo("{messages=null; deviations=[]; periods=[]}");
+    }
+
+    @Test
     @DisplayName(
             "Nested Payload Lens: Cascading round-trip re-escaping fidelity from leaf XML through middle JSON to root JSON")
     void testRoundTripReEscapingFidelity() {

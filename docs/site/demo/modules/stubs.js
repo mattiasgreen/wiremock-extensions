@@ -811,34 +811,4 @@ export function initStubsTab() {
       }
     });
   }
-
-  const topLensBtn = document.getElementById('btn-stub-open-lens-top');
-  if (topLensBtn) {
-    topLensBtn.addEventListener('click', () => {
-      const stub = state.contextStub || (state.selectedStubId ? findCatalogStubById(state.selectedStubId) : null);
-      if (!stub) return;
-      const isDynamic = stub.isDynamic || (stub.metadata && stub.metadata.mode === 'dynamic');
-      const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
-      const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
-      openPayloadLens(rawStubJson, {
-        path: '$',
-        key: 'stub',
-        format: 'json',
-        encoding: 'JSON_STRING',
-        unescapedValue: rawStubJson
-      }, (updatedJson) => {
-        try {
-          const parsed = JSON.parse(updatedJson);
-          if (isDynamic) {
-            stub.rule = parsed;
-          } else {
-            Object.assign(stub, parsed);
-          }
-          selectStub(stub.id);
-        } catch (e) {
-          console.error('Failed to parse updated stub JSON:', e);
-        }
-      });
-    });
-  }
 }

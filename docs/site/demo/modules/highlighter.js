@@ -44,7 +44,150 @@ export function detectFormat(input) {
     } catch (_) {}
   }
 
+  // Java Map toString() / Key-Value pseudo-JSON detection ({key=val} or [item1, item2])
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    if (trimmed.includes('=')) {
+      try {
+        const kv = parsePseudoJson(trimmed);
+        if (kv && typeof kv === 'object') {
+          return 'kv';
+        }
+      } catch (_) {}
+    }
+  }
+
   return 'text';
+}
+
+/**
+ * Lenient Java Map toString() and key-value pseudo-JSON parser.
+ * Handles {key=val, nested={a=1}} and {messages=null; deviations=[]; periods=[]}.
+ *
+ * @param {string} input
+ * @returns {object|array|null}
+ */
+export function parsePseudoJson(input) {
+  if (typeof input !== 'string') return null;
+  const str = input.trim();
+  if (!((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']')))) {
+    return null;
+  }
+
+  let pos = 0;
+  const len = str.length;
+
+  function skipWhitespace() {
+    while (pos < len && /\s/.test(str[pos])) pos++;
+  }
+
+  function parseQuoted(quote) {
+    pos++; // skip quote
+    let res = '';
+    while (pos < len) {
+      const c = str[pos++];
+      if (c === '\\' && pos < len) {
+        res += str[pos++];
+      } else if (c === quote) {
+        break;
+      } else {
+        res += c;
+      }
+    }
+    return res;
+  }
+
+  function parseKey() {
+    skipWhitespace();
+    if (pos < len && (str[pos] === '"' || str[pos] === "'")) {
+      return parseQuoted(str[pos]);
+    }
+    const start = pos;
+    while (pos < len) {
+      const c = str[pos];
+      if (c === '=' || c === ':' || c === '}' || c === ',' || c === ';' || /\s/.test(c)) {
+        break;
+      }
+      pos++;
+    }
+    return str.substring(start, pos).trim();
+  }
+
+  function parseLiteral() {
+    const start = pos;
+    while (pos < len) {
+      const c = str[pos];
+      if (c === ',' || c === ';' || c === '}' || c === ']' || c === '=' || c === ':') {
+        break;
+      }
+      pos++;
+    }
+    const raw = str.substring(start, pos).trim();
+    if (raw === 'null') return null;
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    if (/^-?\d+$/.test(raw)) return parseInt(raw, 10);
+    if (/^-?\d+\.\d+$/.test(raw)) return parseFloat(raw);
+    return raw;
+  }
+
+  function parseValue() {
+    skipWhitespace();
+    if (pos >= len) return null;
+    const c = str[pos];
+    if (c === '{') return parseObject();
+    if (c === '[') return parseArray();
+    if (c === '"' || c === "'") return parseQuoted(c);
+    return parseLiteral();
+  }
+
+  function parseObject() {
+    pos++; // skip '{'
+    const obj = {};
+    while (pos < len) {
+      skipWhitespace();
+      if (pos >= len || str[pos] === '}') {
+        if (pos < len) pos++; // skip '}'
+        break;
+      }
+      const key = parseKey();
+      skipWhitespace();
+      if (pos < len && (str[pos] === '=' || str[pos] === ':')) {
+        pos++;
+      }
+      const val = parseValue();
+      if (key) obj[key] = val;
+      skipWhitespace();
+      if (pos < len && (str[pos] === ',' || str[pos] === ';')) {
+        pos++;
+      }
+    }
+    return obj;
+  }
+
+  function parseArray() {
+    pos++; // skip '['
+    const arr = [];
+    while (pos < len) {
+      skipWhitespace();
+      if (pos >= len || str[pos] === ']') {
+        if (pos < len) pos++; // skip ']'
+        break;
+      }
+      const item = parseValue();
+      arr.push(item);
+      skipWhitespace();
+      if (pos < len && (str[pos] === ',' || str[pos] === ';')) {
+        pos++;
+      }
+    }
+    return arr;
+  }
+
+  try {
+    return parseValue();
+  } catch (_) {
+    return null;
+  }
 }
 
 /**
@@ -258,6 +401,10 @@ export function highlightPayload(input) {
   if (format === 'json') {
     return highlightJson(input);
   }
+  if (format === 'kv') {
+    const parsed = parsePseudoJson(typeof input === 'string' ? input : String(input));
+    if (parsed) return highlightJson(parsed);
+  }
   if (format === 'xml') {
     return highlightXml(typeof input === 'string' ? input : String(input));
   }
@@ -265,7 +412,7 @@ export function highlightPayload(input) {
 }
 
 /**
- * Unified payload pretty-printer: formats JSON or XML based on detected grammar.
+ * Unified payload pretty-printer: formats JSON, KV, or XML based on detected grammar.
  *
  * @param {any} input
  * @returns {string}
@@ -279,6 +426,10 @@ export function formatPayload(input) {
     } catch (_) {
       return String(input);
     }
+  }
+  if (format === 'kv') {
+    const parsed = parsePseudoJson(typeof input === 'string' ? input : String(input));
+    if (parsed) return JSON.stringify(parsed, null, 2);
   }
   if (format === 'xml') {
     return formatXml(typeof input === 'string' ? input : String(input));

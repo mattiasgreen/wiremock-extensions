@@ -274,7 +274,6 @@ function buildRowHtml(req) {
                     ${reqBodyRaw ? `
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqBadgeLabel)}</span>
-                        <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="req" data-id="${req.id}" title="Open full Request Body in Focused Lens">🔍 Lens</button>
                         <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="req" data-id="${req.id}" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
                       </span>
                     ` : ''}
@@ -325,7 +324,6 @@ function buildRowHtml(req) {
                     ${resBodyRaw ? `
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resBadgeLabel)}</span>
-                        <button type="button" class="btn-lens-open-pill btn-journal-top-lens" data-type="res" data-id="${req.id}" title="Open full Response Body in Focused Lens">🔍 Lens</button>
                         <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="res" data-id="${req.id}" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
                       </span>
                     ` : ''}
