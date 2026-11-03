@@ -1278,9 +1278,9 @@ class InMemoryDemoBackend {
     // 9. Version endpoint
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
-        version: '1.9.0-demo',
-        branch: 'main',
-        commit: 'gh-pages'
+        version: '1.14.0',
+        branch: 'feat/ui-build-version-and-git-hash',
+        commit: 'd31c6c1'
       });
     }
 

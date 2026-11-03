@@ -399,6 +399,13 @@ public final class WireMockConsoleProxy {
     }
 
     public static String resolveVersionJson() {
+        StaticAsset asset = loadStaticAsset("/ui/version.json");
+        if (asset.status() == 200 && asset.bodyBytes() != null && asset.bodyBytes().length > 0) {
+            String json = new String(asset.bodyBytes(), StandardCharsets.UTF_8).trim();
+            if (json.startsWith("{") && json.contains("\"version\"")) {
+                return json;
+            }
+        }
         String version = resolveVersion();
         String commit = resolveGitCommit();
         String branch = resolveGitBranch();
@@ -407,7 +414,7 @@ public final class WireMockConsoleProxy {
 
     private static String resolveVersion() {
         String ver = WireMockConsoleProxy.class.getPackage().getImplementationVersion();
-        return (ver != null && !ver.isBlank()) ? ver : "1.2.0";
+        return (ver != null && !ver.isBlank()) ? ver : "1.14.0";
     }
 
     private static String resolveGitCommit() {
@@ -419,7 +426,7 @@ public final class WireMockConsoleProxy {
             }
         } catch (IOException | RuntimeException ignored) {
         }
-        return "27d3381";
+        return "unknown";
     }
 
     private static String resolveGitBranch() {
@@ -431,7 +438,7 @@ public final class WireMockConsoleProxy {
             }
         } catch (IOException | RuntimeException ignored) {
         }
-        return "feat/openapi-proxy-recording";
+        return "main";
     }
 
     private static String sanitizeError(Throwable t) {

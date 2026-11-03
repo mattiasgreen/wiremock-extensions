@@ -84,9 +84,34 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"btn-copy-curl\"");
         assertThat(html).contains("id=\"btn-tester-send\"");
         assertThat(html).contains("id=\"btn-tester-share-link\"");
+        assertThat(html).contains("id=\"app-version-badge\"");
         assertThat(html).contains("id=\"nav-tab-netem\"");
         assertThat(html).contains("id=\"tab-netem\"");
         assertThat(html).contains("id=\"netem-journal-table\"");
+    }
+
+    @Test
+    void testVersionJsonAssetAndEndpoint() throws Exception {
+        HttpRequest versionReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/ui/version"))
+                .GET()
+                .build();
+        HttpResponse<String> versionResp = httpClient.send(versionReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(versionResp.statusCode()).isEqualTo(200);
+        JsonNode json = objectMapper.readTree(versionResp.body());
+        assertThat(json.has("version")).isTrue();
+        assertThat(json.has("commit")).isTrue();
+        assertThat(json.has("branch")).isTrue();
+        assertThat(json.get("version").asText()).isNotBlank();
+        assertThat(json.get("commit").asText()).isNotBlank();
+        assertThat(json.get("branch").asText()).isNotBlank();
+
+        Path versionJsonPath = Path.of("src/main/resources/ui/version.json");
+        assertThat(Files.isRegularFile(versionJsonPath)).isTrue();
+        String diskContent = Files.readString(versionJsonPath, StandardCharsets.UTF_8);
+        JsonNode diskJson = objectMapper.readTree(diskContent);
+        assertThat(diskJson.get("version").asText())
+                .isEqualTo(json.get("version").asText());
     }
 
     @Test
