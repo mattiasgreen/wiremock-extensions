@@ -767,6 +767,7 @@ public final class CasualBufferUtils {
         String str = null;
         if (data instanceof byte[] bytes) {
             if (bytes.length > 0) {
+                effectiveCharset = guessCharset(bytes, effectiveCharset);
                 str = new String(bytes, effectiveCharset).trim();
             }
         } else if (data instanceof String s) {
@@ -781,20 +782,246 @@ public final class CasualBufferUtils {
             try {
                 return OBJECT_MAPPER.readValue(str, Object.class);
             } catch (IOException ignored) {
+                Object pseudo = tryParsePseudoJson(str);
+                if (pseudo != null) {
+                    return pseudo;
+                }
             }
         }
 
-        // 2. Base64-encoded JSON payload
+        // 2. Base64-encoded JSON or pseudo-JSON payload
         try {
             byte[] decoded = Base64.getDecoder().decode(str);
-            String decodedStr = new String(decoded, effectiveCharset).trim();
+            Charset b64Charset = guessCharset(decoded, effectiveCharset);
+            String decodedStr = new String(decoded, b64Charset).trim();
             if ((decodedStr.startsWith("{") && decodedStr.endsWith("}"))
                     || (decodedStr.startsWith("[") && decodedStr.endsWith("]"))) {
-                return OBJECT_MAPPER.readValue(decodedStr, Object.class);
+                try {
+                    return OBJECT_MAPPER.readValue(decodedStr, Object.class);
+                } catch (IOException ignored) {
+                    Object pseudo = tryParsePseudoJson(decodedStr);
+                    if (pseudo != null) {
+                        return pseudo;
+                    }
+                }
             }
-        } catch (IOException | IllegalArgumentException ignored) {
+        } catch (IllegalArgumentException ignored) {
         }
         return null;
+    }
+
+    public static Charset guessCharset(byte[] bytes, Charset defaultCharset) {
+        if (bytes == null || bytes.length == 0) {
+            return defaultCharset != null ? defaultCharset : StandardCharsets.UTF_8;
+        }
+        if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF) {
+            return StandardCharsets.UTF_8;
+        }
+        int i = 0;
+        while (i < bytes.length) {
+            int b = bytes[i] & 0xFF;
+            if (b <= 0x7F) {
+                i++;
+            } else if (b >= 0xC2 && b <= 0xDF) {
+                if (i + 1 >= bytes.length || (bytes[i + 1] & 0xC0) != 0x80) {
+                    return StandardCharsets.ISO_8859_1;
+                }
+                i += 2;
+            } else if (b >= 0xE0 && b <= 0xEF) {
+                if (i + 2 >= bytes.length || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80) {
+                    return StandardCharsets.ISO_8859_1;
+                }
+                if (b == 0xE0 && (bytes[i + 1] & 0xE0) == 0x80) {
+                    return StandardCharsets.ISO_8859_1;
+                }
+                i += 3;
+            } else if (b >= 0xF0 && b <= 0xF4) {
+                if (i + 3 >= bytes.length
+                        || (bytes[i + 1] & 0xC0) != 0x80
+                        || (bytes[i + 2] & 0xC0) != 0x80
+                        || (bytes[i + 3] & 0xC0) != 0x80) {
+                    return StandardCharsets.ISO_8859_1;
+                }
+                i += 4;
+            } else {
+                return StandardCharsets.ISO_8859_1;
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    public static Object tryParsePseudoJson(String text) {
+        if (text == null) {
+            return null;
+        }
+        String trimmed = text.trim();
+        if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+            try {
+                return new PseudoJsonParser(trimmed).parse();
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static final class PseudoJsonParser {
+        private final String text;
+        private final int len;
+        private int pos;
+
+        PseudoJsonParser(String text) {
+            this.text = text;
+            this.len = text.length();
+            this.pos = 0;
+        }
+
+        Object parse() {
+            skipWhitespace();
+            if (pos >= len) {
+                return null;
+            }
+            char c = text.charAt(pos);
+            if (c == '{') {
+                return parseObject();
+            }
+            if (c == '[') {
+                return parseArray();
+            }
+            return null;
+        }
+
+        private void skipWhitespace() {
+            while (pos < len && Character.isWhitespace(text.charAt(pos))) {
+                pos++;
+            }
+        }
+
+        private Object parseValue() {
+            skipWhitespace();
+            if (pos >= len) {
+                return null;
+            }
+            char c = text.charAt(pos);
+            if (c == '{') {
+                return parseObject();
+            }
+            if (c == '[') {
+                return parseArray();
+            }
+            if (c == '"' || c == '\'') {
+                return parseQuotedString(c);
+            }
+            return parseLiteral();
+        }
+
+        private Map<String, Object> parseObject() {
+            pos++; // skip '{'
+            Map<String, Object> map = new LinkedHashMap<>();
+            while (pos < len) {
+                skipWhitespace();
+                if (pos >= len || text.charAt(pos) == '}') {
+                    if (pos < len) {
+                        pos++; // skip '}'
+                    }
+                    break;
+                }
+                String key = parseKey();
+                skipWhitespace();
+                if (pos < len && (text.charAt(pos) == '=' || text.charAt(pos) == ':')) {
+                    pos++;
+                }
+                Object value = parseValue();
+                map.put(key, value);
+                skipWhitespace();
+                if (pos < len && (text.charAt(pos) == ',' || text.charAt(pos) == ';')) {
+                    pos++;
+                }
+            }
+            return map;
+        }
+
+        private List<Object> parseArray() {
+            pos++; // skip '['
+            List<Object> list = new ArrayList<>();
+            while (pos < len) {
+                skipWhitespace();
+                if (pos >= len || text.charAt(pos) == ']') {
+                    if (pos < len) {
+                        pos++; // skip ']'
+                    }
+                    break;
+                }
+                Object item = parseValue();
+                list.add(item);
+                skipWhitespace();
+                if (pos < len && (text.charAt(pos) == ',' || text.charAt(pos) == ';')) {
+                    pos++;
+                }
+            }
+            return list;
+        }
+
+        private String parseKey() {
+            skipWhitespace();
+            if (pos < len && (text.charAt(pos) == '"' || text.charAt(pos) == '\'')) {
+                return parseQuotedString(text.charAt(pos));
+            }
+            int start = pos;
+            while (pos < len) {
+                char c = text.charAt(pos);
+                if (c == '=' || c == ':' || c == '}' || c == ',' || c == ';' || Character.isWhitespace(c)) {
+                    break;
+                }
+                pos++;
+            }
+            return text.substring(start, pos).trim();
+        }
+
+        private String parseQuotedString(char quote) {
+            pos++; // skip opening quote
+            StringBuilder sb = new StringBuilder();
+            while (pos < len) {
+                char c = text.charAt(pos++);
+                if (c == '\\' && pos < len) {
+                    sb.append(text.charAt(pos++));
+                } else if (c == quote) {
+                    break;
+                } else {
+                    sb.append(c);
+                }
+            }
+            return sb.toString();
+        }
+
+        private Object parseLiteral() {
+            int start = pos;
+            while (pos < len) {
+                char c = text.charAt(pos);
+                if (c == ',' || c == ';' || c == '}' || c == ']' || c == '=' || c == ':') {
+                    break;
+                }
+                pos++;
+            }
+            String raw = text.substring(start, pos).trim();
+            if ("null".equalsIgnoreCase(raw)) {
+                return null;
+            }
+            if ("true".equalsIgnoreCase(raw)) {
+                return Boolean.TRUE;
+            }
+            if ("false".equalsIgnoreCase(raw)) {
+                return Boolean.FALSE;
+            }
+            try {
+                return Long.parseLong(raw);
+            } catch (NumberFormatException ignored) {
+            }
+            try {
+                return Double.parseDouble(raw);
+            } catch (NumberFormatException ignored) {
+            }
+            return raw;
+        }
     }
 
     private static boolean isDigitsOnly(String str) {

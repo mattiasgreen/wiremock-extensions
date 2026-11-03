@@ -12,7 +12,8 @@ import {
   minifyXml,
   highlightPayload,
   highlightJson,
-  highlightXml
+  highlightXml,
+  parsePseudoJson
 } from './highlighter.js';
 import { decodeBase64ToUtf8, tryDecodeBase64Json } from './base64.js';
 
@@ -423,6 +424,17 @@ function inspectJsonObject(obj, path, results, maxDepth, currentDepth) {
   }
 }
 
+export function isPrintableText(str) {
+  if (typeof str !== 'string' || !str) return false;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
   const trimmedVal = val.trim();
   if (trimmedVal.length < 2) return null;
@@ -450,6 +462,31 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
         };
       }
     } catch (_) {}
+
+    // 1b. Check for embedded Java Map / KV pseudo-JSON string
+    if (trimmedVal.includes('=')) {
+      try {
+        const kv = parsePseudoJson(trimmedVal);
+        if (kv && typeof kv === 'object') {
+          const children = currentDepth + 1 < maxDepth
+            ? discoverEmbeddedPayloads(trimmedVal, maxDepth, currentDepth + 1, childPath)
+            : [];
+          return {
+            path: childPath,
+            key,
+            format: 'kv',
+            encoding: 'JSON_STRING',
+            charset: detectCharset(trimmedVal),
+            wasCompact: !val.includes('\n'),
+            rawValue: val,
+            unescapedValue: trimmedVal,
+            formattedValue: formatPayload(trimmedVal),
+            byteLength: typeof Blob !== 'undefined' ? new Blob([val]).size : val.length,
+            children
+          };
+        }
+      } catch (_) {}
+    }
   }
 
   // 2. Check for embedded XML string
@@ -474,12 +511,19 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
     }
   }
 
-  // 3. Check for Base64-encoded JSON or XML (supporting UTF-8 and single-byte charsets)
+  // 3. Check for Base64-encoded JSON, XML, KV, or printable Text
   const b64Decoded = decodeBase64WithCharset(val);
-  if (b64Decoded && b64Decoded.text && b64Decoded.text.length > 3) {
+  if (b64Decoded && b64Decoded.text && b64Decoded.text.length >= 3) {
     const decodedText = b64Decoded.text;
     const innerFormat = detectFormat(decodedText);
-    if (innerFormat === 'json' || innerFormat === 'xml') {
+    const isPrintable = isPrintableText(decodedText);
+    const trimmedValStr = val.trim();
+    const isGenuineBase64 = /^[A-Za-z0-9+/]{8,}={0,2}$/.test(trimmedValStr);
+
+    const isMatch = (innerFormat === 'json' || innerFormat === 'xml' || innerFormat === 'kv') ||
+      (innerFormat === 'text' && isPrintable && isGenuineBase64 && trimmedValStr.length >= 24 && isMostlyAsciiText(decodedText));
+
+    if (isMatch) {
       const children = currentDepth + 1 < maxDepth
         ? discoverEmbeddedPayloads(decodedText, maxDepth, currentDepth + 1, childPath)
         : [];
@@ -492,7 +536,7 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
         wasCompact: !decodedText.includes('\n'),
         rawValue: val,
         unescapedValue: decodedText,
-        formattedValue: innerFormat === 'json' ? formatPayload(decodedText) : formatXml(decodedText),
+        formattedValue: formatPayload(decodedText),
         byteLength: typeof Blob !== 'undefined' ? new Blob([val]).size : val.length,
         children
       };
@@ -500,6 +544,18 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
   }
 
   return null;
+}
+
+function isMostlyAsciiText(str) {
+  if (!str) return false;
+  let asciiCount = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+      asciiCount++;
+    }
+  }
+  return (asciiCount / str.length) >= 0.9;
 }
 
 function inspectXmlText(xmlText, path, results, maxDepth, currentDepth) {
@@ -896,7 +952,7 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
       charset: node.charset,
       sizeKb
     });
-    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><button type="button" class="btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Open focused Nested Payload Lens">🔍 Lens</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
 
     const token = `__LENS_TOKEN_${i}__`;
     const escapedInJson = JSON.stringify(node.rawValue);
@@ -1349,9 +1405,12 @@ export function renderViewportModal() {
   const titleEl = document.getElementById('payload-lens-title');
   const nestedBarEl = document.getElementById('payload-lens-nested-bar');
   const saveRootBtn = document.getElementById('btn-lens-save-root');
+  const cancelBtn = document.getElementById('btn-cancel-payload-lens');
+  const viewerContainerEl = document.getElementById('payload-viewport-viewer-container');
+  const editorContainerEl = document.getElementById('payload-viewport-editor-container');
 
   if (titleEl) {
-    titleEl.innerHTML = `<span>🔍</span> ${escapeHtml(currentFrame.title)}`;
+    titleEl.innerHTML = `<span>⛶</span> ${escapeHtml(currentFrame.title)}`;
   }
 
   // Render Stacked Breadcrumbs
@@ -1387,36 +1446,55 @@ export function renderViewportModal() {
     });
   }
 
-  // Populate Editor Textarea
+  // Always populate Editor Textarea so underlying state and DOM access remain synchronized
   if (editorEl) {
     editorEl.value = currentFrame.currentText;
     validateCurrentEditor();
   }
 
-  updateViewportDirtyIndicator();
+  const isViewerMode = currentFrame.mode === 'viewer';
 
-  // Dynamic context save button label
-  if (saveRootBtn) {
-    if (currentFrame.context === 'journal') {
-      saveRootBtn.textContent = '📸 Snapshot as Stub';
-      saveRootBtn.title = 'Snapshot this modified journal response as an active mock stub';
-    } else if (currentFrame.context === 'tester-request') {
-      saveRootBtn.textContent = '💾 Save to Request';
-      saveRootBtn.title = 'Apply modifications back to HTTP/Casual Tester request payload';
-    } else if (currentFrame.context === 'tester-response') {
-      saveRootBtn.textContent = '📸 Snapshot as Stub';
-      saveRootBtn.title = 'Snapshot response payload into an active WireMock stub';
-    } else if (currentFrame.context === 'stub') {
-      saveRootBtn.textContent = '💾 Save Mapping';
-      saveRootBtn.title = 'Commit modifications to in-memory stub definition';
-    } else {
-      saveRootBtn.textContent = viewportStack.length > 1 ? '💾 Save All to Root' : '💾 Save';
-      saveRootBtn.title = 'Re-escape and apply changes';
+  if (isViewerMode) {
+    if (editorContainerEl) editorContainerEl.classList.add('hidden');
+    if (viewerContainerEl) {
+      viewerContainerEl.classList.remove('hidden');
+      renderPayloadViewer(viewerContainerEl, currentFrame.currentText, {
+        onSaveRoot: currentFrame.onSave
+      });
+    }
+    if (cancelBtn) cancelBtn.textContent = 'Close';
+    if (saveRootBtn) {
+      if (currentFrame.context === 'journal' || currentFrame.context === 'tester-response') {
+        saveRootBtn.textContent = '📸 Snapshot as Stub';
+        saveRootBtn.title = 'Snapshot this payload as an active WireMock mock stub';
+        saveRootBtn.classList.remove('hidden');
+      } else {
+        saveRootBtn.classList.add('hidden');
+      }
+    }
+  } else {
+    if (viewerContainerEl) viewerContainerEl.classList.add('hidden');
+    if (editorContainerEl) editorContainerEl.classList.remove('hidden');
+    if (cancelBtn) cancelBtn.textContent = 'Cancel';
+    if (saveRootBtn) {
+      saveRootBtn.classList.remove('hidden');
+      if (currentFrame.context === 'tester-request') {
+        saveRootBtn.textContent = '💾 Save to Request';
+        saveRootBtn.title = 'Apply modifications back to HTTP/Casual Tester request payload';
+      } else if (currentFrame.context === 'stub') {
+        saveRootBtn.textContent = '💾 Save Mapping';
+        saveRootBtn.title = 'Commit modifications to in-memory stub definition';
+      } else {
+        saveRootBtn.textContent = viewportStack.length > 1 ? '💾 Save All to Root' : '💾 Save';
+        saveRootBtn.title = 'Re-escape and apply changes';
+      }
     }
   }
 
-  // Check for even deeper nested payloads inside this active frame
-  if (nestedBarEl) {
+  updateViewportDirtyIndicator();
+
+  // Check for even deeper nested payloads inside this active frame in editor mode
+  if (nestedBarEl && !isViewerMode) {
     const innerDiscovered = discoverEmbeddedPayloads(currentFrame.currentText);
     if (innerDiscovered.length > 0) {
       nestedBarEl.classList.remove('hidden');

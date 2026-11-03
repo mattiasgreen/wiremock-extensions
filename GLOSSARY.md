@@ -49,19 +49,19 @@ A high-level test seam encapsulating console navigation, tab switching, stub/jou
 _Avoid_: page object boilerplate, playwright helper, UI tester fixture
 
 **Payload Unnesting Engine**:
-A domain module that recursively detects, extracts, and parses embedded JSON, XML, or Base64 documents inside JSON string properties or XML text/CDATA nodes while preserving structural path addressing.
+A domain module that recursively detects, extracts, and parses embedded JSON, XML, Java Map / Key-Value (`{key=val}`), or Base64 documents inside JSON string properties or XML text/CDATA nodes while preserving structural path addressing and guessing character encodings.
 _Avoid_: string unescaper, regex payload cleaner, nested parser
 
-**Nested Payload Lens**:
-A focused inspection and editing surface for a single unwrapped inner payload (with breadcrumb path context, syntax validation, and round-trip re-escaping back into its parent container).
-_Avoid_: popup editor, sub-modal, raw string editor
+**Maximized Payload Viewport**:
+A full-window (100vw × 100vh) overlay viewport wrapping a Canonical Payload Surface with breadcrumb navigation, format descriptors, and action toolbars, providing distraction-free inspection and editing of root documents or unnested child payloads with full syntax highlighting and inline unnested blocks.
+_Avoid_: nested payload lens, popup editor, sub-modal, raw string editor
 
 **Auto-Unnested Payload**:
-An inline presentation of an escaped nested JSON, XML, or CDATA document rendered directly within the parent syntax flow, expanded and auto-indented by default with a format badge, subtle gutter marking, and floating actions (`Open in Lens`, `Collapse`) to allow immediate reading without manual unrolling.
-_Avoid_: auto-expanded string, unpacked blob, inlined object
+An inline presentation of an escaped nested JSON, XML, Key-Value, or Base64 document rendered directly within the parent syntax flow, expanded and auto-indented by default with a format badge, subtle gutter marking, and action controls to allow immediate reading without manual unrolling.
+_Avoid_: auto-expanded string, unpacked blob, inlined object, payload lens
 
 **Truncated Payload Preview**:
-An inline syntax-highlighted representation of an escaped nested JSON, XML, or CDATA document rendered within the parent syntax flow when collapsed or folded, featuring a format badge and hover actions (`Open in Lens`, `Expand`) to inspect or unfold without disrupting document geometry.
+An inline syntax-highlighted representation of an escaped nested JSON, XML, Key-Value, or Base64 document rendered within the parent syntax flow when collapsed or folded, featuring a format badge and hover actions to inspect or unfold without disrupting document geometry.
 _Avoid_: string ellipsis, clipped text, collapsed string, block preview box
 
 **Detected Embedded Payloads Bar**:

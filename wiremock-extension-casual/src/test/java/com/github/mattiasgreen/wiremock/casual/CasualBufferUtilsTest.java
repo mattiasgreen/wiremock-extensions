@@ -389,4 +389,43 @@ class CasualBufferUtilsTest {
         assertThat(dump).contains("48 65 6C 6C 6F");
         assertThat(dump).contains("|Hello, World!|");
     }
+
+    @Test
+    @DisplayName("Should parse Java Map toString and semi-colon delimited pseudo-JSON into structured Map")
+    void shouldParsePseudoJsonStructures() {
+        // Nested Java map format: {abc={abc={id=1111111111111}}}
+        String mapStr = "{abc={abc={id=1111111111111}}}";
+        Object parsed1 = CasualBufferUtils.tryParsePseudoJson(mapStr);
+        assertThat(parsed1).isInstanceOf(java.util.Map.class);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> map1 = (java.util.Map<String, Object>) parsed1;
+        assertThat(map1).containsKey("abc");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> inner1 = (java.util.Map<String, Object>) map1.get("abc");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> deepest1 = (java.util.Map<String, Object>) inner1.get("abc");
+        assertThat(deepest1.get("id")).isEqualTo(1111111111111L);
+
+        // Semicolon delimited map with null and empty arrays: {messages=null; deviations=[]; periods=[]}
+        String mapStr2 = "{messages=null; deviations=[]; periods=[]}";
+        Object parsed2 = CasualBufferUtils.tryParsePseudoJson(mapStr2);
+        assertThat(parsed2).isInstanceOf(java.util.Map.class);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> map2 = (java.util.Map<String, Object>) parsed2;
+        assertThat(map2).containsEntry("messages", null);
+        assertThat(map2.get("deviations")).isEqualTo(List.of());
+        assertThat(map2.get("periods")).isEqualTo(List.of());
+    }
+
+    @Test
+    @DisplayName("Should guess UTF-8 and ISO-8859-1 charsets accurately")
+    void shouldGuessCharsetsAccurately() {
+        byte[] utf8Bytes = "Räksmörgås".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] isoBytes = "Räksmörgås".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+
+        assertThat(CasualBufferUtils.guessCharset(utf8Bytes, java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(CasualBufferUtils.guessCharset(isoBytes, java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo(java.nio.charset.StandardCharsets.ISO_8859_1);
+    }
 }

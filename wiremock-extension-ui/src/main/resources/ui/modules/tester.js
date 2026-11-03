@@ -567,8 +567,54 @@ export function initTesterTab() {
       if (elements.testerMethod) elements.testerMethod.value = 'GET';
       if (elements.testerUrl) elements.testerUrl.value = '/api/v1/users';
       if (elements.testerHeaders) elements.testerHeaders.value = '';
-      if (elements.testerBody) elements.testerBody.value = '';
+      if (elements.testerBody) {
+        elements.testerBody.value = '';
+        elements.testerBody.dispatchEvent(new Event('input'));
+      }
       updateTesterRoute(true);
+    });
+  }
+
+  const updateTesterBodyPill = () => {
+    const text = elements.testerBody ? elements.testerBody.value : '';
+    const pill = document.getElementById('tester-request-top-pill');
+    const pillGroup = document.getElementById('tester-request-top-pill-group');
+    if (pill && pillGroup) {
+      if (text && text.trim()) {
+        pillGroup.style.display = 'inline-flex';
+        const fmt = detectFormat(text);
+        const sizeKb = (new Blob([text]).size / 1024).toFixed(1);
+        pill.textContent = `${fmt.toUpperCase()} · ${sizeKb} KB`;
+      } else {
+        pillGroup.style.display = 'none';
+      }
+    }
+  };
+
+  if (elements.testerBody) {
+    elements.testerBody.addEventListener('input', updateTesterBodyPill);
+    updateTesterBodyPill();
+  }
+
+  const btnTesterReqMax = document.getElementById('btn-tester-request-maximize');
+  if (btnTesterReqMax) {
+    btnTesterReqMax.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const text = elements.testerBody ? elements.testerBody.value : '';
+      pushViewportLayer({
+        title: 'HTTP Tester Request Body',
+        text,
+        format: detectFormat(text),
+        context: 'tester-request',
+        mode: 'editor',
+        onSave: (savedText) => {
+          if (elements.testerBody) {
+            elements.testerBody.value = savedText;
+            updateTesterBodyPill();
+            updateTesterRoute(true);
+          }
+        }
+      });
     });
   }
 
@@ -583,22 +629,6 @@ export function initTesterTab() {
         const isHidden = elements.testerResponseBody.classList.toggle('hidden');
         topPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
       }
-    });
-  }
-
-  const topLensBtn = document.getElementById('btn-tester-open-lens-top');
-  if (topLensBtn) {
-    topLensBtn.addEventListener('click', () => {
-      const bodyText = state.lastRawResponseBody;
-      if (!bodyText) return;
-      const fmt = detectFormat(bodyText);
-      openPayloadLens(bodyText, {
-        path: '$',
-        key: 'response',
-        format: fmt,
-        encoding: 'STRING',
-        unescapedValue: bodyText
-      }, null);
     });
   }
 }

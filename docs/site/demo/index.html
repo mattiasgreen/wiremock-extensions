@@ -240,7 +240,6 @@
                 <span class="code-viewer-title">Stub Mapping JSON</span>
                 <span class="preview-pill-group" id="stub-top-pill-group">
                   <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
-                  <button type="button" id="btn-stub-open-lens-top" class="btn-lens-open-pill" title="Open full Stub in Focused Lens">🔍 Lens</button>
                   <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
                 </span>
               </div>
@@ -419,8 +418,16 @@
 
                   <div class="tester-section" id="tester-body-section">
                     <div class="tester-section-header">
-                      <span>Request Body</span>
-                      <button id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span>Request Body</span>
+                        <span class="preview-pill-group" id="tester-request-top-pill-group" style="display: none;">
+                          <span class="preview-pill-badge" id="tester-request-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
+                          <button type="button" id="btn-tester-request-maximize" class="btn-payload-maximize" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
+                        </span>
+                      </div>
+                      <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
+                        <button type="button" id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
+                      </div>
                     </div>
                     <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
                     <div id="tester-body-embedded-bar" data-testid="tester-body-embedded-bar" class="hidden"></div>
@@ -471,7 +478,6 @@
                           <span>Response Body</span>
                           <span class="preview-pill-group" id="tester-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="tester-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
-                            <button type="button" id="btn-tester-open-lens-top" class="btn-lens-open-pill" title="Open Response Body in Focused Lens">🔍 Lens</button>
                             <button type="button" id="btn-tester-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
@@ -567,7 +573,6 @@
                         <span>Request Payload</span>
                         <span class="preview-pill-group" id="casual-request-top-pill-group">
                           <span class="preview-pill-badge" id="casual-request-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
-                          <button type="button" id="btn-casual-request-open-lens-top" class="btn-lens-open-pill" title="Open Request Payload in Focused Lens">🔍 Lens</button>
                           <button type="button" id="btn-casual-request-maximize" class="btn-payload-maximize" title="Maximize Request Payload in Fullscreen Viewport">⛶ Maximize</button>
                         </span>
                       </div>
@@ -631,7 +636,7 @@
                           <span>Response Body</span>
                           <span class="preview-pill-group" id="casual-response-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="casual-response-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
-                            <button type="button" id="btn-casual-response-open-lens-top" class="btn-lens-open-pill" title="Open response body in Focused Lens">🔍 Lens</button>
+                            <button type="button" id="btn-casual-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
                       </div>
@@ -1347,7 +1352,7 @@
     </div>
   </div>
 
-  <!-- Modal: Nested Payload Lens & Fullscreen Maximized Viewport -->
+  <!-- Modal: Maximized Viewport & Stacked Layers -->
   <div id="modal-payload-lens" class="modal-backdrop hidden" data-testid="modal-payload-lens">
     <div class="modal modal-large">
       <div class="modal-header">
@@ -1355,7 +1360,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 10px;">
               <h2 id="payload-lens-title" style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-                <span>🔍</span> Payload Lens
+                <span>⛶</span> Maximized Viewport
               </h2>
               <span id="payload-lens-dirty-indicator" class="viewport-dirty-badge hidden" data-testid="payload-lens-dirty-indicator">● Unsaved Changes</span>
             </div>
@@ -1367,43 +1372,49 @@
           </div>
         </div>
       </div>
-      <div class="modal-body" style="padding-top: 10px;">
-        <!-- Embedded child payloads bar if the current lens payload itself has nested escaped payloads -->
-        <div id="payload-lens-nested-bar" data-testid="payload-lens-nested-bar" class="hidden" style="margin-bottom: 8px;"></div>
+      <div class="modal-body" style="padding-top: 10px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 0%;">
+        <!-- Viewer Container for formatted preview / read-only mode -->
+        <div id="payload-viewport-viewer-container" class="hidden" style="flex: 1 1 0%; display: flex; flex-direction: column; min-height: 0;"></div>
 
-        <!-- Editor Toolbar -->
-        <div class="payload-lens-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <button type="button" id="btn-lens-prettify" data-testid="btn-lens-prettify" class="btn btn-tiny btn-secondary" title="Format/Prettify Payload">✨ Prettify</button>
-            <button type="button" id="btn-lens-minify" data-testid="btn-lens-minify" class="btn btn-tiny btn-secondary" title="Minify Payload">Compact</button>
-            <span style="border-left: 1px solid var(--border-color); height: 16px; margin: 0 4px;"></span>
-            <button type="button" id="btn-lens-copy-raw" data-testid="btn-lens-copy-raw" class="btn btn-tiny btn-secondary" title="Copy raw escaped wire representation">📋 Copy Raw</button>
-            <button type="button" id="btn-lens-copy-formatted" data-testid="btn-lens-copy-formatted" class="btn btn-tiny btn-secondary" title="Copy formatted payload">✨ Copy Formatted</button>
+        <!-- Editor Container for editable mode -->
+        <div id="payload-viewport-editor-container" style="flex: 1 1 0%; display: flex; flex-direction: column; min-height: 0;">
+          <!-- Embedded child payloads bar if the current payload itself has nested escaped payloads -->
+          <div id="payload-lens-nested-bar" data-testid="payload-lens-nested-bar" class="hidden" style="margin-bottom: 8px;"></div>
+
+          <!-- Editor Toolbar -->
+          <div class="payload-lens-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <button type="button" id="btn-lens-prettify" data-testid="btn-lens-prettify" class="btn btn-tiny btn-secondary" title="Format/Prettify Payload">✨ Prettify</button>
+              <button type="button" id="btn-lens-minify" data-testid="btn-lens-minify" class="btn btn-tiny btn-secondary" title="Minify Payload">Compact</button>
+              <span style="border-left: 1px solid var(--border-color); height: 16px; margin: 0 4px;"></span>
+              <button type="button" id="btn-lens-copy-raw" data-testid="btn-lens-copy-raw" class="btn btn-tiny btn-secondary" title="Copy raw escaped wire representation">📋 Copy Raw</button>
+              <button type="button" id="btn-lens-copy-formatted" data-testid="btn-lens-copy-formatted" class="btn btn-tiny btn-secondary" title="Copy formatted payload">✨ Copy Formatted</button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
+              <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                <input type="checkbox" id="chk-lens-minify-on-save" data-testid="chk-lens-minify-on-save">
+                <span>Minify before re-escaping</span>
+              </label>
+            </div>
           </div>
-          <div style="display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
-            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-              <input type="checkbox" id="chk-lens-minify-on-save" data-testid="chk-lens-minify-on-save">
-              <span>Minify before re-escaping</span>
-            </label>
+
+          <!-- Lens Textarea Editor -->
+          <div class="code-editor-wrapper" style="position: relative; flex: 1 1 0%; display: flex; min-height: 0;">
+            <textarea id="payload-lens-editor" data-testid="payload-lens-editor" class="code-input" rows="18" spellcheck="false" style="font-family: monospace; font-size: 0.85rem; width: 100%; flex: 1 1 0%; resize: none;"></textarea>
           </div>
-        </div>
 
-        <!-- Lens Textarea Editor -->
-        <div class="code-editor-wrapper" style="position: relative;">
-          <textarea id="payload-lens-editor" data-testid="payload-lens-editor" class="code-input" rows="18" spellcheck="false" style="font-family: monospace; font-size: 0.85rem; width: 100%; resize: vertical;"></textarea>
+          <!-- Live Validation Error / Alert Box -->
+          <div id="payload-lens-validation-error" data-testid="payload-lens-validation-error" class="validation-error hidden" style="margin-top: 8px; padding: 6px 10px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; font-size: 0.82rem; color: #ef4444;"></div>
         </div>
-
-        <!-- Live Validation Error / Alert Box -->
-        <div id="payload-lens-validation-error" data-testid="payload-lens-validation-error" class="validation-error hidden" style="margin-top: 8px; padding: 6px 10px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; font-size: 0.82rem; color: #ef4444;"></div>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; gap: 8px;">
           <button type="button" id="btn-lens-force-apply" data-testid="btn-lens-force-apply" class="btn btn-small btn-danger hidden" title="Force apply invalid payload for negative testing">⚠️ Force Apply Unvalidated</button>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button type="button" id="btn-cancel-payload-lens" data-testid="btn-cancel-payload-lens" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="btn-cancel-payload-lens" data-testid="btn-cancel-payload-lens" class="btn btn-secondary">Close</button>
           <button type="button" id="btn-lens-apply-parent" data-testid="btn-lens-apply-parent" class="btn btn-secondary" style="display: none;" title="Apply changes to immediate parent payload layer">Apply to Parent Layer</button>
-          <button type="button" id="btn-lens-save-root" data-testid="btn-lens-save-root" class="btn btn-primary" title="Re-escape and cascade changes all the way to root wire payload">💾 Save All to Root</button>
+          <button type="button" id="btn-lens-save-root" data-testid="btn-lens-save-root" class="btn btn-primary" title="Save changes">💾 Save</button>
         </div>
       </div>
     </div>

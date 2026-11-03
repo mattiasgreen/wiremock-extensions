@@ -165,27 +165,6 @@ export function initCasualTester() {
     });
   }
 
-  const reqTopLensBtn = document.getElementById('btn-casual-request-open-lens-top');
-  if (reqTopLensBtn) {
-    reqTopLensBtn.addEventListener('click', () => {
-      const raw = elements.casualRequestPayload ? elements.casualRequestPayload.value || '' : '';
-      const fmt = detectFormat(raw);
-      openPayloadLens(raw, {
-        path: '$',
-        key: 'casualRequest',
-        format: fmt,
-        encoding: 'STRING',
-        unescapedValue: raw
-      }, (updatedText) => {
-        if (elements.casualRequestPayload) {
-          elements.casualRequestPayload.value = updatedText;
-        }
-        updateCasualRequestPill();
-        updateCasualRoute(true);
-      });
-    });
-  }
-
   const resTopPill = document.getElementById('casual-response-top-pill');
   if (resTopPill) {
     resTopPill.addEventListener('click', () => {
@@ -196,18 +175,19 @@ export function initCasualTester() {
     });
   }
 
-  const resTopLensBtn = document.getElementById('btn-casual-response-open-lens-top');
-  if (resTopLensBtn) {
-    resTopLensBtn.addEventListener('click', () => {
+  const resMaxBtn = document.getElementById('btn-casual-response-maximize');
+  if (resMaxBtn) {
+    resMaxBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       if (!lastRawCasualResponse) return;
       const fmt = detectFormat(lastRawCasualResponse);
-      openPayloadLens(lastRawCasualResponse, {
-        path: '$',
-        key: 'casualResponse',
+      pushViewportLayer({
+        title: 'Casual Response Body',
+        text: lastRawCasualResponse,
         format: fmt,
-        encoding: 'STRING',
-        unescapedValue: lastRawCasualResponse
-      }, null);
+        context: 'tester-response',
+        mode: 'viewer'
+      });
     });
   }
 
