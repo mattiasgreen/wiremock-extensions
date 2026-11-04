@@ -1,0 +1,6 @@
+dependencies {
+    implementation libs.zstd.jni
+    implementation libs.jackson.databind
+
+    testImplementation project(':wiremock-extension-casual')
+}

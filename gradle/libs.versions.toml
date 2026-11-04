@@ -17,8 +17,10 @@ spotbugs-plugin = "6.1.7"
 findsecbugs = "1.14.0"
 casual = "3.4.0"
 netty = "4.1.121.Final"
+zstd = "1.5.6-9"
 
 [libraries]
+zstd-jni = { module = "com.github.luben:zstd-jni", version.ref = "zstd" }
 casual-api = { module = "se.laz.casual:casual-api", version.ref = "casual" }
 casual-network = { module = "se.laz.casual:casual-network", version.ref = "casual" }
 casual-network-protocol = { module = "se.laz.casual:casual-network-protocol", version.ref = "casual" }
