@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 class JournalPerformanceBenchmarkTest {
@@ -157,10 +158,19 @@ class JournalPerformanceBenchmarkTest {
     }
 
     @Test
+    void benchmarkConcurrentLoad_10k() throws Exception {
+        executeConcurrentLoad(4, 2_500, "Concurrent Load Benchmark: 10,000 Requests across 4 Clients");
+    }
+
+    @Test
+    @Tag("benchmark")
     void benchmarkExtremeConcurrentLoad_250k() throws Exception {
-        final int CONCURRENT_CLIENTS = 20;
-        final int REQUESTS_PER_CLIENT = 12_500;
-        final int TOTAL_REQUESTS = CONCURRENT_CLIENTS * REQUESTS_PER_CLIENT; // 250,000 requests
+        executeConcurrentLoad(20, 12_500, "Extreme Concurrent Stress Benchmark: 250,000 Requests across 20 Clients");
+    }
+
+    private void executeConcurrentLoad(int concurrentClients, int requestsPerClient, String benchmarkTitle)
+            throws Exception {
+        final int TOTAL_REQUESTS = concurrentClients * requestsPerClient;
 
         String[] endpointTypes = {
             "cases", "payments", "accounts", "auth",
@@ -176,16 +186,14 @@ class JournalPerformanceBenchmarkTest {
         }
 
         String needleId = "CONCURRENT-NEEDLE-42-SECRET";
-        int needleClient = 7;
-        int needleReqIndex = 8888;
+        int needleClient = concurrentClients / 2;
+        int needleReqIndex = requestsPerClient / 2;
         java.util.concurrent.atomic.AtomicReference<UUID> needleEventIdRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
 
         System.out.println(
                 "\n==========================================================================================");
-        System.out.println("Starting Extreme Concurrent Stress Benchmark: 250,000 Requests across " + CONCURRENT_CLIENTS
-                + " Clients");
-        System.out.println("Raw data volume expected: ~1.85 GB | Max Heap Budget: 256 MB");
+        System.out.println("Starting " + benchmarkTitle);
         System.out.println(String.format(
                 "%-10s | %-12s | %-14s | %-10s | %-10s | %-12s | %-10s",
                 "Events", "Raw (MB)", "Comp (MB)", "Ratio", "Evicted", "Active Dicts", "Elapsed (s)"));
@@ -222,13 +230,14 @@ class JournalPerformanceBenchmarkTest {
         });
 
         // 2. Launch Progress Logger Thread
+        int progressStep = Math.max(2_000, TOTAL_REQUESTS / 10);
         Thread progressLogger = Thread.ofVirtual().name("benchmark-logger").start(() -> {
             int lastLogged = 0;
             while (benchmarkRunning.get()) {
                 try {
-                    Thread.sleep(2000);
+                    Thread.sleep(1000);
                     int current = totalSubmitted.get();
-                    if (current - lastLogged >= 20_000 || current >= TOTAL_REQUESTS) {
+                    if (current - lastLogged >= progressStep || current >= TOTAL_REQUESTS) {
                         lastLogged = current;
                         JournalStats stats = store.getStats();
                         double elapsedSec = (System.nanoTime() - startNanos) / 1_000_000_000.0;
@@ -248,15 +257,15 @@ class JournalPerformanceBenchmarkTest {
             }
         });
 
-        // 3. Execute 20 Concurrent Client Workers
+        // 3. Execute Concurrent Client Workers
         java.util.concurrent.ExecutorService executor =
-                java.util.concurrent.Executors.newFixedThreadPool(CONCURRENT_CLIENTS);
+                java.util.concurrent.Executors.newFixedThreadPool(concurrentClients);
         java.util.List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
 
-        for (int c = 0; c < CONCURRENT_CLIENTS; c++) {
+        for (int c = 0; c < concurrentClients; c++) {
             final int clientId = c;
             futures.add(executor.submit(() -> {
-                for (int r = 1; r <= REQUESTS_PER_CLIENT; r++) {
+                for (int r = 1; r <= requestsPerClient; r++) {
                     String endpoint = endpointTypes[(clientId + r) % endpointTypes.length];
                     StubMapping stub = stubs.get(endpoint);
 
@@ -286,7 +295,7 @@ class JournalPerformanceBenchmarkTest {
             }));
         }
 
-        // Wait for all 20 clients to finish
+        // Wait for all clients to finish
         for (java.util.concurrent.Future<?> f : futures) {
             f.get();
         }
@@ -309,7 +318,8 @@ class JournalPerformanceBenchmarkTest {
                 "==========================================================================================");
         System.out.println(String.format(
                 Locale.ROOT,
-                "CONCURRENT 250,000 BENCHMARK COMPLETED in %.2f seconds! (%.0f req/sec)",
+                "%s COMPLETED in %.2f seconds! (%.0f req/sec)",
+                benchmarkTitle,
                 totalSec,
                 TOTAL_REQUESTS / Math.max(0.001, totalSec)));
         System.out.println(String.format(
@@ -332,6 +342,31 @@ class JournalPerformanceBenchmarkTest {
         assertThat(finalStats.totalEvents() + finalStats.totalEvictions()).isEqualTo(TOTAL_REQUESTS);
         assertThat(finalStats.activeDictionaries()).isEqualTo(8);
         assertThat(finalStats.compressionRatio()).isGreaterThanOrEqualTo(10.0);
+
+        // Verify needle retrieval
+        UUID needleIdFound = needleEventIdRef.get();
+        assertThat(needleIdFound).isNotNull();
+        Optional<ServeEvent> needleEventOpt = store.get(needleIdFound);
+        assertThat(needleEventOpt).isPresent();
+        assertThat(needleEventOpt.get().getRequest().getBodyAsString()).contains(needleId);
+    }
+
+    private static final String PRECOMPUTED_LINE_ITEMS = buildLineItems();
+
+    private static String buildLineItems() {
+        StringBuilder items = new StringBuilder();
+        for (int j = 1; j <= 15; j++) {
+            if (j > 1) items.append(",");
+            items.append(String.format(
+                    Locale.ROOT,
+                    "{\"lineId\":\"LINE-%04d\",\"sku\":\"SKU-PART-%03d\",\"name\":\"Standard Component Part %d\",\"category\":\"HARDWARE_ELECTRONICS\",\"unitPrice\":149.50,\"quantity\":%d,\"currency\":\"SEK\",\"vatRate\":0.25,\"status\":\"ALLOCATED\",\"warehouse\":{\"code\":\"WH-SE-01\",\"shelf\":\"B-12-%02d\",\"zone\":\"NORDIC_MAIN\"},\"specifications\":{\"weightGrams\":350,\"dimensions\":{\"length\":12.5,\"width\":8.0,\"height\":2.2},\"rohsCompliant\":true,\"refrigerationRequired\":false}}",
+                    j,
+                    j % 20,
+                    j,
+                    (j % 5) + 1,
+                    j));
+        }
+        return items.toString();
     }
 
     private String generateRealisticRequestPayload(
@@ -350,19 +385,6 @@ class JournalPerformanceBenchmarkTest {
 
     private String generateRealisticResponsePayload(
             String endpoint, String caseId, String correlationId, String timestamp) {
-        StringBuilder items = new StringBuilder();
-        for (int j = 1; j <= 15; j++) {
-            if (j > 1) items.append(",");
-            items.append(String.format(
-                    Locale.ROOT,
-                    "{\"lineId\":\"LINE-%04d\",\"sku\":\"SKU-PART-%03d\",\"name\":\"Standard Component Part %d\",\"category\":\"HARDWARE_ELECTRONICS\",\"unitPrice\":149.50,\"quantity\":%d,\"currency\":\"SEK\",\"vatRate\":0.25,\"status\":\"ALLOCATED\",\"warehouse\":{\"code\":\"WH-SE-01\",\"shelf\":\"B-12-%02d\",\"zone\":\"NORDIC_MAIN\"},\"specifications\":{\"weightGrams\":350,\"dimensions\":{\"length\":12.5,\"width\":8.0,\"height\":2.2},\"rohsCompliant\":true,\"refrigerationRequired\":false}}",
-                    j,
-                    j % 20,
-                    j,
-                    (j % 5) + 1,
-                    j));
-        }
-
         return String.format(
                 Locale.ROOT,
                 "{"
@@ -390,7 +412,7 @@ class JournalPerformanceBenchmarkTest {
                 timestamp,
                 caseId,
                 endpoint,
-                items.toString(),
+                PRECOMPUTED_LINE_ITEMS,
                 timestamp,
                 timestamp,
                 timestamp);
