@@ -197,9 +197,6 @@ class CompressedRequestJournalStoreTest {
         }
 
         assertThat(dictionaryPool.getActiveDictionaryCount()).isGreaterThanOrEqualTo(5);
-        System.out.println("DEBUG Phase 2: dictEvents=" + dictEventsPhase2 + ", activeDicts="
-                + dictionaryPool.getActiveDictionaryCount() + ", totalEvents="
-                + store.getAll().count());
         // 5 services * 25 events each = 125 events should now be dictionary-compressed
         assertThat(dictEventsPhase2)
                 .withFailMessage(

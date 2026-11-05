@@ -123,6 +123,10 @@ public class AdaptiveJournalCompactor {
             return oldEvent;
         }
 
+        if (oldEvent.isUsedDictionary() && targetSig.equals(oldEvent.getSignature())) {
+            return oldEvent;
+        }
+
         DictionaryPool.CompiledDictionary dict = dictionaryPool.getDictionary(targetSig);
         if (dict == null) {
             return oldEvent;
