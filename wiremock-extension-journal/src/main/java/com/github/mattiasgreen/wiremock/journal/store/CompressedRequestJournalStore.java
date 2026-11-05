@@ -257,6 +257,11 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
             return;
         }
         Thread.ofVirtual().name("rebalance-" + signature.key()).start(() -> {
+            try {
+                // Yield briefly to ensure in-flight store.add() finishes inserting the triggering event
+                Thread.sleep(10);
+            } catch (InterruptedException ignored) {
+            }
             for (UUID id : deque) {
                 ServeEvent current = serveEvents.get(id);
                 if (current instanceof CompressedServeEvent c && !c.isUsedDictionary()) {
