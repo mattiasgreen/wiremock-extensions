@@ -98,6 +98,36 @@ _Avoid_: UI benchmark, profiler test, speed check
 An in-process observability module that encapsulates a unified OpenTelemetry SDK (MeterProvider, TracerProvider, and Resource), metric instruments, asynchronous observable gauges for WireMock journal/stubs/NetEm state, and W3C trace span lifecycle management, scoped per WireMock server instance.
 _Avoid_: metrics registry, tracing registry, telemetry helper, monitoring service
 
+### Request Journal & Memory Optimization
+
+**Compressed Serve Event**:
+An in-memory representation of a WireMock `ServeEvent` holding its request and response bodies compressed via Zstandard, decompressing transparently on-demand during query evaluations or UI inspection without re-caching raw payloads on the heap.
+_Avoid_: zipped event, cached serve event, packed record
+
+**Adaptive Journal Compactor**:
+An in-memory journal store decorator and engine that immediately compresses inbound request/response payloads and trains cluster-specific Zstandard dictionaries on high-volume endpoints to maximize compression density.
+_Avoid_: journal cleaner, background zipper, journal evictor
+
+**Cluster Signature**:
+The structural classification identifier (`stub:<id>`, `proxy:<target>`, or `unmatched:<method>`) used to group structurally homogeneous payloads for targeted dictionary training without cross-endpoint schema contamination.
+_Avoid_: endpoint tag, payload group, route bucket
+
+**Transient Decompression**:
+The execution model where compressed journal payloads are decompressed strictly on-the-fly to satisfy reader queries (assertions, searches, UI views) and instantly garbage-collected, preventing heap re-inflation.
+_Avoid_: lazy caching, query inflation, memory rehydration
+
+**Adaptive Anti-OOM Guard**:
+The memory protection module monitoring real-time JVM available heap headroom and post-GC memory pool thresholds, executing FIFO pruning of historical journal entries when memory approaches critical limits.
+_Avoid_: memory watchdog, heap killer, OOM checker
+
+**Retroactive Compaction**:
+The process of upgrading historical journal events that were initially recorded with baseline compression to specialized dictionary compression once their cluster dictionary completes training.
+_Avoid_: re-zipping, back-compression, late encoding
+
+**Dynamic Rebalancing**:
+The automatic background adjustment of cluster dictionary assignments and stored payload density triggered by event-count watermarks, eviction thresholds, or newly trained dictionaries.
+_Avoid_: journal defrag, store rebalancing, memory garbage clean
+
 **Traffic Classification**:
 An immutable domain representation derived from a WireMock `ServeEvent` and `Request` that encapsulates protocol detection (`http`, `casual`, `grpc`), routing outcome (`stubbed`, `proxied`, `fault`, `unmatched`), upstream proxy target, RPC service/error metadata, and elapsed duration.
 _Avoid_: request inspector, traffic sniffer, protocol detector

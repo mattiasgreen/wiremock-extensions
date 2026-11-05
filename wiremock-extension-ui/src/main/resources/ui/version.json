@@ -1,5 +1,5 @@
 {
   "version": "1.14.0",
-  "commit": "d31c6c1",
-  "branch": "feat/ui-build-version-and-git-hash"
+  "commit": "589f243",
+  "branch": "feat/adaptive-zstd-journal-compression"
 }

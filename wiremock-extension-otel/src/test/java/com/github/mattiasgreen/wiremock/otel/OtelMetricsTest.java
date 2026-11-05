@@ -144,14 +144,21 @@ public class OtelMetricsTest {
                 // Expected connection reset or empty response
             }
 
-            // 4. Scrape metrics
-            HttpRequest metricsReq = HttpRequest.newBuilder()
-                    .uri(URI.create(server.baseUrl() + "/__admin/metrics/prometheus"))
-                    .GET()
-                    .build();
-            HttpResponse<String> metricsResp = httpClient.send(metricsReq, HttpResponse.BodyHandlers.ofString());
-            assertThat(metricsResp.statusCode()).isEqualTo(200);
-            String body = metricsResp.body();
+            // 4. Scrape metrics (with retry loop to await asynchronous serve event listener dispatch)
+            String body = "";
+            for (int attempt = 0; attempt < 30; attempt++) {
+                HttpRequest metricsReq = HttpRequest.newBuilder()
+                        .uri(URI.create(server.baseUrl() + "/__admin/metrics/prometheus"))
+                        .GET()
+                        .build();
+                HttpResponse<String> metricsResp = httpClient.send(metricsReq, HttpResponse.BodyHandlers.ofString());
+                assertThat(metricsResp.statusCode()).isEqualTo(200);
+                body = metricsResp.body();
+                if (body.contains("traffic_type=\"fault\"")) {
+                    break;
+                }
+                Thread.sleep(50);
+            }
 
             // Verify Stubbed metric
             assertThat(body).contains("traffic_type=\"stubbed\"");
