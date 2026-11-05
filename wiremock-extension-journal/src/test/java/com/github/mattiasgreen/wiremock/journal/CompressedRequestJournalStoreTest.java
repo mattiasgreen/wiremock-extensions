@@ -197,8 +197,17 @@ class CompressedRequestJournalStoreTest {
         }
 
         assertThat(dictionaryPool.getActiveDictionaryCount()).isGreaterThanOrEqualTo(5);
+        System.out.println("DEBUG Phase 2: dictEvents=" + dictEventsPhase2 + ", activeDicts="
+                + dictionaryPool.getActiveDictionaryCount() + ", totalEvents="
+                + store.getAll().count());
         // 5 services * 25 events each = 125 events should now be dictionary-compressed
-        assertThat(dictEventsPhase2).isEqualTo(125);
+        assertThat(dictEventsPhase2)
+                .withFailMessage(
+                        "Expected 125 dictionary events, but found %d. Active dicts: %d, Total in store: %d",
+                        dictEventsPhase2,
+                        dictionaryPool.getActiveDictionaryCount(),
+                        store.getAll().count())
+                .isEqualTo(125);
 
         // Phase 3: Add 10 brand-new services (svc-26 to svc-35) with 25 events each
         for (int s = 26; s <= 35; s++) {
@@ -231,8 +240,17 @@ class CompressedRequestJournalStoreTest {
         }
 
         assertThat(dictionaryPool.getActiveDictionaryCount()).isGreaterThanOrEqualTo(15);
+        System.out.println("DEBUG Phase 3: dictEvents=" + dictEventsPhase3 + ", activeDicts="
+                + dictionaryPool.getActiveDictionaryCount() + ", totalEvents="
+                + store.getAll().count());
         // Total dictionary-compressed events: (5 + 10) * 25 = 375 events!
-        assertThat(dictEventsPhase3).isEqualTo(375);
+        assertThat(dictEventsPhase3)
+                .withFailMessage(
+                        "Expected 375 dictionary events, but found %d. Active dicts: %d, Total in store: %d",
+                        dictEventsPhase3,
+                        dictionaryPool.getActiveDictionaryCount(),
+                        store.getAll().count())
+                .isEqualTo(375);
     }
 
     @Test
