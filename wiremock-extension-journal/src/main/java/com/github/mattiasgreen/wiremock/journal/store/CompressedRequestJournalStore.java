@@ -1,8 +1,10 @@
 package com.github.mattiasgreen.wiremock.journal.store;
 
-import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveAntiOomGuard;
+import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveJournalCompactor;
 import com.github.mattiasgreen.wiremock.journal.engine.DictionaryPool;
 import com.github.mattiasgreen.wiremock.journal.engine.JournalConfig;
+import com.github.mattiasgreen.wiremock.journal.engine.JournalMemoryGovernor;
+import com.github.mattiasgreen.wiremock.journal.engine.JournalSearchIndex;
 import com.github.mattiasgreen.wiremock.journal.engine.ZstdCodec;
 import com.github.mattiasgreen.wiremock.journal.model.ClusterSignature;
 import com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent;
@@ -12,20 +14,21 @@ import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 /**
- * High-density RequestJournalStore backed by in-memory Zstandard compression and adaptive anti-OOM eviction.
+ * High-density RequestJournalStore backed by in-memory Zstandard compression,
+ * ingestion-time token indexing, and autonomous memory headroom governance.
  */
 public final class CompressedRequestJournalStore implements RequestJournalStore {
 
     private final ConcurrentLinkedDeque<UUID> deque = new ConcurrentLinkedDeque<>();
     private final ConcurrentHashMap<UUID, ServeEvent> serveEvents = new ConcurrentHashMap<>();
 
-    private final ZstdCodec codec;
-    private final DictionaryPool dictionaryPool;
-    private final AdaptiveAntiOomGuard antiOomGuard;
+    private final AdaptiveJournalCompactor compactor;
+    private final JournalMemoryGovernor governor;
     private final JournalConfig config;
 
     private final AtomicLong rawBytesTotal = new AtomicLong(0);
@@ -34,35 +37,37 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
 
     private final AtomicLong eventsSinceLastRebalance = new AtomicLong(0);
     private final AtomicLong evictionsSinceLastRebalance = new AtomicLong(0);
-    private final java.util.concurrent.atomic.AtomicBoolean isRebalancing =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final AtomicBoolean isRebalancing = new AtomicBoolean(false);
 
     public CompressedRequestJournalStore() {
         this(JournalConfig.loadDefault());
     }
 
     public CompressedRequestJournalStore(JournalConfig config) {
-        this(new ZstdCodec(), new DictionaryPool(config), new AdaptiveAntiOomGuard(config), config);
+        this(new AdaptiveJournalCompactor(config), new JournalMemoryGovernor(config));
     }
 
     public CompressedRequestJournalStore(
-            ZstdCodec codec, DictionaryPool dictionaryPool, AdaptiveAntiOomGuard antiOomGuard) {
-        this(codec, dictionaryPool, antiOomGuard, JournalConfig.loadDefault());
+            ZstdCodec codec, DictionaryPool dictionaryPool, JournalMemoryGovernor governor) {
+        this(codec, dictionaryPool, governor, JournalConfig.loadDefault());
     }
 
     public CompressedRequestJournalStore(
-            ZstdCodec codec, DictionaryPool dictionaryPool, AdaptiveAntiOomGuard antiOomGuard, JournalConfig config) {
-        this.codec = Objects.requireNonNull(codec, "codec must not be null");
-        this.dictionaryPool = Objects.requireNonNull(dictionaryPool, "dictionaryPool must not be null");
-        this.antiOomGuard = Objects.requireNonNull(antiOomGuard, "antiOomGuard must not be null");
-        this.config = Objects.requireNonNull(config, "config must not be null");
+            ZstdCodec codec, DictionaryPool dictionaryPool, JournalMemoryGovernor governor, JournalConfig config) {
+        this(new AdaptiveJournalCompactor(codec, dictionaryPool, new JournalSearchIndex(), config), governor);
+    }
 
-        // Register emergency pruning listener
-        this.antiOomGuard.registerLowMemoryListener(reason -> pruneOldestUnderPressure(10));
+    public CompressedRequestJournalStore(AdaptiveJournalCompactor compactor, JournalMemoryGovernor governor) {
+        this.compactor = Objects.requireNonNull(compactor, "compactor must not be null");
+        this.governor = Objects.requireNonNull(governor, "governor must not be null");
+        this.config = compactor.getConfig();
+
+        // Register emergency pruning listener with governor
+        this.governor.registerLowMemoryListener(reason -> pruneOldestBatch(20));
 
         // Listen for completed dictionary training to automatically upgrade cold-start events
         if (config.compressionEnabled()) {
-            this.dictionaryPool.onDictionaryTrained(this::rebalanceClusterAsync);
+            this.compactor.getDictionaryPool().onDictionaryTrained(this::rebalanceClusterAsync);
         }
     }
 
@@ -70,16 +75,32 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
         return config;
     }
 
+    public AdaptiveJournalCompactor getCompactor() {
+        return compactor;
+    }
+
+    public JournalMemoryGovernor getGovernor() {
+        return governor;
+    }
+
+    public JournalSearchIndex getSearchIndex() {
+        return compactor.getSearchIndex();
+    }
+
     public ZstdCodec getCodec() {
-        return codec;
+        return compactor.getCodec();
     }
 
     public DictionaryPool getDictionaryPool() {
-        return dictionaryPool;
+        return compactor.getDictionaryPool();
     }
 
-    public AdaptiveAntiOomGuard getAntiOomGuard() {
-        return antiOomGuard;
+    public JournalMemoryGovernor getAntiOomGuard() {
+        return governor;
+    }
+
+    public long getDecompressionCount() {
+        return compactor.getSearchIndex().getTransientDecompressions();
     }
 
     @Override
@@ -88,11 +109,17 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
             return;
         }
 
-        // 1. Check memory pressure and prune if necessary
+        // 1. Autonomous headroom check and batch eviction
         ensureMemoryHeadroom();
 
-        // 2. Store event (compressed if enabled, raw otherwise)
-        ServeEvent eventToStore = config.compressionEnabled() ? toCompressed(serveEvent) : serveEvent;
+        // 2. Compact event (compressed if enabled, raw otherwise)
+        ServeEvent eventToStore;
+        if (config.compressionEnabled()) {
+            eventToStore = compactor.compact(serveEvent);
+        } else {
+            eventToStore = serveEvent;
+            compactor.getSearchIndex().index(serveEvent.getId(), serveEvent);
+        }
 
         UUID id = eventToStore.getId();
         serveEvents.put(id, eventToStore);
@@ -119,10 +146,11 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
             if (removed != null) {
                 rawBytesTotal.addAndGet(-calculateRawSize(removed));
                 compressedBytesTotal.addAndGet(-calculateStoredSize(removed));
-            }
-            totalEvictions.incrementAndGet();
-            if (config.compressionEnabled() && evictionsSinceLastRebalance.incrementAndGet() >= 1000) {
-                rebalanceAsync(false);
+                compactor.getSearchIndex().remove(id);
+                totalEvictions.incrementAndGet();
+                if (config.compressionEnabled() && evictionsSinceLastRebalance.incrementAndGet() >= 1000) {
+                    rebalanceAsync(false);
+                }
             }
         }
     }
@@ -147,9 +175,10 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
         if (old != null) {
             rawBytesTotal.addAndGet(-calculateRawSize(old));
             compressedBytesTotal.addAndGet(-calculateStoredSize(old));
+            compactor.getSearchIndex().remove(id);
         }
 
-        ServeEvent eventToStore = config.compressionEnabled() ? toCompressed(serveEvent) : serveEvent;
+        ServeEvent eventToStore = config.compressionEnabled() ? compactor.compact(serveEvent) : serveEvent;
         serveEvents.put(id, eventToStore);
 
         rawBytesTotal.addAndGet(calculateRawSize(eventToStore));
@@ -170,6 +199,7 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
         if (removed != null) {
             rawBytesTotal.addAndGet(-calculateRawSize(removed));
             compressedBytesTotal.addAndGet(-calculateStoredSize(removed));
+            compactor.getSearchIndex().remove(id);
         }
     }
 
@@ -179,15 +209,7 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
         serveEvents.clear();
         rawBytesTotal.set(0);
         compressedBytesTotal.set(0);
-        dictionaryPool.clear();
-    }
-
-    private CompressedServeEvent toCompressed(ServeEvent serveEvent) {
-        if (serveEvent instanceof CompressedServeEvent c) {
-            return c;
-        }
-        ClusterSignature signature = ClusterSignature.of(serveEvent);
-        return new CompressedServeEvent(serveEvent, signature, codec, dictionaryPool);
+        compactor.clear();
     }
 
     private long calculateRawSize(ServeEvent event) {
@@ -215,14 +237,16 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
     }
 
     private void ensureMemoryHeadroom() {
-        long currentMem = Math.max(0, compressedBytesTotal.get());
-        for (int i = 0; i < 10 && antiOomGuard.isEvictionRequired(currentMem) && !deque.isEmpty(); i++) {
-            removeLast();
-            currentMem = Math.max(0, compressedBytesTotal.get());
+        int eventCount = deque.size();
+        if (eventCount == 0) {
+            return;
         }
+        long currentMem = Math.max(0, compressedBytesTotal.get());
+        long avgSize = Math.max(256, currentMem / eventCount);
+        governor.ensureHeadroom(currentMem, avgSize, eventCount, this::pruneOldestBatch);
     }
 
-    private void pruneOldestUnderPressure(int count) {
+    public void pruneOldestBatch(int count) {
         for (int i = 0; i < count && !deque.isEmpty(); i++) {
             removeLast();
         }
@@ -236,7 +260,8 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
             for (UUID id : deque) {
                 ServeEvent current = serveEvents.get(id);
                 if (current instanceof CompressedServeEvent c && !c.isUsedDictionary()) {
-                    if (signature.equals(c.getSignature()) && dictionaryPool.hasDictionary(signature)) {
+                    if (signature.equals(c.getSignature())
+                            && compactor.getDictionaryPool().hasDictionary(signature)) {
                         upgradeEvent(id, c, signature);
                     }
                 }
@@ -257,7 +282,8 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
                     ServeEvent current = serveEvents.get(id);
                     if (current instanceof CompressedServeEvent c) {
                         ClusterSignature sig = full ? ClusterSignature.of(c) : c.getSignature();
-                        if (!c.isUsedDictionary() && dictionaryPool.hasDictionary(sig)) {
+                        if (!c.isUsedDictionary()
+                                && compactor.getDictionaryPool().hasDictionary(sig)) {
                             upgradeEvent(id, c, sig);
                         } else if (full && !sig.equals(c.getSignature())) {
                             upgradeEvent(id, c, sig);
@@ -271,10 +297,12 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
     }
 
     private void upgradeEvent(UUID id, CompressedServeEvent oldEvent, ClusterSignature targetSig) {
-        CompressedServeEvent upgraded = new CompressedServeEvent(oldEvent, targetSig, codec, dictionaryPool);
-        serveEvents.put(id, upgraded);
-        long delta = upgraded.getStoredMemorySizeBytes() - oldEvent.getStoredMemorySizeBytes();
-        compressedBytesTotal.addAndGet(delta);
+        CompressedServeEvent upgraded = compactor.recompact(oldEvent, targetSig);
+        ServeEvent previous = serveEvents.computeIfPresent(id, (k, existing) -> upgraded);
+        if (previous != null) {
+            long delta = upgraded.getStoredMemorySizeBytes() - oldEvent.getStoredMemorySizeBytes();
+            compressedBytesTotal.addAndGet(delta);
+        }
     }
 
     public JournalStats getStats() {
@@ -290,21 +318,43 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
                 raw,
                 comp,
                 ratio,
-                dictionaryPool.getActiveDictionaryCount(),
+                compactor.getDictionaryPool().getActiveDictionaryCount(),
                 totalEvictions.get(),
                 usedMem,
                 maxMem);
     }
 
+    /**
+     * Resolves queries via the inverted token index with zero decompression on hits.
+     * Falls back to transient decompression only when the query cannot be resolved via token index.
+     */
     public List<UUID> search(String query) {
         if (query == null || query.isBlank()) {
             return new ArrayList<>(deque);
         }
 
+        // 1. Try resolving via inverted token index (zero decompression)
+        Optional<Set<UUID>> indexedMatches = compactor.getSearchIndex().search(query);
+        if (indexedMatches.isPresent()) {
+            Set<UUID> hitSet = indexedMatches.get();
+            if (hitSet.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<UUID> ordered = new ArrayList<>(hitSet.size());
+            for (UUID id : deque) {
+                if (hitSet.contains(id)) {
+                    ordered.add(id);
+                }
+            }
+            return ordered;
+        }
+
+        // 2. Fallback to transient decompression search for unindexed partial substrings
         List<UUID> matches = new ArrayList<>();
         for (UUID id : deque) {
             ServeEvent event = serveEvents.get(id);
             if (event instanceof CompressedServeEvent c) {
+                compactor.getSearchIndex().recordTransientDecompression();
                 if (c.matchesText(query)) {
                     matches.add(id);
                 }

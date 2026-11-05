@@ -1,9 +1,9 @@
 package com.github.mattiasgreen.wiremock.journal.model;
 
+import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveJournalCompactor;
 import com.github.mattiasgreen.wiremock.journal.engine.DictionaryPool;
 import com.github.mattiasgreen.wiremock.journal.engine.ZstdCodec;
 import com.github.tomakehurst.wiremock.common.Limit;
-import com.github.tomakehurst.wiremock.common.url.PathParams;
 import com.github.tomakehurst.wiremock.http.*;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
@@ -13,8 +13,14 @@ import java.util.*;
 /**
  * Memory-efficient ServeEvent that retains request and response payloads in Zstandard compressed form,
  * decompressing transiently on-the-fly when getters are accessed without re-caching raw bytes on the heap.
+ * Designed as a pure value record containing zero heavy engine dependencies.
  */
 public class CompressedServeEvent extends ServeEvent {
+
+    @FunctionalInterface
+    public interface PayloadDecompressor {
+        byte[] decompress(byte[] compressed, int originalSize, ClusterSignature signature, boolean usedDictionary);
+    }
 
     private final ClusterSignature signature;
     private final boolean usedDictionary;
@@ -28,11 +34,20 @@ public class CompressedServeEvent extends ServeEvent {
     private final HttpHeaders responseHeaders;
     private final Fault responseFault;
 
-    private final ZstdCodec codec;
-    private final DictionaryPool dictionaryPool;
+    private final PayloadDecompressor decompressor;
 
+    /**
+     * Primary pure value constructor. Does not perform compression or side-effects.
+     */
     public CompressedServeEvent(
-            ServeEvent original, ClusterSignature signature, ZstdCodec codec, DictionaryPool dictionaryPool) {
+            ServeEvent original,
+            ClusterSignature signature,
+            byte[] compressedRequestBody,
+            byte[] compressedResponseBody,
+            int rawRequestSize,
+            int rawResponseSize,
+            boolean usedDictionary,
+            PayloadDecompressor decompressor) {
         super(
                 original.getId(),
                 createEmptyRequestShell(original.getRequest()),
@@ -46,40 +61,72 @@ public class CompressedServeEvent extends ServeEvent {
                 original.getSubEvents() != null ? new LinkedList<>(original.getSubEvents()) : new LinkedList<>());
 
         this.signature = Objects.requireNonNull(signature, "signature must not be null");
-        this.codec = Objects.requireNonNull(codec, "codec must not be null");
-        this.dictionaryPool = Objects.requireNonNull(dictionaryPool, "dictionaryPool must not be null");
+        this.compressedRequestBody = compressedRequestBody != null ? compressedRequestBody : new byte[0];
+        this.compressedResponseBody = compressedResponseBody != null ? compressedResponseBody : new byte[0];
+        this.rawRequestSize = rawRequestSize;
+        this.rawResponseSize = rawResponseSize;
+        this.usedDictionary = usedDictionary;
+        this.decompressor = decompressor != null ? decompressor : (bytes, origSize, sig, used) -> bytes;
 
-        // Request compression
-        byte[] rawReq = original.getRequest() != null ? original.getRequest().getBody() : new byte[0];
-        this.rawRequestSize = rawReq != null ? rawReq.length : 0;
         this.requestMetadata = original.getRequest();
-
-        // Response compression
-        byte[] rawResp = original.getResponse() != null ? original.getResponse().getBody() : new byte[0];
-        this.rawResponseSize = rawResp != null ? rawResp.length : 0;
         this.responseStatus =
                 original.getResponse() != null ? original.getResponse().getStatus() : 200;
         this.responseHeaders =
                 original.getResponse() != null ? original.getResponse().getHeaders() : new HttpHeaders();
         this.responseFault =
                 original.getResponse() != null ? original.getResponse().getFault() : null;
+    }
 
-        // Compress payloads
-        DictionaryPool.CompiledDictionary dict = dictionaryPool.getDictionary(signature);
-        if (dict != null) {
-            this.usedDictionary = true;
-            this.compressedRequestBody = codec.compressWithDict(rawReq, dict.compressor());
-            this.compressedResponseBody = codec.compressWithDict(rawResp, dict.compressor());
-        } else {
-            this.usedDictionary = false;
-            this.compressedRequestBody = codec.compressBaseline(rawReq);
-            this.compressedResponseBody = codec.compressBaseline(rawResp);
+    /**
+     * Legacy constructor preserved for backwards-compatibility.
+     * Delegates compaction orchestration to {@link AdaptiveJournalCompactor}.
+     */
+    public CompressedServeEvent(
+            ServeEvent original, ClusterSignature signature, ZstdCodec codec, DictionaryPool dictionaryPool) {
+        this(original, signature, createCompacted(original, signature, codec, dictionaryPool));
+    }
 
-            // Record samples for prospective dictionary training
-            if (rawResp != null && rawResp.length > 0) {
-                dictionaryPool.recordSample(signature, rawResp);
-            }
-        }
+    private record CompactedData(
+            byte[] req, byte[] resp, int reqLen, int respLen, boolean usedDict, PayloadDecompressor decompressor) {}
+
+    private static CompactedData createCompacted(
+            ServeEvent original, ClusterSignature signature, ZstdCodec codec, DictionaryPool dictionaryPool) {
+        byte[] rawReq = original.getRequest() != null && original.getRequest().getBody() != null
+                ? original.getRequest().getBody()
+                : new byte[0];
+        byte[] rawResp =
+                original.getResponse() != null && original.getResponse().getBody() != null
+                        ? original.getResponse().getBody()
+                        : new byte[0];
+        DictionaryPool.CompiledDictionary dict =
+                dictionaryPool != null ? dictionaryPool.getDictionary(signature) : null;
+        boolean usedDict = dict != null;
+        byte[] compReq = usedDict ? codec.compressWithDict(rawReq, dict.compressor()) : codec.compressBaseline(rawReq);
+        byte[] compResp =
+                usedDict ? codec.compressWithDict(rawResp, dict.compressor()) : codec.compressBaseline(rawResp);
+        return new CompactedData(
+                compReq, compResp, rawReq.length, rawResp.length, usedDict, (bytes, origSize, sig, used) -> {
+                    if (!used) {
+                        return codec.decompressBaseline(bytes, origSize);
+                    }
+                    DictionaryPool.CompiledDictionary d =
+                            dictionaryPool != null ? dictionaryPool.getDictionary(sig) : null;
+                    return d != null
+                            ? codec.decompressWithDict(bytes, d.decompressor(), origSize)
+                            : codec.decompressBaseline(bytes, origSize);
+                });
+    }
+
+    private CompressedServeEvent(ServeEvent original, ClusterSignature signature, CompactedData data) {
+        this(
+                original,
+                signature,
+                data.req(),
+                data.resp(),
+                data.reqLen(),
+                data.respLen(),
+                data.usedDict(),
+                data.decompressor());
     }
 
     private static LoggedRequest createEmptyRequestShell(LoggedRequest req) {
@@ -101,13 +148,14 @@ public class CompressedServeEvent extends ServeEvent {
         if (requestMetadata == null) {
             return null;
         }
-        byte[] decompressed = decompressPayload(compressedRequestBody, rawRequestSize);
+        byte[] decompressed = decompressor.decompress(compressedRequestBody, rawRequestSize, signature, usedDictionary);
         return LoggedRequest.createFrom(new DelegatingRequest(requestMetadata, decompressed));
     }
 
     @Override
     public LoggedResponse getResponse() {
-        byte[] decompressed = decompressPayload(compressedResponseBody, rawResponseSize);
+        byte[] decompressed =
+                decompressor.decompress(compressedResponseBody, rawResponseSize, signature, usedDictionary);
         Response response = Response.response()
                 .status(responseStatus)
                 .headers(responseHeaders)
@@ -115,19 +163,6 @@ public class CompressedServeEvent extends ServeEvent {
                 .fault(responseFault)
                 .build();
         return LoggedResponse.from(response, Limit.UNLIMITED);
-    }
-
-    private byte[] decompressPayload(byte[] compressed, int originalSize) {
-        if (compressed == null || compressed.length == 0 || originalSize <= 0) {
-            return new byte[0];
-        }
-        if (usedDictionary) {
-            DictionaryPool.CompiledDictionary dict = dictionaryPool.getDictionary(signature);
-            if (dict != null) {
-                return codec.decompressWithDict(compressed, dict.decompressor(), originalSize);
-            }
-        }
-        return codec.decompressBaseline(compressed, originalSize);
     }
 
     public ClusterSignature getSignature() {
@@ -154,13 +189,21 @@ public class CompressedServeEvent extends ServeEvent {
         return compressedResponseBody != null ? compressedResponseBody.length : 0;
     }
 
+    public byte[] getCompressedRequestBody() {
+        return compressedRequestBody.clone();
+    }
+
+    public byte[] getCompressedResponseBody() {
+        return compressedResponseBody.clone();
+    }
+
     public long getStoredMemorySizeBytes() {
         return (compressedRequestBody != null ? compressedRequestBody.length : 0)
                 + (compressedResponseBody != null ? compressedResponseBody.length : 0);
     }
 
     /**
-     * Fast free-text matching that tests URL, headers, and transiently decompressed payload.
+     * Fast free-text matching testing URL, headers, and transiently decompressed payload.
      */
     public boolean matchesText(String searchTerm) {
         if (searchTerm == null || searchTerm.isBlank()) {
@@ -186,7 +229,7 @@ public class CompressedServeEvent extends ServeEvent {
 
         // 3. Transiently decompress request body
         if (rawRequestSize > 0) {
-            byte[] reqBytes = decompressPayload(compressedRequestBody, rawRequestSize);
+            byte[] reqBytes = decompressor.decompress(compressedRequestBody, rawRequestSize, signature, usedDictionary);
             String reqStr = new String(reqBytes, StandardCharsets.UTF_8);
             if (reqStr.contains(searchTerm)) {
                 return true;
@@ -195,7 +238,8 @@ public class CompressedServeEvent extends ServeEvent {
 
         // 4. Transiently decompress response body
         if (rawResponseSize > 0) {
-            byte[] respBytes = decompressPayload(compressedResponseBody, rawResponseSize);
+            byte[] respBytes =
+                    decompressor.decompress(compressedResponseBody, rawResponseSize, signature, usedDictionary);
             String respStr = new String(respBytes, StandardCharsets.UTF_8);
             if (respStr.contains(searchTerm)) {
                 return true;
@@ -216,92 +260,92 @@ public class CompressedServeEvent extends ServeEvent {
 
         @Override
         public String getUrl() {
-            return delegate != null ? delegate.getUrl() : "";
+            return delegate.getUrl();
         }
 
         @Override
         public String getAbsoluteUrl() {
-            return delegate != null ? delegate.getAbsoluteUrl() : "";
+            return delegate.getAbsoluteUrl();
         }
 
         @Override
         public RequestMethod getMethod() {
-            return delegate != null ? delegate.getMethod() : RequestMethod.GET;
+            return delegate.getMethod();
         }
 
         @Override
         public String getScheme() {
-            return delegate != null ? delegate.getScheme() : "http";
+            return delegate.getScheme();
         }
 
         @Override
         public String getHost() {
-            return delegate != null ? delegate.getHost() : "localhost";
+            return delegate.getHost();
         }
 
         @Override
         public int getPort() {
-            return delegate != null ? delegate.getPort() : 80;
+            return delegate.getPort();
         }
 
         @Override
         public String getClientIp() {
-            return delegate != null ? delegate.getClientIp() : "127.0.0.1";
+            return delegate.getClientIp();
         }
 
         @Override
         public String getHeader(String key) {
-            return delegate != null ? delegate.getHeader(key) : null;
+            return delegate.getHeader(key);
         }
 
         @Override
         public HttpHeader header(String key) {
-            return delegate != null ? delegate.header(key) : HttpHeader.absent(key);
+            return delegate.header(key);
         }
 
         @Override
         public ContentTypeHeader contentTypeHeader() {
-            return delegate != null ? delegate.contentTypeHeader() : null;
+            return delegate.contentTypeHeader();
         }
 
         @Override
         public HttpHeaders getHeaders() {
-            return delegate != null ? delegate.getHeaders() : new HttpHeaders();
+            return delegate.getHeaders();
         }
 
         @Override
         public boolean containsHeader(String key) {
-            return delegate != null && delegate.containsHeader(key);
+            return delegate.containsHeader(key);
         }
 
         @Override
         public Set<String> getAllHeaderKeys() {
-            return delegate != null ? delegate.getAllHeaderKeys() : Collections.emptySet();
+            return delegate.getAllHeaderKeys();
         }
 
         @Override
         public Map<String, Cookie> getCookies() {
-            return delegate != null ? delegate.getCookies() : Collections.emptyMap();
+            return delegate.getCookies();
         }
 
         @Override
         public QueryParameter queryParameter(String key) {
-            return delegate != null ? delegate.queryParameter(key) : QueryParameter.absent(key);
+            return delegate.queryParameter(key);
         }
 
         @Override
         public FormParameter formParameter(String key) {
-            return delegate != null ? delegate.formParameter(key) : FormParameter.absent(key);
+            return delegate.formParameter(key);
         }
 
         @Override
         public Map<String, FormParameter> formParameters() {
-            return delegate != null ? delegate.formParameters() : Collections.emptyMap();
+            return delegate.formParameters();
         }
 
         @Override
         public byte[] getBody() {
-            return body;
+            return body.clone();
         }
 
         @Override
@@ -316,37 +360,37 @@ public class CompressedServeEvent extends ServeEvent {
 
         @Override
         public boolean isBrowserProxyRequest() {
-            return delegate != null && delegate.isBrowserProxyRequest();
+            return delegate.isBrowserProxyRequest();
         }
 
         @Override
         public Optional<Request> getOriginalRequest() {
-            return delegate != null ? delegate.getOriginalRequest() : Optional.empty();
+            return Optional.ofNullable(delegate);
         }
 
         @Override
         public String getProtocol() {
-            return delegate != null ? delegate.getProtocol() : "HTTP/1.1";
+            return delegate.getProtocol();
         }
 
         @Override
-        public PathParams getPathParameters() {
-            return delegate != null ? delegate.getPathParameters() : PathParams.empty();
+        public com.github.tomakehurst.wiremock.common.url.PathParams getPathParameters() {
+            return delegate.getPathParameters();
         }
 
         @Override
         public boolean isMultipart() {
-            return delegate != null && delegate.isMultipart();
+            return delegate.isMultipart();
         }
 
         @Override
         public Collection<Part> getParts() {
-            return delegate != null ? delegate.getParts() : Collections.emptyList();
+            return delegate.getParts();
         }
 
         @Override
         public Part getPart(String name) {
-            return delegate != null ? delegate.getPart(name) : null;
+            return delegate.getPart(name);
         }
     }
 }
