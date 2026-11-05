@@ -96,26 +96,26 @@ public class JournalMemoryGovernor {
             return 0;
         }
 
-        long availableHeadroom = getAvailableHeadroomBytes();
-
-        long deficitFromMax = (maxJournalMemoryBytes > 0 && currentJournalMemoryBytes > maxJournalMemoryBytes)
-                ? (currentJournalMemoryBytes - maxJournalMemoryBytes)
-                : 0;
-
-        long deficitFromHeadroom = availableHeadroom < minHeadroomBytes ? (minHeadroomBytes - availableHeadroom) : 0;
-
-        long totalDeficit = Math.max(deficitFromMax, deficitFromHeadroom);
-        if (criticalLowMemory.get() && totalDeficit == 0) {
-            totalDeficit = Math.max(minHeadroomBytes / 4, 1024 * 1024);
-        }
-
-        if (totalDeficit <= 0) {
-            return 0;
-        }
-
         long avgSize = Math.max(256, averageEventSizeBytes);
-        int evictionsNeeded = (int) Math.ceil((double) totalDeficit / (double) avgSize);
-        return Math.min(currentEventCount, Math.max(1, evictionsNeeded));
+
+        // 1. Quota check against configured journal memory limit
+        if (maxJournalMemoryBytes > 0 && currentJournalMemoryBytes > maxJournalMemoryBytes) {
+            long deficit = currentJournalMemoryBytes - maxJournalMemoryBytes;
+            int evictionsNeeded = (int) Math.ceil((double) deficit / (double) avgSize);
+            return Math.min(currentEventCount, Math.max(1, evictionsNeeded));
+        }
+
+        // 2. Headroom and emergency GC pressure check
+        long availableHeadroom = getAvailableHeadroomBytes();
+        boolean lowHeadroom = availableHeadroom < minHeadroomBytes;
+        if (lowHeadroom || criticalLowMemory.get()) {
+            // Evict a bounded batch (up to 20% of current journal, between 10 and 50 events)
+            // to relieve memory pressure smoothly without panic-wiping the entire journal on transient GC spikes.
+            int batchSize = Math.min(currentEventCount, Math.max(10, currentEventCount / 5));
+            return Math.min(batchSize, 50);
+        }
+
+        return 0;
     }
 
     /**
