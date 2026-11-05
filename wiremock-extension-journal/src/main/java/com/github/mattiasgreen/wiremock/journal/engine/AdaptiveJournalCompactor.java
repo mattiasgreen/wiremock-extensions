@@ -82,13 +82,21 @@ public class AdaptiveJournalCompactor {
                 compressedReq = codec.compressWithDict(rawReq, dict.compressor());
                 compressedResp = codec.compressWithDict(rawResp, dict.compressor());
             } else {
-                usedDict = false;
-                compressedReq = codec.compressBaseline(rawReq);
-                compressedResp = codec.compressBaseline(rawResp);
-
                 // Collect sample for asynchronous dictionary training
                 if (rawResp != null && rawResp.length > 0) {
                     dictionaryPool.recordSample(signature, rawResp);
+                }
+
+                // Check if sample collection immediately graduated a dictionary
+                dict = dictionaryPool.getDictionary(signature);
+                if (dict != null) {
+                    usedDict = true;
+                    compressedReq = codec.compressWithDict(rawReq, dict.compressor());
+                    compressedResp = codec.compressWithDict(rawResp, dict.compressor());
+                } else {
+                    usedDict = false;
+                    compressedReq = codec.compressBaseline(rawReq);
+                    compressedResp = codec.compressBaseline(rawResp);
                 }
             }
         }
