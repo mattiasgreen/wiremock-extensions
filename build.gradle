@@ -99,6 +99,10 @@ subprojects {
     tasks.withType(Test).configureEach {
         jvmArgs '-XX:TieredStopAtLevel=1', '-XX:+UseParallelGC'
         maxParallelForks = Math.max(1, Math.min(3, Runtime.runtime.availableProcessors() / 2 as int))
+        testLogging {
+            events 'failed'
+            exceptionFormat 'full'
+        }
         if (!file('src/test/resources/logback-test.xml').exists()) {
             systemProperty 'logback.configurationFile', rootProject.file('config/logback-test.xml').absolutePath
         }

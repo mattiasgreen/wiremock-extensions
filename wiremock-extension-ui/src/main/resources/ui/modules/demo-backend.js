@@ -1293,8 +1293,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/async-messaging-extension',
-        commit: 'a355e1f'
+        branch: 'feat/adaptive-zstd-journal-compression',
+        commit: 'e6efa3c'
       });
     }
 

@@ -125,6 +125,14 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
         serveEvents.put(id, eventToStore);
         deque.addFirst(id);
 
+        // Close race window: If the dictionary completed training while this event was being compacted,
+        // upgrade immediately so no event remains baseline-compressed in the cluster.
+        if (eventToStore instanceof CompressedServeEvent c && !c.isUsedDictionary()) {
+            if (compactor.getDictionaryPool().hasDictionary(c.getSignature())) {
+                upgradeEvent(id, c, c.getSignature());
+            }
+        }
+
         rawBytesTotal.addAndGet(calculateRawSize(eventToStore));
         compressedBytesTotal.addAndGet(calculateStoredSize(eventToStore));
 
@@ -257,17 +265,20 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
             return;
         }
         Thread.ofVirtual().name("rebalance-" + signature.key()).start(() -> {
-            try {
-                // Yield briefly to ensure in-flight store.add() finishes inserting the triggering event
-                Thread.sleep(10);
-            } catch (InterruptedException ignored) {
-            }
-            for (UUID id : deque) {
-                ServeEvent current = serveEvents.get(id);
-                if (current instanceof CompressedServeEvent c && !c.isUsedDictionary()) {
-                    if (signature.equals(c.getSignature())
-                            && compactor.getDictionaryPool().hasDictionary(signature)) {
-                        upgradeEvent(id, c, signature);
+            for (int pass = 0; pass < 2; pass++) {
+                for (UUID id : deque) {
+                    ServeEvent current = serveEvents.get(id);
+                    if (current instanceof CompressedServeEvent c && !c.isUsedDictionary()) {
+                        if (signature.equals(c.getSignature())
+                                && compactor.getDictionaryPool().hasDictionary(signature)) {
+                            upgradeEvent(id, c, signature);
+                        }
+                    }
+                }
+                if (pass == 0) {
+                    try {
+                        Thread.sleep(15);
+                    } catch (InterruptedException ignored) {
                     }
                 }
             }
