@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.journal.admin.JournalAdminEndpoint;
-import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveAntiOomGuard;
 import com.github.mattiasgreen.wiremock.journal.engine.DictionaryPool;
+import com.github.mattiasgreen.wiremock.journal.engine.JournalMemoryGovernor;
 import com.github.mattiasgreen.wiremock.journal.engine.ZstdCodec;
 import com.github.mattiasgreen.wiremock.journal.store.CompressedRequestJournalStore;
 import com.github.tomakehurst.wiremock.admin.Router;
@@ -34,7 +34,7 @@ class JournalAdminEndpointTest {
     void setUp() {
         codec = new ZstdCodec();
         dictionaryPool = new DictionaryPool(16, 5, 16 * 1024, codec);
-        store = new CompressedRequestJournalStore(codec, dictionaryPool, new AdaptiveAntiOomGuard());
+        store = new CompressedRequestJournalStore(codec, dictionaryPool, new JournalMemoryGovernor());
         endpoint = new JournalAdminEndpoint(store);
     }
 

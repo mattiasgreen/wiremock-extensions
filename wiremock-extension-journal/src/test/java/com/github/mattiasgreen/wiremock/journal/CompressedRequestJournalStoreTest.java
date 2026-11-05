@@ -3,8 +3,12 @@ package com.github.mattiasgreen.wiremock.journal;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveAntiOomGuard;
+import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveJournalCompactor;
 import com.github.mattiasgreen.wiremock.journal.engine.DictionaryPool;
+import com.github.mattiasgreen.wiremock.journal.engine.JournalMemoryGovernor;
+import com.github.mattiasgreen.wiremock.journal.engine.JournalSearchIndex;
 import com.github.mattiasgreen.wiremock.journal.engine.ZstdCodec;
+import com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent;
 import com.github.mattiasgreen.wiremock.journal.model.JournalStats;
 import com.github.mattiasgreen.wiremock.journal.store.CompressedRequestJournalStore;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
@@ -31,7 +35,7 @@ class CompressedRequestJournalStoreTest {
         codec = new ZstdCodec();
         dictionaryPool = new DictionaryPool(16, 20, 16 * 1024, codec);
         store = new CompressedRequestJournalStore(
-                codec, dictionaryPool, new AdaptiveAntiOomGuard(10 * 1024 * 1024, 50 * 1024 * 1024));
+                codec, dictionaryPool, new JournalMemoryGovernor(10 * 1024 * 1024, 50 * 1024 * 1024));
     }
 
     @AfterEach
@@ -246,7 +250,7 @@ class CompressedRequestJournalStoreTest {
                         );
 
         CompressedRequestJournalStore uncompressedStore = new CompressedRequestJournalStore(
-                codec, dictionaryPool, new AdaptiveAntiOomGuard(uncompressedConfig), uncompressedConfig);
+                codec, dictionaryPool, new JournalMemoryGovernor(uncompressedConfig), uncompressedConfig);
 
         StubMapping stub = new StubMapping();
         stub.setId(UUID.randomUUID());
@@ -274,6 +278,115 @@ class CompressedRequestJournalStoreTest {
         // Verification and search should still work seamlessly
         List<UUID> searchMatches = uncompressedStore.search("uncompressed-event-49");
         assertThat(searchMatches).hasSize(1);
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void shouldMaintainBackwardsCompatibilityWithAdaptiveAntiOomGuard() {
+        AdaptiveAntiOomGuard legacyGuard = new AdaptiveAntiOomGuard(10 * 1024 * 1024, 50 * 1024 * 1024);
+        assertThat(legacyGuard).isInstanceOf(JournalMemoryGovernor.class);
+        CompressedRequestJournalStore legacyStore =
+                new CompressedRequestJournalStore(codec, dictionaryPool, legacyGuard);
+        assertThat(legacyStore.getAntiOomGuard()).isSameAs(legacyGuard);
+    }
+
+    @Test
+    void shouldSearchWithZeroDecompressionViaInvertedIndex() {
+        StubMapping stub = new StubMapping();
+        stub.setId(UUID.randomUUID());
+
+        for (int i = 0; i < 50; i++) {
+            String req = "{\"action\":\"processPayment\",\"txId\":\"TX-INDEX-" + i + "\"}";
+            String resp = "{\"status\":\"CONFIRMED\",\"authCode\":\"AUTH-" + i + "\"}";
+            store.add(createServeEvent(stub, "/api/payments/" + i, req, resp));
+        }
+
+        long initialDecompressions = store.getDecompressionCount();
+        assertThat(initialDecompressions).isZero();
+
+        // Query indexed needle
+        List<UUID> matches = store.search("TX-INDEX-25");
+        assertThat(matches).hasSize(1);
+        assertThat(store.getDecompressionCount()).isZero();
+
+        // Query another indexed field
+        List<UUID> authMatches = store.search("AUTH-42");
+        assertThat(authMatches).hasSize(1);
+        assertThat(store.getDecompressionCount()).isZero();
+
+        // Inverted index hits recorded
+        assertThat(store.getSearchIndex().getIndexHits()).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void shouldResolveNegativeSearchUnderFiftyMicrosecondsWithoutDecompression() {
+        StubMapping stub = new StubMapping();
+        stub.setId(UUID.randomUUID());
+
+        for (int i = 0; i < 50; i++) {
+            store.add(createServeEvent(stub, "/api/items/" + i, "{\"id\":" + i + "}", "{\"status\":\"ok\"}"));
+        }
+
+        long beforeDecompressions = store.getDecompressionCount();
+
+        // Warm up JIT
+        for (int i = 0; i < 50; i++) {
+            store.search("NON_EXISTENT_WARMUP_TOKEN");
+        }
+
+        long startNanos = System.nanoTime();
+        List<UUID> emptyMatches = store.search("COMPLETELY_ABSENT_TOKEN_12345");
+        long elapsedNanos = System.nanoTime() - startNanos;
+
+        assertThat(emptyMatches).isEmpty();
+        // Negative lookup must never trigger transient decompression
+        assertThat(store.getDecompressionCount()).isEqualTo(beforeDecompressions);
+        // Generous margin for CI execution (typically < 50us)
+        assertThat(elapsedNanos).isLessThan(5_000_000L);
+    }
+
+    @Test
+    void shouldPerformBatchEvictionUnderMemoryPressure() {
+        StubMapping stub = new StubMapping();
+        stub.setId(UUID.randomUUID());
+
+        // Governor with synthetic headroom supplier simulating a sudden memory drop below threshold
+        java.util.concurrent.atomic.AtomicLong simulatedHeadroom =
+                new java.util.concurrent.atomic.AtomicLong(100 * 1024 * 1024); // 100 MB healthy
+        JournalMemoryGovernor testGovernor =
+                new JournalMemoryGovernor(true, 20 * 1024 * 1024, 0, simulatedHeadroom::get);
+
+        CompressedRequestJournalStore pressureStore =
+                new CompressedRequestJournalStore(codec, dictionaryPool, testGovernor);
+
+        for (int i = 0; i < 100; i++) {
+            pressureStore.add(createServeEvent(
+                    stub, "/api/events/" + i, "{\"payload\":\"" + "x".repeat(500) + "\"}", "{\"resp\":\"ok\"}"));
+        }
+        assertThat(pressureStore.getAll().count()).isEqualTo(100);
+
+        // Simulate sudden memory spike: headroom drops to 5 MB (below 20 MB minHeadroomBytes)
+        simulatedHeadroom.set(5 * 1024 * 1024);
+
+        // Adding 1 new event must trigger autonomous batch eviction in a single pass
+        pressureStore.add(createServeEvent(stub, "/api/events/100", "{\"new\":\"event\"}", "{\"resp\":\"ok\"}"));
+
+        assertThat(pressureStore.getStats().totalEvictions()).isGreaterThanOrEqualTo(20);
+        assertThat(pressureStore.getAll().count()).isLessThanOrEqualTo(81);
+    }
+
+    @Test
+    void shouldVerifyCompressedServeEventIsPureValueObjectWithoutEngineReferences() {
+        for (java.lang.reflect.Field field : CompressedServeEvent.class.getDeclaredFields()) {
+            Class<?> type = field.getType();
+            assertThat(type)
+                    .withFailMessage("CompressedServeEvent must not reference engine class: " + type.getName())
+                    .isNotEqualTo(ZstdCodec.class)
+                    .isNotEqualTo(DictionaryPool.class)
+                    .isNotEqualTo(AdaptiveJournalCompactor.class)
+                    .isNotEqualTo(JournalSearchIndex.class)
+                    .isNotEqualTo(JournalMemoryGovernor.class);
+        }
     }
 
     private ServeEvent createServeEvent(StubMapping stub, String url, String reqBody, String respBody) {

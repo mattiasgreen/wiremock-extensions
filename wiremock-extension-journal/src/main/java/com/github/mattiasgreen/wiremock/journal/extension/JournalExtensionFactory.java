@@ -15,6 +15,8 @@ import java.util.List;
  */
 public class JournalExtensionFactory implements ExtensionFactory {
 
+    private static final System.Logger LOGGER = System.getLogger(JournalExtensionFactory.class.getName());
+
     private final ZstdCodec codec;
     private final DictionaryPool dictionaryPool;
 
@@ -37,10 +39,19 @@ public class JournalExtensionFactory implements ExtensionFactory {
             }
         }
 
+        if (directStore == null) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "CompressedStores was not configured as the WireMock store provider. "
+                            + "Falling back to JournalCompactionListener with degraded performance. "
+                            + "Configure Stores via wiremockOptions.withStores(new CompressedStores()) for optimal memory efficiency.");
+        }
+
         JournalAdminEndpoint adminEndpoint = directStore != null
                 ? new JournalAdminEndpoint(directStore)
                 : new JournalAdminEndpoint(services != null ? services.getStores() : null);
 
+        @SuppressWarnings("removal")
         JournalCompactionListener listener = new JournalCompactionListener(services, codec, dictionaryPool);
 
         return List.of(adminEndpoint, listener);

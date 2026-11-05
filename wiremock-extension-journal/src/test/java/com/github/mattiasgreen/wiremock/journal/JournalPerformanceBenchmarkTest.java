@@ -2,8 +2,8 @@ package com.github.mattiasgreen.wiremock.journal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveAntiOomGuard;
 import com.github.mattiasgreen.wiremock.journal.engine.DictionaryPool;
+import com.github.mattiasgreen.wiremock.journal.engine.JournalMemoryGovernor;
 import com.github.mattiasgreen.wiremock.journal.engine.ZstdCodec;
 import com.github.mattiasgreen.wiremock.journal.model.JournalStats;
 import com.github.mattiasgreen.wiremock.journal.store.CompressedRequestJournalStore;
@@ -34,7 +34,7 @@ class JournalPerformanceBenchmarkTest {
         // 64 dictionaries pool, 20 sample training threshold, 32 KB target dict size
         dictionaryPool = new DictionaryPool(64, 20, 32 * 1024, codec);
         store = new CompressedRequestJournalStore(
-                codec, dictionaryPool, new AdaptiveAntiOomGuard(32 * 1024 * 1024, 256 * 1024 * 1024));
+                codec, dictionaryPool, new JournalMemoryGovernor(32 * 1024 * 1024, 256 * 1024 * 1024));
     }
 
     @AfterEach
@@ -140,6 +140,7 @@ class JournalPerformanceBenchmarkTest {
 
         // --- Free-Text Search Verification ---
         System.out.println("\nExecuting Free-Text Search across 5,000 compressed events for: " + needleCaseId);
+        long decompressionsBefore = store.getDecompressionCount();
         long searchStartNanos = System.nanoTime();
         List<UUID> searchResults = store.search(needleCaseId);
         long searchDurationMs = (System.nanoTime() - searchStartNanos) / 1_000_000;
@@ -148,6 +149,17 @@ class JournalPerformanceBenchmarkTest {
                 String.format("Search completed in %d ms. Matches found: %d", searchDurationMs, searchResults.size()));
         assertThat(searchResults).containsExactly(needleEventId);
         assertThat(searchDurationMs).isLessThan(500); // Sub-half-second search across 5,000 in-memory items
+        // Zero-decompression search assertion
+        assertThat(store.getDecompressionCount()).isEqualTo(decompressionsBefore);
+        assertThat(store.getSearchIndex().getIndexHits()).isGreaterThanOrEqualTo(1);
+
+        // Negative search assertion across 5,000 items
+        long negStart = System.nanoTime();
+        List<UUID> negResults = store.search("COMPLETELY_ABSENT_CASE_ID_99999");
+        long negDurationNanos = System.nanoTime() - negStart;
+        assertThat(negResults).isEmpty();
+        assertThat(store.getDecompressionCount()).isEqualTo(decompressionsBefore);
+        assertThat(negDurationNanos).isLessThan(50_000_000L); // Fast sub-50ms index miss on cold run
 
         // --- Exact Fidelity Verification on Needle ---
         Optional<ServeEvent> needleEventOpt = store.get(needleEventId);
@@ -187,7 +199,7 @@ class JournalPerformanceBenchmarkTest {
 
         String needleId = "CONCURRENT-NEEDLE-42-SECRET";
         int needleClient = concurrentClients / 2;
-        int needleReqIndex = requestsPerClient / 2;
+        int needleReqIndex = Math.max(1, requestsPerClient - 10);
         java.util.concurrent.atomic.AtomicReference<UUID> needleEventIdRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -343,9 +355,11 @@ class JournalPerformanceBenchmarkTest {
         assertThat(finalStats.activeDictionaries()).isEqualTo(8);
         assertThat(finalStats.compressionRatio()).isGreaterThanOrEqualTo(10.0);
 
-        // Verify needle retrieval
+        // Verify needle retrieval via inverted index and direct lookup
         UUID needleIdFound = needleEventIdRef.get();
         assertThat(needleIdFound).isNotNull();
+        List<UUID> needleSearchHits = store.search(needleId);
+        assertThat(needleSearchHits).contains(needleIdFound);
         Optional<ServeEvent> needleEventOpt = store.get(needleIdFound);
         assertThat(needleEventOpt).isPresent();
         assertThat(needleEventOpt.get().getRequest().getBodyAsString()).contains(needleId);
