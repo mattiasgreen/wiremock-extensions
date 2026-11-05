@@ -150,10 +150,6 @@ public class DictionaryPool {
         sampleBuffers.clear();
         trainingInProgress.clear();
         synchronized (dictionaryCache) {
-            for (CompiledDictionary dict : dictionaryCache.values()) {
-                dict.compressor().close();
-                dict.decompressor().close();
-            }
             dictionaryCache.clear();
         }
     }

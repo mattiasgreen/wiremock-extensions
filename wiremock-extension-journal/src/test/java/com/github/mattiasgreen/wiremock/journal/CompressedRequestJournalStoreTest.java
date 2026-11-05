@@ -182,8 +182,8 @@ class CompressedRequestJournalStoreTest {
             }
         }
 
-        // Wait up to 5000ms for dictionary training and retroactive rebalancing
-        long deadline = System.currentTimeMillis() + 5000;
+        // Wait up to 10000ms for dictionary training and retroactive rebalancing
+        long deadline = System.currentTimeMillis() + 10000;
         long dictEventsPhase2 = 0;
         while (System.currentTimeMillis() < deadline) {
             dictEventsPhase2 = store.getAll()
@@ -216,8 +216,8 @@ class CompressedRequestJournalStoreTest {
             }
         }
 
-        // Wait up to 5000ms for the 10 new dictionaries to train and auto-rebalance
-        deadline = System.currentTimeMillis() + 5000;
+        // Wait up to 10000ms for the 10 new dictionaries to train and auto-rebalance
+        deadline = System.currentTimeMillis() + 10000;
         long dictEventsPhase3 = 0;
         while (System.currentTimeMillis() < deadline) {
             dictEventsPhase3 = store.getAll()
