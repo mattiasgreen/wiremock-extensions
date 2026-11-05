@@ -35,7 +35,7 @@ class CompressedRequestJournalStoreTest {
         codec = new ZstdCodec();
         dictionaryPool = new DictionaryPool(16, 20, 16 * 1024, codec);
         store = new CompressedRequestJournalStore(
-                codec, dictionaryPool, new JournalMemoryGovernor(0, 50 * 1024 * 1024));
+                codec, dictionaryPool, new JournalMemoryGovernor(false, 0, 50 * 1024 * 1024, null));
     }
 
     @AfterEach
