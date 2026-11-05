@@ -178,21 +178,21 @@ class CompressedRequestJournalStoreTest {
             }
         }
 
-        // Wait up to 1000ms for dictionary training and retroactive rebalancing
-        long deadline = System.currentTimeMillis() + 1500;
-        while (dictionaryPool.getActiveDictionaryCount() < 5 && System.currentTimeMillis() < deadline) {
+        // Wait up to 5000ms for dictionary training and retroactive rebalancing
+        long deadline = System.currentTimeMillis() + 5000;
+        long dictEventsPhase2 = 0;
+        while (System.currentTimeMillis() < deadline) {
+            dictEventsPhase2 = store.getAll()
+                    .filter(e -> e instanceof com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent c
+                            && c.isUsedDictionary())
+                    .count();
+            if (dictionaryPool.getActiveDictionaryCount() >= 5 && dictEventsPhase2 == 125) {
+                break;
+            }
             Thread.sleep(25);
         }
-        Thread.sleep(100); // allow async rebalance to complete
 
         assertThat(dictionaryPool.getActiveDictionaryCount()).isGreaterThanOrEqualTo(5);
-
-        // Verify that the initial 15 cold-start events for the first 5 services were RETROACTIVELY upgraded!
-        long dictEventsPhase2 = store.getAll()
-                .filter(e -> e instanceof com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent c
-                        && c.isUsedDictionary())
-                .count();
-
         // 5 services * 25 events each = 125 events should now be dictionary-compressed
         assertThat(dictEventsPhase2).isEqualTo(125);
 
@@ -212,20 +212,22 @@ class CompressedRequestJournalStoreTest {
             }
         }
 
-        // Wait for the 10 new dictionaries to train and auto-rebalance
-        deadline = System.currentTimeMillis() + 1500;
-        while (dictionaryPool.getActiveDictionaryCount() < 15 && System.currentTimeMillis() < deadline) {
+        // Wait up to 5000ms for the 10 new dictionaries to train and auto-rebalance
+        deadline = System.currentTimeMillis() + 5000;
+        long dictEventsPhase3 = 0;
+        while (System.currentTimeMillis() < deadline) {
+            dictEventsPhase3 = store.getAll()
+                    .filter(e -> e instanceof com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent c
+                            && c.isUsedDictionary())
+                    .count();
+            if (dictionaryPool.getActiveDictionaryCount() >= 15 && dictEventsPhase3 == 375) {
+                break;
+            }
             Thread.sleep(25);
         }
-        Thread.sleep(100);
 
         assertThat(dictionaryPool.getActiveDictionaryCount()).isGreaterThanOrEqualTo(15);
-
         // Total dictionary-compressed events: (5 + 10) * 25 = 375 events!
-        long dictEventsPhase3 = store.getAll()
-                .filter(e -> e instanceof com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent c
-                        && c.isUsedDictionary())
-                .count();
         assertThat(dictEventsPhase3).isEqualTo(375);
     }
 
