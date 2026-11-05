@@ -4,3 +4,7 @@ dependencies {
 
     testImplementation project(':wiremock-extension-casual')
 }
+
+tasks.withType(Test).configureEach {
+    maxHeapSize = '1024m'
+}
