@@ -744,7 +744,7 @@ export function openStubEditor(stub, clone = false) {
         text: val,
         format: detectFormat(val),
         context: 'stub',
-        mode: 'editor',
+        mode: 'viewer',
         onSave: (savedText) => {
           if (bodyEl) {
             bodyEl.value = savedText;
@@ -780,7 +780,7 @@ export function openStubEditor(stub, clone = false) {
         text: val,
         format: 'json',
         context: 'stub',
-        mode: 'editor',
+        mode: 'viewer',
         onSave: (savedText) => {
           if (rawTextarea) {
             rawTextarea.value = savedText;

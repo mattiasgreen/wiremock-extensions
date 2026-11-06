@@ -93,20 +93,26 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Maximized Viewport: Zero whitespace defect and seamless Viewer ↔ Editor mode transition")
+    @DisplayName("Maximized Viewport: Opens in Viewer Mode, zero whitespace defect, and spacious Stub Editor modal")
     void testMaximizedViewportNoWhitespaceDefectAndModeSwitching() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector("#stub-list");
 
-        // 1. Open Stub Editor and maximize Raw JSON
+        // 1. Open Stub Editor and verify spacious modal dimensions
         page.locator("#btn-create-stub").click();
         page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        Number dialogWidth = (Number) page.locator("#stub-editor-modal .modal-dialog-wide")
+                .evaluate("el => el.getBoundingClientRect().width");
+        assertThat(dialogWidth.doubleValue()).isGreaterThan(800.0);
+
         page.locator("#btn-editor-mode-json").click();
 
+        // 2. Maximize Raw JSON
         Locator btnRawMax = page.locator("#btn-editor-raw-maximize");
         btnRawMax.click();
 
-        // Maximized Viewport opens in Editor Mode
+        // Maximized Viewport defaults to Viewer Mode for instant folding & multi-format syntax inspection
         Locator modalViewport = page.locator("#modal-payload-lens");
         assertThat(modalViewport.isVisible()).isTrue();
         assertThat(modalViewport.getAttribute("class")).contains("fullscreen-viewport");
@@ -114,34 +120,38 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         Locator viewerContainer = page.locator("#payload-viewport-viewer-container");
         Locator editorContainer = page.locator("#payload-viewport-editor-container");
 
-        // CRITICAL BUG VERIFICATION: Viewer container MUST be truly hidden with 0 computed height
-        assertThat(viewerContainer.getAttribute("class")).contains("hidden");
+        // Viewer container must be active and visible
+        assertThat(viewerContainer.getAttribute("class")).doesNotContain("hidden");
         Number viewerHeight = (Number) viewerContainer.evaluate("el => el.getBoundingClientRect().height");
-        assertThat(viewerHeight.doubleValue()).isEqualTo(0.0);
+        assertThat(viewerHeight.doubleValue()).isGreaterThan(300.0);
 
-        // Editor container must be visible and taking up significant screen height
-        assertThat(editorContainer.getAttribute("class")).doesNotContain("hidden");
-        Number editorHeight = (Number) editorContainer.evaluate("el => el.getBoundingClientRect().height");
-        assertThat(editorHeight.doubleValue()).isGreaterThan(300.0);
+        // Editor container must be hidden with 0 height
+        assertThat(editorContainer.getAttribute("class")).contains("hidden");
+        Number editorHiddenHeight = (Number) editorContainer.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(editorHiddenHeight.doubleValue()).isEqualTo(0.0);
 
-        // 2. Test Viewer ↔ Editor Mode Transition
+        // 3. Test Viewer ↔ Editor Mode Transition
         Locator btnModeSwitch = page.locator("#btn-lens-view-edit-toggle");
         assertThat(btnModeSwitch.isVisible()).isTrue();
+        assertThat(btnModeSwitch.textContent()).contains("Edit");
+
+        // Switch to Editor mode
+        btnModeSwitch.click();
+        assertThat(viewerContainer.getAttribute("class")).contains("hidden");
+        assertThat(editorContainer.getAttribute("class")).doesNotContain("hidden");
         assertThat(btnModeSwitch.textContent()).contains("View");
 
-        // Switch to Viewer mode
+        // CRITICAL BUG VERIFICATION: In Editor mode, viewer container MUST be truly hidden with 0 computed height
+        Number viewerHiddenHeight = (Number) viewerContainer.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(viewerHiddenHeight.doubleValue()).isEqualTo(0.0);
+
+        Number activeEditorHeight = (Number) editorContainer.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(activeEditorHeight.doubleValue()).isGreaterThan(300.0);
+
+        // Switch back to Viewer mode
         btnModeSwitch.click();
         assertThat(viewerContainer.getAttribute("class")).doesNotContain("hidden");
         assertThat(editorContainer.getAttribute("class")).contains("hidden");
-        assertThat(btnModeSwitch.textContent()).contains("Edit");
-
-        Number activeViewerHeight = (Number) viewerContainer.evaluate("el => el.getBoundingClientRect().height");
-        assertThat(activeViewerHeight.doubleValue()).isGreaterThan(300.0);
-
-        // Switch back to Editor mode
-        btnModeSwitch.click();
-        assertThat(viewerContainer.getAttribute("class")).contains("hidden");
-        assertThat(editorContainer.getAttribute("class")).doesNotContain("hidden");
 
         // Close Viewport
         page.locator("#btn-close-payload-lens").click();
