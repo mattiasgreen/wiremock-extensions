@@ -10,6 +10,7 @@ import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
   attachEmbeddedPayloadsBar,
+  attachDualLayerEditor,
   openPayloadLens,
   formatCasualBufferDescriptor,
   detectCharset,
@@ -151,8 +152,11 @@ export function initCasualTester() {
     if (el) el.addEventListener('change', () => updateCasualRoute(true));
   });
 
-  if (elements.casualRequestPayload && elements.casualPayloadEmbeddedBar) {
-    attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
+  if (elements.casualRequestPayload) {
+    attachDualLayerEditor(elements.casualRequestPayload, elements.casualPayloadModeToggle || document.getElementById('casual-payload-mode-toggle'));
+    if (elements.casualPayloadEmbeddedBar) {
+      attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
+    }
   }
 
   const reqTopPill = document.getElementById('casual-request-top-pill');
@@ -268,6 +272,7 @@ export function updateCasualRequestPill() {
         onSave: (savedText) => {
           if (elements.casualRequestPayload) {
             elements.casualRequestPayload.value = savedText;
+            if (elements.casualRequestPayload._dualLayer) elements.casualRequestPayload._dualLayer.refresh();
             updateCasualRequestPill();
             elements.casualRequestPayload.dispatchEvent(new Event('input', { bubbles: true }));
           }

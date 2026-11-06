@@ -8,6 +8,7 @@ import { normalizeJsonPayload } from './base64.js';
 import { formatPayload, detectFormat } from './highlighter.js';
 import {
   attachEmbeddedPayloadsBar,
+  attachDualLayerEditor,
   pushViewportLayer,
   detectCharset,
   formatPayloadDescriptor
@@ -584,6 +585,8 @@ export function setEditorMode(mode) {
     const stubObj = buildStubFromForm();
     if (rawTextarea) {
       rawTextarea.value = JSON.stringify(stubObj, null, 2);
+      attachDualLayerEditor(rawTextarea, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
+      if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
     }
     if (errorEl) {
       errorEl.classList.add('hidden');
@@ -631,6 +634,7 @@ export function formatRawEditorJson() {
   try {
     const parsed = JSON.parse(rawTextarea.value);
     rawTextarea.value = JSON.stringify(parsed, null, 2);
+    if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
     if (errorEl) {
       errorEl.classList.add('hidden');
       errorEl.textContent = '';
@@ -691,6 +695,8 @@ export function openStubEditor(stub, clone = false) {
       ? { ...stub, id: undefined, name: `${stub.name || 'Stub'} (Copy)` }
       : (stub || buildStubFromForm());
     rawTextarea.value = JSON.stringify(initialStub, null, 2);
+    attachDualLayerEditor(rawTextarea, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
+    if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
   }
 
   // Reset to form mode on open without re-parsing rawTextarea
@@ -722,6 +728,8 @@ export function openStubEditor(stub, clone = false) {
     }
   };
   if (bodyEl) {
+    attachDualLayerEditor(bodyEl, elements.editorBodyModeToggle || document.getElementById('editor-body-mode-toggle'));
+    if (bodyEl._dualLayer) bodyEl._dualLayer.refresh();
     bodyEl.oninput = updateBodyPill;
     updateBodyPill();
   }
@@ -1023,18 +1031,27 @@ export function initStubLifecycleHandlers() {
     });
   }
 
-  // Attach embedded payload bars to stub editor textareas
+  // Attach dual-layer code editors & embedded payload bars to stub editor textareas
   const editorBody = document.getElementById('editor-body');
-  if (editorBody && elements.editorBodyEmbeddedBar) {
-    attachEmbeddedPayloadsBar(editorBody, elements.editorBodyEmbeddedBar);
+  if (editorBody) {
+    attachDualLayerEditor(editorBody, elements.editorBodyModeToggle || document.getElementById('editor-body-mode-toggle'));
+    if (elements.editorBodyEmbeddedBar) {
+      attachEmbeddedPayloadsBar(editorBody, elements.editorBodyEmbeddedBar);
+    }
   }
   const editorPattern = document.getElementById('editor-body-match-pattern');
-  if (editorPattern && elements.editorPatternEmbeddedBar) {
-    attachEmbeddedPayloadsBar(editorPattern, elements.editorPatternEmbeddedBar);
+  if (editorPattern) {
+    attachDualLayerEditor(editorPattern, elements.editorPatternModeToggle || document.getElementById('editor-pattern-mode-toggle'));
+    if (elements.editorPatternEmbeddedBar) {
+      attachEmbeddedPayloadsBar(editorPattern, elements.editorPatternEmbeddedBar);
+    }
   }
   const editorRaw = document.getElementById('editor-raw-json');
-  if (editorRaw && elements.editorRawEmbeddedBar) {
-    attachEmbeddedPayloadsBar(editorRaw, elements.editorRawEmbeddedBar);
+  if (editorRaw) {
+    attachDualLayerEditor(editorRaw, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
+    if (elements.editorRawEmbeddedBar) {
+      attachEmbeddedPayloadsBar(editorRaw, elements.editorRawEmbeddedBar);
+    }
   }
 }
 

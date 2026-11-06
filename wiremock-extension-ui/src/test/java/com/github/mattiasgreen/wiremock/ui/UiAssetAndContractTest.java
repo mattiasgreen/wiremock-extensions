@@ -88,6 +88,8 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"nav-tab-netem\"");
         assertThat(html).contains("id=\"tab-netem\"");
         assertThat(html).contains("id=\"netem-journal-table\"");
+        assertThat(html).contains("id=\"payload-lens-mode-toggle\"");
+        assertThat(html).contains("id=\"btn-lens-view-edit-toggle\"");
     }
 
     @Test
@@ -128,6 +130,7 @@ public class UiAssetAndContractTest {
         assertThat(jsResp.body()).contains("highlightJson");
         assertThat(jsResp.body()).contains("generateCurl");
         assertThat(jsResp.body()).contains("parseHash");
+        assertThat(jsResp.body()).contains("attachDualLayerEditor");
         assertThat(jsResp.headers().firstValue("Cache-Control")).isPresent();
 
         HttpRequest cssReq = HttpRequest.newBuilder()
@@ -138,6 +141,9 @@ public class UiAssetAndContractTest {
         assertThat(cssResp.statusCode()).isEqualTo(200);
         assertThat(cssResp.headers().firstValue("Content-Type").get()).contains("text/css");
         assertThat(cssResp.body()).contains(":root");
+        assertThat(cssResp.body()).contains(".dual-layer-editor-wrapper");
+        assertThat(cssResp.body()).contains(".mode-rich");
+        assertThat(cssResp.body()).contains(".mode-raw");
         assertThat(cssResp.body()).contains(".json-key");
         assertThat(cssResp.body()).contains(".tester-container");
 

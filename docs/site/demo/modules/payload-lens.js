@@ -13,7 +13,8 @@ import {
   highlightPayload,
   highlightJson,
   highlightXml,
-  parsePseudoJson
+  parsePseudoJson,
+  MAX_HIGHLIGHT_PAYLOAD_CHARS
 } from './highlighter.js';
 import { decodeBase64ToUtf8, tryDecodeBase64Json } from './base64.js';
 
@@ -1011,7 +1012,7 @@ if (typeof document !== 'undefined') {
       const nodeId = openBtn.getAttribute('data-node-id');
       const entry = nodeRegistry.get(nodeId);
       if (entry) {
-        openPayloadLens(entry.rootText, entry.node, entry.onSaveRoot, entry.ancestorFrames);
+        openPayloadLens(entry.rootText, entry.node, entry.onSaveRoot, entry.ancestorFrames, 'viewer');
       } else {
         const parentPreview = openBtn.closest('.truncated-payload-preview');
         if (parentPreview) {
@@ -1019,7 +1020,7 @@ if (typeof document !== 'undefined') {
           const nodeIdx = parseInt(openBtn.getAttribute('data-node-idx'), 10);
           const stored = viewerRegistry.get(viewerId);
           if (stored && stored.discovered && stored.discovered[nodeIdx]) {
-            openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot);
+            openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot, null, 'viewer');
           }
         }
       }
@@ -1046,7 +1047,7 @@ function attachViewerEventListeners(boxEl, rawText, discovered) {
       if (node) {
         openPayloadLens(rawText, node, (newRootText) => {
           renderPayloadViewer(boxEl.parentElement, newRootText);
-        });
+        }, null, 'viewer');
       }
     });
   });
@@ -1069,6 +1070,167 @@ function attachViewerEventListeners(boxEl, rawText, discovered) {
       }
     });
   });
+}
+
+/**
+ * Attaches a synchronized Dual-Layer Code Editor to a native <textarea>.
+ * Places an invisible foreground textarea over an identical syntax-highlighted
+ * <pre class="dual-layer-backdrop"><code> backdrop with scroll locking, typography matching,
+ * and an in-memory [🎨 Rich | 📝 Raw] experience mode toggle.
+ *
+ * @param {HTMLTextAreaElement} textareaEl
+ * @param {HTMLElement} [toggleContainerEl]
+ * @param {object} [options]
+ * @returns {object} Dual-layer editor controller
+ */
+export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, options = {}) {
+  if (!textareaEl) return null;
+  if (textareaEl._dualLayer) {
+    if (toggleContainerEl && !textareaEl._dualLayer.hasToggle) {
+      textareaEl._dualLayer.bindToggle(toggleContainerEl);
+    }
+    textareaEl._dualLayer.refresh();
+    return textareaEl._dualLayer;
+  }
+
+  // Ensure wrapper and backdrop exist
+  let wrapper = textareaEl.parentElement;
+  if (!wrapper || !wrapper.classList.contains('dual-layer-editor-wrapper')) {
+    wrapper = document.createElement('div');
+    wrapper.className = 'dual-layer-editor-wrapper mode-rich';
+    if (textareaEl.parentNode) {
+      textareaEl.parentNode.insertBefore(wrapper, textareaEl);
+    }
+    wrapper.appendChild(textareaEl);
+  } else {
+    wrapper.classList.add('mode-rich');
+  }
+
+  let backdrop = wrapper.querySelector('.dual-layer-backdrop');
+  let code = backdrop ? backdrop.querySelector('code') : null;
+  if (!backdrop) {
+    backdrop = document.createElement('pre');
+    backdrop.className = 'dual-layer-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+    code = document.createElement('code');
+    code.className = 'dual-layer-code';
+    backdrop.appendChild(code);
+    wrapper.insertBefore(backdrop, textareaEl);
+  }
+
+  textareaEl.classList.add('dual-layer-input');
+  textareaEl.spellcheck = false;
+
+  let currentMode = 'rich'; // in-memory experience mode: 'rich' or 'raw'
+  let toggleGroup = null;
+
+  const syncScroll = () => {
+    if (backdrop) {
+      backdrop.scrollTop = textareaEl.scrollTop;
+      backdrop.scrollLeft = textareaEl.scrollLeft;
+    }
+  };
+
+  const updateToggleButtons = (mode, isAutoDegraded = false) => {
+    if (!toggleGroup) return;
+    const btnRich = toggleGroup.querySelector('.btn-mode-rich');
+    const btnRaw = toggleGroup.querySelector('.btn-mode-raw');
+    if (btnRich && btnRaw) {
+      if (mode === 'rich' && !isAutoDegraded) {
+        btnRich.classList.add('active');
+        btnRaw.classList.remove('active');
+      } else {
+        btnRich.classList.remove('active');
+        btnRaw.classList.add('active');
+        if (isAutoDegraded) {
+          btnRaw.title = 'Plain Native Textarea (Payload > 20 KB)';
+        }
+      }
+    }
+  };
+
+  const updateBackdrop = () => {
+    if (!code || currentMode !== 'rich') return;
+    const val = textareaEl.value;
+    if (val.length > MAX_HIGHLIGHT_PAYLOAD_CHARS) {
+      wrapper.classList.remove('mode-rich');
+      wrapper.classList.add('mode-raw');
+      updateToggleButtons('raw', true);
+      return;
+    } else if (currentMode === 'rich') {
+      wrapper.classList.remove('mode-raw');
+      wrapper.classList.add('mode-rich');
+      updateToggleButtons('rich', false);
+    }
+    const html = highlightPayload(val) + (val.endsWith('\n') ? ' ' : '');
+    code.innerHTML = html;
+    syncScroll();
+  };
+
+  const setMode = (mode) => {
+    currentMode = mode === 'raw' ? 'raw' : 'rich';
+    if (currentMode === 'raw') {
+      wrapper.classList.remove('mode-rich');
+      wrapper.classList.add('mode-raw');
+    } else {
+      wrapper.classList.remove('mode-raw');
+      wrapper.classList.add('mode-rich');
+      updateBackdrop();
+    }
+    updateToggleButtons(currentMode, false);
+  };
+
+  const bindToggle = (container) => {
+    if (!container) return;
+    toggleGroup = container.classList.contains('editor-mode-toggle') ? container : container.querySelector('.editor-mode-toggle');
+    if (!toggleGroup) {
+      toggleGroup = document.createElement('div');
+      toggleGroup.className = 'editor-mode-toggle';
+      toggleGroup.innerHTML = `
+        <button type="button" class="btn btn-tiny ${currentMode === 'rich' ? 'active' : ''} btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+        <button type="button" class="btn btn-tiny ${currentMode === 'raw' ? 'active' : ''} btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+      `;
+      container.appendChild(toggleGroup);
+    }
+    const btnRich = toggleGroup.querySelector('.btn-mode-rich');
+    const btnRaw = toggleGroup.querySelector('.btn-mode-raw');
+    if (btnRich) {
+      btnRich.onclick = (e) => {
+        e.preventDefault();
+        setMode('rich');
+      };
+    }
+    if (btnRaw) {
+      btnRaw.onclick = (e) => {
+        e.preventDefault();
+        setMode('raw');
+      };
+    }
+    instance.hasToggle = true;
+  };
+
+  textareaEl.addEventListener('scroll', syncScroll);
+  textareaEl.addEventListener('input', updateBackdrop);
+
+  const instance = {
+    wrapper,
+    backdrop,
+    code,
+    textarea: textareaEl,
+    setMode,
+    getMode: () => currentMode,
+    refresh: updateBackdrop,
+    bindToggle,
+    hasToggle: false
+  };
+
+  if (toggleContainerEl) {
+    bindToggle(toggleContainerEl);
+  }
+
+  textareaEl._dualLayer = instance;
+  updateBackdrop();
+  return instance;
 }
 
 /**
@@ -1161,7 +1323,7 @@ export function pushViewportLayer({
   format = null,
   charset = null,
   context = 'stub',
-  mode = 'editor',
+  mode = 'viewer',
   descriptor = null,
   onSave = null
 }) {
@@ -1312,7 +1474,7 @@ export function saveActiveViewportInPlace() {
   setTimeout(() => toast.remove(), 1500);
 }
 
-export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null) {
+export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null, mode = 'editor') {
   // If ancestorFrames exist, seed the stack with ancestor frames
   if (viewportStack.length === 0) {
     if (ancestorFrames && ancestorFrames.length > 0) {
@@ -1322,6 +1484,7 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
           text: frame.text,
           format: frame.format,
           context: 'nested',
+          mode: 'viewer',
           descriptor: frame.descriptor,
           onSave: onSaveRootCallback
         });
@@ -1332,6 +1495,7 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
         text: rootText,
         format: detectFormat(rootText),
         context: 'nested',
+        mode: 'viewer',
         descriptor: null,
         onSave: onSaveRootCallback
       });
@@ -1345,6 +1509,7 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
     format: initialNodeDescriptor.format,
     charset: initialNodeDescriptor.charset,
     context: 'nested',
+    mode,
     descriptor: initialNodeDescriptor,
     onSave: (savedText) => {
       if (typeof onSaveRootCallback === 'function') {
@@ -1453,6 +1618,22 @@ export function renderViewportModal() {
   }
 
   const isViewerMode = currentFrame.mode === 'viewer';
+  const modeToggleBtn = elements.btnLensViewEditToggle || document.getElementById('btn-lens-view-edit-toggle');
+
+  if (modeToggleBtn) {
+    if (currentFrame.context === 'journal') {
+      modeToggleBtn.classList.add('hidden');
+    } else {
+      modeToggleBtn.classList.remove('hidden');
+      modeToggleBtn.innerHTML = isViewerMode ? '✏️ Edit' : '👁️ View';
+      modeToggleBtn.title = isViewerMode ? 'Switch to Fullscreen Editor' : 'Switch to Syntax Highlighted Viewer';
+      modeToggleBtn.onclick = (e) => {
+        e.preventDefault();
+        currentFrame.mode = isViewerMode ? 'editor' : 'viewer';
+        renderViewportModal();
+      };
+    }
+  }
 
   if (isViewerMode) {
     if (editorContainerEl) editorContainerEl.classList.add('hidden');
@@ -1474,7 +1655,15 @@ export function renderViewportModal() {
     }
   } else {
     if (viewerContainerEl) viewerContainerEl.classList.add('hidden');
-    if (editorContainerEl) editorContainerEl.classList.remove('hidden');
+    if (editorContainerEl) {
+      editorContainerEl.classList.remove('hidden');
+      if (editorEl) {
+        attachDualLayerEditor(editorEl, elements.payloadLensModeToggle || document.getElementById('payload-lens-mode-toggle'));
+        if (editorEl._dualLayer) {
+          editorEl._dualLayer.refresh();
+        }
+      }
+    }
     if (cancelBtn) cancelBtn.textContent = 'Cancel';
     if (saveRootBtn) {
       saveRootBtn.classList.remove('hidden');

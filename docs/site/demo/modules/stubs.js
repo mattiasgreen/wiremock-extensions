@@ -525,7 +525,7 @@ export function selectStub(stub, updateRoute = true) {
           text: rawStubJson,
           format: 'json',
           context: 'stub',
-          mode: 'editor',
+          mode: 'viewer',
           onSave: (savedText) => {
             try {
               const parsed = JSON.parse(savedText);

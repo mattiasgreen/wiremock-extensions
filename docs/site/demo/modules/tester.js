@@ -9,6 +9,7 @@ import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
   attachEmbeddedPayloadsBar,
+  attachDualLayerEditor,
   openPayloadLens,
   detectCharset,
   formatPayloadDescriptor,
@@ -483,11 +484,13 @@ export function initTesterTab() {
       const detected = detectFormat(val);
       if (detected === 'xml') {
         elements.testerBody.value = formatXml(val);
+        if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
         appendHeader('Content-Type', 'application/xml');
       } else {
         try {
           const parsed = JSON.parse(val);
           elements.testerBody.value = JSON.stringify(parsed, null, 2);
+          if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
           appendHeader('Content-Type', 'application/json');
         } catch (err) {
           alert('Invalid payload: ' + err.message);
@@ -610,6 +613,7 @@ export function initTesterTab() {
         onSave: (savedText) => {
           if (elements.testerBody) {
             elements.testerBody.value = savedText;
+            if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
             updateTesterBodyPill();
             updateTesterRoute(true);
           }
@@ -618,8 +622,11 @@ export function initTesterTab() {
     });
   }
 
-  if (elements.testerBody && elements.testerBodyEmbeddedBar) {
-    attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
+  if (elements.testerBody) {
+    attachDualLayerEditor(elements.testerBody, elements.testerBodyModeToggle || document.getElementById('tester-body-mode-toggle'));
+    if (elements.testerBodyEmbeddedBar) {
+      attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
+    }
   }
 
   const topPill = document.getElementById('tester-top-pill');
