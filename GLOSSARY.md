@@ -76,6 +76,14 @@ _Avoid_: escape mode, encoding flag, wrapper type
 The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and HTTP/Casual Testers), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
 _Avoid_: code box, custom textarea, raw editor pane
 
+**Dual-Layer Code Editor**:
+A zero-dependency editor component coupling a foreground `<textarea>` (configured with transparent text, visible caret, and spellcheck disabled) with a background `<pre class="editor-backdrop"><code>` layer running `highlightPayload()`, with locked font metrics and scroll synchronization.
+_Avoid_: fake code editor, syntax textarea, custom input box
+
+**Editor Experience Mode**:
+An in-memory developer setting (`rich` vs. `raw`) toggling between the Dual-Layer Code Editor and a native raw `<textarea>` across console editing surfaces, providing zero-risk operational fallback for edge cases without persistent storage side-effects.
+_Avoid_: editor view switch, textarea toggle
+
 **Fullscreen Maximized Viewport**:
 A full-window (100vw × 100vh) overlay viewport wrapping a Canonical Payload Surface with breadcrumb navigation, format descriptors, and action toolbars, providing distraction-free inspection and editing of root documents or unnested child payloads.
 _Avoid_: big modal, fullscreen dialog, zoom popup
