@@ -3355,6 +3355,69 @@ a[disabled].cap-disabled,
   line-height: 1.4;
 }
 
+/* Inline Block Editor (In-Place Polyglot Subnode Editing) */
+.inline-block-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.inline-block-editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color, #334155);
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+
+.inline-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inline-edit-tag {
+  font-weight: 600;
+  color: var(--accent-color, #38bdf8);
+}
+
+.inline-edit-dirty-indicator {
+  color: #f59e0b;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.inline-edit-lint-pill {
+  color: #ef4444;
+  font-size: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.inline-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-block-editor .dual-layer-editor-wrapper {
+  position: relative !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  border: 1px solid var(--border-color, #334155) !important;
+  border-radius: 4px !important;
+  overflow: hidden !important;
+}
+
 /* Embedded Payloads Bar */
 .embedded-payloads-bar {
   display: flex;

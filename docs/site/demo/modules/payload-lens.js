@@ -953,7 +953,11 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
       charset: node.charset,
       sizeKb
     });
-    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><button type="button" class="btn-payload-maximize btn-nested-edit" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Edit unescaped payload in focused editor">✏️ Edit</button><button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+    const canEdit = typeof onSaveRoot === 'function';
+    const editBtnHtml = canEdit
+      ? `<button type="button" class="btn-payload-maximize btn-nested-edit" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Edit unescaped payload in-place">✏️ Edit</button>`
+      : '';
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span>${editBtnHtml}<button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
 
     const token = `__LENS_TOKEN_${i}__`;
     const escapedInJson = JSON.stringify(node.rawValue);
@@ -1030,21 +1034,7 @@ if (typeof document !== 'undefined') {
     const editBtn = e.target.closest('.btn-nested-edit');
     if (editBtn) {
       e.stopPropagation();
-      const nodeId = editBtn.getAttribute('data-node-id');
-      const entry = nodeRegistry.get(nodeId);
-      if (entry) {
-        openPayloadLens(entry.rootText, entry.node, entry.onSaveRoot, entry.ancestorFrames, 'editor');
-      } else {
-        const parentPreview = editBtn.closest('.truncated-payload-preview');
-        if (parentPreview) {
-          const viewerId = parentPreview.getAttribute('data-viewer-id');
-          const nodeIdx = parseInt(editBtn.getAttribute('data-node-idx'), 10);
-          const stored = viewerRegistry.get(viewerId);
-          if (stored && stored.discovered && stored.discovered[nodeIdx]) {
-            openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot, null, 'editor');
-          }
-        }
-      }
+      activateInlineBlockEditor(editBtn);
       return;
     }
 
@@ -1056,6 +1046,190 @@ if (typeof document !== 'undefined') {
       return;
     }
   });
+
+  document.addEventListener('dblclick', (e) => {
+    const inlinePayload = e.target.closest('.inline-expanded-payload');
+    if (inlinePayload && !inlinePayload.querySelector('.inline-block-editor')) {
+      const parentPreview = inlinePayload.closest('.truncated-payload-preview');
+      if (parentPreview) {
+        const editBtn = parentPreview.querySelector('.btn-nested-edit');
+        if (editBtn) {
+          e.stopPropagation();
+          activateInlineBlockEditor(editBtn);
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Activates an in-place format-aware Dual-Layer code editor for an embedded payload subsection.
+ * Preserves the enclosing tree structure while allowing targeted unescaped editing.
+ */
+export function activateInlineBlockEditor(triggerEl) {
+  const parentPreview = triggerEl.closest('.truncated-payload-preview');
+  if (!parentPreview) return;
+  const nodeId = triggerEl.getAttribute('data-node-id') || parentPreview.getAttribute('data-node-id');
+  let entry = nodeRegistry.get(nodeId);
+  if (!entry) {
+    const viewerId = parentPreview.getAttribute('data-viewer-id');
+    const nodeIdx = parseInt(triggerEl.getAttribute('data-node-idx'), 10);
+    const stored = viewerRegistry.get(viewerId);
+    if (stored && stored.discovered && stored.discovered[nodeIdx]) {
+      entry = {
+        node: stored.discovered[nodeIdx],
+        rootText: stored.rawText,
+        ancestorFrames: [
+          { text: stored.rawText, descriptor: null, title: 'Root Wire Document', format: detectFormat(stored.rawText) }
+        ],
+        onSaveRoot: stored.onSaveRoot
+      };
+    }
+  }
+  if (!entry) return;
+
+  const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
+  if (!expandedDiv) return;
+
+  const existingTextarea = expandedDiv.querySelector('.inline-nested-textarea');
+  if (existingTextarea) {
+    existingTextarea.focus();
+    return;
+  }
+
+  expandedDiv.classList.remove('hidden');
+  parentPreview.classList.add('auto-expanded');
+
+  const originalHtml = expandedDiv.innerHTML;
+  const initialText = formatPayload(entry.node.unescapedValue);
+  const lines = initialText.split('\n').length;
+  const heightPx = Math.min(420, Math.max(140, lines * 21 + 36));
+  const formatUpper = (entry.node.format || detectFormat(initialText)).toUpperCase();
+
+  expandedDiv.innerHTML = `
+    <div class="inline-block-editor" data-node-id="${escapeHtml(nodeId)}">
+      <div class="inline-block-editor-toolbar">
+        <div class="inline-toolbar-left">
+          <span class="inline-edit-tag">✏️ ${escapeHtml(formatUpper)} Block</span>
+          <span class="inline-edit-dirty-indicator hidden">● Unsaved Changes</span>
+          <span class="inline-edit-lint-pill hidden"></span>
+        </div>
+        <div class="inline-toolbar-right">
+          <button type="button" class="btn btn-tiny btn-secondary btn-inline-format" title="Format/Prettify block">✨ Format</button>
+          <button type="button" class="btn btn-tiny btn-primary btn-inline-done" title="Apply changes (Ctrl+Enter / Ctrl+S)">✓ Done</button>
+          <button type="button" class="btn btn-tiny btn-secondary btn-inline-cancel" title="Cancel changes (Esc)">Cancel</button>
+        </div>
+      </div>
+      <div class="dual-layer-editor-wrapper mode-rich" style="height: ${heightPx}px;">
+        <pre class="dual-layer-backdrop" aria-hidden="true"><code class="dual-layer-code">${highlightPayload(initialText)}</code></pre>
+        <textarea class="dual-layer-input inline-nested-textarea" spellcheck="false">${escapeHtml(initialText)}</textarea>
+      </div>
+    </div>
+  `;
+
+  const editorContainer = expandedDiv.querySelector('.inline-block-editor');
+  const textarea = editorContainer.querySelector('.inline-nested-textarea');
+  const backdrop = editorContainer.querySelector('.dual-layer-backdrop');
+  const code = backdrop.querySelector('code');
+  const dirtyIndicator = editorContainer.querySelector('.inline-edit-dirty-indicator');
+  const lintPill = editorContainer.querySelector('.inline-edit-lint-pill');
+  const btnFormat = editorContainer.querySelector('.btn-inline-format');
+  const btnDone = editorContainer.querySelector('.btn-inline-done');
+  const btnCancel = editorContainer.querySelector('.btn-inline-cancel');
+
+  let isDirty = false;
+
+  const syncScroll = () => {
+    if (backdrop) {
+      backdrop.scrollTop = textarea.scrollTop;
+      backdrop.scrollLeft = textarea.scrollLeft;
+    }
+  };
+
+  const validate = () => {
+    const val = textarea.value;
+    const fmt = entry.node.format || detectFormat(val);
+    const res = validatePayload(val, fmt);
+    if (!res.valid) {
+      lintPill.textContent = `⚠️ Invalid ${fmt.toUpperCase()}: ${res.errorMessage}`;
+      lintPill.classList.remove('hidden');
+    } else {
+      lintPill.classList.add('hidden');
+      lintPill.textContent = '';
+    }
+    return res.valid;
+  };
+
+  const updateBackdrop = () => {
+    const val = textarea.value;
+    code.innerHTML = highlightPayload(val) + (val.endsWith('\n') ? ' ' : '');
+    syncScroll();
+  };
+
+  textarea.addEventListener('scroll', syncScroll);
+  textarea.addEventListener('input', () => {
+    if (!isDirty) {
+      isDirty = true;
+      dirtyIndicator.classList.remove('hidden');
+    }
+    updateBackdrop();
+    validate();
+  });
+
+  btnFormat.addEventListener('click', (e) => {
+    e.stopPropagation();
+    textarea.value = formatPayload(textarea.value);
+    updateBackdrop();
+    validate();
+  });
+
+  const finish = (save) => {
+    if (!save) {
+      expandedDiv.innerHTML = originalHtml;
+      return;
+    }
+
+    if (!validate()) {
+      textarea.focus();
+      return;
+    }
+
+    const editedVal = textarea.value;
+    entry.node.unescapedValue = editedVal;
+
+    const stack = [
+      ...entry.ancestorFrames,
+      { text: editedVal, descriptor: entry.node, title: entry.node.path, format: entry.node.format }
+    ];
+
+    const newRoot = cascadeLensStackToRoot(stack, editedVal, { forceInvalid: false, minifyOnSave: false });
+    expandedDiv.innerHTML = `<pre class="inline-code"><code>${highlightPayload(editedVal)}</code></pre>`;
+    if (typeof entry.onSaveRoot === 'function') {
+      entry.onSaveRoot(newRoot);
+    }
+  };
+
+  btnDone.addEventListener('click', (e) => {
+    e.stopPropagation();
+    finish(true);
+  });
+
+  btnCancel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    finish(false);
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key === 's')) {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+
+  textarea.focus();
 }
 
 function attachViewerEventListeners(boxEl, rawText, discovered) {

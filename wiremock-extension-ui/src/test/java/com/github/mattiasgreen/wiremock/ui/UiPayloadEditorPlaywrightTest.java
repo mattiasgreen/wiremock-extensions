@@ -3,6 +3,8 @@ package com.github.mattiasgreen.wiremock.ui;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.Page;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -316,5 +318,74 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(finalOuter).doesNotContain("ACC-112233");
 
         page.locator("#btn-close-editor-modal").click();
+    }
+
+    @Test
+    @DisplayName(
+            "In-Place Polyglot Block Editor: Clicking [Edit] on nested block opens inline editor with live linting and Done saves to root")
+    void testInPlaceNestedBlockEditingAndRoundTripping() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 1. Create a stub with nested XML inside JSON
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        page.locator("#editor-url").fill("/api/v1/inplace-test");
+        String innerXml = "<order><id>ORD-12345</id><amount>99.90</amount></order>";
+        String rootJson = "{\"status\":\"CONFIRMED\",\"payload\":\"" + innerXml.replace("\"", "\\\"") + "\"}";
+        page.locator("#editor-body").fill(rootJson);
+
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 2. Select the created stub in catalog list
+        page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("/api/v1/inplace-test"))
+                .first()
+                .click();
+        page.waitForSelector("#stub-json-viewer");
+
+        // 3. Find the nested inner XML block's [ ✏️ Edit ] button
+        Locator editBtn = page.locator("#stub-json-viewer .btn-nested-edit").last();
+        assertThat(editBtn.isVisible()).isTrue();
+        editBtn.click();
+
+        // 4. In-place editor should mount inside the block
+        Locator inlineEditor = page.locator("#stub-json-viewer .inline-block-editor");
+        page.waitForSelector("#stub-json-viewer .inline-block-editor");
+        assertThat(inlineEditor.isVisible()).isTrue();
+
+        Locator inlineTextarea = inlineEditor.locator(".inline-nested-textarea");
+        assertThat(inlineTextarea.inputValue()).contains("ORD-12345");
+
+        // 5. Unsaved changes hint appears on input
+        Locator dirtyHint = inlineEditor.locator(".inline-edit-dirty-indicator");
+        assertThat(dirtyHint.getAttribute("class")).contains("hidden");
+
+        String updatedXml = inlineTextarea.inputValue().replace("ORD-12345", "ORD-99999");
+        inlineTextarea.fill(updatedXml);
+        assertThat(dirtyHint.getAttribute("class")).doesNotContain("hidden");
+
+        // 6. Live structural validation
+        Locator lintPill = inlineEditor.locator(".inline-edit-lint-pill");
+        inlineTextarea.fill("<invalid <xml>");
+        assertThat(lintPill.getAttribute("class")).doesNotContain("hidden");
+        assertThat(lintPill.innerText()).contains("Invalid XML");
+
+        // Fix syntax
+        inlineTextarea.fill(updatedXml);
+        assertThat(lintPill.getAttribute("class")).contains("hidden");
+
+        // 7. Click [ ✓ Done ]
+        inlineEditor.locator(".btn-inline-done").click();
+
+        // 8. Block editor closes and viewer displays updated XML
+        assertThat(page.locator("#stub-json-viewer .inline-block-editor").count())
+                .isEqualTo(0);
+        String viewerHtml = page.locator("#stub-json-viewer").innerText();
+        assertThat(viewerHtml).contains("ORD-99999");
+        assertThat(viewerHtml).doesNotContain("ORD-12345");
     }
 }
