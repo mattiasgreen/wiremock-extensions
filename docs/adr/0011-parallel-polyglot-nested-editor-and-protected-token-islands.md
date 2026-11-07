@@ -4,7 +4,15 @@ Date: 2026-11-07
 
 ## Status
 
-Accepted (Extends [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md))
+Rejected / Superseded (Trial Prototype Reverted; Preserves Scope-Isolated In-Place Editing of [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md))
+
+## Trial Outcome & Visual Architecture Lessons
+
+A trial implementation of segmented dual-layer slices and protected child islands was built and evaluated in browser. The experiment demonstrated that slicing a structured code document into multiple disjoint `<textarea>`/`<pre>` slices separated by child DOM islands produces unacceptable UX defects:
+
+1. **Visual Geometry Fragmentation**: Splitting an envelope into disjoint textareas introduces artificial container borders, baseline misalignments, and large empty vertical voids between parent lines and child blocks.
+2. **Typography & Cursor Desynchronization**: Slices surrounded by block toolbars destroy the natural tree indentation and gutter flow, making code look like broken form widgets rather than clean syntax.
+3. **Ergonomic Superiority of Scope-Isolated Editing**: The cleanest, most natural interaction remains **Scope-Isolated In-Place Editing** (editing an individual unnested payload block in its own clean Dual-Layer Editor of exact height) or elevating to the **Maximized Viewport** ([ADR 0008](0008-canonical-payload-surface-and-maximized-viewport.md)) when modifying complex multi-level envelopes.
 
 ## Context
 
