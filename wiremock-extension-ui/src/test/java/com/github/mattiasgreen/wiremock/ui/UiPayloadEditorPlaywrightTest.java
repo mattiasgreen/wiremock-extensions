@@ -388,4 +388,114 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(viewerHtml).contains("ORD-99999");
         assertThat(viewerHtml).doesNotContain("ORD-12345");
     }
+
+    @Test
+    @DisplayName(
+            "Unified Component: Rich/Raw toggles on all scopes, always-visible maximize buttons, and zero inline scrollbars")
+    void testUnifiedComponentTogglesMaximizeAndZeroInlineScrollbar() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 1. Create stub with nested payload
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        page.locator("#editor-url").fill("/api/v1/unified-scope-test");
+        String nestedJson = "{\"status\":\"OK\",\"meta\":\"{\\\"version\\\":\\\"2.0\\\"}\"}";
+        page.locator("#editor-body").fill(nestedJson);
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 2. Select stub and inspect Stub Detail Card mode toggle
+        page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("/api/v1/unified-scope-test"))
+                .first()
+                .click();
+        page.waitForSelector("#stub-json-viewer");
+
+        Locator stubToggle = page.locator("#stub-viewer-mode-toggle");
+        Locator btnStubRich = stubToggle.locator(".btn-mode-rich");
+        Locator btnStubRaw = stubToggle.locator(".btn-mode-raw");
+
+        // Default Rich
+        assertThat(btnStubRich.getAttribute("class")).contains("active");
+
+        // Click Raw: Switches to compact wire representation
+        btnStubRaw.click();
+        assertThat(btnStubRaw.getAttribute("class")).contains("active");
+        assertThat(btnStubRich.getAttribute("class")).doesNotContain("active");
+        String rawViewerText = page.locator("#stub-json-viewer").innerText();
+        assertThat(rawViewerText).contains("/api/v1/unified-scope-test");
+
+        // Restore Rich
+        btnStubRich.click();
+        assertThat(btnStubRich.getAttribute("class")).contains("active");
+
+        // 3. Inspect nested block: Has mode toggle and always-visible maximize button
+        Locator nestedToggle =
+                page.locator("#stub-json-viewer .nested-mode-toggle").first();
+        assertThat(nestedToggle.isVisible()).isTrue();
+        Locator btnNestedRich = nestedToggle.locator(".btn-nested-mode-rich");
+        Locator btnNestedRaw = nestedToggle.locator(".btn-nested-mode-raw");
+        assertThat(btnNestedRich.getAttribute("class")).contains("active");
+
+        Locator nestedMax =
+                page.locator("#stub-json-viewer .btn-nested-maximize").first();
+        assertThat(nestedMax.isVisible()).isTrue();
+        String opacity = (String) nestedMax.evaluate("el => window.getComputedStyle(el).opacity");
+        assertThat(Double.parseDouble(opacity)).isGreaterThan(0.5);
+
+        // Click nested Raw: Shows wire-exact escaped raw string without unescaping
+        btnNestedRaw.click();
+        assertThat(btnNestedRaw.getAttribute("class")).contains("active");
+        assertThat(btnNestedRich.getAttribute("class")).doesNotContain("active");
+
+        // Click nested Rich: Restores unescaped view
+        btnNestedRich.click();
+        assertThat(btnNestedRich.getAttribute("class")).contains("active");
+
+        // 4. Open In-Place Block Editor and verify zero vertical scrollbar
+        Locator editBtn = page.locator("#stub-json-viewer .btn-nested-edit").first();
+        editBtn.click();
+        page.waitForSelector("#stub-json-viewer .inline-block-editor");
+
+        Locator inlineEditor = page.locator("#stub-json-viewer .inline-block-editor");
+        Locator inlineInput = inlineEditor.locator(".dual-layer-input");
+        String overflowY = (String) inlineInput.evaluate("el => window.getComputedStyle(el).overflowY");
+        assertThat(overflowY).isEqualTo("hidden");
+
+        Number scrollHeight = (Number) inlineInput.evaluate("el => el.scrollHeight");
+        Number clientHeight = (Number) inlineInput.evaluate("el => el.clientHeight");
+        assertThat(Math.abs(scrollHeight.doubleValue() - clientHeight.doubleValue()))
+                .isLessThanOrEqualTo(6.0);
+
+        // Cancel inline editing
+        inlineEditor.locator(".btn-inline-cancel").click();
+        assertThat(page.locator("#stub-json-viewer .inline-block-editor").count())
+                .isEqualTo(0);
+
+        // 5. Navigate to Tester tab and verify Response Body has Rich/Raw toggle
+        page.locator("#nav-tab-tester").click();
+        page.waitForSelector("#tab-tester:not(.hidden)");
+
+        // Send a request to receive response
+        page.locator("#tester-url").fill(wireMockServer.baseUrl() + "/api/v1/unified-scope-test");
+        page.locator("#btn-tester-send").click();
+        page.waitForSelector(
+                "#tester-top-pill-group", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.VISIBLE));
+
+        Locator testerToggle = page.locator("#tester-response-mode-toggle");
+        assertThat(testerToggle.isVisible()).isTrue();
+        Locator btnTesterRich = testerToggle.locator(".btn-mode-rich");
+        Locator btnTesterRaw = testerToggle.locator(".btn-mode-raw");
+
+        assertThat(btnTesterRich.getAttribute("class")).contains("active");
+        btnTesterRaw.click();
+        assertThat(btnTesterRaw.getAttribute("class")).contains("active");
+        assertThat(btnTesterRich.getAttribute("class")).doesNotContain("active");
+
+        btnTesterRich.click();
+        assertThat(btnTesterRich.getAttribute("class")).contains("active");
+    }
 }

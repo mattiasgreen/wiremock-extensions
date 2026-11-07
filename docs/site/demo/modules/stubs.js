@@ -4,7 +4,7 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, detectFormat } from './highlighter.js';
+import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
 import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
@@ -26,6 +26,8 @@ import { updateFilterCounts } from './projects.js';
 import { loadData } from './api.js';
 import { renderJournal } from './journal.js';
 import { populateCasualTester } from './casual-tester.js';
+
+let currentStubViewMode = 'rich';
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -489,8 +491,9 @@ export function selectStub(stub, updateRoute = true) {
 
   const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
   const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
+  const compactStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj);
 
-  let stubViewMode = 'rich';
+  let stubViewMode = currentStubViewMode;
   const modeToggle = document.getElementById('stub-viewer-mode-toggle');
 
   function renderStubJson() {
@@ -507,22 +510,34 @@ export function selectStub(stub, updateRoute = true) {
           try {
             const parsed = JSON.parse(updatedStubJson);
             Object.assign(stub, parsed);
-            renderStubDetails(stub, false);
+            selectStub(stub, false);
           } catch (_) {}
         });
       } else {
         elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
       }
     } else {
-      elements.stubJsonViewer.innerHTML = highlightPayload(rawStubJson);
+      elements.stubJsonViewer.innerHTML = highlightPayload(compactStubJson);
     }
   }
 
   if (modeToggle) {
     const btnRich = modeToggle.querySelector('.btn-mode-rich');
     const btnRaw = modeToggle.querySelector('.btn-mode-raw');
-    if (btnRich) btnRich.onclick = () => { stubViewMode = 'rich'; renderStubJson(); };
-    if (btnRaw) btnRaw.onclick = () => { stubViewMode = 'raw'; renderStubJson(); };
+    if (btnRich) {
+      btnRich.onclick = () => {
+        currentStubViewMode = 'rich';
+        stubViewMode = 'rich';
+        renderStubJson();
+      };
+    }
+    if (btnRaw) {
+      btnRaw.onclick = () => {
+        currentStubViewMode = 'raw';
+        stubViewMode = 'raw';
+        renderStubJson();
+      };
+    }
   }
 
   renderStubJson();

@@ -957,7 +957,7 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
     const editBtnHtml = canEdit
       ? `<button type="button" class="btn-payload-maximize btn-nested-edit" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Edit unescaped payload in-place">✏️ Edit</button>`
       : '';
-    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span>${editBtnHtml}<button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><div class="editor-mode-toggle nested-mode-toggle" data-node-id="${fullNodeId}"><button type="button" class="btn btn-tiny active btn-nested-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button><button type="button" class="btn btn-tiny btn-nested-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button></div>${editBtnHtml}<button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
 
     const token = `__LENS_TOKEN_${i}__`;
     const escapedInJson = JSON.stringify(node.rawValue);
@@ -1038,6 +1038,36 @@ if (typeof document !== 'undefined') {
       return;
     }
 
+    const nestedModeBtn = e.target.closest('.btn-nested-mode-rich, .btn-nested-mode-raw');
+    if (nestedModeBtn) {
+      e.stopPropagation();
+      const toggle = nestedModeBtn.closest('.nested-mode-toggle');
+      const parentPreview = toggle ? toggle.closest('.truncated-payload-preview') : null;
+      if (parentPreview && toggle) {
+        const nodeId = toggle.getAttribute('data-node-id');
+        const entry = nodeRegistry.get(nodeId);
+        const mode = nestedModeBtn.getAttribute('data-mode');
+        const btnRich = toggle.querySelector('.btn-nested-mode-rich');
+        const btnRaw = toggle.querySelector('.btn-nested-mode-raw');
+        if (btnRich) btnRich.classList.toggle('active', mode === 'rich');
+        if (btnRaw) btnRaw.classList.toggle('active', mode === 'raw');
+
+        const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
+        if (expandedDiv && entry) {
+          if (mode === 'raw') {
+            expandedDiv.innerHTML = `<pre class="inline-code"><code>${highlightPayload(entry.node.rawValue)}</code></pre>`;
+          } else {
+            const hasKids = entry.node.children && entry.node.children.length > 0;
+            const content = hasKids
+              ? renderFormattedWithNestedPreviews(entry.node.unescapedValue, entry.node.children, `${nodeId}_c`, entry.onSaveRoot, entry.ancestorFrames, entry.rootText)
+              : highlightPayload(formatPayload(entry.node.unescapedValue));
+            expandedDiv.innerHTML = `<pre class="inline-code"><code>${content}</code></pre>`;
+          }
+        }
+      }
+      return;
+    }
+
     const snippetSpan = e.target.closest('.preview-snippet');
     if (snippetSpan) {
       const parentPreview = snippetSpan.closest('.truncated-payload-preview');
@@ -1102,8 +1132,6 @@ export function activateInlineBlockEditor(triggerEl) {
 
   const originalHtml = expandedDiv.innerHTML;
   const initialText = formatPayload(entry.node.unescapedValue);
-  const lines = initialText.split('\n').length;
-  const heightPx = Math.min(420, Math.max(140, lines * 21 + 36));
   const formatUpper = (entry.node.format || detectFormat(initialText)).toUpperCase();
 
   expandedDiv.innerHTML = `
@@ -1120,7 +1148,7 @@ export function activateInlineBlockEditor(triggerEl) {
           <button type="button" class="btn btn-tiny btn-secondary btn-inline-cancel" title="Cancel changes (Esc)">Cancel</button>
         </div>
       </div>
-      <div class="dual-layer-editor-wrapper mode-rich" style="height: ${heightPx}px;">
+      <div class="dual-layer-editor-wrapper mode-rich">
         <pre class="dual-layer-backdrop" aria-hidden="true"><code class="dual-layer-code">${highlightPayload(initialText)}</code></pre>
         <textarea class="dual-layer-input inline-nested-textarea" spellcheck="false">${escapeHtml(initialText)}</textarea>
       </div>
@@ -1128,6 +1156,7 @@ export function activateInlineBlockEditor(triggerEl) {
   `;
 
   const editorContainer = expandedDiv.querySelector('.inline-block-editor');
+  const wrapper = editorContainer.querySelector('.dual-layer-editor-wrapper');
   const textarea = editorContainer.querySelector('.inline-nested-textarea');
   const backdrop = editorContainer.querySelector('.dual-layer-backdrop');
   const code = backdrop.querySelector('code');
@@ -1138,6 +1167,14 @@ export function activateInlineBlockEditor(triggerEl) {
   const btnCancel = editorContainer.querySelector('.btn-inline-cancel');
 
   let isDirty = false;
+
+  const adjustHeight = () => {
+    if (!textarea || !wrapper) return;
+    const lines = (textarea.value || '').split('\n').length;
+    const calculatedHeight = Math.max(48, lines * 21 + 26);
+    wrapper.style.height = `${calculatedHeight}px`;
+    if (backdrop) backdrop.style.height = `${calculatedHeight}px`;
+  };
 
   const syncScroll = () => {
     if (backdrop) {
@@ -1174,6 +1211,7 @@ export function activateInlineBlockEditor(triggerEl) {
     }
     updateBackdrop();
     validate();
+    adjustHeight();
   });
 
   btnFormat.addEventListener('click', (e) => {
@@ -1181,7 +1219,13 @@ export function activateInlineBlockEditor(triggerEl) {
     textarea.value = formatPayload(textarea.value);
     updateBackdrop();
     validate();
+    adjustHeight();
   });
+
+  adjustHeight();
+  if (typeof requestAnimationFrame !== 'undefined') {
+    requestAnimationFrame(adjustHeight);
+  }
 
   const finish = (save) => {
     if (!save) {

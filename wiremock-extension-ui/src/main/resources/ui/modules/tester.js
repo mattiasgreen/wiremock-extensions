@@ -322,6 +322,30 @@ export function renderTesterResponse(bodyText) {
       topPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
       topPill.title = elements.testerResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
 
+      const modeToggle = document.getElementById('tester-response-mode-toggle');
+      if (modeToggle) {
+        const btnRich = modeToggle.querySelector('.btn-mode-rich');
+        const btnRaw = modeToggle.querySelector('.btn-mode-raw');
+        const isRaw = state.testerViewMode === 'raw';
+        if (btnRich) btnRich.classList.toggle('active', !isRaw);
+        if (btnRaw) btnRaw.classList.toggle('active', isRaw);
+
+        btnRich.onclick = (e) => {
+          e.stopPropagation();
+          state.testerViewMode = 'highlighted';
+          if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.add('active');
+          if (elements.btnViewRaw) elements.btnViewRaw.classList.remove('active');
+          renderTesterResponse(bodyText);
+        };
+        btnRaw.onclick = (e) => {
+          e.stopPropagation();
+          state.testerViewMode = 'raw';
+          if (elements.btnViewRaw) elements.btnViewRaw.classList.add('active');
+          if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.remove('active');
+          renderTesterResponse(bodyText);
+        };
+      }
+
       const btnMax = document.getElementById('btn-tester-response-maximize');
       if (btnMax) {
         btnMax.onclick = (e) => {
