@@ -1,4 +1,12 @@
-# Stacked Nested Payload Lens for Round-Trip Escaped Payload Editing
+# 1. Stacked Nested Payload Lens for Round-Trip Escaped Payload Editing
+
+Date: 2026-11-06
+
+## Status
+
+Superseded by [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md) and [ADR 0012](0012-comprehensive-ui-editing-deepening-and-lifecycle-hardening.md)
+
+## Context
 
 Enterprise HTTP and Casual XATMI traffic frequently nests escaped payloads inside outer envelopes (e.g., XML inside an escaped JSON string inside a JSON response, or JSON inside an XML `CDATA` or Base64 field). Rather than unescaping nested structures in place inside a single mixed-grammar `<textarea>`—which destroys syntax boundaries for `JSON.parse` and `DOMParser` and loses whether a node was originally JSON-escaped, XML entity-escaped, `CDATA`-wrapped, or Base64-encoded—we use a **Stacked Nested Payload Lens** backed by a **Container Encoding Envelope**.
 

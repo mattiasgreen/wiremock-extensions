@@ -792,8 +792,8 @@ public class UiModuleUnitTest {
                     }
                 };
 
-                // 1. Open editor in Form Mode
-                openStubEditor(initialStub, false);
+                // 1. Open editor for Creation -> Form / Quickstart mode is available
+                openStubEditor(null, false);
                 const initialMode = getEditorMode();
 
                 const formPanel = document.getElementById('editor-form-panel');
@@ -809,6 +809,9 @@ public class UiModuleUnitTest {
                 const modeAfterJsonSwitch = getEditorMode();
                 const formHiddenAfterSwitch = formPanel.classList.contains('hidden');
                 const jsonVisibleAfterSwitch = !jsonPanel.classList.contains('hidden');
+
+                // Load initialStub into editor to test raw content
+                rawTextarea.value = JSON.stringify(initialStub, null, 2);
                 const rawJsonContent = rawTextarea.value;
                 const rawContainsGold = rawJsonContent.includes('gold');
 
@@ -832,6 +835,12 @@ public class UiModuleUnitTest {
                 const errorVisible = !errorEl.classList.contains('hidden');
                 const errorMsg = errorEl.textContent;
 
+                // 6. Test Editing an Existing Stub -> Opens directly in JSON mode (form removed)
+                openStubEditor(initialStub, false);
+                const existingStubMode = getEditorMode();
+                const existingStubJsonVisible = !jsonPanel.classList.contains('hidden');
+                const existingStubFormVisible = !formPanel.classList.contains('hidden');
+
                 // Close editor
                 closeStubEditor();
 
@@ -852,7 +861,10 @@ public class UiModuleUnitTest {
                     invalidSwitchSuccess,
                     modeAfterFailedSwitch,
                     errorVisible,
-                    errorMsgContainsInvalid: errorMsg.includes("Invalid JSON")
+                    errorMsgContainsInvalid: errorMsg.includes("Invalid JSON"),
+                    existingStubMode,
+                    existingStubJsonVisible,
+                    existingStubFormVisible
                 };
             }
         """;
@@ -879,6 +891,11 @@ public class UiModuleUnitTest {
         assertThat(result.get("modeAfterFailedSwitch")).isEqualTo("json");
         assertThat(result.get("errorVisible")).isEqualTo(true);
         assertThat(result.get("errorMsgContainsInvalid")).isEqualTo(true);
+
+        // Verify editing existing stub opens directly in JSON mode (form removed)
+        assertThat(result.get("existingStubMode")).isEqualTo("json");
+        assertThat(result.get("existingStubJsonVisible")).isEqualTo(true);
+        assertThat(result.get("existingStubFormVisible")).isEqualTo(false);
     }
 
     @Test

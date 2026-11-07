@@ -569,52 +569,19 @@ export function initTesterTab() {
     });
   }
 
-  const updateTesterBodyPill = () => {
-    const text = elements.testerBody ? elements.testerBody.value : '';
-    const pill = document.getElementById('tester-request-top-pill');
-    const pillGroup = document.getElementById('tester-request-top-pill-group');
-    if (pill && pillGroup) {
-      if (text && text.trim()) {
-        pillGroup.style.display = 'inline-flex';
-        const fmt = detectFormat(text);
-        const sizeKb = (new Blob([text]).size / 1024).toFixed(1);
-        pill.textContent = `${fmt.toUpperCase()} · ${sizeKb} KB`;
-      } else {
-        pillGroup.style.display = 'none';
-      }
-    }
-  };
-
   if (elements.testerBody) {
-    elements.testerBody.addEventListener('input', updateTesterBodyPill);
-    updateTesterBodyPill();
-  }
-
-  const btnTesterReqMax = document.getElementById('btn-tester-request-maximize');
-  if (btnTesterReqMax) {
-    btnTesterReqMax.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const text = elements.testerBody ? elements.testerBody.value : '';
-      pushViewportLayer({
-        title: 'HTTP Tester Request Body',
-        text,
-        format: detectFormat(text),
-        context: 'tester-request',
-        mode: 'editor',
-        onSave: (savedText) => {
-          if (elements.testerBody) {
-            elements.testerBody.value = savedText;
-            if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
-            updateTesterBodyPill();
-            updateTesterRoute(true);
-          }
-        }
-      });
+    createPayloadComponent(null, {
+      backingTextarea: elements.testerBody,
+      toggleEl: elements.testerBodyModeToggle || document.getElementById('tester-body-mode-toggle'),
+      pillEl: document.getElementById('tester-request-top-pill'),
+      pillGroupEl: document.getElementById('tester-request-top-pill-group'),
+      formatBtn: document.getElementById('btn-tester-format-json'),
+      maximizeBtn: document.getElementById('btn-tester-request-maximize'),
+      title: 'HTTP Tester Request Body',
+      context: 'tester-request',
+      defaultAction: 'edit',
+      onChange: () => updateTesterRoute(true)
     });
-  }
-
-  if (elements.testerBody) {
-    attachDualLayerEditor(elements.testerBody, elements.testerBodyModeToggle || document.getElementById('tester-body-mode-toggle'));
     if (elements.testerBodyEmbeddedBar) {
       attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
     }

@@ -6,6 +6,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { importMappings, loadData } from './api.js';
 import { getStubProject } from './projects.js';
+import { mountCodeInputEditor } from './payload-lens.js';
 
 export function exportStubs(scope = 'all') {
   let list = [];
@@ -150,6 +151,17 @@ export function openImportModal(initialTab = 'openapi') {
   if (modal) {
     modal.classList.remove('hidden');
     switchImportTab(initialTab);
+    const bundleContent = document.getElementById('bundle-content');
+    if (bundleContent && !bundleContent._mountedEditor) {
+      bundleContent._mountedEditor = mountCodeInputEditor(bundleContent, {
+        title: 'WireMock JSON Bundle',
+        format: 'json',
+        context: 'bundle-import',
+        formatBtn: document.getElementById('btn-bundle-format-json'),
+        maximizeBtn: document.getElementById('btn-bundle-maximize'),
+        lintPill: document.getElementById('bundle-content-lint-pill')
+      });
+    }
   }
 }
 

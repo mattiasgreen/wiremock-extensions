@@ -953,11 +953,7 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
       charset: node.charset,
       sizeKb
     });
-    const canEdit = typeof onSaveRoot === 'function';
-    const editBtnHtml = canEdit
-      ? `<button type="button" class="btn-payload-maximize btn-nested-edit" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Edit unescaped payload in-place">✏️ Edit</button>`
-      : '';
-    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><div class="editor-mode-toggle nested-mode-toggle" data-node-id="${fullNodeId}"><button type="button" class="btn btn-tiny active btn-nested-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button><button type="button" class="btn btn-tiny btn-nested-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button></div>${editBtnHtml}<button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><div class="editor-mode-toggle nested-mode-toggle" data-node-id="${fullNodeId}"><button type="button" class="btn btn-tiny active btn-nested-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button><button type="button" class="btn btn-tiny btn-nested-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button></div><button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
 
     const token = `__LENS_TOKEN_${i}__`;
     const escapedInJson = JSON.stringify(node.rawValue);
@@ -1031,13 +1027,6 @@ if (typeof document !== 'undefined') {
       return;
     }
 
-    const editBtn = e.target.closest('.btn-nested-edit');
-    if (editBtn) {
-      e.stopPropagation();
-      activateInlineBlockEditor(editBtn);
-      return;
-    }
-
     const nestedModeBtn = e.target.closest('.btn-nested-mode-rich, .btn-nested-mode-raw');
     if (nestedModeBtn) {
       e.stopPropagation();
@@ -1076,174 +1065,6 @@ if (typeof document !== 'undefined') {
       return;
     }
   });
-
-  document.addEventListener('dblclick', (e) => {
-    const inlinePayload = e.target.closest('.inline-expanded-payload');
-    if (inlinePayload && !inlinePayload.querySelector('.inline-block-editor')) {
-      const parentPreview = inlinePayload.closest('.truncated-payload-preview');
-      if (parentPreview) {
-        const editBtn = parentPreview.querySelector('.btn-nested-edit');
-        if (editBtn) {
-          e.stopPropagation();
-          activateInlineBlockEditor(editBtn);
-        }
-      }
-    }
-  });
-}
-
-/**
- * Activates an in-place format-aware Dual-Layer code editor for an embedded payload subsection.
- * Preserves the enclosing tree structure while allowing targeted unescaped editing.
- */
-export function activateInlineBlockEditor(triggerEl) {
-  const parentPreview = triggerEl.closest('.truncated-payload-preview');
-  if (!parentPreview) return;
-  const nodeId = triggerEl.getAttribute('data-node-id') || parentPreview.getAttribute('data-node-id');
-  let entry = nodeRegistry.get(nodeId);
-  if (!entry) {
-    const viewerId = parentPreview.getAttribute('data-viewer-id');
-    const nodeIdx = parseInt(triggerEl.getAttribute('data-node-idx'), 10);
-    const stored = viewerRegistry.get(viewerId);
-    if (stored && stored.discovered && stored.discovered[nodeIdx]) {
-      entry = {
-        node: stored.discovered[nodeIdx],
-        rootText: stored.rawText,
-        ancestorFrames: [
-          { text: stored.rawText, descriptor: null, title: 'Root Wire Document', format: detectFormat(stored.rawText) }
-        ],
-        onSaveRoot: stored.onSaveRoot
-      };
-    }
-  }
-  if (!entry) return;
-
-  const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
-  if (!expandedDiv) return;
-
-  const existingTextarea = expandedDiv.querySelector('.inline-nested-textarea');
-  if (existingTextarea) {
-    existingTextarea.focus();
-    return;
-  }
-
-  expandedDiv.classList.remove('hidden');
-  parentPreview.classList.add('auto-expanded');
-
-  const originalHtml = expandedDiv.innerHTML;
-  const initialText = formatPayload(entry.node.unescapedValue);
-  const formatUpper = (entry.node.format || detectFormat(initialText)).toUpperCase();
-
-  expandedDiv.innerHTML = `
-    <div class="inline-block-editor" data-node-id="${escapeHtml(nodeId)}">
-      <div class="inline-block-editor-toolbar">
-        <div class="inline-toolbar-left">
-          <span class="inline-edit-tag">✏️ ${escapeHtml(formatUpper)} Block</span>
-          <span class="inline-edit-dirty-indicator hidden">● Unsaved Changes</span>
-          <span class="inline-edit-lint-pill hidden"></span>
-        </div>
-        <div class="inline-toolbar-right">
-          <button type="button" class="btn btn-tiny btn-secondary btn-inline-format" title="Format/Prettify block">✨ Format</button>
-          <button type="button" class="btn btn-tiny btn-primary btn-inline-done" title="Apply changes (Ctrl+Enter / Ctrl+S)">✓ Done</button>
-          <button type="button" class="btn btn-tiny btn-secondary btn-inline-cancel" title="Cancel changes (Esc)">Cancel</button>
-        </div>
-      </div>
-      <div class="dual-layer-editor-wrapper mode-rich">
-        <pre class="dual-layer-backdrop" aria-hidden="true"><code class="dual-layer-code">${highlightPayload(initialText)}</code></pre>
-        <textarea class="dual-layer-input inline-nested-textarea" spellcheck="false">${escapeHtml(initialText)}</textarea>
-      </div>
-    </div>
-  `;
-
-  const editorContainer = expandedDiv.querySelector('.inline-block-editor');
-  const textarea = editorContainer.querySelector('.inline-nested-textarea');
-  const dirtyIndicator = editorContainer.querySelector('.inline-edit-dirty-indicator');
-  const lintPill = editorContainer.querySelector('.inline-edit-lint-pill');
-  const btnFormat = editorContainer.querySelector('.btn-inline-format');
-  const btnDone = editorContainer.querySelector('.btn-inline-done');
-  const btnCancel = editorContainer.querySelector('.btn-inline-cancel');
-
-  let isDirty = false;
-
-  const validate = () => {
-    const val = textarea.value;
-    const fmt = entry.node.format || detectFormat(val);
-    const res = validatePayload(val, fmt);
-    if (!res.valid) {
-      lintPill.textContent = `⚠️ Invalid ${fmt.toUpperCase()}: ${res.errorMessage}`;
-      lintPill.classList.remove('hidden');
-    } else {
-      lintPill.classList.add('hidden');
-      lintPill.textContent = '';
-    }
-    return res.valid;
-  };
-
-  const dualLayer = attachDualLayerEditor(textarea, null, {
-    autoGrow: true,
-    onChange: () => {
-      if (!isDirty) {
-        isDirty = true;
-        dirtyIndicator.classList.remove('hidden');
-      }
-      validate();
-    }
-  });
-
-  btnFormat.addEventListener('click', (e) => {
-    e.stopPropagation();
-    textarea.value = formatPayload(textarea.value);
-    if (dualLayer) dualLayer.refresh();
-    validate();
-  });
-
-  const finish = (save) => {
-    if (!save) {
-      expandedDiv.innerHTML = originalHtml;
-      return;
-    }
-
-    if (!validate()) {
-      textarea.focus();
-      return;
-    }
-
-    const editedVal = textarea.value;
-    entry.node.unescapedValue = editedVal;
-
-    const stack = [
-      ...entry.ancestorFrames,
-      { text: editedVal, descriptor: entry.node, title: entry.node.path, format: entry.node.format }
-    ];
-
-    const newRoot = cascadeLensStackToRoot(stack, editedVal, { forceInvalid: false, minifyOnSave: false });
-    expandedDiv.innerHTML = `<pre class="inline-code"><code>${highlightPayload(editedVal)}</code></pre>`;
-    if (typeof entry.onSaveRoot === 'function') {
-      entry.onSaveRoot(newRoot);
-    }
-  };
-
-  btnDone.addEventListener('click', (e) => {
-    e.stopPropagation();
-    finish(true);
-  });
-
-  btnCancel.addEventListener('click', (e) => {
-    e.stopPropagation();
-    finish(false);
-  });
-
-  textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key === 's')) {
-      e.preventDefault();
-      finish(true);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      finish(false);
-    }
-  });
-
-  textarea.focus();
 }
 
 function attachViewerEventListeners(boxEl, rawText, discovered) {
@@ -1504,10 +1325,13 @@ export function createPayloadComponent(containerEl, {
   toggleEl = null,
   pillEl = null,
   pillGroupEl = null,
+  lintPillEl = null,
+  formatBtn = null,
   maximizeBtn = null,
   editBtn = null,
   onEdit = null,
-  bufferType = null
+  bufferType = null,
+  autoGrow = false
 } = {}) {
   let currentText = backingTextarea ? (backingTextarea.value || '') : (text || '');
   let currentMode = defaultMode; // 'rich' | 'raw'
@@ -1517,18 +1341,18 @@ export function createPayloadComponent(containerEl, {
   const cleanFormat = format || detectFormat(currentText);
   const cleanCharset = charset || detectCharset(currentText);
 
-  const isExternal = Boolean(viewerEl);
+  const isExternal = Boolean(viewerEl || backingTextarea);
   let rootEl = null;
   let viewContainer = viewerEl;
   let editContainer = null;
   let textareaEl = backingTextarea;
   let descPill = pillEl;
-  let lintPill = null;
+  let lintPill = lintPillEl;
   let btnRich = null;
   let btnRaw = null;
   let btnActionView = null;
   let btnActionEdit = null;
-  let btnFormat = null;
+  let btnFormat = formatBtn;
   let btnCopy = null;
   let btnMax = maximizeBtn;
 
@@ -1536,6 +1360,18 @@ export function createPayloadComponent(containerEl, {
     if (toggleEl) {
       btnRich = toggleEl.querySelector('.btn-mode-rich');
       btnRaw = toggleEl.querySelector('.btn-mode-raw');
+    }
+    if (!lintPill && pillGroupEl) {
+      lintPill = pillGroupEl.querySelector('.payload-lint-pill');
+      if (!lintPill) {
+        lintPill = document.createElement('span');
+        lintPill.className = 'payload-lint-pill hidden';
+        if (maximizeBtn && maximizeBtn.parentNode === pillGroupEl) {
+          pillGroupEl.insertBefore(lintPill, maximizeBtn);
+        } else {
+          pillGroupEl.appendChild(lintPill);
+        }
+      }
     }
   } else if (containerEl) {
     containerEl.innerHTML = `
@@ -1588,7 +1424,7 @@ export function createPayloadComponent(containerEl, {
 
   let dualLayerInstance = null;
   if (!readOnly && textareaEl) {
-    dualLayerInstance = attachDualLayerEditor(textareaEl);
+    dualLayerInstance = attachDualLayerEditor(textareaEl, toggleEl, { autoGrow });
   }
 
   function updateDescriptor() {
@@ -1615,9 +1451,7 @@ export function createPayloadComponent(containerEl, {
     if (currentMode === 'rich') {
       const discovered = discoverEmbeddedPayloads(currentText);
       if (discovered.length > 0) {
-        viewContainer.innerHTML = renderFormattedWithNestedPreviews(currentText, discovered, `${componentId}_v`, (newRoot) => {
-          syncText(newRoot);
-        });
+        viewContainer.innerHTML = renderFormattedWithNestedPreviews(currentText, discovered, `${componentId}_v`, null);
       } else {
         viewContainer.innerHTML = highlightPayload(formatPayload(currentText));
       }
@@ -1663,12 +1497,25 @@ export function createPayloadComponent(containerEl, {
 
   function validate() {
     if (!lintPill) return;
-    const fmt = detectFormat(currentText);
-    if (fmt === 'json' || fmt === 'xml') {
-      const res = validatePayload(currentText, fmt);
+    const trimmed = (currentText || '').trim();
+    if (!trimmed) {
+      lintPill.classList.add('hidden');
+      lintPill.textContent = '';
+      return;
+    }
+    let targetFormat = cleanFormat;
+    if (!targetFormat || targetFormat === 'text') {
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        targetFormat = 'json';
+      } else if (trimmed.startsWith('<')) {
+        targetFormat = 'xml';
+      }
+    }
+    if (targetFormat === 'json' || targetFormat === 'xml') {
+      const res = validatePayload(currentText, targetFormat);
       if (!res.valid) {
         lintPill.classList.remove('hidden');
-        lintPill.textContent = `⚠️ Invalid ${fmt.toUpperCase()}: ${res.errorMessage}`;
+        lintPill.textContent = `⚠️ Invalid ${targetFormat.toUpperCase()}: ${res.errorMessage}`;
         return;
       }
     }
@@ -1791,11 +1638,13 @@ export function createPayloadComponent(containerEl, {
     };
   }
 
-  if (textareaEl && !isExternal) {
-    textareaEl.value = currentText;
-    textareaEl.oninput = () => {
-      syncText(textareaEl.value, true);
-    };
+  if (textareaEl) {
+    if (!isExternal) {
+      textareaEl.value = currentText;
+    }
+    textareaEl.addEventListener('input', () => {
+      syncText(textareaEl.value, false);
+    });
   }
 
   // Initial render
@@ -1817,6 +1666,98 @@ export function createPayloadComponent(containerEl, {
       updateDescriptor();
       if (currentAction === 'view') renderView();
       else if (dualLayerInstance) dualLayerInstance.refresh();
+    }
+  };
+}
+
+/**
+ * Mounts a Dual-Layer Code Editor onto an input textarea with standardized syntax highlighting,
+ * format prettifying, live error diagnostics, and fullscreen maximize capabilities.
+ *
+ * @param {HTMLTextAreaElement} textareaEl
+ * @param {object} [options]
+ * @returns {object} Controller instance
+ */
+export function mountCodeInputEditor(textareaEl, options = {}) {
+  if (!textareaEl) return null;
+  const {
+    title = 'Code Editor',
+    format = null,
+    context = 'code-input',
+    toggleContainer = null,
+    formatBtn = null,
+    maximizeBtn = null,
+    lintPill = null,
+    autoGrow = false,
+    onChange = null
+  } = options;
+
+  const dualLayer = attachDualLayerEditor(textareaEl, toggleContainer, { autoGrow, onChange });
+
+  function validate() {
+    if (!lintPill) return true;
+    const val = textareaEl.value;
+    const fmt = format || detectFormat(val);
+    if (fmt === 'json' || fmt === 'xml') {
+      const res = validatePayload(val, fmt);
+      if (!res.valid) {
+        lintPill.textContent = `⚠️ Invalid ${fmt.toUpperCase()}: ${res.errorMessage}`;
+        lintPill.classList.remove('hidden');
+        return false;
+      }
+    }
+    lintPill.textContent = '';
+    lintPill.classList.add('hidden');
+    return true;
+  }
+
+  if (formatBtn) {
+    formatBtn.onclick = (e) => {
+      e.stopPropagation();
+      textareaEl.value = formatPayload(textareaEl.value);
+      if (dualLayer) dualLayer.refresh();
+      validate();
+      if (typeof onChange === 'function') onChange(textareaEl.value);
+    };
+  }
+
+  if (maximizeBtn) {
+    maximizeBtn.onclick = (e) => {
+      e.preventDefault();
+      const val = textareaEl.value;
+      const fmt = format || detectFormat(val);
+      pushViewportLayer({
+        title,
+        text: val,
+        format: fmt,
+        context,
+        mode: 'editor',
+        onSave: (savedText) => {
+          textareaEl.value = savedText;
+          if (dualLayer) dualLayer.refresh();
+          validate();
+          textareaEl.dispatchEvent(new Event('input', { bubbles: true }));
+          if (typeof onChange === 'function') onChange(savedText);
+        }
+      });
+    };
+  }
+
+  textareaEl.addEventListener('input', validate);
+  validate();
+
+  return {
+    dualLayer,
+    validate,
+    refresh: () => {
+      if (dualLayer) dualLayer.refresh();
+      validate();
+    },
+    getValue: () => textareaEl.value,
+    setValue: (val) => {
+      textareaEl.value = val;
+      if (dualLayer) dualLayer.refresh();
+      validate();
     }
   };
 }

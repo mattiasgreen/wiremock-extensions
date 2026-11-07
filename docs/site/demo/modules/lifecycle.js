@@ -28,9 +28,34 @@ import { switchImportTab, handleBundleImport } from './import-export.js';
 let activeEditingStub = null;
 let isCloneMode = false;
 let activeEditorMode = 'form';
+let initialFormSnapshot = null;
+let initialRawSnapshot = null;
 
 export function getEditorMode() {
   return activeEditorMode;
+}
+
+export function isStubEditorDirty() {
+  const modal = document.getElementById('stub-editor-modal');
+  if (!modal || modal.classList.contains('hidden')) return false;
+  try {
+    if (activeEditorMode === 'json') {
+      const rawTextarea = document.getElementById('editor-raw-json');
+      return rawTextarea ? (rawTextarea.value !== initialRawSnapshot) : false;
+    } else {
+      return initialFormSnapshot !== null && JSON.stringify(buildStubFromForm()) !== initialFormSnapshot;
+    }
+  } catch (_) {
+    return false;
+  }
+}
+
+export function requestCloseStubEditor(force = false) {
+  if (force || !isStubEditorDirty() || window.confirm('You have unsaved changes in the stub editor. Discard changes?')) {
+    closeStubEditor();
+    return true;
+  }
+  return false;
 }
 
 export function handleToggleStub(stubId) {
@@ -597,6 +622,7 @@ export function setEditorMode(mode) {
     if (btnForm) btnForm.classList.remove('active');
     if (btnJson) btnJson.classList.add('active');
     activeEditorMode = 'json';
+    initialRawSnapshot = rawTextarea ? rawTextarea.value : '';
     return true;
   } else {
     if (rawTextarea && rawTextarea.value.trim()) {
@@ -623,6 +649,7 @@ export function setEditorMode(mode) {
     if (btnForm) btnForm.classList.add('active');
     if (btnJson) btnJson.classList.remove('active');
     activeEditorMode = 'form';
+    initialFormSnapshot = JSON.stringify(buildStubFromForm());
     return true;
   }
 }
@@ -646,6 +673,15 @@ export function formatRawEditorJson() {
     }
     alert('Invalid JSON: ' + err.message);
   }
+}
+
+function cleanStubForWireMock(s) {
+  if (!s || typeof s !== 'object') return s;
+  const clean = { ...s };
+  delete clean._disabled;
+  delete clean._dynamic;
+  delete clean.isDynamic;
+  return clean;
 }
 
 export function openStubEditor(stub, clone = false) {
@@ -691,29 +727,55 @@ export function openStubEditor(stub, clone = false) {
   // Initialize raw JSON textarea with current stub
   const rawTextarea = document.getElementById('editor-raw-json');
   if (rawTextarea) {
-    const initialStub = clone
-      ? { ...stub, id: undefined, name: `${stub.name || 'Stub'} (Copy)` }
-      : (stub || buildStubFromForm());
+    let initialStub;
+    if (clone) {
+      initialStub = cleanStubForWireMock(stub);
+      initialStub.name = `${stub.name || 'Stub'} (Copy)`;
+      delete initialStub.id;
+      delete initialStub.uuid;
+    } else if (stub) {
+      initialStub = cleanStubForWireMock(stub);
+    } else {
+      initialStub = buildStubFromForm();
+    }
     rawTextarea.value = JSON.stringify(initialStub, null, 2);
     attachDualLayerEditor(rawTextarea, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
     if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
   }
+  initialFormSnapshot = JSON.stringify(buildStubFromForm());
+  initialRawSnapshot = rawTextarea ? rawTextarea.value : '';
 
-  // Reset to form mode on open without re-parsing rawTextarea
+  // Setup mode panels: editing stubs uses direct JSON editor (no cumbersome form)
   const formPanel = document.getElementById('editor-form-panel');
   const jsonPanel = document.getElementById('editor-json-panel');
   const btnForm = document.getElementById('btn-editor-mode-form');
   const btnJson = document.getElementById('btn-editor-mode-json');
+  const modePills = document.querySelector('.editor-mode-pills');
   const errorEl = document.getElementById('editor-raw-json-error');
   if (errorEl) {
     errorEl.classList.add('hidden');
     errorEl.textContent = '';
   }
-  if (formPanel) formPanel.classList.remove('hidden');
-  if (jsonPanel) jsonPanel.classList.add('hidden');
-  if (btnForm) btnForm.classList.add('active');
-  if (btnJson) btnJson.classList.remove('active');
-  activeEditorMode = 'form';
+
+  const isEditingExisting = Boolean(stub && (stub.id != null || stub.uuid != null || clone));
+
+  if (isEditingExisting) {
+    // When editing or cloning an existing stub: Direct JSON Editor (form removed for clean, robust editing)
+    if (modePills) modePills.classList.add('hidden');
+    if (formPanel) formPanel.classList.add('hidden');
+    if (jsonPanel) jsonPanel.classList.remove('hidden');
+    if (btnForm) btnForm.classList.remove('active');
+    if (btnJson) btnJson.classList.add('active');
+    activeEditorMode = 'json';
+  } else {
+    // When creating a new stub or using a template/quickstart (e.g. from journal snapshot)
+    if (modePills) modePills.classList.remove('hidden');
+    if (formPanel) formPanel.classList.remove('hidden');
+    if (jsonPanel) jsonPanel.classList.add('hidden');
+    if (btnForm) btnForm.classList.add('active');
+    if (btnJson) btnJson.classList.remove('active');
+    activeEditorMode = 'form';
+  }
 
   // Update Response Body Top Pill & Maximize
   const bodyEl = document.getElementById('editor-body');
@@ -750,6 +812,47 @@ export function openStubEditor(stub, clone = false) {
             bodyEl.value = savedText;
             updateBodyPill();
             bodyEl.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      });
+    };
+  }
+
+  // Update Pattern Top Pill & Maximize
+  const patternEl = document.getElementById('editor-body-match-pattern');
+  const patternTopPill = document.getElementById('editor-pattern-top-pill');
+  const updatePatternPill = () => {
+    if (patternEl && patternTopPill) {
+      const val = patternEl.value || '';
+      const fmt = detectFormat(val).toUpperCase();
+      const charset = detectCharset(val);
+      const sizeKb = (new Blob([val]).size / 1024).toFixed(1);
+      patternTopPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
+    }
+  };
+  if (patternEl) {
+    attachDualLayerEditor(patternEl, elements.editorPatternModeToggle || document.getElementById('editor-pattern-mode-toggle'));
+    if (patternEl._dualLayer) patternEl._dualLayer.refresh();
+    patternEl.oninput = updatePatternPill;
+    updatePatternPill();
+  }
+
+  const btnPatternMax = document.getElementById('btn-editor-pattern-maximize');
+  if (btnPatternMax) {
+    btnPatternMax.onclick = (e) => {
+      e.preventDefault();
+      const val = patternEl ? patternEl.value : '';
+      pushViewportLayer({
+        title: 'Stub Expected Pattern',
+        text: val,
+        format: detectFormat(val),
+        context: 'stub-pattern',
+        mode: 'editor',
+        onSave: (savedText) => {
+          if (patternEl) {
+            patternEl.value = savedText;
+            updatePatternPill();
+            patternEl.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
       });
@@ -803,6 +906,8 @@ export function closeStubEditor() {
   activeEditingStub = null;
   isCloneMode = false;
   activeEditorMode = 'form';
+  initialFormSnapshot = null;
+  initialRawSnapshot = null;
 }
 
 export function saveStubEditor() {
@@ -816,7 +921,7 @@ export function saveStubEditor() {
       return;
     }
     try {
-      stubPayload = JSON.parse(rawTextarea.value);
+      stubPayload = cleanStubForWireMock(JSON.parse(rawTextarea.value));
       if (typeof stubPayload !== 'object' || stubPayload === null || Array.isArray(stubPayload)) {
         throw new Error('Stub mapping root must be a JSON object');
       }
@@ -832,9 +937,18 @@ export function saveStubEditor() {
     stubPayload = buildStubFromForm();
   }
 
-  const targetId = (!isCloneMode && activeEditingStub && activeEditingStub.id)
-    ? activeEditingStub.id
-    : (stubPayload.id && !isCloneMode ? stubPayload.id : null);
+  const existingId = (!isCloneMode && activeEditingStub)
+    ? (activeEditingStub.id || activeEditingStub.uuid)
+    : null;
+  const payloadId = (stubPayload && !isCloneMode)
+    ? (stubPayload.id || stubPayload.uuid)
+    : null;
+  const targetId = existingId || payloadId;
+
+  if (isCloneMode && stubPayload) {
+    delete stubPayload.id;
+    delete stubPayload.uuid;
+  }
 
   const isSnapshot = !targetId && stubPayload.metadata && stubPayload.metadata.source === 'recorded-proxy';
   const savePromise = (isCloneMode || !targetId)
@@ -896,10 +1010,18 @@ export function initStubLifecycleHandlers() {
 
   // Modal close/save buttons
   if (elements.btnCloseEditorModal) {
-    elements.btnCloseEditorModal.addEventListener('click', closeStubEditor);
+    elements.btnCloseEditorModal.addEventListener('click', () => requestCloseStubEditor());
   }
   if (elements.btnCancelEditor) {
-    elements.btnCancelEditor.addEventListener('click', closeStubEditor);
+    elements.btnCancelEditor.addEventListener('click', () => requestCloseStubEditor());
+  }
+  const stubEditorModal = document.getElementById('stub-editor-modal');
+  if (stubEditorModal) {
+    stubEditorModal.addEventListener('click', (e) => {
+      if (e.target === stubEditorModal) {
+        requestCloseStubEditor();
+      }
+    });
   }
   if (elements.btnSaveEditor) {
     elements.btnSaveEditor.addEventListener('click', saveStubEditor);

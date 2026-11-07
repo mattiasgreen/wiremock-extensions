@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 8ca0546">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@8ca0546)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 4d43a7e">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@4d43a7e)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -827,7 +827,14 @@
             </div>
 
             <div class="form-group" style="margin-top: 12px;">
-              <label for="openapi-spec-content">Or paste specification directly:</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label for="openapi-spec-content">Or paste specification directly:</label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="payload-lint-pill hidden" id="openapi-spec-lint-pill"></span>
+                  <button type="button" id="btn-openapi-format-spec" class="btn btn-tiny" title="Format/Prettify Spec">✨ Format</button>
+                  <button type="button" id="btn-openapi-maximize-spec" class="btn-payload-maximize" title="Maximize OpenAPI Spec in Fullscreen Viewport">⛶ Maximize</button>
+                </div>
+              </div>
               <textarea id="openapi-spec-content" class="code-input" rows="8" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
             </div>
 
@@ -892,7 +899,14 @@
             </div>
 
             <div class="form-group" style="margin-top: 12px;">
-              <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="payload-lint-pill hidden" id="bundle-content-lint-pill"></span>
+                  <button type="button" id="btn-bundle-format-json" class="btn btn-tiny" title="Format JSON Bundle">Format JSON</button>
+                  <button type="button" id="btn-bundle-maximize" class="btn-payload-maximize" title="Maximize Bundle in Fullscreen Viewport">⛶ Maximize</button>
+                </div>
+              </div>
               <textarea id="bundle-content" class="code-input" rows="8" placeholder='{&#10;  "mappings": [&#10;    { "request": { "method": "GET", "url": "/example" }, "response": { "status": 200 } }&#10;  ]&#10;}'></textarea>
             </div>
 
@@ -1028,13 +1042,19 @@
 
           <div id="editor-body-match-container" class="form-group hidden" style="margin-top: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
+                <span class="preview-pill-group" id="editor-pattern-top-pill-group" style="display: inline-flex;">
+                  <span class="preview-pill-badge" id="editor-pattern-top-pill" role="button" tabindex="0">JSON</span>
+                </span>
+              </div>
               <div style="display: flex; gap: 6px; align-items: center;">
                 <div class="editor-mode-toggle" id="editor-pattern-mode-toggle" data-testid="editor-pattern-mode-toggle">
                   <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
                   <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
                 </div>
                 <button type="button" id="btn-editor-format-request-json" class="btn btn-tiny hidden" data-testid="btn-editor-format-request-json">Format JSON</button>
+                <button type="button" id="btn-editor-pattern-maximize" class="btn-payload-maximize" title="Maximize Pattern in Fullscreen Viewport">⛶ Maximize</button>
               </div>
             </div>
             <textarea id="editor-body-match-pattern" class="code-input" rows="5" placeholder="Expected pattern or substring..."></textarea>
@@ -1226,7 +1246,18 @@
         </div>
 
         <div class="form-group">
-          <label for="dynamic-model-json"><strong>Model Specification JSON (AST):</strong></label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="dynamic-model-json"><strong>Model Specification JSON (AST):</strong></label>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <span class="payload-lint-pill hidden" id="dynamic-model-lint-pill"></span>
+              <div class="editor-mode-toggle" id="dynamic-model-mode-toggle">
+                <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+              </div>
+              <button type="button" id="btn-dynamic-model-format-json" class="btn btn-tiny" title="Format JSON AST">Format JSON</button>
+              <button type="button" id="btn-dynamic-model-maximize" class="btn-payload-maximize" title="Maximize AST in Fullscreen Viewport">⛶ Maximize</button>
+            </div>
+          </div>
           <textarea id="dynamic-model-json" class="code-input" rows="12" data-testid="dynamic-model-json"></textarea>
         </div>
       </div>

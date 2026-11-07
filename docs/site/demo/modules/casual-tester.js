@@ -154,7 +154,19 @@ export function initCasualTester() {
   });
 
   if (elements.casualRequestPayload) {
-    attachDualLayerEditor(elements.casualRequestPayload, elements.casualPayloadModeToggle || document.getElementById('casual-payload-mode-toggle'));
+    createPayloadComponent(null, {
+      backingTextarea: elements.casualRequestPayload,
+      toggleEl: elements.casualPayloadModeToggle || document.getElementById('casual-payload-mode-toggle'),
+      pillEl: document.getElementById('casual-request-top-pill'),
+      pillGroupEl: document.getElementById('casual-request-top-pill-group'),
+      formatBtn: document.getElementById('btn-casual-format-json'),
+      maximizeBtn: document.getElementById('btn-casual-request-maximize'),
+      title: 'Casual Request Payload',
+      context: 'tester-request',
+      bufferType: (elements.casualBufferType && elements.casualBufferType.value) || 'JSON',
+      defaultAction: 'edit',
+      onChange: () => updateCasualRoute(true)
+    });
     if (elements.casualPayloadEmbeddedBar) {
       attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
     }

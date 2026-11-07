@@ -347,46 +347,28 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
                 .click();
         page.waitForSelector("#stub-json-viewer");
 
-        // 3. Find the nested inner XML block's [ ✏️ Edit ] button
-        Locator editBtn = page.locator("#stub-json-viewer .btn-nested-edit").last();
-        assertThat(editBtn.isVisible()).isTrue();
-        editBtn.click();
-
-        // 4. In-place editor should mount inside the block
-        Locator inlineEditor = page.locator("#stub-json-viewer .inline-block-editor");
-        page.waitForSelector("#stub-json-viewer .inline-block-editor");
-        assertThat(inlineEditor.isVisible()).isTrue();
-
-        Locator inlineTextarea = inlineEditor.locator(".inline-nested-textarea");
-        assertThat(inlineTextarea.inputValue()).contains("ORD-12345");
-
-        // 5. Unsaved changes hint appears on input
-        Locator dirtyHint = inlineEditor.locator(".inline-edit-dirty-indicator");
-        assertThat(dirtyHint.getAttribute("class")).contains("hidden");
-
-        String updatedXml = inlineTextarea.inputValue().replace("ORD-12345", "ORD-99999");
-        inlineTextarea.fill(updatedXml);
-        assertThat(dirtyHint.getAttribute("class")).doesNotContain("hidden");
-
-        // 6. Live structural validation
-        Locator lintPill = inlineEditor.locator(".inline-edit-lint-pill");
-        inlineTextarea.fill("<invalid <xml>");
-        assertThat(lintPill.getAttribute("class")).doesNotContain("hidden");
-        assertThat(lintPill.innerText()).contains("Invalid XML");
-
-        // Fix syntax
-        inlineTextarea.fill(updatedXml);
-        assertThat(lintPill.getAttribute("class")).contains("hidden");
-
-        // 7. Click [ ✓ Done ]
-        inlineEditor.locator(".btn-inline-done").click();
-
-        // 8. Block editor closes and viewer displays updated XML
+        // 3. Verify read-only surface remains clean: zero inline edit buttons
+        assertThat(page.locator("#stub-json-viewer .btn-nested-edit").count()).isEqualTo(0);
         assertThat(page.locator("#stub-json-viewer .inline-block-editor").count())
                 .isEqualTo(0);
-        String viewerHtml = page.locator("#stub-json-viewer").innerText();
-        assertThat(viewerHtml).contains("ORD-99999");
-        assertThat(viewerHtml).doesNotContain("ORD-12345");
+
+        // 4. Verify nested preview expands and renders formatted XML
+        Locator nestedPreview =
+                page.locator("#stub-json-viewer .truncated-payload-preview").last();
+        assertThat(nestedPreview.isVisible()).isTrue();
+        assertThat(nestedPreview.innerText()).contains("ORD-12345");
+
+        // 5. Maximize into Fullscreen Viewport for rich inspection
+        Locator btnMax = nestedPreview.locator(".btn-nested-maximize");
+        btnMax.click();
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+        assertThat(page.locator("#payload-lens-title").innerText()).contains("payload");
+        assertThat(page.locator("#payload-viewport-viewer-container").innerText())
+                .contains("ORD-12345");
+
+        page.locator("#btn-close-payload-lens").click();
+        page.waitForSelector(
+                "#modal-payload-lens", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
     }
 
     @Test
@@ -467,23 +449,8 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         btnNestedRich.click();
         assertThat(btnNestedRich.getAttribute("class")).contains("active");
 
-        // 4. Open In-Place Block Editor and verify zero vertical scrollbar
-        Locator editBtn = page.locator("#stub-json-viewer .btn-nested-edit").first();
-        editBtn.click();
-        page.waitForSelector("#stub-json-viewer .inline-block-editor");
-
-        Locator inlineEditor = page.locator("#stub-json-viewer .inline-block-editor");
-        Locator inlineInput = inlineEditor.locator(".dual-layer-input");
-        String overflowY = (String) inlineInput.evaluate("el => window.getComputedStyle(el).overflowY");
-        assertThat(overflowY).isEqualTo("hidden");
-
-        Number scrollHeight = (Number) inlineInput.evaluate("el => el.scrollHeight");
-        Number clientHeight = (Number) inlineInput.evaluate("el => el.clientHeight");
-        assertThat(Math.abs(scrollHeight.doubleValue() - clientHeight.doubleValue()))
-                .isLessThanOrEqualTo(6.0);
-
-        // Cancel inline editing
-        inlineEditor.locator(".btn-inline-cancel").click();
+        // 4. Verify read-only surface has no inline editing buttons
+        assertThat(page.locator("#stub-json-viewer .btn-nested-edit").count()).isEqualTo(0);
         assertThat(page.locator("#stub-json-viewer .inline-block-editor").count())
                 .isEqualTo(0);
 
@@ -509,5 +476,83 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
 
         btnTesterRich.click();
         assertThat(btnTesterRich.getAttribute("class")).contains("active");
+    }
+
+    @Test
+    @DisplayName(
+            "Comprehensive Editing: Tester request validation, pattern sub-editor, dynamic AST editor, and inline maximize")
+    void testComprehensiveUiEditingDeepeningAndSecondaryInputs() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+        page.waitForSelector("#tab-tester:not(.hidden)");
+
+        // 1. Tester Request Body: Type invalid JSON and assert live lint pill appears
+        Locator testerBody = page.locator("#tester-body");
+        testerBody.fill("{ unquoted_key: invalid }");
+        testerBody.dispatchEvent("input");
+
+        Locator lintPill = page.locator("#tester-request-top-pill-group .payload-lint-pill");
+        assertThat(lintPill.isVisible()).isTrue();
+        assertThat(lintPill.innerText()).contains("Invalid JSON");
+
+        // Format button prettifies valid JSON
+        testerBody.fill("{\"valid\": true, \"num\": 42}");
+        testerBody.dispatchEvent("input");
+        assertThat(lintPill.isVisible()).isFalse();
+
+        page.locator("#btn-tester-format-json").click();
+        assertThat(testerBody.inputValue()).contains("\n  \"valid\": true");
+
+        // 2. Open Stub Editor modal and verify Expected Request Pattern sub-editor has top-pill & maximize
+        page.locator("#nav-tab-stubs").click();
+        page.waitForSelector("#stub-list");
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        // Enable Body Matching to show pattern sub-editor
+        page.locator("#editor-body-match-type").selectOption("equalToJson");
+        page.waitForSelector("#editor-body-match-container:not(.hidden)");
+
+        Locator patternTopPill = page.locator("#editor-pattern-top-pill");
+        assertThat(patternTopPill.isVisible()).isTrue();
+        Locator btnPatternMax = page.locator("#btn-editor-pattern-maximize");
+        assertThat(btnPatternMax.isVisible()).isTrue();
+
+        // 3. Maximize Pattern editor into Fullscreen Viewport
+        page.locator("#editor-body-match-pattern").fill("{\"expected\": \"value\"}");
+        btnPatternMax.click();
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+        assertThat(page.locator("#payload-lens-title").innerText()).contains("Stub Expected Pattern");
+
+        // Save from viewport back into pattern editor
+        page.locator("#btn-lens-save-root").click();
+        page.waitForSelector(
+                "#modal-payload-lens", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(page.locator("#editor-body-match-pattern").inputValue()).contains("\"expected\": \"value\"");
+
+        // Verify dirty guard: Accept confirmation to discard and close
+        page.onceDialog(dialog -> dialog.accept());
+        page.locator("#btn-close-editor-modal").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 4. Dynamic Model AST Editor: Open modal and verify dual layer & maximize
+        page.locator("#btn-create-dynamic-stub").click();
+        page.waitForSelector("#dynamic-stub-modal:not(.hidden)");
+
+        Locator dynamicAstMax = page.locator("#btn-dynamic-model-maximize");
+        assertThat(dynamicAstMax.isVisible()).isTrue();
+        Locator dynamicAstToggle = page.locator("#dynamic-model-mode-toggle");
+        assertThat(dynamicAstToggle.isVisible()).isTrue();
+
+        dynamicAstMax.click();
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+        assertThat(page.locator("#payload-lens-title").innerText()).contains("Stateful Model AST");
+        page.locator("#btn-close-payload-lens").click();
+        page.waitForSelector(
+                "#modal-payload-lens", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        page.locator("#btn-cancel-dynamic").click();
+        page.waitForSelector(
+                "#dynamic-stub-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
     }
 }
