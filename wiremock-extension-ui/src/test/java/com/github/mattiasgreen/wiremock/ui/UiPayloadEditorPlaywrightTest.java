@@ -510,4 +510,74 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         btnTesterRich.click();
         assertThat(btnTesterRich.getAttribute("class")).contains("active");
     }
+
+    @Test
+    @DisplayName(
+            "Parallel Polyglot Editor: Editing parent envelope preserves child island unescaped with Unified Staging Bar")
+    void testParallelPolyglotSegmentedEditorWithProtectedChildIslands() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 1. Create a 3-layer polyglot stub: JSON envelope with routing fields + child XML payload
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        page.locator("#editor-url").fill("/api/v1/parallel-polyglot-test");
+        String xmlChild = "<swiftMessage><sender>SWIFT-EXT</sender></swiftMessage>";
+        String envelopeJson = "{\"routing\":{\"network\":\"SWIFT_NET\"},\"messagePayload\":\""
+                + xmlChild.replace("\"", "\\\"") + "\"}";
+        String rootJson = "{\"status\":\"ACTIVE\",\"gatewayEnvelope\":\"" + envelopeJson.replace("\"", "\\\"") + "\"}";
+
+        page.locator("#editor-body").fill(rootJson);
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 2. Select stub and locate gatewayEnvelope's [ ✏️ Edit ] button
+        page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("/api/v1/parallel-polyglot-test"))
+                .first()
+                .click();
+        page.waitForSelector("#stub-json-viewer");
+
+        // The outer preview is gatewayEnvelope (it has child messagePayload XML)
+        Locator envelopeEditBtn =
+                page.locator("#stub-json-viewer .btn-nested-edit").first();
+        assertThat(envelopeEditBtn.isVisible()).isTrue();
+        envelopeEditBtn.click();
+
+        // 3. Segmented Polyglot Editor mounts!
+        page.waitForSelector("#stub-json-viewer .segmented-polyglot-editor");
+        Locator segmentedEditor = page.locator("#stub-json-viewer .segmented-polyglot-editor");
+        assertThat(segmentedEditor.isVisible()).isTrue();
+
+        // 4. Crucial: Child XML island is NOT collapsed into raw escaped text!
+        Locator childIsland = segmentedEditor.locator(".polyglot-child-island");
+        assertThat(childIsland.isVisible()).isTrue();
+        String childIslandText = childIsland.innerText();
+        assertThat(childIslandText).contains("<swiftMessage>");
+        assertThat(childIslandText).contains("SWIFT-EXT");
+
+        // 5. Slice 0 contains parent routing fields (the yellow part)
+        Locator sliceInput = segmentedEditor.locator(".polyglot-slice-input").first();
+        assertThat(sliceInput.inputValue()).contains("SWIFT_NET");
+
+        // 6. Edit Slice 0: Change SWIFT_NET to SWIFT_PARALLEL
+        String updatedSlice = sliceInput.inputValue().replace("SWIFT_NET", "SWIFT_PARALLEL");
+        sliceInput.fill(updatedSlice);
+
+        // 7. Unified Staging Bar appears with unsaved changes indicator
+        Locator stagingBar = segmentedEditor.locator(".unified-staging-bar");
+        assertThat(stagingBar.getAttribute("class")).doesNotContain("hidden");
+
+        // 8. Click [ ✓ Save Changes ] on Staging Bar
+        stagingBar.locator(".btn-staging-save").click();
+
+        // 9. Editor closes, viewer re-renders with updated SWIFT_PARALLEL and intact XML
+        page.waitForSelector("#stub-json-viewer");
+        String finalViewerText = page.locator("#stub-json-viewer").innerText();
+        assertThat(finalViewerText).contains("SWIFT_PARALLEL");
+        assertThat(finalViewerText).doesNotContain("SWIFT_NET");
+        assertThat(finalViewerText).contains("<swiftMessage>");
+    }
 }

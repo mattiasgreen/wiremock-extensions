@@ -3467,6 +3467,96 @@ a[disabled].cap-disabled,
   box-sizing: border-box !important;
 }
 
+/* Polyglot Segmented Slices & Child Islands */
+.polyglot-slice-wrapper {
+  position: relative !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  flex: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 24px;
+}
+
+.polyglot-slice-wrapper .dual-layer-backdrop,
+.polyglot-slice-wrapper .dual-layer-input {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 2px 4px !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 0.85rem !important;
+  line-height: 1.5 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.polyglot-child-island {
+  position: relative !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 4px 0 !important;
+  border-left: 2px solid var(--accent-color, #38bdf8) !important;
+  padding-left: 8px !important;
+}
+
+/* Unified Staging Bar */
+.unified-staging-bar {
+  position: sticky !important;
+  bottom: 12px !important;
+  left: 12px !important;
+  right: 12px !important;
+  z-index: 100 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 8px 16px !important;
+  background: var(--bg-surface, #1e293b) !important;
+  border: 1px solid var(--accent-color, #38bdf8) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+  animation: slideUpStaging 0.2s ease-out;
+}
+
+.unified-staging-bar.hidden {
+  display: none !important;
+}
+
+.staging-bar-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 0.82rem !important;
+  color: var(--text-primary, #f1f5f9) !important;
+}
+
+.staging-indicator {
+  color: #f59e0b !important;
+  font-size: 1rem !important;
+}
+
+.staging-bar-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+@keyframes slideUpStaging {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 /* Embedded Payloads Bar */
 .embedded-payloads-bar {
   display: flex;

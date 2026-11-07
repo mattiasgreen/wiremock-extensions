@@ -1092,6 +1092,221 @@ if (typeof document !== 'undefined') {
   });
 }
 
+function applyChildEncodingForReassembly(child, childVal) {
+  if (child.encoding === 'XML_CDATA') {
+    return `<![CDATA[${childVal}]]>`;
+  }
+  if (child.encoding === 'XML_ENTITY_TEXT') {
+    return escapeXmlEntities(childVal);
+  }
+  if (child.encoding === 'BASE64' || child.encoding === 'BASE64_UTF8') {
+    return encodeToBase64(childVal, child.charset || 'UTF-8');
+  }
+  // Standard JSON string: JSON.stringify escapes quotes and newlines
+  return JSON.stringify(childVal);
+}
+
+export function activateSegmentedPolyglotEditor(expandedDiv, entry, nodeId) {
+  const originalHtml = expandedDiv.innerHTML;
+  let parentText = formatPayload(entry.node.unescapedValue);
+  const tokenMap = [];
+
+  for (let i = 0; i < entry.node.children.length; i++) {
+    const child = entry.node.children[i];
+    const token = `__LENS_TOKEN_${i}__`;
+    const escapedInJson = JSON.stringify(child.rawValue);
+    if (parentText.includes(escapedInJson)) {
+      parentText = parentText.replace(escapedInJson, token);
+    } else if (parentText.includes(child.rawValue)) {
+      parentText = parentText.replace(child.rawValue, token);
+    }
+    tokenMap.push({ token, child, idx: i });
+  }
+
+  const tokenTokens = tokenMap.map(t => t.token);
+  const tokenRegex = new RegExp(`(${tokenTokens.join('|')})`, 'g');
+  const segments = parentText.split(tokenRegex);
+
+  let html = `<div class="segmented-polyglot-editor" data-node-id="${escapeHtml(nodeId)}">`;
+  html += `
+    <div class="inline-block-editor-toolbar">
+      <div class="inline-toolbar-left">
+        <span class="inline-edit-tag">✏️ ${(entry.node.format || 'JSON').toUpperCase()} Envelope (Polyglot)</span>
+        <span class="inline-edit-dirty-indicator hidden">● Unsaved Changes</span>
+        <span class="inline-edit-lint-pill hidden"></span>
+      </div>
+      <div class="inline-toolbar-right">
+        <button type="button" class="btn btn-tiny btn-primary btn-polyglot-done" title="Apply changes (Ctrl+Enter / Ctrl+S)">✓ Done</button>
+        <button type="button" class="btn btn-tiny btn-secondary btn-polyglot-cancel" title="Cancel changes (Esc)">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  let sliceIndex = 0;
+  for (const seg of segments) {
+    const matchedToken = tokenMap.find(t => t.token === seg);
+    if (matchedToken) {
+      const child = matchedToken.child;
+      const childFullNodeId = `${nodeId}_c${matchedToken.idx}`;
+      const childInnerHtml = renderFormattedWithNestedPreviews(
+        child.unescapedValue,
+        child.children || [],
+        childFullNodeId,
+        (updatedChildText) => {
+          child.unescapedValue = updatedChildText;
+          const dirtyIndicator = expandedDiv.querySelector('.inline-edit-dirty-indicator');
+          if (dirtyIndicator) dirtyIndicator.classList.remove('hidden');
+          const stagingBar = expandedDiv.querySelector('.unified-staging-bar');
+          if (stagingBar) stagingBar.classList.remove('hidden');
+        },
+        [
+          ...entry.ancestorFrames,
+          { text: entry.node.unescapedValue, descriptor: entry.node, title: entry.node.path, format: entry.node.format }
+        ],
+        entry.rootText
+      );
+      html += `<div class="polyglot-child-island" data-token="${escapeHtml(seg)}">${childInnerHtml}</div>`;
+    } else {
+      const sliceId = `slice_${nodeId}_${sliceIndex++}`;
+      html += `
+        <div class="polyglot-slice-wrapper" id="${sliceId}">
+          <pre class="dual-layer-backdrop" aria-hidden="true"><code class="dual-layer-code">${highlightPayload(seg)}</code></pre>
+          <textarea class="dual-layer-input polyglot-slice-input" spellcheck="false">${escapeHtml(seg)}</textarea>
+        </div>
+      `;
+    }
+  }
+
+  html += `
+    <div class="unified-staging-bar hidden">
+      <div class="staging-bar-left">
+        <span class="staging-indicator">●</span>
+        <span class="staging-text">Unsaved modifications in document</span>
+      </div>
+      <div class="staging-bar-actions">
+        <button type="button" class="btn btn-tiny btn-primary btn-staging-save">✓ Save Changes</button>
+        <button type="button" class="btn btn-tiny btn-secondary btn-staging-discard">✕ Discard</button>
+      </div>
+    </div>
+  `;
+  html += `</div>`;
+
+  expandedDiv.innerHTML = html;
+
+  const container = expandedDiv.querySelector('.segmented-polyglot-editor');
+  const dirtyIndicator = container.querySelector('.inline-edit-dirty-indicator');
+  const stagingBar = container.querySelector('.unified-staging-bar');
+  const btnDone = container.querySelector('.btn-polyglot-done');
+  const btnCancel = container.querySelector('.btn-polyglot-cancel');
+  const btnStageSave = container.querySelector('.btn-staging-save');
+  const btnStageDiscard = container.querySelector('.btn-staging-discard');
+
+  const sliceWrappers = container.querySelectorAll('.polyglot-slice-wrapper');
+
+  const adjustSliceHeight = (wrapper) => {
+    const textarea = wrapper.querySelector('.polyglot-slice-input');
+    const backdrop = wrapper.querySelector('.dual-layer-backdrop');
+    if (!textarea) return;
+    const lines = (textarea.value || '').split('\n').length;
+    const contentHeight = Math.max(26, lines * 21 + 8);
+    wrapper.style.height = `${contentHeight}px`;
+    if (backdrop) backdrop.style.height = `${contentHeight}px`;
+  };
+
+  sliceWrappers.forEach((wrapper) => {
+    const textarea = wrapper.querySelector('.polyglot-slice-input');
+    const backdrop = wrapper.querySelector('.dual-layer-backdrop');
+    const code = backdrop ? backdrop.querySelector('code') : null;
+
+    adjustSliceHeight(wrapper);
+
+    textarea.addEventListener('input', () => {
+      if (dirtyIndicator) dirtyIndicator.classList.remove('hidden');
+      if (stagingBar) stagingBar.classList.remove('hidden');
+      if (code) {
+        code.innerHTML = highlightPayload(textarea.value) + (textarea.value.endsWith('\n') ? ' ' : '');
+      }
+      adjustSliceHeight(wrapper);
+    });
+
+    textarea.addEventListener('scroll', () => {
+      if (backdrop) {
+        backdrop.scrollTop = textarea.scrollTop;
+        backdrop.scrollLeft = textarea.scrollLeft;
+      }
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key === 's')) {
+        e.preventDefault();
+        saveAll();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        expandedDiv.innerHTML = originalHtml;
+      }
+    });
+  });
+
+  const saveAll = () => {
+    let reassembled = '';
+    let currentSliceIdx = 0;
+    for (const seg of segments) {
+      const matchedToken = tokenMap.find(t => t.token === seg);
+      if (matchedToken) {
+        const child = matchedToken.child;
+        let childVal = child.unescapedValue;
+        if (child.format === 'json') {
+          try {
+            childVal = JSON.stringify(JSON.parse(childVal));
+          } catch (_) {}
+        }
+        const encoded = applyChildEncodingForReassembly(child, childVal);
+        reassembled += encoded;
+      } else {
+        const wrapper = sliceWrappers[currentSliceIdx++];
+        const textarea = wrapper ? wrapper.querySelector('.polyglot-slice-input') : null;
+        reassembled += textarea ? textarea.value : seg;
+      }
+    }
+
+    entry.node.unescapedValue = reassembled;
+    const stack = [
+      ...entry.ancestorFrames,
+      { text: reassembled, descriptor: entry.node, title: entry.node.path, format: entry.node.format }
+    ];
+    const newRoot = cascadeLensStackToRoot(stack, reassembled, { forceInvalid: false, minifyOnSave: false });
+    expandedDiv.innerHTML = `<pre class="inline-code"><code>${highlightPayload(reassembled)}</code></pre>`;
+    if (typeof entry.onSaveRoot === 'function') {
+      entry.onSaveRoot(newRoot);
+    }
+  };
+
+  btnDone.addEventListener('click', (e) => {
+    e.stopPropagation();
+    saveAll();
+  });
+  if (btnStageSave) {
+    btnStageSave.addEventListener('click', (e) => {
+      e.stopPropagation();
+      saveAll();
+    });
+  }
+
+  btnCancel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    expandedDiv.innerHTML = originalHtml;
+  });
+  if (btnStageDiscard) {
+    btnStageDiscard.addEventListener('click', (e) => {
+      e.stopPropagation();
+      expandedDiv.innerHTML = originalHtml;
+    });
+  }
+
+  const firstTextarea = container.querySelector('.polyglot-slice-input');
+  if (firstTextarea) firstTextarea.focus();
+}
+
 /**
  * Activates an in-place format-aware Dual-Layer code editor for an embedded payload subsection.
  * Preserves the enclosing tree structure while allowing targeted unescaped editing.
@@ -1120,6 +1335,12 @@ export function activateInlineBlockEditor(triggerEl) {
 
   const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
   if (!expandedDiv) return;
+
+  // If node has nested children, launch the Segmented Polyglot Editor!
+  if (entry.node.children && entry.node.children.length > 0) {
+    activateSegmentedPolyglotEditor(expandedDiv, entry, nodeId);
+    return;
+  }
 
   const existingTextarea = expandedDiv.querySelector('.inline-nested-textarea');
   if (existingTextarea) {
