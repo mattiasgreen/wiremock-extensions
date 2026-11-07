@@ -5,9 +5,21 @@
 
 import { elements } from './dom.js';
 import { doFetch, loadData, inspectOpenApi } from './api.js';
+import { mountCodeInputEditor } from './payload-lens.js';
 
 export function setupOpenApiModal() {
   if (!elements.btnOpenOpenApiModal || !elements.openapiModal) return;
+
+  if (elements.openapiSpecContent) {
+    mountCodeInputEditor(elements.openapiSpecContent, {
+      title: 'OpenAPI Specification',
+      format: 'yaml',
+      context: 'openapi-spec',
+      formatBtn: document.getElementById('btn-openapi-format-spec'),
+      maximizeBtn: document.getElementById('btn-openapi-maximize-spec'),
+      lintPill: document.getElementById('openapi-spec-lint-pill')
+    });
+  }
 
   function openModal() {
     elements.openapiModal.classList.remove('hidden');

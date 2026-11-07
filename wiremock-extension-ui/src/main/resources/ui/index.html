@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/ui-build-version-and-git-hash | Commit: d31c6c1">v1.14.0 (feat/ui-build-version-and-git-hash@d31c6c1)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 4d43a7e">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@4d43a7e)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -238,10 +238,17 @@
             <div class="code-viewer-container">
               <div class="code-viewer-header">
                 <span class="code-viewer-title">Stub Mapping JSON</span>
-                <span class="preview-pill-group" id="stub-top-pill-group">
-                  <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="preview-pill-group" id="stub-top-pill-group">
+                    <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
+                  </span>
+                  <div class="editor-mode-toggle" id="stub-viewer-mode-toggle" data-testid="stub-viewer-mode-toggle">
+                    <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted, indented">🎨 Rich</button>
+                    <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
+                  </div>
+                  <button type="button" id="btn-top-stub-edit" class="btn-payload-maximize btn-nested-edit" title="Edit stub mapping in editor modal">✏️ Edit</button>
                   <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
-                </span>
+                </div>
               </div>
               <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
             </div>
@@ -426,6 +433,10 @@
                         </span>
                       </div>
                       <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
+                        <div class="editor-mode-toggle" id="tester-body-mode-toggle" data-testid="tester-body-mode-toggle">
+                          <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                          <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                        </div>
                         <button type="button" id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
                       </div>
                     </div>
@@ -478,6 +489,10 @@
                           <span>Response Body</span>
                           <span class="preview-pill-group" id="tester-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="tester-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
+                            <div class="editor-mode-toggle" id="tester-response-mode-toggle">
+                              <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button>
+                              <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button>
+                            </div>
                             <button type="button" id="btn-tester-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
@@ -577,6 +592,10 @@
                         </span>
                       </div>
                       <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
+                        <div class="editor-mode-toggle" id="casual-payload-mode-toggle" data-testid="casual-payload-mode-toggle">
+                          <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                          <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                        </div>
                         <select id="casual-payload-encoding" class="preset-badge" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 2px 6px; font-size: 0.75rem; border-radius: 4px;" title="Payload format encoding">
                           <option value="text">JSON / Text</option>
                           <option value="hex">Hex Bytes</option>
@@ -636,6 +655,10 @@
                           <span>Response Body</span>
                           <span class="preview-pill-group" id="casual-response-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="casual-response-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
+                            <div class="editor-mode-toggle" id="casual-response-mode-toggle">
+                              <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button>
+                              <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button>
+                            </div>
                             <button type="button" id="btn-casual-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
@@ -804,7 +827,14 @@
             </div>
 
             <div class="form-group" style="margin-top: 12px;">
-              <label for="openapi-spec-content">Or paste specification directly:</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label for="openapi-spec-content">Or paste specification directly:</label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="payload-lint-pill hidden" id="openapi-spec-lint-pill"></span>
+                  <button type="button" id="btn-openapi-format-spec" class="btn btn-tiny" title="Format/Prettify Spec">✨ Format</button>
+                  <button type="button" id="btn-openapi-maximize-spec" class="btn-payload-maximize" title="Maximize OpenAPI Spec in Fullscreen Viewport">⛶ Maximize</button>
+                </div>
+              </div>
               <textarea id="openapi-spec-content" class="code-input" rows="8" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
             </div>
 
@@ -869,7 +899,14 @@
             </div>
 
             <div class="form-group" style="margin-top: 12px;">
-              <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="payload-lint-pill hidden" id="bundle-content-lint-pill"></span>
+                  <button type="button" id="btn-bundle-format-json" class="btn btn-tiny" title="Format JSON Bundle">Format JSON</button>
+                  <button type="button" id="btn-bundle-maximize" class="btn-payload-maximize" title="Maximize Bundle in Fullscreen Viewport">⛶ Maximize</button>
+                </div>
+              </div>
               <textarea id="bundle-content" class="code-input" rows="8" placeholder='{&#10;  "mappings": [&#10;    { "request": { "method": "GET", "url": "/example" }, "response": { "status": 200 } }&#10;  ]&#10;}'></textarea>
             </div>
 
@@ -1005,8 +1042,20 @@
 
           <div id="editor-body-match-container" class="form-group hidden" style="margin-top: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
-              <button type="button" id="btn-editor-format-request-json" class="btn btn-tiny hidden" data-testid="btn-editor-format-request-json">Format JSON</button>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
+                <span class="preview-pill-group" id="editor-pattern-top-pill-group" style="display: inline-flex;">
+                  <span class="preview-pill-badge" id="editor-pattern-top-pill" role="button" tabindex="0">JSON</span>
+                </span>
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <div class="editor-mode-toggle" id="editor-pattern-mode-toggle" data-testid="editor-pattern-mode-toggle">
+                  <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                  <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                </div>
+                <button type="button" id="btn-editor-format-request-json" class="btn btn-tiny hidden" data-testid="btn-editor-format-request-json">Format JSON</button>
+                <button type="button" id="btn-editor-pattern-maximize" class="btn-payload-maximize" title="Maximize Pattern in Fullscreen Viewport">⛶ Maximize</button>
+              </div>
             </div>
             <textarea id="editor-body-match-pattern" class="code-input" rows="5" placeholder="Expected pattern or substring..."></textarea>
             <div id="editor-pattern-embedded-bar" data-testid="editor-pattern-embedded-bar" class="hidden"></div>
@@ -1046,6 +1095,10 @@
                 </span>
               </div>
               <div style="display: flex; gap: 6px; align-items: center;">
+                <div class="editor-mode-toggle" id="editor-body-mode-toggle" data-testid="editor-body-mode-toggle">
+                  <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                  <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                </div>
                 <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
                 <button type="button" id="btn-editor-body-maximize" class="btn-payload-maximize" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
               </div>
@@ -1066,6 +1119,10 @@
                   </span>
                 </div>
                 <div style="display: flex; gap: 6px; align-items: center;">
+                  <div class="editor-mode-toggle" id="editor-raw-mode-toggle" data-testid="editor-raw-mode-toggle">
+                    <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                    <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                  </div>
                   <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny" data-testid="btn-editor-raw-format-json">Format JSON</button>
                   <button type="button" id="btn-editor-raw-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
                 </div>
@@ -1189,7 +1246,18 @@
         </div>
 
         <div class="form-group">
-          <label for="dynamic-model-json"><strong>Model Specification JSON (AST):</strong></label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="dynamic-model-json"><strong>Model Specification JSON (AST):</strong></label>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <span class="payload-lint-pill hidden" id="dynamic-model-lint-pill"></span>
+              <div class="editor-mode-toggle" id="dynamic-model-mode-toggle">
+                <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+              </div>
+              <button type="button" id="btn-dynamic-model-format-json" class="btn btn-tiny" title="Format JSON AST">Format JSON</button>
+              <button type="button" id="btn-dynamic-model-maximize" class="btn-payload-maximize" title="Maximize AST in Fullscreen Viewport">⛶ Maximize</button>
+            </div>
+          </div>
           <textarea id="dynamic-model-json" class="code-input" rows="12" data-testid="dynamic-model-json"></textarea>
         </div>
       </div>
@@ -1364,7 +1432,10 @@
               </h2>
               <span id="payload-lens-dirty-indicator" class="viewport-dirty-badge hidden" data-testid="payload-lens-dirty-indicator">● Unsaved Changes</span>
             </div>
-            <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Viewport (Esc)">&times;</button>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button id="btn-lens-view-edit-toggle" data-testid="btn-lens-view-edit-toggle" class="btn btn-tiny btn-secondary hidden" title="Switch between View and Edit mode">✏️ Edit</button>
+              <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Viewport (Esc)">&times;</button>
+            </div>
           </div>
           <!-- Stacked Breadcrumb Trail -->
           <div id="payload-lens-breadcrumbs" data-testid="payload-lens-breadcrumbs" class="payload-lens-breadcrumbs">
@@ -1374,10 +1445,10 @@
       </div>
       <div class="modal-body" style="padding-top: 10px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 0%;">
         <!-- Viewer Container for formatted preview / read-only mode -->
-        <div id="payload-viewport-viewer-container" class="hidden" style="flex: 1 1 0%; display: flex; flex-direction: column; min-height: 0;"></div>
+        <div id="payload-viewport-viewer-container" class="hidden"></div>
 
         <!-- Editor Container for editable mode -->
-        <div id="payload-viewport-editor-container" style="flex: 1 1 0%; display: flex; flex-direction: column; min-height: 0;">
+        <div id="payload-viewport-editor-container" class="hidden">
           <!-- Embedded child payloads bar if the current payload itself has nested escaped payloads -->
           <div id="payload-lens-nested-bar" data-testid="payload-lens-nested-bar" class="hidden" style="margin-bottom: 8px;"></div>
 
@@ -1391,6 +1462,10 @@
               <button type="button" id="btn-lens-copy-formatted" data-testid="btn-lens-copy-formatted" class="btn btn-tiny btn-secondary" title="Copy formatted payload">✨ Copy Formatted</button>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
+              <div class="editor-mode-toggle" id="payload-lens-mode-toggle" data-testid="payload-lens-mode-toggle">
+                <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
+                <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+              </div>
               <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
                 <input type="checkbox" id="chk-lens-minify-on-save" data-testid="chk-lens-minify-on-save">
                 <span>Minify before re-escaping</span>

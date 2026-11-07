@@ -1,4 +1,10 @@
-# Recursive Payload Auto-Unnesting, Expanded-by-Default Presentation, and Truncation Threshold Relief
+# 3. Recursive Payload Auto-Unnesting, Expanded-by-Default Presentation, and Truncation Threshold Relief
+
+Date: 2026-11-06
+
+## Status
+
+Superseded by [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md) and [ADR 0012](0012-comprehensive-ui-editing-deepening-and-lifecycle-hardening.md)
 
 ## Context & Problem Statement
 

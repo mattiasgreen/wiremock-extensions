@@ -328,9 +328,19 @@ export const elements = {
   btnUnsavedCancel: document.getElementById('btn-unsaved-cancel'),
   btnStubMaximize: document.getElementById('btn-stub-maximize'),
   btnEditorBodyMaximize: document.getElementById('btn-editor-body-maximize'),
+  btnEditorPatternMaximize: document.getElementById('btn-editor-pattern-maximize'),
+  editorPatternTopPill: document.getElementById('editor-pattern-top-pill'),
+  editorPatternTopPillGroup: document.getElementById('editor-pattern-top-pill-group'),
   btnEditorRawMaximize: document.getElementById('btn-editor-raw-maximize'),
   btnTesterResponseMaximize: document.getElementById('btn-tester-response-maximize'),
-  btnCasualRequestMaximize: document.getElementById('btn-casual-request-maximize')
+  btnCasualRequestMaximize: document.getElementById('btn-casual-request-maximize'),
+  btnLensViewEditToggle: document.getElementById('btn-lens-view-edit-toggle'),
+  payloadLensModeToggle: document.getElementById('payload-lens-mode-toggle'),
+  editorRawModeToggle: document.getElementById('editor-raw-mode-toggle'),
+  editorBodyModeToggle: document.getElementById('editor-body-mode-toggle'),
+  editorPatternModeToggle: document.getElementById('editor-pattern-mode-toggle'),
+  testerBodyModeToggle: document.getElementById('tester-body-mode-toggle'),
+  casualPayloadModeToggle: document.getElementById('casual-payload-mode-toggle')
 };
 
 /** Escapes HTML special characters for safe innerHTML injection. */

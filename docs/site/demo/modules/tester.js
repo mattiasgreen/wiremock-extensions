@@ -9,10 +9,12 @@ import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
   attachEmbeddedPayloadsBar,
+  attachDualLayerEditor,
   openPayloadLens,
   detectCharset,
   formatPayloadDescriptor,
-  pushViewportLayer
+  pushViewportLayer,
+  createPayloadComponent
 } from './payload-lens.js';
 import { openStubEditor } from './lifecycle.js';
 import { setRoute, toBase64 } from './router.js';
@@ -299,63 +301,53 @@ export function renderTesterResponse(bodyText) {
   state.lastRawResponseBody = bodyText;
   if (!elements.testerResponseBody) return;
 
-  if (state.testerViewMode === 'raw') {
-    elements.testerResponseBody.textContent = bodyText;
-  } else {
-    const discovered = discoverEmbeddedPayloads(bodyText);
-    if (discovered.length > 0) {
-      elements.testerResponseBody.innerHTML = renderFormattedWithNestedPreviews(bodyText, discovered, 'tester_res');
-    } else {
-      elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
-    }
-  }
-
+  const modeToggle = document.getElementById('tester-response-mode-toggle');
   const topPillGroup = document.getElementById('tester-top-pill-group');
   const topPill = document.getElementById('tester-top-pill');
-  if (topPillGroup && topPill) {
-    if (bodyText && bodyText.trim()) {
-      topPillGroup.style.display = 'inline-flex';
-      const fmt = detectFormat(bodyText);
-      const sizeKb = (new Blob([bodyText]).size / 1024).toFixed(1);
-      const charset = detectCharset(bodyText, state.lastResponseHeaders);
-      topPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
-      topPill.title = elements.testerResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+  const btnMax = document.getElementById('btn-tester-response-maximize');
+  const charset = detectCharset(bodyText, state.lastResponseHeaders);
+  const fmt = detectFormat(bodyText);
 
-      const btnMax = document.getElementById('btn-tester-response-maximize');
-      if (btnMax) {
-        btnMax.onclick = (e) => {
-          e.stopPropagation();
-          pushViewportLayer({
-            title: 'HTTP Tester Response',
-            text: bodyText,
-            format: fmt,
-            charset,
-            context: 'tester-response',
-            mode: 'viewer',
-            onSave: (savedText) => {
-              const reqMethod = elements.testerMethod ? elements.testerMethod.value : 'GET';
-              const reqUrl = elements.testerUrl ? elements.testerUrl.value : '/';
-              const syntheticStub = {
-                name: `${reqMethod} ${reqUrl}`,
-                request: {
-                  method: reqMethod,
-                  url: reqUrl
-                },
-                response: {
-                  status: parseInt(elements.testerResponseStatus?.textContent || '200', 10) || 200,
-                  headers: { 'Content-Type': 'application/json' },
-                  body: savedText
-                }
-              };
-              openStubEditor(syntheticStub, false);
+  createPayloadComponent(null, {
+    viewerEl: elements.testerResponseBody,
+    toggleEl: modeToggle,
+    pillEl: topPill,
+    pillGroupEl: topPillGroup,
+    maximizeBtn: btnMax,
+    text: bodyText,
+    format: fmt,
+    charset,
+    defaultMode: state.testerViewMode === 'raw' ? 'raw' : 'rich',
+    title: 'HTTP Tester Response',
+    context: 'tester-response',
+    onMaximize: () => {
+      pushViewportLayer({
+        title: 'HTTP Tester Response',
+        text: bodyText,
+        format: fmt,
+        charset,
+        context: 'tester-response',
+        mode: 'viewer',
+        onSave: (savedText) => {
+          const reqMethod = elements.testerMethod ? elements.testerMethod.value : 'GET';
+          const reqUrl = elements.testerUrl ? elements.testerUrl.value : '/';
+          const syntheticStub = {
+            name: `${reqMethod} ${reqUrl}`,
+            request: {
+              method: reqMethod,
+              url: reqUrl
+            },
+            response: {
+              status: parseInt(elements.testerResponseStatus?.textContent || '200', 10) || 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: savedText
             }
-          });
-        };
-      }
-    } else {
-      topPillGroup.style.display = 'none';
+          };
+          openStubEditor(syntheticStub, false);
+        }
+      });
     }
-  }
+  });
 }
 
 export function renderLocalHeaderChips() {
@@ -483,11 +475,13 @@ export function initTesterTab() {
       const detected = detectFormat(val);
       if (detected === 'xml') {
         elements.testerBody.value = formatXml(val);
+        if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
         appendHeader('Content-Type', 'application/xml');
       } else {
         try {
           const parsed = JSON.parse(val);
           elements.testerBody.value = JSON.stringify(parsed, null, 2);
+          if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
           appendHeader('Content-Type', 'application/json');
         } catch (err) {
           alert('Invalid payload: ' + err.message);
@@ -575,51 +569,22 @@ export function initTesterTab() {
     });
   }
 
-  const updateTesterBodyPill = () => {
-    const text = elements.testerBody ? elements.testerBody.value : '';
-    const pill = document.getElementById('tester-request-top-pill');
-    const pillGroup = document.getElementById('tester-request-top-pill-group');
-    if (pill && pillGroup) {
-      if (text && text.trim()) {
-        pillGroup.style.display = 'inline-flex';
-        const fmt = detectFormat(text);
-        const sizeKb = (new Blob([text]).size / 1024).toFixed(1);
-        pill.textContent = `${fmt.toUpperCase()} · ${sizeKb} KB`;
-      } else {
-        pillGroup.style.display = 'none';
-      }
-    }
-  };
-
   if (elements.testerBody) {
-    elements.testerBody.addEventListener('input', updateTesterBodyPill);
-    updateTesterBodyPill();
-  }
-
-  const btnTesterReqMax = document.getElementById('btn-tester-request-maximize');
-  if (btnTesterReqMax) {
-    btnTesterReqMax.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const text = elements.testerBody ? elements.testerBody.value : '';
-      pushViewportLayer({
-        title: 'HTTP Tester Request Body',
-        text,
-        format: detectFormat(text),
-        context: 'tester-request',
-        mode: 'editor',
-        onSave: (savedText) => {
-          if (elements.testerBody) {
-            elements.testerBody.value = savedText;
-            updateTesterBodyPill();
-            updateTesterRoute(true);
-          }
-        }
-      });
+    createPayloadComponent(null, {
+      backingTextarea: elements.testerBody,
+      toggleEl: elements.testerBodyModeToggle || document.getElementById('tester-body-mode-toggle'),
+      pillEl: document.getElementById('tester-request-top-pill'),
+      pillGroupEl: document.getElementById('tester-request-top-pill-group'),
+      formatBtn: document.getElementById('btn-tester-format-json'),
+      maximizeBtn: document.getElementById('btn-tester-request-maximize'),
+      title: 'HTTP Tester Request Body',
+      context: 'tester-request',
+      defaultAction: 'edit',
+      onChange: () => updateTesterRoute(true)
     });
-  }
-
-  if (elements.testerBody && elements.testerBodyEmbeddedBar) {
-    attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
+    if (elements.testerBodyEmbeddedBar) {
+      attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));
+    }
   }
 
   const topPill = document.getElementById('tester-top-pill');

@@ -792,8 +792,8 @@ public class UiModuleUnitTest {
                     }
                 };
 
-                // 1. Open editor in Form Mode
-                openStubEditor(initialStub, false);
+                // 1. Open editor for Creation -> Form / Quickstart mode is available
+                openStubEditor(null, false);
                 const initialMode = getEditorMode();
 
                 const formPanel = document.getElementById('editor-form-panel');
@@ -809,6 +809,9 @@ public class UiModuleUnitTest {
                 const modeAfterJsonSwitch = getEditorMode();
                 const formHiddenAfterSwitch = formPanel.classList.contains('hidden');
                 const jsonVisibleAfterSwitch = !jsonPanel.classList.contains('hidden');
+
+                // Load initialStub into editor to test raw content
+                rawTextarea.value = JSON.stringify(initialStub, null, 2);
                 const rawJsonContent = rawTextarea.value;
                 const rawContainsGold = rawJsonContent.includes('gold');
 
@@ -832,6 +835,12 @@ public class UiModuleUnitTest {
                 const errorVisible = !errorEl.classList.contains('hidden');
                 const errorMsg = errorEl.textContent;
 
+                // 6. Test Editing an Existing Stub -> Opens directly in JSON mode (form removed)
+                openStubEditor(initialStub, false);
+                const existingStubMode = getEditorMode();
+                const existingStubJsonVisible = !jsonPanel.classList.contains('hidden');
+                const existingStubFormVisible = !formPanel.classList.contains('hidden');
+
                 // Close editor
                 closeStubEditor();
 
@@ -852,7 +861,10 @@ public class UiModuleUnitTest {
                     invalidSwitchSuccess,
                     modeAfterFailedSwitch,
                     errorVisible,
-                    errorMsgContainsInvalid: errorMsg.includes("Invalid JSON")
+                    errorMsgContainsInvalid: errorMsg.includes("Invalid JSON"),
+                    existingStubMode,
+                    existingStubJsonVisible,
+                    existingStubFormVisible
                 };
             }
         """;
@@ -879,6 +891,11 @@ public class UiModuleUnitTest {
         assertThat(result.get("modeAfterFailedSwitch")).isEqualTo("json");
         assertThat(result.get("errorVisible")).isEqualTo(true);
         assertThat(result.get("errorMsgContainsInvalid")).isEqualTo(true);
+
+        // Verify editing existing stub opens directly in JSON mode (form removed)
+        assertThat(result.get("existingStubMode")).isEqualTo("json");
+        assertThat(result.get("existingStubJsonVisible")).isEqualTo(true);
+        assertThat(result.get("existingStubFormVisible")).isEqualTo(false);
     }
 
     @Test
@@ -2273,5 +2290,85 @@ public class UiModuleUnitTest {
         assertThat(result.get("rootNeedsPrompt")).isEqualTo(true);
         assertThat(result.get("rootSaveCalled")).isEqualTo(true);
         assertThat(result.get("finalDepth")).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName(
+            "Dual-Layer Code Editor: Binding, Backdrop Syntax Tokenization, Experience Mode Toggle, and Auto-Fallback")
+    void testDualLayerCodeEditorBindingAndExperienceModes() {
+        String script =
+                """
+            async () => {
+                const { attachDualLayerEditor } = await import('./modules/payload-lens.js');
+
+                // 1. Create a container and textarea
+                const container = document.createElement('div');
+                const toggleContainer = document.createElement('div');
+                const textarea = document.createElement('textarea');
+                textarea.value = '{\\n  "testKey": "testVal",\\n  "num": 42\\n}';
+                container.appendChild(textarea);
+                container.appendChild(toggleContainer);
+                document.body.appendChild(container);
+
+                // 2. Attach Dual Layer Editor
+                const editor = attachDualLayerEditor(textarea, toggleContainer);
+                const wrapper = textarea.parentElement;
+                const backdrop = wrapper.querySelector('.dual-layer-backdrop');
+                const code = backdrop.querySelector('code');
+
+                const isWrapperModeRich = wrapper.classList.contains('mode-rich');
+                const hasBackdrop = backdrop !== null;
+                const backdropHtml = code.innerHTML;
+                const hasKeySpan = backdropHtml.includes('class="json-key"');
+                const hasStringSpan = backdropHtml.includes('class="json-string"');
+                const hasNumSpan = backdropHtml.includes('class="json-number"');
+
+                // 3. Switch to Raw mode via toggle
+                const btnRaw = toggleContainer.querySelector('.btn-mode-raw');
+                btnRaw.click();
+                const isRawActive = btnRaw.classList.contains('active');
+                const isWrapperModeRaw = wrapper.classList.contains('mode-raw');
+                const editorGetModeRaw = editor.getMode();
+
+                // 4. Switch back to Rich mode via controller
+                editor.setMode('rich');
+                const isRichActiveAgain = wrapper.classList.contains('mode-rich');
+
+                // 5. Test large payload auto-fallback (> 20 KB)
+                textarea.value = '{"large": "' + 'x'.repeat(25 * 1024) + '"}';
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                const isAutoDegradedToRaw = wrapper.classList.contains('mode-raw');
+
+                // Clean up DOM
+                container.remove();
+
+                return {
+                    isWrapperModeRich,
+                    hasBackdrop,
+                    hasKeySpan,
+                    hasStringSpan,
+                    hasNumSpan,
+                    isRawActive,
+                    isWrapperModeRaw,
+                    editorGetModeRaw,
+                    isRichActiveAgain,
+                    isAutoDegradedToRaw
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("isWrapperModeRich")).isEqualTo(true);
+        assertThat(result.get("hasBackdrop")).isEqualTo(true);
+        assertThat(result.get("hasKeySpan")).isEqualTo(true);
+        assertThat(result.get("hasStringSpan")).isEqualTo(true);
+        assertThat(result.get("hasNumSpan")).isEqualTo(true);
+        assertThat(result.get("isRawActive")).isEqualTo(true);
+        assertThat(result.get("isWrapperModeRaw")).isEqualTo(true);
+        assertThat(result.get("editorGetModeRaw")).isEqualTo("raw");
+        assertThat(result.get("isRichActiveAgain")).isEqualTo(true);
+        assertThat(result.get("isAutoDegradedToRaw")).isEqualTo(true);
     }
 }

@@ -1,6 +1,10 @@
-# Universal Payload Lens, Inline Truncation Flow, and Viewport-Adaptive Sizing
+# 2. Universal Payload Lens, Inline Truncation Flow, and Viewport-Adaptive Sizing
 
-Nested payload inspection and round-trip editing must not be restricted to isolated viewer surfaces or break document geometry with disruptive block widgets. Furthermore, developer consoles must adapt fluidly when browser zoom levels change (e.g. 80% or 60%), granting more vertical editor space rather than wasting viewport height with fixed static caps and excessive padding.
+Date: 2026-11-06
+
+## Status
+
+Superseded by [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md) and [ADR 0012](0012-comprehensive-ui-editing-deepening-and-lifecycle-hardening.md)
 
 ## Context & Problem Statement
 

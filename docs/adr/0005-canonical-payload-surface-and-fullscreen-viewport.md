@@ -4,7 +4,7 @@ Date: 2026-11-02
 
 ## Status
 
-Accepted
+Superseded by [ADR 0008](0008-canonical-payload-surface-and-maximized-viewport.md), [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md), and [ADR 0012](0012-comprehensive-ui-editing-deepening-and-lifecycle-hardening.md)
 
 ## Context
 

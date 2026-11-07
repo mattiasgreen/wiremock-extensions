@@ -76,6 +76,30 @@ _Avoid_: escape mode, encoding flag, wrapper type
 The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and HTTP/Casual Testers), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
 _Avoid_: code box, custom textarea, raw editor pane
 
+**Unified Payload Component**:
+The single canonical UI component instance mounted identically across View Stub cards, Edit Stub modal panels, Maximized Viewports, Testers, and Journal entries. Encapsulates the 2×2 state engine, the standard header toolbar, live nested block unescaping/re-escaping, and bidirectional synchronization.
+_Avoid_: custom viewer, preview panel, raw text container
+
+**2×2 Payload Experience Matrix**:
+The orthogonal state grid governing payload presentation and manipulation across all console surfaces: Mode Axis (`Rich`: unescaped, formatted, indented vs. `Raw`: escaped, unindented wire representation) and Action Axis (`View`: read-only `<pre><code>` vs. `Edit`: Dual-Layer Code Editor), yielding four explicit states (`Rich View`, `Rich Edit`, `Raw View`, `Raw Edit`) with syntax highlighting active across all four.
+_Avoid_: display switcher, format mode grid, editor toggle matrix
+
+**In-Place Block Editing**:
+The capability within Rich View / Rich Edit to edit an unescaped, formatted sub-payload directly inside a Dual-Layer Code Editor without manual escaping, with automatic structural validation, re-serialization, and re-escaping into the parent `Container Encoding Envelope` upon save.
+_Avoid_: nested edit popup, inline string unescaper, sub-editor modal
+
+**Dual-Layer Code Editor**:
+A zero-dependency editor component coupling a foreground `<textarea>` (configured with transparent text, visible caret, and spellcheck disabled) with a background `<pre class="editor-backdrop"><code>` layer running `highlightPayload()`, with locked font metrics and scroll synchronization across both `Rich Edit` and `Raw Edit`.
+_Avoid_: fake code editor, syntax textarea, custom input box
+
+**Code Input Editor Adapter**:
+A reusable adapter at the Canonical Payload Surface seam that equips native textareas (such as Stateful AST rules, OpenAPI specifications, and WireMock JSON bundle imports) with Dual-Layer syntax highlighting, format prettifying, live error diagnostics, and fullscreen maximize capabilities.
+_Avoid_: textarea wrapper, editor helper, code enhancer
+
+**Editor Experience Mode**:
+The Mode Axis (`rich` vs. `raw`) of the 2×2 Payload Experience Matrix, toggling between unescaped/formatted/indented representation (`rich`) and wire-exact escaped/unindented representation (`raw`) while preserving syntax highlighting in both modes.
+_Avoid_: editor view switch, textarea toggle, plain-text fallback toggle
+
 **Fullscreen Maximized Viewport**:
 A full-window (100vw × 100vh) overlay viewport wrapping a Canonical Payload Surface with breadcrumb navigation, format descriptors, and action toolbars, providing distraction-free inspection and editing of root documents or unnested child payloads.
 _Avoid_: big modal, fullscreen dialog, zoom popup
