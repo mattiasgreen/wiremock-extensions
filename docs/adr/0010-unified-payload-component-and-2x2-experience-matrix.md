@@ -4,64 +4,74 @@ Date: 2026-11-07
 
 ## Status
 
-Accepted
+Accepted (Supersedes Section 2 `Editor Experience Mode` of [ADR 0009](0009-dual-layer-code-editor-and-viewport-layout-hardening.md))
 
 ## Context
 
-While ADR 0005, ADR 0008, and ADR 0009 introduced the Canonical Payload Surface and the Dual-Layer Code Editor, critical UX fragmentation and inconsistencies remained across the Web Console:
+While [ADR 0005](0005-canonical-payload-surface-and-fullscreen-viewport.md), [ADR 0008](0008-canonical-payload-surface-and-maximized-viewport.md), and [ADR 0009](0009-dual-layer-code-editor-and-viewport-layout-hardening.md) introduced the Canonical Payload Surface and the Dual-Layer Code Editor, critical UX fragmentation and semantic inconsistencies remained across the Web Console:
 
-1. **Surface Divergence**: Viewing a stub card in the catalog, editing a stub in the modal dialog, and inspecting a maximized payload utilized disparate DOM structures, toolbars, and rendering lifecycles. Users were confronted with differing visual presentations and interactions depending on whether they opened a payload in-place or via a modal.
-2. **The Escaped String Editing Impediment**: In WireMock mappings, response bodies are frequently serialized as escaped JSON strings (e.g., `"body": "{\n  \"key\": \"value\"\n}"`) or nested XML/CDATA. While read-only viewports successfully unescaped and formatted these trees, entering edit mode forced developers to edit raw escaped strings with cumbersome `\"` and `\n` literals, leading to frequent syntax errors.
-3. **Missing 2×2 State Symmetry**: Users lacked an orthogonal, predictable mental model for payload interaction. Developers need both formatted, unescaped views/edits (for human comprehension) and wire-exact escaped views/edits (to see precisely what travels over the wire).
-4. **Modal Layout Defect**: A CSS specificity regression caused `.modal-dialog-wide #editor-json-panel { display: flex !important; }` to override `.hidden { display: none !important; }`, resulting in both Form Mode and Raw JSON mode rendering simultaneously within the Edit Stub Mapping modal.
+1. **Three Divergent Components Across Stub Views**:
+   - **View Stub (`stubs.js`)**: Hand-rendered `<pre id="stub-json-viewer">` using `renderFormattedWithNestedPreviews()`, lacking any `[ 🎨 Rich | 📝 Raw ]` or `[ 👁️ View | ✏️ Edit ]` toggles.
+   - **Maximized Viewer (`payload-lens.js` -> `renderPayloadViewer`)**: Rendered a `.payload-viewer-box` with legacy buttons `[ ✨ Unescaped ]` and `[ 📦 Raw (Wire) ]`, and in `Raw (Wire)` mode called `escapeHtml()` **without syntax highlighting**.
+   - **Edit Stub Modal & Maximized Editor (`lifecycle.js` / `index.html`)**: Used raw `<textarea>` elements with divergent toolbars (`Format JSON` in the modal; `✨ Prettify`, `Compact`, `Minify before re-escaping`, and `✨ Deep Nested` bars in the maximized editor).
+2. **Semantic Collision on `[ 🎨 Rich | 📝 Raw ]` in ADR 0009**:
+   - ADR 0009 used `[ 🎨 Rich | 📝 Raw ]` to toggle syntax highlighting on/off on a raw `<textarea>`, conflicting with the core domain meaning where **🎨 Rich** means *Unescaped, formatted, and indented* and **📝 Raw** means *Escaped and unindented (wire-exact)*—with **syntax highlighting enabled in all modes**.
+3. **The Escaped String Editing Impediment**:
+   - In WireMock mappings, response bodies and nested envelopes are frequently serialized as escaped strings (e.g., `"body": "{\n  \"key\": \"value\"\n}"` or XML inside JSON). Entering edit mode forced developers to edit raw escaped strings with cumbersome `\"` and `\n` literals instead of editing the unescaped, indented structure directly.
+4. **Modal CSS Specificity Defect**:
+   - `.modal-dialog-wide #editor-json-panel { display: flex !important; }` overrode `.hidden { display: none !important; }`, causing both Form Mode and Raw JSON mode to render simultaneously inside `#stub-editor-modal`.
 
 ## Decision
 
-We establish the **Unified Payload Component** and the **2×2 Payload Experience Matrix** across all console surfaces:
+We establish the **Unified Payload Component** (`createPayloadComponent` in `payload-lens.js`) and the **2×2 Payload Experience Matrix** across all six console surfaces:
 
-### 1. The 2×2 Payload Experience Matrix
+### 1. The 2×2 Payload Experience Matrix (Syntax Highlighting Always On)
 
-Every payload surface operates along two orthogonal axes: **Mode** (`Rich` vs. `Raw`) and **Action** (`View` vs. `Edit`), creating four explicit states:
+Every payload surface operates along two orthogonal axes—**Mode** (`Rich` vs. `Raw`) and **Action** (`View` vs. `Edit`)—with syntax highlighting active across all four states (up to the 20 KB `MAX_HIGHLIGHT_PAYLOAD_CHARS` guardrail):
 
-- **Rich View** *(Default)*: Unescaped, formatted, indented, and foldable JSON/XML tree with syntax highlighting, format/size badges (`JSON`, `XML`, `CDATA`), and in-place child edit chips.
-- **Rich Edit**: Direct editing of unescaped, formatted, indented content. When editing an unescaped nested payload, saving automatically validates structure and re-serializes/re-escapes the content back into the parent container envelope.
-- **Raw View**: Wire-exact, escaped, and unindented read-only syntax-highlighted block reflecting the literal string payload stored or received over the wire.
-- **Raw Edit**: Dual-Layer Code Editor operating on the raw escaped string with syntax highlighting and manual escape character control.
+| | **👁️ View** (`action: 'view'`) | **✏️ Edit** (`action: 'edit'`) |
+| :--- | :--- | :--- |
+| **🎨 Rich** (`mode: 'rich'`) | **Unescaped, formatted, indented viewer** *(Default everywhere)*: Pretty-printed, syntax-highlighted root document with recursively auto-unnested child blocks (`JSON`, `XML`, `CDATA`, `Base64`, `KV`), collapsible format/size badges, and inline `[ ✏️ Edit ]` + `[ ⛶ Maximize ]` actions on each nested block. | **Unescaped, formatted, indented editor**: Dual-Layer Code Editor operating on unescaped, pretty-printed content. For composite documents with embedded strings, each nested block can be edited unescaped in-place (or focused in its own unescaped Dual-Layer Code Editor); saving validates structure and automatically re-serializes/re-escapes back into its parent `Container Encoding Envelope` ([ADR 0001](0001-nested-payload-lens-roundtripping.md)). |
+| **📝 Raw** (`mode: 'raw'`) | **Wire-exact, escaped, unindented viewer**: Read-only `<pre class="syntax-view"><code>` with **syntax highlighting enabled** (`highlightPayload`), displaying the exact literal wire/stored string with all escapes intact and without unnesting or re-indenting. | **Wire-exact, escaped, unindented editor**: Dual-Layer Code Editor with **syntax highlighting enabled**, operating directly on the raw escaped string as transmitted on the wire. |
 
-### 2. Universal Reusable Component Architecture
+### 2. Universal Reusable Component Factory (`createPayloadComponent`)
 
-- Implement a single factory function `createPayloadComponent(containerEl, options)` in `payload-lens.js` (zero-NPM, pure ES6 module).
-- All six console surfaces mount this identical component:
-  1. **View Stub**: Stub cards in the Stubs Catalog tab.
-  2. **Edit Stub Mapping Modal**: Form Mode Response Body and Full Stub JSON tab.
-  3. **Fullscreen Maximized Viewport**: `#modal-payload-lens`.
-  4. **HTTP Tester**: Request Body and Response Body.
-  5. **Casual Tester**: Request Buffer and Response Buffer.
-  6. **Request Journal**: Request and Response inspection (immutable; `[ ✏️ Edit ]` toggle cleanly hidden).
+- Implement `createPayloadComponent(containerEl, options)` in `payload-lens.js` (Zero-NPM, pure Vanilla ES6).
+- All six console surfaces mount this single component:
+  1. **View Stub** (`stubs.js` — Stub Catalog detail card).
+  2. **Edit Stub Mapping Modal** (`lifecycle.js` — both Form Mode `Response Body` and `Full Stub JSON` tab).
+  3. **Fullscreen Maximized Viewport** (`payload-lens.js` — `#modal-payload-lens`).
+  4. **HTTP Tester** (`tester.js` — Request Body and Response Body).
+  5. **Casual Tester** (`casual-tester.js` — Request Buffer and Response Buffer).
+  6. **Request Journal** (`journal.js` — Request Body and Response Body, with `readOnly: true` so `[ ✏️ Edit ]` is hidden while `[ 🎨 Rich | 📝 Raw ]` is fully active).
+- Retire all divergent legacy toolbars (`✨ Unescaped / 📦 Raw (Wire)`, `✨ Prettify / Compact / Minify before re-escaping`, and separate `✨ Nested Payloads` chip bars) in favor of the unified component.
+- Synchronize existing underlying DOM elements (`#stub-json-viewer`, `#editor-raw-json`, `#editor-body`, `#tester-body`, `#casual-request-payload`, `#payload-lens-editor`) so form submission lifecycles and existing test contracts remain intact.
 
 ### 3. Standardized Header Toolbar
 
-Every component instance renders a uniform control bar:
-- **Left**: Format & size descriptor badge (`JSON · 0.5 KB`) and contextual path breadcrumbs (`$.response.body`).
+Every `createPayloadComponent` instance renders the same header control bar:
+- **Left**:
+  - Title / label + Format, Charset & Size descriptor badge (`JSON · 0.5 KB`, `XML · UTF-8 · 0.2 KB`, clickable to collapse/expand inline).
+  - Optional nested path breadcrumb (`$.response.body ▸ $.executionTrace.gatewayEnvelope`).
 - **Right**:
-  - `[ 🎨 Rich | 📝 Raw ]` mode toggle.
-  - `[ 👁️ View | ✏️ Edit ]` state toggle (hidden on read-only surfaces).
-  - `[ Format ]` action button (formats JSON/XML during editing).
-  - `[ Copy ]` action button (copies active payload to clipboard).
-  - `[ ⛶ Maximize ]` action button (expands the identical component into the Fullscreen Maximized Viewport).
+  - **Mode Toggle**: `[ 🎨 Rich | 📝 Raw ]`
+  - **Action Toggle**: `[ 👁️ View | ✏️ Edit ]` (omitted when `readOnly: true`)
+  - **Action Buttons**:
+    - `[ ✨ Format ]` (visible in Edit mode to re-indent current editor buffer)
+    - `[ 📋 Copy ]` (copies active representation—unescaped formatted in `Rich`, raw wire in `Raw`)
+    - `[ ⛶ Maximize ]` (opens the identical component state in `#modal-payload-lens`)
 
-### 4. In-Place Block Editing & Linting
+### 4. In-Place Block Editing & Non-Blocking Syntax Linting
 
-- When exploring nested payloads in Rich View, in-place edit chips allow opening an unescaped editor directly for that child segment.
-- Rich Edit incorporates non-blocking syntax linting (visual error pill indicating line and error description) without blocking navigation or switching to Raw Edit.
+- In **Rich View**, each discovered nested payload block includes an inline `[ ✏️ Edit ]` pill alongside its format badge and `[ ⛶ Maximize ]`. Clicking `[ ✏️ Edit ]` switches that block (or the component) into **Rich Edit** with the unescaped, formatted child payload loaded into a Dual-Layer Code Editor.
+- In **Rich Edit**, live validation displays a non-blocking inline lint status pill (e.g., `⚠️ Invalid JSON: line 3`) when syntax is malformed, preventing corrupted re-escaping on save while allowing the user to fix the syntax or switch to `Raw Edit` for negative testing.
 
 ### 5. Modal Display Specificity Fix
 
-- Update `#editor-json-panel` styling in `style.css` to target `:not(.hidden)` explicitly, guaranteeing mutual exclusivity between Form Mode and Raw JSON mode in `.modal-dialog-wide`.
+- Restrict `.modal-dialog-wide #editor-json-panel` flex layout rules in `style.css` to `.modal-dialog-wide #editor-json-panel:not(.hidden)` so Form Mode (`#editor-form-panel`) and Full Stub JSON Mode (`#editor-json-panel`) never display simultaneously.
 
 ## Consequences
 
-- Completely unified UI experience across catalog cards, modal dialogs, and maximized viewports.
-- Eliminates manual JSON/XML string escaping during everyday stub authoring.
-- Provides seamless fallbacks to wire-exact raw views and raw editing when developers require low-level protocol inspection.
-- Fixes the modal overlapping defect and maintains zero-NPM bundle invariants.
+- **True Single-Component Consistency**: View Stub, Edit Stub Modal, Maximized Viewport, Testers, and Journal share the exact same DOM structure, buttons, and 2×2 state model.
+- **Frictionless Rich Editing**: Developers edit unescaped, indented JSON and XML directly without manual `\"` or `\n` escaping, while retaining 1-click access to wire-exact `Raw View` and `Raw Edit`.
+- **Always-On Syntax Highlighting**: Both `Rich` and `Raw` modes remain syntax-highlighted in both `View` and `Edit` states.

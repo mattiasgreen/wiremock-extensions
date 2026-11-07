@@ -4,7 +4,7 @@ Date: 2026-11-06
 
 ## Status
 
-Accepted
+Accepted (Section 2 `Editor Experience Mode` superseded by [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md): `[ 🎨 Rich | 📝 Raw ]` governs Unescaped/Formatted vs. Escaped/Wire-Exact representation rather than toggling syntax highlighting off; Dual-Layer Code Editor syntax highlighting remains active across both `Rich Edit` and `Raw Edit` up to the 20 KB performance guardrail)
 
 ## Context
 
