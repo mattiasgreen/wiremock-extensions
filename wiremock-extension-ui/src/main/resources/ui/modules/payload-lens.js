@@ -1812,9 +1812,10 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
   }
 
   // Push the target node descriptor layer
+  const formattedNodeText = formatPayload(initialNodeDescriptor.unescapedValue);
   pushViewportLayer({
     title: initialNodeDescriptor.path,
-    text: initialNodeDescriptor.unescapedValue,
+    text: formattedNodeText,
     format: initialNodeDescriptor.format,
     charset: initialNodeDescriptor.charset,
     context: 'nested',
@@ -2020,7 +2021,7 @@ export function renderViewportModal() {
           if (nextNode) {
             pushViewportLayer({
               title: nextNode.path,
-              text: nextNode.unescapedValue,
+              text: formatPayload(nextNode.unescapedValue),
               format: nextNode.format,
               charset: nextNode.charset,
               context: 'nested',

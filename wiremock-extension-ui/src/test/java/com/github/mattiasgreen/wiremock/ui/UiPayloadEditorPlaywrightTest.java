@@ -48,6 +48,11 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(backdropHtml).contains("class=\"json-string\"");
         assertThat(backdropHtml).contains("/api/test-syntax-highlighting");
 
+        // Verify 1:1 character and line alignment between foreground textarea and backdrop
+        String editorText = rawEditor.inputValue();
+        String backdropText = backdropCode.innerText();
+        assertThat(backdropText.trim()).isEqualTo(editorText.trim());
+
         // 4. Verify scroll synchronization
         rawEditor.evaluate("el => el.scrollTop = 50");
         rawEditor.dispatchEvent("scroll");
@@ -260,5 +265,56 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
                 assertThat(richHtml).isNotEmpty();
             }
         }
+    }
+
+    @Test
+    @DisplayName(
+            "Nested Payload Rich Editing & Caret Alignment: Unindented string formats in editor and matches backdrop 1:1")
+    void testNestedPayloadRichEditingCaretAlignmentAndRoundTripping() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 1. Open Stub Editor modal
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        // 2. Put compact, unindented nested JSON in response body
+        String compactInner = "{\"account\":\"ACC-112233\",\"passed\":true}";
+        String rootJson = "{\"status\":\"OK\",\"details\":\"" + compactInner.replace("\"", "\\\"") + "\"}";
+        Locator editorBody = page.locator("#editor-body");
+        editorBody.fill(rootJson);
+
+        // 3. Wait for embedded payload chip and click it
+        page.waitForSelector("#editor-body-embedded-bar:not(.hidden)");
+        Locator chip =
+                page.locator("#editor-body-embedded-bar .embedded-node-chip").first();
+        chip.click();
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+
+        // 4. Verify lens editor opens unescaped, formatted and indented
+        Locator lensEditor = page.locator("#payload-lens-editor");
+        String lensEditorText = lensEditor.inputValue();
+        assertThat(lensEditorText).contains("\n");
+        assertThat(lensEditorText).contains("  \"account\": \"ACC-112233\"");
+
+        // 5. Caret alignment verification: Backdrop text matches textarea text 1:1
+        Locator backdropCode = page.locator("#payload-viewport-editor-container .dual-layer-backdrop code");
+        String backdropText = backdropCode.innerText();
+        assertThat(backdropText.trim()).isEqualTo(lensEditorText.trim());
+
+        // 6. In-place edit
+        String updatedChild = lensEditorText.replace("ACC-112233", "ACC-778899");
+        lensEditor.fill(updatedChild);
+        assertThat(backdropCode.innerText().trim()).isEqualTo(updatedChild.trim());
+
+        // 7. Save to root and verify round-tripping
+        page.locator("#btn-lens-save-root").click();
+        assertThat(page.locator("#modal-payload-lens").isHidden()).isTrue();
+
+        String finalOuter = editorBody.inputValue();
+        assertThat(finalOuter).contains("ACC-778899");
+        assertThat(finalOuter).doesNotContain("ACC-112233");
+
+        page.locator("#btn-close-editor-modal").click();
     }
 }
