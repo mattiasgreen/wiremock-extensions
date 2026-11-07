@@ -92,6 +92,18 @@ _Avoid_: nested edit popup, inline string unescaper, sub-editor modal
 A zero-dependency editor component coupling a foreground `<textarea>` (configured with transparent text, visible caret, and spellcheck disabled) with a background `<pre class="editor-backdrop"><code>` layer running `highlightPayload()`, with locked font metrics and scroll synchronization across both `Rich Edit` and `Raw Edit`.
 _Avoid_: fake code editor, syntax textarea, custom input box
 
+**Protected Token Island**:
+A placeholder-mediated visual island representing an embedded or child payload within an active parent editor slice. The parent editor manipulates its own envelope fields while treating the child island as an immutable token (`__LENS_TOKEN_N__`), protecting child syntax from corruption or premature re-escaping during parent edits.
+_Avoid_: sub-node placeholder, dummy token, protected div
+
+**Parallel Polyglot Editor**:
+A multi-layered in-place editing experience where parent envelopes and nested polyglot child nodes (JSON, XML, CDATA, Base64) are concurrently accessible for editing within their own format-aware scopes without collapsing child payloads into raw escaped strings or requiring modal isolation.
+_Avoid_: inline multi-editor, polyglot textarea, tree editor
+
+**Unified Staging Bar**:
+A global action bar tracking multi-scope dirty modifications across nested payload layers, providing atomic commit (`Save Changes`) and rollback (`Discard`) operations before committing serialized wire representations back to the WireMock mapping.
+_Avoid_: dirty bar, save drawer, change tracker
+
 **Editor Experience Mode**:
 The Mode Axis (`rich` vs. `raw`) of the 2×2 Payload Experience Matrix, toggling between unescaped/formatted/indented representation (`rich`) and wire-exact escaped/unindented representation (`raw`) while preserving syntax highlighting in both modes.
 _Avoid_: editor view switch, textarea toggle, plain-text fallback toggle

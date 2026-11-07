@@ -421,16 +421,28 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         // Default Rich
         assertThat(btnStubRich.getAttribute("class")).contains("active");
 
-        // Click Raw: Switches to compact wire representation
+        // Click Raw: Switches to compact wire representation with line-wrapping enabled
         btnStubRaw.click();
         assertThat(btnStubRaw.getAttribute("class")).contains("active");
         assertThat(btnStubRich.getAttribute("class")).doesNotContain("active");
         String rawViewerText = page.locator("#stub-json-viewer").innerText();
         assertThat(rawViewerText).contains("/api/v1/unified-scope-test");
+        String rawWhiteSpace =
+                (String) page.locator("#stub-json-viewer").evaluate("el => window.getComputedStyle(el).whiteSpace");
+        assertThat(rawWhiteSpace).contains("pre-wrap");
 
         // Restore Rich
         btnStubRich.click();
         assertThat(btnStubRich.getAttribute("class")).contains("active");
+
+        // Verify top-level Edit button is present and opens modal
+        Locator btnTopEdit = page.locator("#btn-top-stub-edit");
+        assertThat(btnTopEdit.isVisible()).isTrue();
+        btnTopEdit.click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        page.locator("#btn-close-editor-modal").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
         // 3. Inspect nested block: Has mode toggle and always-visible maximize button
         Locator nestedToggle =

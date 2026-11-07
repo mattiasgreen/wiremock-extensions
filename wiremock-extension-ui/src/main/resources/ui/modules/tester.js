@@ -300,6 +300,8 @@ export function renderTesterResponse(bodyText) {
   state.lastRawResponseBody = bodyText;
   if (!elements.testerResponseBody) return;
 
+  elements.testerResponseBody.classList.toggle('mode-raw', state.testerViewMode === 'raw');
+
   if (state.testerViewMode === 'raw') {
     elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
   } else {

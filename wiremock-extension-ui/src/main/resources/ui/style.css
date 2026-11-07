@@ -552,6 +552,15 @@ body {
   contain: content;
 }
 
+.code-block.mode-raw,
+.code-block.wrap-lines,
+.inline-code.mode-raw,
+.syntax-view.mode-raw {
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+  overflow-wrap: anywhere !important;
+}
+
 /* Journal Table & Controls */
 .journal-controls {
   margin-bottom: 14px;

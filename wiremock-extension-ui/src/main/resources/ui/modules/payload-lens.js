@@ -1055,7 +1055,7 @@ if (typeof document !== 'undefined') {
         const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
         if (expandedDiv && entry) {
           if (mode === 'raw') {
-            expandedDiv.innerHTML = `<pre class="inline-code"><code>${highlightPayload(entry.node.rawValue)}</code></pre>`;
+            expandedDiv.innerHTML = `<pre class="inline-code mode-raw"><code>${highlightPayload(entry.node.rawValue)}</code></pre>`;
           } else {
             const hasKids = entry.node.children && entry.node.children.length > 0;
             const content = hasKids

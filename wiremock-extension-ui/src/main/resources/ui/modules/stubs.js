@@ -503,6 +503,9 @@ export function selectStub(stub, updateRoute = true) {
       if (btnRich) btnRich.classList.toggle('active', stubViewMode === 'rich');
       if (btnRaw) btnRaw.classList.toggle('active', stubViewMode === 'raw');
     }
+    if (elements.stubJsonViewer) {
+      elements.stubJsonViewer.classList.toggle('mode-raw', stubViewMode === 'raw');
+    }
     if (stubViewMode === 'rich') {
       const discovered = discoverEmbeddedPayloads(rawStubJson);
       if (discovered.length > 0) {
@@ -561,6 +564,15 @@ export function selectStub(stub, updateRoute = true) {
       topPill.textContent = formatPayloadDescriptor({ format: bodyFormat, charset: stubCharset, sizeKb });
     }
     topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+
+    const btnTopEdit = document.getElementById('btn-top-stub-edit');
+    if (btnTopEdit) {
+      btnTopEdit.style.display = isDynamic ? 'none' : 'inline-flex';
+      btnTopEdit.onclick = (e) => {
+        e.stopPropagation();
+        openStubEditor(stub, false);
+      };
+    }
 
     const btnStubMaximize = document.getElementById('btn-stub-maximize');
     if (btnStubMaximize) {
