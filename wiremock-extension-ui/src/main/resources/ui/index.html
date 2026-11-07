@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 3f685e4">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@3f685e4)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: b085d5a">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@b085d5a)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -238,10 +238,16 @@
             <div class="code-viewer-container">
               <div class="code-viewer-header">
                 <span class="code-viewer-title">Stub Mapping JSON</span>
-                <span class="preview-pill-group" id="stub-top-pill-group">
-                  <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="preview-pill-group" id="stub-top-pill-group">
+                    <span class="preview-pill-badge" id="stub-top-pill" role="button" tabindex="0" title="Click to collapse / expand stub JSON">JSON</span>
+                  </span>
+                  <div class="editor-mode-toggle" id="stub-viewer-mode-toggle" data-testid="stub-viewer-mode-toggle">
+                    <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted, indented">🎨 Rich</button>
+                    <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
+                  </div>
                   <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
-                </span>
+                </div>
               </div>
               <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
             </div>

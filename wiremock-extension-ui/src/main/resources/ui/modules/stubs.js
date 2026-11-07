@@ -489,12 +489,43 @@ export function selectStub(stub, updateRoute = true) {
 
   const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
   const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
-  const discovered = discoverEmbeddedPayloads(rawStubJson);
-  if (discovered.length > 0) {
-    elements.stubJsonViewer.innerHTML = renderFormattedWithNestedPreviews(rawStubJson, discovered, `stub_${stub.id}`);
-  } else {
-    elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
+
+  let stubViewMode = 'rich';
+  const modeToggle = document.getElementById('stub-viewer-mode-toggle');
+
+  function renderStubJson() {
+    if (modeToggle) {
+      const btnRich = modeToggle.querySelector('.btn-mode-rich');
+      const btnRaw = modeToggle.querySelector('.btn-mode-raw');
+      if (btnRich) btnRich.classList.toggle('active', stubViewMode === 'rich');
+      if (btnRaw) btnRaw.classList.toggle('active', stubViewMode === 'raw');
+    }
+    if (stubViewMode === 'rich') {
+      const discovered = discoverEmbeddedPayloads(rawStubJson);
+      if (discovered.length > 0) {
+        elements.stubJsonViewer.innerHTML = renderFormattedWithNestedPreviews(rawStubJson, discovered, `stub_${stub.id}`, (updatedStubJson) => {
+          try {
+            const parsed = JSON.parse(updatedStubJson);
+            Object.assign(stub, parsed);
+            renderStubDetails(stub, false);
+          } catch (_) {}
+        });
+      } else {
+        elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
+      }
+    } else {
+      elements.stubJsonViewer.innerHTML = highlightPayload(rawStubJson);
+    }
   }
+
+  if (modeToggle) {
+    const btnRich = modeToggle.querySelector('.btn-mode-rich');
+    const btnRaw = modeToggle.querySelector('.btn-mode-raw');
+    if (btnRich) btnRich.onclick = () => { stubViewMode = 'rich'; renderStubJson(); };
+    if (btnRaw) btnRaw.onclick = () => { stubViewMode = 'raw'; renderStubJson(); };
+  }
+
+  renderStubJson();
 
   const topPillGroup = document.getElementById('stub-top-pill-group');
   const topPill = document.getElementById('stub-top-pill');

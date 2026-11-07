@@ -204,4 +204,61 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(finalTesterText).contains("Привет мир!");
         assertThat(finalTesterText).contains("£100 · 200€ · ©2026");
     }
+
+    @Test
+    @DisplayName(
+            "Modal Mutual Exclusivity & Raw View Syntax Highlighting: Form and JSON never overlap, Raw View retains syntax spans")
+    void testStubEditorModalMutualExclusivityAndRawSyntaxHighlighting() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 1. Open Stub Editor modal in default Form Mode
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        Locator formPanel = page.locator("#editor-form-panel");
+        Locator jsonPanel = page.locator("#editor-json-panel");
+
+        // CRITICAL SPECIFICITY VERIFICATION: When Form Mode is active, Raw JSON panel MUST have 0 height
+        assertThat(formPanel.isVisible()).isTrue();
+        Number formHeight = (Number) formPanel.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(formHeight.doubleValue()).isGreaterThan(200.0);
+
+        Number jsonHiddenHeight = (Number) jsonPanel.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(jsonHiddenHeight.doubleValue()).isEqualTo(0.0);
+
+        // 2. Switch to Raw JSON mode
+        page.locator("#btn-editor-mode-json").click();
+        page.waitForSelector("#editor-json-panel:not(.hidden)");
+
+        // When Raw JSON is active, Form panel MUST have 0 height
+        Number jsonHeight = (Number) jsonPanel.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(jsonHeight.doubleValue()).isGreaterThan(200.0);
+
+        Number formHiddenHeight = (Number) formPanel.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(formHiddenHeight.doubleValue()).isEqualTo(0.0);
+
+        page.locator("#btn-close-editor-modal").click();
+
+        // 3. Verify Stub Card Raw View Syntax Highlighting
+        Locator firstStub = page.locator(".stub-card").first();
+        if (firstStub.isVisible()) {
+            firstStub.click();
+            page.waitForSelector("#stub-json-viewer");
+
+            Locator modeToggle = page.locator("#stub-viewer-mode-toggle");
+            if (modeToggle.isVisible()) {
+                // Switch to Raw mode
+                modeToggle.locator(".btn-mode-raw").click();
+                String rawHtml = page.locator("#stub-json-viewer").innerHTML();
+                // Raw View MUST retain syntax highlighting
+                assertThat(rawHtml).contains("class=\"json-key\"");
+
+                // Switch back to Rich mode
+                modeToggle.locator(".btn-mode-rich").click();
+                String richHtml = page.locator("#stub-json-viewer").innerHTML();
+                assertThat(richHtml).isNotEmpty();
+            }
+        }
+    }
 }

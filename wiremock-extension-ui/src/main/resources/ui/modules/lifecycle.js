@@ -744,7 +744,7 @@ export function openStubEditor(stub, clone = false) {
         text: val,
         format: detectFormat(val),
         context: 'stub',
-        mode: 'viewer',
+        mode: 'editor',
         onSave: (savedText) => {
           if (bodyEl) {
             bodyEl.value = savedText;

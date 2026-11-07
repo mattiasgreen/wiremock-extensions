@@ -301,7 +301,7 @@ export function renderTesterResponse(bodyText) {
   if (!elements.testerResponseBody) return;
 
   if (state.testerViewMode === 'raw') {
-    elements.testerResponseBody.textContent = bodyText;
+    elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
   } else {
     const discovered = discoverEmbeddedPayloads(bodyText);
     if (discovered.length > 0) {
