@@ -1280,7 +1280,7 @@ class InMemoryDemoBackend {
       return responseJson(200, {
         version: '1.14.0',
         branch: 'feat/dual-layer-editor-and-viewport-hardening',
-        commit: '8de5bec'
+        commit: '8ca0546'
       });
     }
 

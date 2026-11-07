@@ -13,7 +13,8 @@ import {
   openPayloadLens,
   detectCharset,
   formatPayloadDescriptor,
-  pushViewportLayer
+  pushViewportLayer,
+  createPayloadComponent
 } from './payload-lens.js';
 import { openStubEditor } from './lifecycle.js';
 import { setRoute, toBase64 } from './router.js';
@@ -300,89 +301,53 @@ export function renderTesterResponse(bodyText) {
   state.lastRawResponseBody = bodyText;
   if (!elements.testerResponseBody) return;
 
-  elements.testerResponseBody.classList.toggle('mode-raw', state.testerViewMode === 'raw');
-
-  if (state.testerViewMode === 'raw') {
-    elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
-  } else {
-    const discovered = discoverEmbeddedPayloads(bodyText);
-    if (discovered.length > 0) {
-      elements.testerResponseBody.innerHTML = renderFormattedWithNestedPreviews(bodyText, discovered, 'tester_res');
-    } else {
-      elements.testerResponseBody.innerHTML = highlightPayload(bodyText);
-    }
-  }
-
+  const modeToggle = document.getElementById('tester-response-mode-toggle');
   const topPillGroup = document.getElementById('tester-top-pill-group');
   const topPill = document.getElementById('tester-top-pill');
-  if (topPillGroup && topPill) {
-    if (bodyText && bodyText.trim()) {
-      topPillGroup.style.display = 'inline-flex';
-      const fmt = detectFormat(bodyText);
-      const sizeKb = (new Blob([bodyText]).size / 1024).toFixed(1);
-      const charset = detectCharset(bodyText, state.lastResponseHeaders);
-      topPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
-      topPill.title = elements.testerResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+  const btnMax = document.getElementById('btn-tester-response-maximize');
+  const charset = detectCharset(bodyText, state.lastResponseHeaders);
+  const fmt = detectFormat(bodyText);
 
-      const modeToggle = document.getElementById('tester-response-mode-toggle');
-      if (modeToggle) {
-        const btnRich = modeToggle.querySelector('.btn-mode-rich');
-        const btnRaw = modeToggle.querySelector('.btn-mode-raw');
-        const isRaw = state.testerViewMode === 'raw';
-        if (btnRich) btnRich.classList.toggle('active', !isRaw);
-        if (btnRaw) btnRaw.classList.toggle('active', isRaw);
-
-        btnRich.onclick = (e) => {
-          e.stopPropagation();
-          state.testerViewMode = 'highlighted';
-          if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.add('active');
-          if (elements.btnViewRaw) elements.btnViewRaw.classList.remove('active');
-          renderTesterResponse(bodyText);
-        };
-        btnRaw.onclick = (e) => {
-          e.stopPropagation();
-          state.testerViewMode = 'raw';
-          if (elements.btnViewRaw) elements.btnViewRaw.classList.add('active');
-          if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.remove('active');
-          renderTesterResponse(bodyText);
-        };
-      }
-
-      const btnMax = document.getElementById('btn-tester-response-maximize');
-      if (btnMax) {
-        btnMax.onclick = (e) => {
-          e.stopPropagation();
-          pushViewportLayer({
-            title: 'HTTP Tester Response',
-            text: bodyText,
-            format: fmt,
-            charset,
-            context: 'tester-response',
-            mode: 'viewer',
-            onSave: (savedText) => {
-              const reqMethod = elements.testerMethod ? elements.testerMethod.value : 'GET';
-              const reqUrl = elements.testerUrl ? elements.testerUrl.value : '/';
-              const syntheticStub = {
-                name: `${reqMethod} ${reqUrl}`,
-                request: {
-                  method: reqMethod,
-                  url: reqUrl
-                },
-                response: {
-                  status: parseInt(elements.testerResponseStatus?.textContent || '200', 10) || 200,
-                  headers: { 'Content-Type': 'application/json' },
-                  body: savedText
-                }
-              };
-              openStubEditor(syntheticStub, false);
+  createPayloadComponent(null, {
+    viewerEl: elements.testerResponseBody,
+    toggleEl: modeToggle,
+    pillEl: topPill,
+    pillGroupEl: topPillGroup,
+    maximizeBtn: btnMax,
+    text: bodyText,
+    format: fmt,
+    charset,
+    defaultMode: state.testerViewMode === 'raw' ? 'raw' : 'rich',
+    title: 'HTTP Tester Response',
+    context: 'tester-response',
+    onMaximize: () => {
+      pushViewportLayer({
+        title: 'HTTP Tester Response',
+        text: bodyText,
+        format: fmt,
+        charset,
+        context: 'tester-response',
+        mode: 'viewer',
+        onSave: (savedText) => {
+          const reqMethod = elements.testerMethod ? elements.testerMethod.value : 'GET';
+          const reqUrl = elements.testerUrl ? elements.testerUrl.value : '/';
+          const syntheticStub = {
+            name: `${reqMethod} ${reqUrl}`,
+            request: {
+              method: reqMethod,
+              url: reqUrl
+            },
+            response: {
+              status: parseInt(elements.testerResponseStatus?.textContent || '200', 10) || 200,
+              headers: { 'Content-Type': 'application/json' },
+              body: savedText
             }
-          });
-        };
-      }
-    } else {
-      topPillGroup.style.display = 'none';
+          };
+          openStubEditor(syntheticStub, false);
+        }
+      });
     }
-  }
+  });
 }
 
 export function renderLocalHeaderChips() {

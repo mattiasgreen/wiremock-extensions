@@ -47,7 +47,7 @@ const CHARSET_ALIAS_MAP = {
  * @param {string} [charset]
  * @returns {string} Canonical uppercase charset (e.g. 'UTF-8', 'ISO-8859-1', 'WINDOWS-1252', 'KOI8-R')
  */
-export function normalizeCharsetName(charset) {
+function normalizeCharsetName(charset) {
   if (!charset || typeof charset !== 'string') return 'UTF-8';
   const raw = charset.trim().replace(/^["']|["']$/g, '').toUpperCase();
   if (!raw) return 'UTF-8';
@@ -252,7 +252,7 @@ function getSingleByteEncodeMap(normCharset) {
  * @param {string} [charset='UTF-8']
  * @returns {Uint8Array}
  */
-export function encodeStringToBytes(str, charset = 'UTF-8') {
+function encodeStringToBytes(str, charset = 'UTF-8') {
   const norm = normalizeCharsetName(charset);
   if (norm === 'UTF-8') {
     if (typeof TextEncoder !== 'undefined') {
@@ -311,7 +311,7 @@ export function utf8ToBase64(str) {
  * @param {string} str
  * @returns {{ text: string, charset: string } | null}
  */
-export function decodeBase64WithCharset(str) {
+function decodeBase64WithCharset(str) {
   if (typeof str !== 'string') return null;
   const cleaned = str.trim().replace(/[\r\n\s]+/g, '');
   if (cleaned.length < 4) return null;
@@ -425,7 +425,7 @@ function inspectJsonObject(obj, path, results, maxDepth, currentDepth) {
   }
 }
 
-export function isPrintableText(str) {
+function isPrintableText(str) {
   if (typeof str !== 'string' || !str) return false;
   for (let i = 0; i < str.length; i++) {
     const code = str.charCodeAt(i);
@@ -620,7 +620,7 @@ function inspectXmlText(xmlText, path, results, maxDepth, currentDepth) {
   }
 }
 
-export function unescapeXmlEntities(str) {
+function unescapeXmlEntities(str) {
   if (!str || typeof str !== 'string') return '';
   return str
     .replace(/&lt;/g, '<')
@@ -630,7 +630,7 @@ export function unescapeXmlEntities(str) {
     .replace(/&amp;/g, '&');
 }
 
-export function escapeXmlEntities(str) {
+function escapeXmlEntities(str) {
   if (!str || typeof str !== 'string') return '';
   return str
     .replace(/&/g, '&amp;')
@@ -647,7 +647,7 @@ export function escapeXmlEntities(str) {
  * @param {string} path
  * @param {any} newValue
  */
-export function setJsonPathValue(root, path, newValue) {
+function setJsonPathValue(root, path, newValue) {
   if (!path || path === '$') return newValue;
 
   // Tokenize path into keys/indices
@@ -901,7 +901,7 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
 const viewerRegistry = new Map();
 const nodeRegistry = new Map();
 
-export function registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot = null) {
+function registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot = null) {
   viewerRegistry.set(viewerId, { rawText, discovered, onSaveRoot });
 }
 
@@ -1156,10 +1156,7 @@ export function activateInlineBlockEditor(triggerEl) {
   `;
 
   const editorContainer = expandedDiv.querySelector('.inline-block-editor');
-  const wrapper = editorContainer.querySelector('.dual-layer-editor-wrapper');
   const textarea = editorContainer.querySelector('.inline-nested-textarea');
-  const backdrop = editorContainer.querySelector('.dual-layer-backdrop');
-  const code = backdrop.querySelector('code');
   const dirtyIndicator = editorContainer.querySelector('.inline-edit-dirty-indicator');
   const lintPill = editorContainer.querySelector('.inline-edit-lint-pill');
   const btnFormat = editorContainer.querySelector('.btn-inline-format');
@@ -1167,21 +1164,6 @@ export function activateInlineBlockEditor(triggerEl) {
   const btnCancel = editorContainer.querySelector('.btn-inline-cancel');
 
   let isDirty = false;
-
-  const adjustHeight = () => {
-    if (!textarea || !wrapper) return;
-    const lines = (textarea.value || '').split('\n').length;
-    const calculatedHeight = Math.max(48, lines * 21 + 26);
-    wrapper.style.height = `${calculatedHeight}px`;
-    if (backdrop) backdrop.style.height = `${calculatedHeight}px`;
-  };
-
-  const syncScroll = () => {
-    if (backdrop) {
-      backdrop.scrollTop = textarea.scrollTop;
-      backdrop.scrollLeft = textarea.scrollLeft;
-    }
-  };
 
   const validate = () => {
     const val = textarea.value;
@@ -1197,35 +1179,23 @@ export function activateInlineBlockEditor(triggerEl) {
     return res.valid;
   };
 
-  const updateBackdrop = () => {
-    const val = textarea.value;
-    code.innerHTML = highlightPayload(val) + (val.endsWith('\n') ? ' ' : '');
-    syncScroll();
-  };
-
-  textarea.addEventListener('scroll', syncScroll);
-  textarea.addEventListener('input', () => {
-    if (!isDirty) {
-      isDirty = true;
-      dirtyIndicator.classList.remove('hidden');
+  const dualLayer = attachDualLayerEditor(textarea, null, {
+    autoGrow: true,
+    onChange: () => {
+      if (!isDirty) {
+        isDirty = true;
+        dirtyIndicator.classList.remove('hidden');
+      }
+      validate();
     }
-    updateBackdrop();
-    validate();
-    adjustHeight();
   });
 
   btnFormat.addEventListener('click', (e) => {
     e.stopPropagation();
     textarea.value = formatPayload(textarea.value);
-    updateBackdrop();
+    if (dualLayer) dualLayer.refresh();
     validate();
-    adjustHeight();
   });
-
-  adjustHeight();
-  if (typeof requestAnimationFrame !== 'undefined') {
-    requestAnimationFrame(adjustHeight);
-  }
 
   const finish = (save) => {
     if (!save) {
@@ -1332,6 +1302,8 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
     return textareaEl._dualLayer;
   }
 
+  const isAutoGrow = Boolean(options.autoGrow);
+
   // Ensure wrapper and backdrop exist
   let wrapper = textareaEl.parentElement;
   if (!wrapper || !wrapper.classList.contains('dual-layer-editor-wrapper')) {
@@ -1343,6 +1315,11 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
     wrapper.appendChild(textareaEl);
   } else {
     wrapper.classList.add('mode-rich');
+  }
+
+  if (isAutoGrow) {
+    wrapper.style.flex = 'none';
+    wrapper.style.overflow = 'hidden';
   }
 
   let backdrop = wrapper.querySelector('.dual-layer-backdrop');
@@ -1360,8 +1337,16 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
   textareaEl.classList.add('dual-layer-input');
   textareaEl.spellcheck = false;
 
-  let currentMode = 'rich'; // in-memory experience mode: 'rich' or 'raw'
+  let currentMode = options.initialMode || 'rich'; // in-memory experience mode: 'rich' or 'raw'
   let toggleGroup = null;
+
+  const adjustHeight = () => {
+    if (!isAutoGrow) return;
+    const lines = (textareaEl.value || '').split('\n').length;
+    const calculatedHeight = Math.max(48, lines * 21 + 26);
+    wrapper.style.height = `${calculatedHeight}px`;
+    if (backdrop) backdrop.style.height = `${calculatedHeight}px`;
+  };
 
   const syncScroll = () => {
     if (backdrop) {
@@ -1395,21 +1380,35 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
       wrapper.classList.remove('mode-rich');
       wrapper.classList.add('mode-raw', 'mode-degraded');
       updateToggleButtons('raw', true);
+      adjustHeight();
       return;
     } else {
       wrapper.classList.remove('mode-degraded');
       if (currentMode === 'rich') {
         wrapper.classList.remove('mode-raw');
         wrapper.classList.add('mode-rich');
+        textareaEl.style.whiteSpace = 'pre';
+        textareaEl.style.wordBreak = 'normal';
+        if (backdrop) {
+          backdrop.style.whiteSpace = 'pre';
+          backdrop.style.wordBreak = 'normal';
+        }
       } else {
         wrapper.classList.remove('mode-rich');
         wrapper.classList.add('mode-raw');
+        textareaEl.style.whiteSpace = 'pre-wrap';
+        textareaEl.style.wordBreak = 'break-all';
+        if (backdrop) {
+          backdrop.style.whiteSpace = 'pre-wrap';
+          backdrop.style.wordBreak = 'break-all';
+        }
       }
       updateToggleButtons(currentMode, false);
     }
     const html = highlightPayload(val) + (val.endsWith('\n') ? ' ' : '');
     code.innerHTML = html;
     syncScroll();
+    adjustHeight();
   };
 
   const setMode = (mode) => {
@@ -1448,7 +1447,12 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
   };
 
   textareaEl.addEventListener('scroll', syncScroll);
-  textareaEl.addEventListener('input', updateBackdrop);
+  textareaEl.addEventListener('input', () => {
+    updateBackdrop();
+    if (typeof options.onChange === 'function') {
+      options.onChange(textareaEl.value);
+    }
+  });
 
   const instance = {
     wrapper,
@@ -1458,6 +1462,7 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
     setMode,
     getMode: () => currentMode,
     refresh: updateBackdrop,
+    adjustHeight,
     bindToggle,
     hasToggle: false
   };
@@ -1475,8 +1480,9 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
  * Factory function creating a Unified Payload Component with the 2x2 Payload Experience Matrix:
  * - Mode: Rich (unescaped, formatted, indented) vs Raw (wire-exact, escaped)
  * - Action: View (read-only syntax block) vs Edit (Dual-Layer Code Editor)
+ * Supports both standalone mounting into a container and binding to existing console surface DOM elements.
  *
- * @param {HTMLElement} containerEl
+ * @param {HTMLElement|null} containerEl
  * @param {object} options
  * @returns {object} Controller instance
  */
@@ -1493,10 +1499,16 @@ export function createPayloadComponent(containerEl, {
   backingPre = null,
   onSave = null,
   onChange = null,
-  onMaximize = null
+  onMaximize = null,
+  viewerEl = null,
+  toggleEl = null,
+  pillEl = null,
+  pillGroupEl = null,
+  maximizeBtn = null,
+  editBtn = null,
+  onEdit = null,
+  bufferType = null
 } = {}) {
-  if (!containerEl) return null;
-
   let currentText = backingTextarea ? (backingTextarea.value || '') : (text || '');
   let currentMode = defaultMode; // 'rich' | 'raw'
   let currentAction = readOnly ? 'view' : defaultAction; // 'view' | 'edit'
@@ -1505,52 +1517,74 @@ export function createPayloadComponent(containerEl, {
   const cleanFormat = format || detectFormat(currentText);
   const cleanCharset = charset || detectCharset(currentText);
 
-  containerEl.innerHTML = `
-    <div class="unified-payload-surface" id="${componentId}" data-context="${escapeHtml(context)}">
-      <div class="unified-payload-header">
-        <div class="unified-payload-header-left">
-          ${title ? `<strong class="payload-title">${escapeHtml(title)}:</strong>` : ''}
-          <span class="preview-pill-badge payload-desc-pill" role="button" tabindex="0" title="Click to collapse/expand"></span>
-          <span class="payload-lint-pill hidden"></span>
-        </div>
-        <div class="unified-payload-header-right">
-          <div class="editor-mode-toggle">
-            <button type="button" class="btn btn-tiny ${currentMode === 'rich' ? 'active' : ''} btn-mode-rich" data-mode="rich" title="Unescaped, formatted, indented">🎨 Rich</button>
-            <button type="button" class="btn btn-tiny ${currentMode === 'raw' ? 'active' : ''} btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
-          </div>
-          ${!readOnly ? `
-          <div class="action-mode-toggle">
-            <button type="button" class="btn btn-tiny ${currentAction === 'view' ? 'active' : ''} btn-action-view" data-action="view" title="Read-only view">👁️ View</button>
-            <button type="button" class="btn btn-tiny ${currentAction === 'edit' ? 'active' : ''} btn-action-edit" data-action="edit" title="Editable mode">✏️ Edit</button>
-          </div>
-          ` : ''}
-          ${!readOnly ? `<button type="button" class="btn btn-tiny btn-format-payload ${currentAction === 'edit' ? '' : 'hidden'}" title="Format/re-indent JSON/XML">✨ Format</button>` : ''}
-          <button type="button" class="btn btn-tiny btn-copy-payload" title="Copy payload text">📋 Copy</button>
-          <button type="button" class="btn-payload-maximize btn-maximize-payload" title="Maximize in Fullscreen Viewport">⛶ Maximize</button>
-        </div>
-      </div>
-      <div class="unified-payload-body">
-        <div class="payload-view-container ${currentAction === 'view' ? '' : 'hidden'}"></div>
-        <div class="payload-edit-container ${currentAction === 'edit' ? '' : 'hidden'}" style="flex: 1 1 0%; display: ${currentAction === 'edit' ? 'flex' : 'none'}; min-height: 0;">
-          <textarea class="code-input payload-component-textarea" rows="12" spellcheck="false" style="font-family: monospace; font-size: 0.85rem; width: 100%; flex: 1 1 0%; resize: none;"></textarea>
-        </div>
-      </div>
-    </div>
-  `;
+  const isExternal = Boolean(viewerEl);
+  let rootEl = null;
+  let viewContainer = viewerEl;
+  let editContainer = null;
+  let textareaEl = backingTextarea;
+  let descPill = pillEl;
+  let lintPill = null;
+  let btnRich = null;
+  let btnRaw = null;
+  let btnActionView = null;
+  let btnActionEdit = null;
+  let btnFormat = null;
+  let btnCopy = null;
+  let btnMax = maximizeBtn;
 
-  const rootEl = containerEl.querySelector(`#${componentId}`);
-  const viewContainer = rootEl.querySelector('.payload-view-container');
-  const editContainer = rootEl.querySelector('.payload-edit-container');
-  const textareaEl = rootEl.querySelector('.payload-component-textarea');
-  const descPill = rootEl.querySelector('.payload-desc-pill');
-  const lintPill = rootEl.querySelector('.payload-lint-pill');
-  const btnRich = rootEl.querySelector('.btn-mode-rich');
-  const btnRaw = rootEl.querySelector('.btn-mode-raw');
-  const btnActionView = rootEl.querySelector('.btn-action-view');
-  const btnActionEdit = rootEl.querySelector('.btn-action-edit');
-  const btnFormat = rootEl.querySelector('.btn-format-payload');
-  const btnCopy = rootEl.querySelector('.btn-copy-payload');
-  const btnMax = rootEl.querySelector('.btn-maximize-payload');
+  if (isExternal) {
+    if (toggleEl) {
+      btnRich = toggleEl.querySelector('.btn-mode-rich');
+      btnRaw = toggleEl.querySelector('.btn-mode-raw');
+    }
+  } else if (containerEl) {
+    containerEl.innerHTML = `
+      <div class="unified-payload-surface" id="${componentId}" data-context="${escapeHtml(context)}">
+        <div class="unified-payload-header">
+          <div class="unified-payload-header-left">
+            ${title ? `<strong class="payload-title">${escapeHtml(title)}:</strong>` : ''}
+            <span class="preview-pill-badge payload-desc-pill" role="button" tabindex="0" title="Click to collapse/expand"></span>
+            <span class="payload-lint-pill hidden"></span>
+          </div>
+          <div class="unified-payload-header-right">
+            <div class="editor-mode-toggle">
+              <button type="button" class="btn btn-tiny ${currentMode === 'rich' ? 'active' : ''} btn-mode-rich" data-mode="rich" title="Unescaped, formatted, indented">🎨 Rich</button>
+              <button type="button" class="btn btn-tiny ${currentMode === 'raw' ? 'active' : ''} btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
+            </div>
+            ${!readOnly ? `
+            <div class="action-mode-toggle">
+              <button type="button" class="btn btn-tiny ${currentAction === 'view' ? 'active' : ''} btn-action-view" data-action="view" title="Read-only view">👁️ View</button>
+              <button type="button" class="btn btn-tiny ${currentAction === 'edit' ? 'active' : ''} btn-action-edit" data-action="edit" title="Editable mode">✏️ Edit</button>
+            </div>
+            ` : ''}
+            ${!readOnly ? `<button type="button" class="btn btn-tiny btn-format-payload ${currentAction === 'edit' ? '' : 'hidden'}" title="Format/re-indent JSON/XML">✨ Format</button>` : ''}
+            <button type="button" class="btn btn-tiny btn-copy-payload" title="Copy payload text">📋 Copy</button>
+            <button type="button" class="btn-payload-maximize btn-maximize-payload" title="Maximize in Fullscreen Viewport">⛶ Maximize</button>
+          </div>
+        </div>
+        <div class="unified-payload-body">
+          <div class="payload-view-container ${currentAction === 'view' ? '' : 'hidden'}"></div>
+          <div class="payload-edit-container ${currentAction === 'edit' ? '' : 'hidden'}" style="flex: 1 1 0%; display: ${currentAction === 'edit' ? 'flex' : 'none'}; min-height: 0;">
+            <textarea class="code-input payload-component-textarea" rows="12" spellcheck="false" style="font-family: monospace; font-size: 0.85rem; width: 100%; flex: 1 1 0%; resize: none;"></textarea>
+          </div>
+        </div>
+      </div>
+    `;
+
+    rootEl = containerEl.querySelector(`#${componentId}`);
+    viewContainer = rootEl.querySelector('.payload-view-container');
+    editContainer = rootEl.querySelector('.payload-edit-container');
+    textareaEl = rootEl.querySelector('.payload-component-textarea');
+    descPill = rootEl.querySelector('.payload-desc-pill');
+    lintPill = rootEl.querySelector('.payload-lint-pill');
+    btnRich = rootEl.querySelector('.btn-mode-rich');
+    btnRaw = rootEl.querySelector('.btn-mode-raw');
+    btnActionView = rootEl.querySelector('.btn-action-view');
+    btnActionEdit = rootEl.querySelector('.btn-action-edit');
+    btnFormat = rootEl.querySelector('.btn-format-payload');
+    btnCopy = rootEl.querySelector('.btn-copy-payload');
+    btnMax = rootEl.querySelector('.btn-maximize-payload');
+  }
 
   let dualLayerInstance = null;
   if (!readOnly && textareaEl) {
@@ -1558,30 +1592,38 @@ export function createPayloadComponent(containerEl, {
   }
 
   function updateDescriptor() {
+    if (pillGroupEl) {
+      pillGroupEl.style.display = currentText && currentText.trim() ? 'inline-flex' : 'none';
+    }
     if (!descPill) return;
     const sizeKb = (new Blob([currentText]).size / 1024).toFixed(1);
     const fmt = (cleanFormat || detectFormat(currentText)).toUpperCase();
-    descPill.textContent = formatPayloadDescriptor({
-      format: fmt,
-      charset: cleanCharset,
-      sizeKb
-    });
+    if (bufferType) {
+      descPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, cleanCharset);
+    } else {
+      descPill.textContent = formatPayloadDescriptor({
+        format: fmt,
+        charset: cleanCharset,
+        sizeKb
+      });
+    }
   }
 
   function renderView() {
     if (!viewContainer) return;
-    const discovered = discoverEmbeddedPayloads(currentText);
+    viewContainer.classList.toggle('mode-raw', currentMode === 'raw');
     if (currentMode === 'rich') {
+      const discovered = discoverEmbeddedPayloads(currentText);
       if (discovered.length > 0) {
-        viewContainer.innerHTML = `<pre class="syntax-view"><code>${renderFormattedWithNestedPreviews(currentText, discovered, `${componentId}_v`, (newRoot) => {
+        viewContainer.innerHTML = renderFormattedWithNestedPreviews(currentText, discovered, `${componentId}_v`, (newRoot) => {
           syncText(newRoot);
-        })}</code></pre>`;
+        });
       } else {
-        viewContainer.innerHTML = `<pre class="syntax-view"><code>${highlightPayload(formatPayload(currentText))}</code></pre>`;
+        viewContainer.innerHTML = highlightPayload(formatPayload(currentText));
       }
     } else {
-      // Raw view: wire-exact escaped string with syntax highlighting
-      viewContainer.innerHTML = `<pre class="syntax-view"><code>${highlightPayload(currentText)}</code></pre>`;
+      // Raw view: wire-exact representation
+      viewContainer.innerHTML = highlightPayload(currentText);
     }
   }
 
@@ -1659,14 +1701,22 @@ export function createPayloadComponent(containerEl, {
       btnFormat.classList.toggle('hidden', currentAction !== 'edit');
     }
     if (currentAction === 'view') {
-      editContainer.classList.add('hidden');
-      editContainer.style.display = 'none';
-      viewContainer.classList.remove('hidden');
+      if (editContainer) {
+        editContainer.classList.add('hidden');
+        editContainer.style.display = 'none';
+      }
+      if (viewContainer) {
+        viewContainer.classList.remove('hidden');
+      }
       renderView();
     } else {
-      viewContainer.classList.add('hidden');
-      editContainer.classList.remove('hidden');
-      editContainer.style.display = 'flex';
+      if (viewContainer) {
+        viewContainer.classList.add('hidden');
+      }
+      if (editContainer) {
+        editContainer.classList.remove('hidden');
+        editContainer.style.display = 'flex';
+      }
       if (textareaEl) {
         textareaEl.value = currentText;
         if (dualLayerInstance) dualLayerInstance.refresh();
@@ -1675,20 +1725,22 @@ export function createPayloadComponent(containerEl, {
   }
 
   // Bind Listeners
-  if (btnRich) btnRich.onclick = () => setMode('rich');
-  if (btnRaw) btnRaw.onclick = () => setMode('raw');
-  if (btnActionView) btnActionView.onclick = () => setAction('view');
-  if (btnActionEdit) btnActionEdit.onclick = () => setAction('edit');
+  if (btnRich) btnRich.onclick = (e) => { e.stopPropagation(); setMode('rich'); };
+  if (btnRaw) btnRaw.onclick = (e) => { e.stopPropagation(); setMode('raw'); };
+  if (btnActionView) btnActionView.onclick = (e) => { e.stopPropagation(); setAction('view'); };
+  if (btnActionEdit) btnActionEdit.onclick = (e) => { e.stopPropagation(); setAction('edit'); };
 
   if (btnFormat) {
-    btnFormat.onclick = () => {
+    btnFormat.onclick = (e) => {
+      e.stopPropagation();
       const formatted = formatPayload(currentText);
       syncText(formatted);
     };
   }
 
   if (btnCopy) {
-    btnCopy.onclick = () => {
+    btnCopy.onclick = (e) => {
+      e.stopPropagation();
       const copyVal = currentMode === 'rich' ? formatPayload(currentText) : currentText;
       navigator.clipboard.writeText(copyVal).then(() => {
         btnCopy.textContent = '✓ Copied';
@@ -1721,16 +1773,25 @@ export function createPayloadComponent(containerEl, {
     };
   }
 
-  if (descPill) {
-    descPill.onclick = () => {
-      const bodyEl = rootEl.querySelector('.unified-payload-body');
-      if (bodyEl) {
-        bodyEl.classList.toggle('hidden');
+  if (editBtn) {
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof onEdit === 'function') {
+        onEdit();
       }
     };
   }
 
-  if (textareaEl) {
+  if (descPill) {
+    descPill.onclick = () => {
+      if (viewContainer) {
+        const isHidden = viewContainer.classList.toggle('hidden');
+        descPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
+      }
+    };
+  }
+
+  if (textareaEl && !isExternal) {
     textareaEl.value = currentText;
     textareaEl.oninput = () => {
       syncText(textareaEl.value, true);
@@ -1910,7 +1971,7 @@ export function setViewportContent(text) {
   updateViewportDirtyIndicator();
 }
 
-export function updateViewportDirtyIndicator() {
+function updateViewportDirtyIndicator() {
   const active = getActiveViewportLayer();
   const dirtyIndicator = document.getElementById('payload-lens-dirty-indicator');
   if (dirtyIndicator) {
@@ -1934,12 +1995,12 @@ export function requestCloseViewport() {
   return { closed: true, needsPrompt: false };
 }
 
-export function showUnsavedChangesPrompt() {
+function showUnsavedChangesPrompt() {
   const modal = document.getElementById('modal-unsaved-changes');
   if (modal) modal.classList.remove('hidden');
 }
 
-export function closeUnsavedChangesPrompt() {
+function closeUnsavedChangesPrompt() {
   const modal = document.getElementById('modal-unsaved-changes');
   if (modal) modal.classList.add('hidden');
 }
@@ -1983,7 +2044,7 @@ export function discardActiveViewport() {
   popViewportLayer();
 }
 
-export function saveActiveViewportInPlace() {
+function saveActiveViewportInPlace() {
   const active = getActiveViewportLayer();
   if (!active) return;
   const savedText = active.currentText;
@@ -2078,7 +2139,7 @@ function closeViewportModal() {
   }
 }
 
-export function renderViewportModal() {
+function renderViewportModal() {
   const modal = elements.modalPayloadLens || document.getElementById('modal-payload-lens');
   if (!modal || viewportStack.length === 0) {
     if (modal) {

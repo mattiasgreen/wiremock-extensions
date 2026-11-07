@@ -12,7 +12,8 @@ import {
   formatCasualBufferDescriptor,
   formatPayloadDescriptor,
   detectCharset,
-  pushViewportLayer
+  pushViewportLayer,
+  createPayloadComponent
 } from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
@@ -493,108 +494,52 @@ export function selectStub(stub, updateRoute = true) {
   const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
   const compactStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj);
 
-  let stubViewMode = currentStubViewMode;
+  const resBody = (stub.response && stub.response.body) || '';
+  const bodyFormat = resBody ? detectFormat(resBody).toUpperCase() : 'JSON';
+  const sizeKb = (new Blob([resBody || rawStubJson]).size / 1024).toFixed(1);
+  const stubCharset = detectCharset(resBody, resHeaders);
+  let normBuf = null;
+  if (isCasual) {
+    const bufferType = (stub.metadata && stub.metadata.bufferType)
+      || (resHeaders['X-Casual-Buffer-Type'] || resHeaders['x-casual-buffer-type'])
+      || (stub.request && stub.request.headers && (stub.request.headers['x-casual-buffer-type'] || stub.request.headers['X-Casual-Buffer-Type']))
+      || 'JSON';
+    normBuf = typeof bufferType === 'object' && bufferType.equalTo ? bufferType.equalTo : String(bufferType);
+  }
+
   const modeToggle = document.getElementById('stub-viewer-mode-toggle');
-
-  function renderStubJson() {
-    if (modeToggle) {
-      const btnRich = modeToggle.querySelector('.btn-mode-rich');
-      const btnRaw = modeToggle.querySelector('.btn-mode-raw');
-      if (btnRich) btnRich.classList.toggle('active', stubViewMode === 'rich');
-      if (btnRaw) btnRaw.classList.toggle('active', stubViewMode === 'raw');
-    }
-    if (elements.stubJsonViewer) {
-      elements.stubJsonViewer.classList.toggle('mode-raw', stubViewMode === 'raw');
-    }
-    if (stubViewMode === 'rich') {
-      const discovered = discoverEmbeddedPayloads(rawStubJson);
-      if (discovered.length > 0) {
-        elements.stubJsonViewer.innerHTML = renderFormattedWithNestedPreviews(rawStubJson, discovered, `stub_${stub.id}`, (updatedStubJson) => {
-          try {
-            const parsed = JSON.parse(updatedStubJson);
-            Object.assign(stub, parsed);
-            selectStub(stub, false);
-          } catch (_) {}
-        });
-      } else {
-        elements.stubJsonViewer.innerHTML = highlightJson(rawStubObj);
-      }
-    } else {
-      elements.stubJsonViewer.innerHTML = highlightPayload(compactStubJson);
-    }
-  }
-
-  if (modeToggle) {
-    const btnRich = modeToggle.querySelector('.btn-mode-rich');
-    const btnRaw = modeToggle.querySelector('.btn-mode-raw');
-    if (btnRich) {
-      btnRich.onclick = () => {
-        currentStubViewMode = 'rich';
-        stubViewMode = 'rich';
-        renderStubJson();
-      };
-    }
-    if (btnRaw) {
-      btnRaw.onclick = () => {
-        currentStubViewMode = 'raw';
-        stubViewMode = 'raw';
-        renderStubJson();
-      };
-    }
-  }
-
-  renderStubJson();
-
   const topPillGroup = document.getElementById('stub-top-pill-group');
   const topPill = document.getElementById('stub-top-pill');
-  if (topPillGroup && topPill) {
-    topPillGroup.style.display = 'inline-flex';
-    const resBody = (stub.response && stub.response.body) || '';
-    const bodyFormat = resBody ? detectFormat(resBody).toUpperCase() : 'JSON';
-    const sizeKb = (new Blob([resBody || rawStubJson]).size / 1024).toFixed(1);
-    const stubCharset = detectCharset(resBody, resHeaders);
-    if (isCasual) {
-      const bufferType = (stub.metadata && stub.metadata.bufferType)
-        || (resHeaders['X-Casual-Buffer-Type'] || resHeaders['x-casual-buffer-type'])
-        || (stub.request && stub.request.headers && (stub.request.headers['x-casual-buffer-type'] || stub.request.headers['X-Casual-Buffer-Type']))
-        || 'JSON';
-      const normBuf = typeof bufferType === 'object' && bufferType.equalTo ? bufferType.equalTo : String(bufferType);
-      topPill.textContent = formatCasualBufferDescriptor(normBuf, bodyFormat, sizeKb, stubCharset);
-    } else {
-      topPill.textContent = formatPayloadDescriptor({ format: bodyFormat, charset: stubCharset, sizeKb });
-    }
-    topPill.title = elements.stubJsonViewer.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
+  const btnTopEdit = document.getElementById('btn-top-stub-edit');
+  const btnStubMaximize = document.getElementById('btn-stub-maximize');
 
-    const btnTopEdit = document.getElementById('btn-top-stub-edit');
-    if (btnTopEdit) {
-      btnTopEdit.style.display = isDynamic ? 'none' : 'inline-flex';
-      btnTopEdit.onclick = (e) => {
-        e.stopPropagation();
-        openStubEditor(stub, false);
-      };
-    }
-
-    const btnStubMaximize = document.getElementById('btn-stub-maximize');
-    if (btnStubMaximize) {
-      btnStubMaximize.onclick = (e) => {
-        e.stopPropagation();
-        pushViewportLayer({
-          title: `Stub: ${stub.name || stub.id}`,
-          text: rawStubJson,
-          format: 'json',
-          context: 'stub',
-          mode: 'viewer',
-          onSave: (savedText) => {
-            try {
-              const parsed = JSON.parse(savedText);
-              Object.assign(stub, parsed);
-              renderStubDetails(stub, false);
-            } catch (_) {}
-          }
-        });
-      };
-    }
+  if (btnTopEdit) {
+    btnTopEdit.style.display = isDynamic ? 'none' : 'inline-flex';
   }
+
+  createPayloadComponent(null, {
+    viewerEl: elements.stubJsonViewer,
+    toggleEl: modeToggle,
+    pillEl: topPill,
+    pillGroupEl: topPillGroup,
+    maximizeBtn: btnStubMaximize,
+    editBtn: btnTopEdit,
+    onEdit: () => openStubEditor(stub, false),
+    text: rawStubJson,
+    format: bodyFormat,
+    charset: stubCharset,
+    bufferType: normBuf,
+    defaultMode: currentStubViewMode,
+    title: `Stub: ${stub.name || stub.id}`,
+    context: 'stub',
+    onChange: (updatedStubJson) => {
+      try {
+        const parsed = JSON.parse(updatedStubJson);
+        Object.assign(stub, parsed);
+        selectStub(stub, false);
+      } catch (_) {}
+    }
+  });
 
   if (updateRoute) {
     setRoute('stubs', { stubId: stub.id });

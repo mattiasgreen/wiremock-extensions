@@ -14,7 +14,8 @@ import {
   openPayloadLens,
   formatCasualBufferDescriptor,
   detectCharset,
-  pushViewportLayer
+  pushViewportLayer,
+  createPayloadComponent
 } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
@@ -572,40 +573,43 @@ export function renderCasualResponseBody(bodyText, hexText) {
   if (hexText !== undefined) lastHexCasualResponse = hexText || '';
   if (!elements.casualResponseBody) return;
 
-  if (casualViewMode === 'hex') {
+  if (casualViewMode === 'hex' || (lastCasualResponseData && lastCasualResponseData.isBinary && casualViewMode !== 'raw')) {
     elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
-  } else if (casualViewMode === 'raw') {
-    elements.casualResponseBody.textContent = lastRawCasualResponse;
-  } else {
-    if (lastCasualResponseData && lastCasualResponseData.isBinary) {
-      elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
-    } else {
-      const discovered = discoverEmbeddedPayloads(lastRawCasualResponse);
-      if (discovered.length > 0) {
-        elements.casualResponseBody.innerHTML = renderFormattedWithNestedPreviews(lastRawCasualResponse, discovered, 'casual_res');
-      } else {
-        elements.casualResponseBody.innerHTML = highlightPayload(lastRawCasualResponse);
-      }
-    }
+    const topPillGroup = document.getElementById('casual-response-top-pill-group');
+    if (topPillGroup) topPillGroup.style.display = 'none';
+    return;
   }
 
+  if (lastCasualResponseData && lastCasualResponseData.isBinary && casualViewMode === 'raw') {
+    elements.casualResponseBody.textContent = lastRawCasualResponse;
+    const topPillGroup = document.getElementById('casual-response-top-pill-group');
+    if (topPillGroup) topPillGroup.style.display = 'none';
+    return;
+  }
+
+  const modeToggle = document.getElementById('casual-response-mode-toggle');
   const topPillGroup = document.getElementById('casual-response-top-pill-group');
   const topPill = document.getElementById('casual-response-top-pill');
-  if (topPillGroup && topPill) {
-    if (lastRawCasualResponse && lastRawCasualResponse.trim()) {
-      topPillGroup.style.display = 'inline-flex';
-      const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
-        || (lastCasualResponseHeaders && (lastCasualResponseHeaders['X-Casual-Buffer-Type'] || lastCasualResponseHeaders['x-casual-buffer-type']))
-        || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
-      const fmt = detectFormat(lastRawCasualResponse);
-      const sizeKb = (new Blob([lastRawCasualResponse]).size / 1024).toFixed(1);
-      const charset = detectCharset(lastRawCasualResponse, lastCasualResponseHeaders);
-      topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, charset);
-      topPill.title = elements.casualResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
-    } else {
-      topPillGroup.style.display = 'none';
-    }
-  }
+  const resMaxBtn = document.getElementById('btn-casual-response-maximize');
+
+  const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
+    || (lastCasualResponseHeaders && (lastCasualResponseHeaders['X-Casual-Buffer-Type'] || lastCasualResponseHeaders['x-casual-buffer-type']))
+    || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
+  const charset = detectCharset(lastRawCasualResponse, lastCasualResponseHeaders);
+
+  createPayloadComponent(null, {
+    viewerEl: elements.casualResponseBody,
+    toggleEl: modeToggle,
+    pillEl: topPill,
+    pillGroupEl: topPillGroup,
+    maximizeBtn: resMaxBtn,
+    text: lastRawCasualResponse,
+    bufferType,
+    charset,
+    defaultMode: casualViewMode === 'raw' ? 'raw' : 'rich',
+    title: 'Casual Response Body',
+    context: 'casual-response'
+  });
 }
 
 export function displayCasualResponseResult(

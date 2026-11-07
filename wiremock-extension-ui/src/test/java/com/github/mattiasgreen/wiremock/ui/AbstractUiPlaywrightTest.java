@@ -1,6 +1,7 @@
 package com.github.mattiasgreen.wiremock.ui;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition;
 import com.github.mattiasgreen.wiremock.stateful.dsl.*;
@@ -105,7 +106,9 @@ public abstract class AbstractUiPlaywrightTest {
         page.onConsoleMessage(msg -> {
             String text = "[" + msg.type() + "] " + msg.text();
             consoleLogs.add(text);
-            if ("error".equalsIgnoreCase(msg.type()) && !msg.text().contains("404 (Not Found)")) {
+            if ("error".equalsIgnoreCase(msg.type())
+                    && !msg.text().contains("Failed to load resource:")
+                    && !msg.text().contains("404 (Not Found)")) {
                 System.err.println("BROWSER CONSOLE ERROR: " + msg.text());
                 consoleErrors.add(msg.text());
             }
@@ -132,11 +135,16 @@ public abstract class AbstractUiPlaywrightTest {
 
     @AfterEach
     void tearDownEach() {
-        if (context != null) {
-            context.close();
-            context = null;
+        try {
+            assertThat(pageErrors).as("Uncaught page errors in test").isEmpty();
+            assertThat(consoleErrors).as("Browser console errors in test").isEmpty();
+        } finally {
+            if (context != null) {
+                context.close();
+                context = null;
+            }
+            resetDefaultStubs();
         }
-        resetDefaultStubs();
     }
 
     protected static void resetDefaultStubs() {
@@ -242,6 +250,31 @@ public abstract class AbstractUiPlaywrightTest {
     protected void openJournalTab() {
         switchTab("tab-journal");
         page.waitForSelector("#journal-table");
+    }
+
+    protected void assertDualLayerGeometry(Locator wrapperLocator, boolean isRichMode) {
+        Locator textarea = wrapperLocator.locator("textarea");
+        Locator backdrop = wrapperLocator.locator(".dual-layer-backdrop");
+
+        assertThat(textarea.isVisible()).isTrue();
+        assertThat(backdrop.isVisible()).isTrue();
+
+        if (isRichMode) {
+            String color = (String) textarea.evaluate("el => window.getComputedStyle(el).color");
+            assertThat(color).isIn("rgba(0, 0, 0, 0)", "transparent");
+        }
+
+        String taFont = (String) textarea.evaluate("el => window.getComputedStyle(el).fontFamily");
+        String bdFont = (String) backdrop.evaluate("el => window.getComputedStyle(el).fontFamily");
+        assertThat(taFont).isEqualTo(bdFont);
+
+        String taSize = (String) textarea.evaluate("el => window.getComputedStyle(el).fontSize");
+        String bdSize = (String) backdrop.evaluate("el => window.getComputedStyle(el).fontSize");
+        assertThat(taSize).isEqualTo(bdSize);
+
+        String taLineHeight = (String) textarea.evaluate("el => window.getComputedStyle(el).lineHeight");
+        String bdLineHeight = (String) backdrop.evaluate("el => window.getComputedStyle(el).lineHeight");
+        assertThat(taLineHeight).isEqualTo(bdLineHeight);
     }
 
     protected void filterJournal(String query) {

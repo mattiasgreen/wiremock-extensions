@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 8de5bec">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@8de5bec)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 8ca0546">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@8ca0546)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -655,6 +655,10 @@
                           <span>Response Body</span>
                           <span class="preview-pill-group" id="casual-response-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="casual-response-top-pill" role="button" tabindex="0" title="Click to collapse">CASUAL JSON</span>
+                            <div class="editor-mode-toggle" id="casual-response-mode-toggle">
+                              <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button>
+                              <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button>
+                            </div>
                             <button type="button" id="btn-casual-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
