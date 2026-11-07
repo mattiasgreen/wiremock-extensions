@@ -76,6 +76,18 @@ _Avoid_: escape mode, encoding flag, wrapper type
 The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and HTTP/Casual Testers), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
 _Avoid_: code box, custom textarea, raw editor pane
 
+**Unified Payload Component**:
+The single canonical UI component instance mounted identically across View Stub cards, Edit Stub modal panels, Maximized Viewports, Testers, and Journal entries. Encapsulates the 2×2 state engine, the standard header toolbar, live nested block unescaping/re-escaping, and bidirectional synchronization.
+_Avoid_: custom viewer, preview panel, raw text container
+
+**2×2 Payload Experience Matrix**:
+The orthogonal state grid governing payload presentation and manipulation: Mode Axis (`Rich` vs. `Raw`) and Action Axis (`View` vs. `Edit`), yielding four explicit operational states (Rich View, Rich Edit, Raw View, Raw Edit).
+_Avoid_: display switcher, format mode grid, editor toggle matrix
+
+**In-Place Block Editing**:
+The capability within Rich View to edit an unescaped, formatted sub-payload directly without manual escaping, with automatic structural re-serialization and re-escaping into the parent document upon save.
+_Avoid_: nested edit popup, inline string unescaper, sub-editor modal
+
 **Dual-Layer Code Editor**:
 A zero-dependency editor component coupling a foreground `<textarea>` (configured with transparent text, visible caret, and spellcheck disabled) with a background `<pre class="editor-backdrop"><code>` layer running `highlightPayload()`, with locked font metrics and scroll synchronization.
 _Avoid_: fake code editor, syntax textarea, custom input box
