@@ -55,6 +55,13 @@ export const CAPABILITY_METADATA = [
     desc: 'In-process Netty Kafka wire sink and HTTP-to-queue trigger mediator',
     icon: '📬',
     endpoint: '/__admin/async/status'
+  },
+  {
+    key: 'journal',
+    name: 'Zstandard Journal Compression (Beta)',
+    desc: 'High-density adaptive dictionary compression and JVM headroom governor',
+    icon: '🗜️',
+    endpoint: '/__admin/journal/stats'
   }
 ];
 

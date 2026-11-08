@@ -152,7 +152,12 @@ function buildRowHtml(req) {
   const casualService = getHeader(reqHeaders, 'x-casual-service')
     || (url.startsWith('/__casual/services/') ? url.substring('/__casual/services/'.length) : null);
   const isCasual = Boolean(casualService);
-  const displayMethod = isCasual ? 'CASUAL' : method;
+  const asyncChannel = getHeader(reqHeaders, 'x-async-channel')
+    || (url.startsWith('/__async/') ? url.split('/')[3] || url.substring('/__async/'.length) : null);
+  const asyncProtocol = (getHeader(reqHeaders, 'x-async-protocol')
+    || (url.startsWith('/__async/') ? url.split('/')[2] : 'async') || 'async').toUpperCase();
+  const isAsync = Boolean(asyncChannel || url.startsWith('/__async/'));
+  const displayMethod = isCasual ? 'CASUAL' : isAsync ? asyncProtocol : method;
   const casualErrorState = isCasual
     ? (getHeader(resHeaders, 'x-casual-error-state')
         || (status >= 200 && status < 300 ? 'OK' : (status === 404 ? 'TPENOENT' : 'TPESVCFAIL')))
@@ -165,10 +170,10 @@ function buildRowHtml(req) {
   const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
 
   let html = `
-    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${isCasual ? 'casual' : 'http'}" data-testid="journal-row">
+    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${isCasual ? 'casual' : isAsync ? 'async' : 'http'}" data-testid="journal-row">
       <td><span class="journal-chevron">▶</span></td>
       <td>${time}</td>
-      <td><span class="http-badge badge-${displayMethod}" title="${isCasual ? 'Casual XATMI Service Call (tpcall)' : escapeHtml(method)}">${displayMethod}</span></td>
+      <td><span class="http-badge badge-${displayMethod}" title="${isCasual ? 'Casual XATMI Service Call (tpcall)' : isAsync ? `${asyncProtocol} Message Event` : escapeHtml(method)}">${displayMethod}</span></td>
       <td title="${escapeHtml(url)}">
         ${escapeHtml(url)}
       </td>
@@ -266,7 +271,7 @@ function buildRowHtml(req) {
               ` : ''}
               <div class="journal-detail-card">
                 <div class="journal-card-header">
-                  <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
+                  <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : isAsync ? `${asyncProtocol} Event: ${escapeHtml(asyncChannel || url)}` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill ${isCasual ? 'Casual ' : 'HTTP '}Tester with this exact request">🚀 Replay in ${isCasual ? 'Casual ' : ''}Tester</button>
                     <button class="btn btn-small btn-journal-copy-curl" data-id="${req.id}" data-testid="btn-journal-copy-curl" title="Copy request as cURL command">📋 Copy cURL</button>

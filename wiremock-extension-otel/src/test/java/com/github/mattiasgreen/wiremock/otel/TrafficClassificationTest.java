@@ -135,6 +135,34 @@ class TrafficClassificationTest {
     }
 
     @Test
+    @DisplayName("Classify async protocol and queue destination from URI and headers")
+    void shouldClassifyAsyncProtocolAndQueueDestination() throws Exception {
+        server.stubFor(
+                post(urlEqualTo("/__async/kafka/orders.events")).willReturn(okJson("{\"status\":\"RECEIVED\"}")));
+
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__async/kafka/orders.events"))
+                .header("X-Async-Protocol", "kafka")
+                .header("X-Async-Channel", "orders.events")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"orderId\":\"ORD-123\"}"))
+                .build();
+
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        assertThat(resp.statusCode()).isEqualTo(200);
+
+        List<ServeEvent> events = server.getAllServeEvents();
+        assertThat(events).hasSize(1);
+
+        TrafficClassification tc = TrafficClassification.from(events.get(0));
+
+        assertThat(tc.protocol()).isEqualTo("kafka");
+        assertThat(tc.rpcSystem()).isEqualTo("kafka");
+        assertThat(tc.rpcService()).isEqualTo("orders.events");
+        assertThat(tc.rpcStatus()).isEqualTo("OK");
+        assertThat(tc.trafficType()).isEqualTo("stubbed");
+    }
+
+    @Test
     @DisplayName("Classify Proxied and Fault responses")
     void shouldClassifyProxiedAndFaultResponses() throws Exception {
         WireMockServer upstream =

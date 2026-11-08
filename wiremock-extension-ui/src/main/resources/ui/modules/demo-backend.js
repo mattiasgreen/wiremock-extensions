@@ -1182,6 +1182,22 @@ class InMemoryDemoBackend {
       }
     }
 
+    // 9. Journal Compression & Anti-OOM (Beta)
+    if (pathname === '/__admin/journal/stats') {
+      if (method === 'GET') {
+        return responseJson(200, {
+          totalEvents: this.requests.length,
+          rawBytesTotal: this.requests.length * 1024,
+          compressedBytesTotal: Math.round(this.requests.length * 1024 / 16.5),
+          compressionRatio: 16.5,
+          activeDictionaries: 2,
+          totalEvictions: 0,
+          usedMemoryBytes: 1048576,
+          maxMemoryBytes: 104857600
+        });
+      }
+    }
+
     if (pathname === '/__admin/casual/call' && method === 'POST') {
       const payload = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
       const service = payload.service || 'echoService';
@@ -1293,8 +1309,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/adaptive-zstd-journal-compression',
-        commit: '010711c'
+        branch: 'feat/cross-extension-alignment',
+        commit: '225f38c'
       });
     }
 

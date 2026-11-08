@@ -58,6 +58,7 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
     public static final AttributeKey<String> ATTR_HTTP_METHOD = AttributeKey.stringKey("http_request_method");
     public static final AttributeKey<String> ATTR_HTTP_STATUS = AttributeKey.stringKey("http_response_status_code");
     public static final AttributeKey<String> ATTR_TARGET_UPSTREAM = AttributeKey.stringKey("target_upstream");
+    public static final AttributeKey<String> ATTR_RPC_SYSTEM = AttributeKey.stringKey("rpc_system");
     public static final AttributeKey<String> ATTR_RPC_SERVICE = AttributeKey.stringKey("rpc_service");
     public static final AttributeKey<String> ATTR_CASUAL_ERROR_STATE = AttributeKey.stringKey("casual_error_state");
 
@@ -398,10 +399,14 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 .put(ATTR_WIREMOCK_MATCHED, String.valueOf(tc.matched()))
                 .put(ATTR_WIREMOCK_STUB_NAME, tc.stubName() != null ? tc.stubName() : "none");
 
+        if (tc.rpcSystem() != null && !tc.rpcSystem().isBlank()) {
+            builder.put(ATTR_RPC_SYSTEM, tc.rpcSystem());
+        }
+        if (tc.rpcService() != null && !tc.rpcService().isBlank()) {
+            builder.put(ATTR_RPC_SERVICE, tc.rpcService());
+        }
+
         if ("casual".equalsIgnoreCase(safeProtocol)) {
-            if (tc.rpcService() != null && !tc.rpcService().isBlank()) {
-                builder.put(ATTR_RPC_SERVICE, tc.rpcService());
-            }
             if (tc.rpcStatus() != null && !tc.rpcStatus().isBlank()) {
                 builder.put(ATTR_CASUAL_ERROR_STATE, tc.rpcStatus());
             }
@@ -528,11 +533,14 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
 
             span.setAttribute(TRACE_WIREMOCK_PROTOCOL, tc.protocol());
 
+            if (tc.rpcSystem() != null && !tc.rpcSystem().isBlank()) {
+                span.setAttribute(TRACE_RPC_SYSTEM, tc.rpcSystem());
+            }
+            if (tc.rpcService() != null && !tc.rpcService().isBlank()) {
+                span.setAttribute(TRACE_RPC_SERVICE, tc.rpcService());
+            }
+
             if ("casual".equals(tc.protocol())) {
-                span.setAttribute(TRACE_RPC_SYSTEM, "casual");
-                if (tc.rpcService() != null) {
-                    span.setAttribute(TRACE_RPC_SERVICE, tc.rpcService());
-                }
                 span.setAttribute(TRACE_RPC_METHOD, "tpcall");
                 if (tc.rpcStatus() != null) {
                     span.setAttribute(TRACE_CASUAL_ERROR_STATE, tc.rpcStatus());
