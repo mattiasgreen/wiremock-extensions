@@ -39,6 +39,16 @@ public record ClusterSignature(String key) {
                 return new ClusterSignature("casual-proxy:" + service);
             }
 
+            // Async queue / broker proxy check
+            if (request != null && request.containsHeader("X-Async-Channel")) {
+                String protocol =
+                        request.containsHeader("X-Async-Protocol") ? request.getHeader("X-Async-Protocol") : "generic";
+                return new ClusterSignature("async-proxy:" + protocol + ":" + request.getHeader("X-Async-Channel"));
+            }
+            if (request != null && request.getUrl() != null && request.getUrl().startsWith("/__async/")) {
+                return new ClusterSignature("async-proxy:" + cleanAsyncPath(request.getUrl()));
+            }
+
             if (proxyUrl != null && !proxyUrl.isBlank()) {
                 try {
                     URI uri = URI.create(proxyUrl);
@@ -63,10 +73,29 @@ public record ClusterSignature(String key) {
             return new ClusterSignature("casual-stub:" + request.getHeader("X-Casual-Service"));
         }
 
-        // 4. Unmatched traffic fallback
+        // 4. Async messaging queue / channel clustering
+        if (request != null && request.containsHeader("X-Async-Channel")) {
+            String protocol =
+                    request.containsHeader("X-Async-Protocol") ? request.getHeader("X-Async-Protocol") : "generic";
+            return new ClusterSignature("async-queue:" + protocol + ":" + request.getHeader("X-Async-Channel"));
+        }
+        if (request != null && request.getUrl() != null && request.getUrl().startsWith("/__async/")) {
+            return new ClusterSignature("async-queue:" + cleanAsyncPath(request.getUrl()));
+        }
+
+        // 5. Unmatched traffic fallback
         String method = request != null && request.getMethod() != null
                 ? request.getMethod().getName()
                 : "GET";
         return new ClusterSignature("unmatched:" + method);
+    }
+
+    private static String cleanAsyncPath(String url) {
+        String path = url.substring("/__async/".length());
+        int queryIdx = path.indexOf('?');
+        if (queryIdx >= 0) {
+            path = path.substring(0, queryIdx);
+        }
+        return path.replace('/', ':');
     }
 }

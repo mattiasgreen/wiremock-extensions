@@ -1294,7 +1294,7 @@ class InMemoryDemoBackend {
       return responseJson(200, {
         version: '1.14.0',
         branch: 'feat/adaptive-zstd-journal-compression',
-        commit: 'e6efa3c'
+        commit: '010711c'
       });
     }
 
