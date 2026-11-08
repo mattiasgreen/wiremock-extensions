@@ -1,10 +1,10 @@
 # WireMock Extensions Bundle
 
-An umbrella module that packages all extensions (`json-logging`, `otel`, `openapi`, `stateful` (experimental), `tcp-netem`, `casual`, and `ui`) into a single artifact with zero-touch auto-discovery.
+An umbrella module that packages all extensions (`json-logging`, `otel`, `openapi`, `stateful` (experimental), `tcp-netem`, `casual`, `async` (beta), and `ui`) into a single artifact with zero-touch auto-discovery.
 
 ## Problem Statement
 
-WireMock users who want structured JSON logging, Prometheus metrics, OpenAPI synthesis, dynamic stateful simulation, TCP network emulation, Casual protocol simulation, and the web UI typically need to manage separate dependencies or download separate JAR files for the CLI classpath.
+WireMock users who want structured JSON logging, Prometheus metrics, OpenAPI synthesis, dynamic stateful simulation, TCP network emulation, Casual protocol simulation, asynchronous Kafka/queue mocking, and the web UI typically need to manage separate dependencies or download separate JAR files for the CLI classpath.
 
 ## How It Addresses the Problem
 
@@ -15,6 +15,7 @@ The bundle module aggregates:
 - `wiremock-extension-stateful` (Experimental / Alpha Prototype)
 - `wiremock-extension-tcp-netem`
 - `wiremock-extension-casual`
+- `wiremock-extension-async` (Beta)
 - `wiremock-extension-ui`
 
 It re-exports all extensions under a single dependency coordinate and includes a pre-configured standalone runner for instant local development.

@@ -17,6 +17,8 @@ spotbugs-plugin = "6.1.7"
 findsecbugs = "1.14.0"
 casual = "3.4.0"
 netty = "4.1.121.Final"
+kafka = "3.9.0"
+protonj2 = "1.4.0"
 
 [libraries]
 casual-api = { module = "se.laz.casual:casual-api", version.ref = "casual" }
@@ -49,6 +51,8 @@ prometheus-metrics-core = { module = "io.prometheus:prometheus-metrics-core", ve
 prometheus-metrics-exporter-common = { module = "io.prometheus:prometheus-metrics-exporter-common", version.ref = "prometheus" }
 prometheus-metrics-exposition-formats = { module = "io.prometheus:prometheus-metrics-exposition-formats", version.ref = "prometheus" }
 swagger-parser = { module = "io.swagger.parser.v3:swagger-parser", version.ref = "swagger-parser" }
+kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
+protonj2-client = { module = "org.apache.qpid:protonj2-client", version.ref = "protonj2" }
 findsecbugs-plugin = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version.ref = "findsecbugs" }
 
 [plugins]

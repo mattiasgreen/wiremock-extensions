@@ -116,6 +116,11 @@
                 <td><code>/__admin/casual/config</code> (TCP :7772)</td>
               </tr>
               <tr>
+                <td><strong><code>wiremock-extension-async</code></strong> <span class="badge blue">Beta</span></td>
+                <td>In-process Netty Kafka wire sink, AMQP/queue bridge, synthetic journal mediation, and HTTP async triggers.</td>
+                <td><code>/__admin/async/status</code>, <code>GET /__admin/async/sinks/kafka</code></td>
+              </tr>
+              <tr>
                 <td><strong><code>wiremock-extension-otel</code></strong></td>
                 <td>In-process request counters, latency histograms, and W3C tracing spans.</td>
                 <td><code>/__admin/metrics/prometheus</code></td>
@@ -284,7 +289,19 @@ POST http://localhost:8080/__admin/mappings
 }</code></pre>
         </div>
 
-        <!-- OTEL Extension -->
+        <!-- Async Messaging Extension -->
+        <div id="ext-async" class="card" style="margin-bottom: 2rem;">
+          <h3>📬 Asynchronous Messaging &amp; Queue Simulation (`wiremock-extension-async`) <span class="badge blue">Beta</span></h3>
+          <p>
+            Enables in-process asynchronous message broker simulation and hybrid HTTP-to-queue flows without launching heavyweight Docker brokers or ZooKeeper daemons.
+          </p>
+          <ul style="margin: 0.75rem 0 1rem 1.25rem;">
+            <li><strong>In-Process Kafka Wire Sink</strong>: Zero-dependency Netty TCP server implementing binary Kafka RPC framing (<code>ApiVersions</code>, <code>Metadata</code>, <code>InitProducerId</code>, <code>Produce</code>) compatible with official <code>org.apache.kafka.clients.producer.KafkaProducer</code>.</li>
+            <li><strong>HTTP-to-Queue Trigger Listener</strong>: WireMock <code>ServeEventListener</code> that evaluates dynamic jsonPath templates (e.g. <code>{{jsonPath response.body '$.id'}}</code>) and asynchronously produces messages to target queues/topics.</li>
+            <li><strong>Dual-Broker Async Bridge</strong>: Provides in-memory isolation for unit tests and forward/harvest proxy modes for upstream broker simulation.</li>
+            <li><strong>Admin API &amp; Telemetry</strong>: Query status via <code>GET /__admin/async/status</code>, inspect consumed messages, and trigger manual event publications.</li>
+          </ul>
+        </div>
         <div id="ext-otel" class="card" style="margin-bottom: 2rem;">
           <h3>📊 OpenTelemetry &amp; Metrics (`wiremock-extension-otel`)</h3>
           <p>
