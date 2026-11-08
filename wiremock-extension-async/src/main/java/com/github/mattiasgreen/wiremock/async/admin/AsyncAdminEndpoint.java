@@ -52,8 +52,46 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
             resp.put("messagesConsumed", engine.getMessagesConsumed());
             resp.put("messagesProduced", engine.getMessagesProduced());
             resp.put("messagesProxied", engine.getMessagesProxied());
+            resp.put("journalCount", engine.getJournal().size());
+            resp.put("harvestedCount", engine.getHarvestedStubs().size());
 
             try {
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(MAPPER.writeValueAsString(resp))
+                        .build();
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(500)
+                        .build();
+            }
+        });
+
+        // GET /__admin/async/journal
+        router.add(RequestMethod.GET, "/async/journal", (admin, serveEvent, pathParams) -> {
+            try {
+                Map<String, Object> resp = Map.of(
+                        "count", engine.getJournal().size(),
+                        "journal", engine.getJournal());
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(MAPPER.writeValueAsString(resp))
+                        .build();
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(500)
+                        .build();
+            }
+        });
+
+        // GET /__admin/async/stubs
+        router.add(RequestMethod.GET, "/async/stubs", (admin, serveEvent, pathParams) -> {
+            try {
+                Map<String, Object> resp = Map.of(
+                        "count", engine.getHarvestedStubs().size(),
+                        "stubs", engine.getHarvestedStubs());
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")

@@ -52,6 +52,10 @@ _Avoid_: message flow style, queue interaction mode
 An active forwarding conduit linking a test broker destination with an upstream broker destination, supporting live proxy forwarding and 1-click stub harvesting across the test pyramid.
 _Avoid_: message pipe, queue router, broker link
 
+**Async Messaging Engine**:
+A deep module unifying in-process Kafka wire sinks, queue bridging, stub matching, offline stub harvesting, and telemetry journaling behind a cohesive lifecycle and routing interface.
+_Avoid_: async manager, queue coordinator, message helper
+
 ### Web Console & Developer UI
 
 **Stub Catalog**:
