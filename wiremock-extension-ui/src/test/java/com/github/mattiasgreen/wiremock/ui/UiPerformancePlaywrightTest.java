@@ -52,8 +52,15 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
             System.out.printf(
                     "  -> Boot Long Task: %s ms (start: %s ms)%n", task.get("durationMs"), task.get("startTimeMs"));
         }
-        // Reset long tasks for interactive phase
-        page.evaluate("() => { if (window.__perfRecords) window.__perfRecords.longTasks = []; }");
+
+        // Allow any trailing boot-up asynchronous layout/rendering tasks to settle
+        page.waitForTimeout(100);
+
+        // Reset long tasks for interactive phase and capture interactive start mark
+        double interactiveStart = ((Number)
+                        page.evaluate(
+                                "() => { if (window.__perfRecords) window.__perfRecords.longTasks = []; return performance.now(); }"))
+                .doubleValue();
 
         Map<String, Double> initialMetrics = getCdpMetrics(cdp);
 
@@ -104,6 +111,10 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
 
         List<Map<String, Object>> severeLongTasks = longTasks.stream()
                 .filter(t -> {
+                    Object start = t.get("startTimeMs");
+                    if (start instanceof Number s && s.doubleValue() < interactiveStart) {
+                        return false;
+                    }
                     Object dur = t.get("durationMs");
                     return (dur instanceof Number n) && n.doubleValue() >= 100.0;
                 })
@@ -159,7 +170,10 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#tester-url").fill("/perf-test");
 
         // Clear long tasks before sending and viewing response to isolate viewer performance
-        page.evaluate("() => { if (window.__perfRecords) window.__perfRecords.longTasks = []; }");
+        double viewerStart = ((Number)
+                        page.evaluate(
+                                "() => { if (window.__perfRecords) window.__perfRecords.longTasks = []; return performance.now(); }"))
+                .doubleValue();
 
         page.locator("#btn-tester-send").click();
         page.waitForSelector("#tester-response-status:has-text('200')");
@@ -198,6 +212,10 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
 
         List<Map<String, Object>> severeLongTasks = longTasks.stream()
                 .filter(t -> {
+                    Object start = t.get("startTimeMs");
+                    if (start instanceof Number s && s.doubleValue() < viewerStart) {
+                        return false;
+                    }
                     Object dur = t.get("durationMs");
                     return (dur instanceof Number n) && n.doubleValue() >= 100.0;
                 })
