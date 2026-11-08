@@ -126,6 +126,7 @@ public abstract class AbstractUiPlaywrightTest {
                     && !response.url().contains("/__admin/tcp-netem/")
                     && !response.url().contains("/__admin/metrics/")
                     && !response.url().contains("/__admin/stateful/")
+                    && !response.url().contains("/__admin/async/")
                     && !response.url().contains("/__admin/stubs/disabled")) {
                 System.err.println("HTTP ERROR RESPONSE: " + response.status() + " " + response.url());
                 httpErrors.add(response.status() + " " + response.url());

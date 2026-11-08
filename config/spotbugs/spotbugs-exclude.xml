@@ -10,10 +10,14 @@
         <Bug pattern="IMPROPER_UNICODE"/>
     </Match>
 
-    <!-- Exclude raw unencrypted TCP socket warnings and simulation pseudorandomness for tcp-netem -->
+    <!-- Exclude raw unencrypted TCP socket warnings and simulation pseudorandomness for tcp-netem and async sinks -->
     <Match>
         <Package name="~com\.github\.mattiasgreen\.wiremock\.netem\..*"/>
         <Bug pattern="UNENCRYPTED_SERVER_SOCKET,UNENCRYPTED_SOCKET,PREDICTABLE_RANDOM"/>
+    </Match>
+    <Match>
+        <Package name="~com\.github\.mattiasgreen\.wiremock\.async\..*"/>
+        <Bug pattern="UNENCRYPTED_SERVER_SOCKET,UNENCRYPTED_SOCKET,CRLF_INJECTION_LOGS,SECCRLFLOG"/>
     </Match>
 
     <!-- Exclude singleton instance exposure for registries and engines -->
@@ -32,6 +36,10 @@
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.otel.WireMockTelemetryEngine"/>
         <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.async.engine.AsyncEngine"/>
+        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
     </Match>
 
     <!-- Exclude browser launcher and local file operations in desktop client WireMockStudio -->

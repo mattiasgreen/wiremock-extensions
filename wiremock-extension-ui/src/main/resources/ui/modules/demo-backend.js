@@ -1168,6 +1168,20 @@ class InMemoryDemoBackend {
       }
     }
 
+    // 8. Async Messaging & Queue Simulation (Beta)
+    if (pathname === '/__admin/async/status') {
+      if (method === 'GET') {
+        return responseJson(200, {
+          status: 'UP',
+          beta: true,
+          mode: 'MOCK',
+          kafkaSinkPort: 0,
+          messagesConsumed: 0,
+          messagesPublished: 0
+        });
+      }
+    }
+
     if (pathname === '/__admin/casual/call' && method === 'POST') {
       const payload = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
       const service = payload.service || 'echoService';
@@ -1279,8 +1293,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/dual-layer-editor-and-viewport-hardening',
-        commit: '7c22f0c'
+        branch: 'feat/async-messaging-extension',
+        commit: 'a355e1f'
       });
     }
 

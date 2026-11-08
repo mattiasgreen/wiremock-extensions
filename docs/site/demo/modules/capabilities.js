@@ -48,6 +48,13 @@ export const CAPABILITY_METADATA = [
     desc: 'Netty XATMI Casual protocol gateway and transaction emulation',
     icon: '🔌',
     endpoint: '/__admin/casual/config'
+  },
+  {
+    key: 'async',
+    name: 'Async Messaging & Queues (Beta)',
+    desc: 'In-process Netty Kafka wire sink and HTTP-to-queue trigger mediator',
+    icon: '📬',
+    endpoint: '/__admin/async/status'
   }
 ];
 
