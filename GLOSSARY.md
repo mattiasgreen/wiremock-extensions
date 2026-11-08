@@ -30,6 +30,28 @@ _Avoid_: buffer label, casual type tag, payload info
 The bidirectional translation of Casual FML/FML32 (`.FIELDED` / `CFIELD/`) binary buffers into structured JSON without requiring pre-registered field definitions in a field table (`casual-fields.json`). Derives concrete wire data types directly from the 64-bit real field ID bitmask (`type = realId / 0x2000000`), synthesizes deterministic `FLD_<realId>` JSON properties, auto-unnests embedded binary documents, and enables bidirectional wire re-encoding for offline stubs.
 _Avoid_: raw binary fallback, blind Base64 encoding, untyped fielded dump
 
+### Async Messaging & Queue Mocking
+
+**Async Message Stubbing**:
+Inbound queue, topic, or channel message consumption matching header and payload patterns, optionally producing outbound reply messages and logging the exchange into the WireMock journal.
+_Avoid_: queue listener, message mock, async spy
+
+**Async Metadata Extension**:
+Encapsulating async messaging configuration (protocol, broker URI, channel, message pattern matchers, reply definition, ACK policy) within standard WireMock stub metadata (`metadata.async`), co-locating async stubs with HTTP and Casual stubs without separate file hierarchies.
+_Avoid_: queue stub DSL, async mapping file, broker config block
+
+**Synthetic Async ServeEvent**:
+The bidirectional translation of an inbound consumed message and its synthetic outbound reply into WireMock's core `ServeEvent` / `LoggedRequest` journal pipeline, enabling full console search, status badging, and payload unnesting.
+_Avoid_: queue log entry, message journal record, async trace
+
+**Message Exchange Pattern (MEP)**:
+The structural interaction model of an asynchronous exchange, supporting both `Request-Reply` (consume from queue A, match, and publish correlated reply to queue B or `reply-to`) and `Fire-and-Forget` / event sink (consume, match, journal, with no reply).
+_Avoid_: message flow style, queue interaction mode
+
+**Async Queue Bridge**:
+An active forwarding conduit linking a test broker destination with an upstream broker destination, supporting live proxy forwarding and 1-click stub harvesting across the test pyramid.
+_Avoid_: message pipe, queue router, broker link
+
 ### Web Console & Developer UI
 
 **Stub Catalog**:
