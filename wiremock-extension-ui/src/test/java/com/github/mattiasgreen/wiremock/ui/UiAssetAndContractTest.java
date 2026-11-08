@@ -88,6 +88,8 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"nav-tab-netem\"");
         assertThat(html).contains("id=\"tab-netem\"");
         assertThat(html).contains("id=\"netem-journal-table\"");
+        assertThat(html).contains("id=\"payload-lens-mode-toggle\"");
+        assertThat(html).contains("id=\"btn-lens-view-edit-toggle\"");
     }
 
     @Test
@@ -128,6 +130,7 @@ public class UiAssetAndContractTest {
         assertThat(jsResp.body()).contains("highlightJson");
         assertThat(jsResp.body()).contains("generateCurl");
         assertThat(jsResp.body()).contains("parseHash");
+        assertThat(jsResp.body()).contains("attachDualLayerEditor");
         assertThat(jsResp.headers().firstValue("Cache-Control")).isPresent();
 
         HttpRequest cssReq = HttpRequest.newBuilder()
@@ -138,6 +141,9 @@ public class UiAssetAndContractTest {
         assertThat(cssResp.statusCode()).isEqualTo(200);
         assertThat(cssResp.headers().firstValue("Content-Type").get()).contains("text/css");
         assertThat(cssResp.body()).contains(":root");
+        assertThat(cssResp.body()).contains(".dual-layer-editor-wrapper");
+        assertThat(cssResp.body()).contains(".mode-rich");
+        assertThat(cssResp.body()).contains(".mode-raw");
         assertThat(cssResp.body()).contains(".json-key");
         assertThat(cssResp.body()).contains(".tester-container");
 
@@ -259,6 +265,34 @@ public class UiAssetAndContractTest {
                     assertThat(Files.isRegularFile(resolved))
                             .as("ES6 import '%s' in %s must resolve to an existing file", importTarget, jsFile)
                             .isTrue();
+                }
+
+                // Verify named imports exist in the target module
+                Pattern namedImportPattern =
+                        Pattern.compile("import\\s*\\{([^}]+)\\}\\s*from\\s*['\"](\\.[^'\"]+)['\"]", Pattern.DOTALL);
+                Matcher namedMatcher = namedImportPattern.matcher(content);
+                while (namedMatcher.find()) {
+                    String importedSymbols = namedMatcher.group(1);
+                    String importTarget = namedMatcher.group(2);
+                    Path resolved = jsFile.getParent().resolve(importTarget).normalize();
+                    String targetContent = Files.readString(resolved, StandardCharsets.UTF_8);
+
+                    for (String symbolDecl : importedSymbols.split(",")) {
+                        String clean = symbolDecl.trim();
+                        if (clean.isEmpty()) continue;
+                        String exportedName = clean.split("\\s+as\\s+")[0].trim();
+                        Pattern exportPattern =
+                                Pattern.compile("export\\s+(?:async\\s+)?(?:function|class|const|let|var)\\s+"
+                                        + Pattern.quote(exportedName)
+                                        + "\\b|export\\s*\\{[^}]*\\b"
+                                        + Pattern.quote(exportedName)
+                                        + "\\b[^}]*\\}");
+                        assertThat(exportPattern.matcher(targetContent).find())
+                                .as(
+                                        "Module %s imports '%s' from %s, but %s does not export it",
+                                        jsFile.getFileName(), exportedName, importTarget, importTarget)
+                                .isTrue();
+                    }
                 }
             }
         }

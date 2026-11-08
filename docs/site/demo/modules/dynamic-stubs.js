@@ -6,6 +6,7 @@
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { createStatefulModel, loadData } from './api.js';
+import { mountCodeInputEditor } from './payload-lens.js';
 
 export const DYNAMIC_TEMPLATES = {
   'case-management': {
@@ -251,7 +252,23 @@ export function setupDynamicStubModal() {
     if (inputEntity) inputEntity.value = tpl.entity;
     if (inputParam) inputParam.value = tpl.idPathParam;
     if (inputPrefix) inputPrefix.value = tpl.idPrefix;
-    if (txtJson) txtJson.value = JSON.stringify(tpl.model, null, 2);
+    if (txtJson) {
+      txtJson.value = JSON.stringify(tpl.model, null, 2);
+      if (txtJson._dualLayer) txtJson._dualLayer.refresh();
+      txtJson.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  if (txtJson) {
+    mountCodeInputEditor(txtJson, {
+      title: 'Stateful Model AST',
+      format: 'json',
+      context: 'dynamic-model',
+      toggleContainer: document.getElementById('dynamic-model-mode-toggle'),
+      formatBtn: document.getElementById('btn-dynamic-model-format-json'),
+      maximizeBtn: document.getElementById('btn-dynamic-model-maximize'),
+      lintPill: document.getElementById('dynamic-model-lint-pill')
+    });
   }
 
   if (btnOpen) {

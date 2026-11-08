@@ -10,10 +10,12 @@ import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
   attachEmbeddedPayloadsBar,
+  attachDualLayerEditor,
   openPayloadLens,
   formatCasualBufferDescriptor,
   detectCharset,
-  pushViewportLayer
+  pushViewportLayer,
+  createPayloadComponent
 } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
@@ -151,8 +153,23 @@ export function initCasualTester() {
     if (el) el.addEventListener('change', () => updateCasualRoute(true));
   });
 
-  if (elements.casualRequestPayload && elements.casualPayloadEmbeddedBar) {
-    attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
+  if (elements.casualRequestPayload) {
+    createPayloadComponent(null, {
+      backingTextarea: elements.casualRequestPayload,
+      toggleEl: elements.casualPayloadModeToggle || document.getElementById('casual-payload-mode-toggle'),
+      pillEl: document.getElementById('casual-request-top-pill'),
+      pillGroupEl: document.getElementById('casual-request-top-pill-group'),
+      formatBtn: document.getElementById('btn-casual-format-json'),
+      maximizeBtn: document.getElementById('btn-casual-request-maximize'),
+      title: 'Casual Request Payload',
+      context: 'tester-request',
+      bufferType: (elements.casualBufferType && elements.casualBufferType.value) || 'JSON',
+      defaultAction: 'edit',
+      onChange: () => updateCasualRoute(true)
+    });
+    if (elements.casualPayloadEmbeddedBar) {
+      attachEmbeddedPayloadsBar(elements.casualRequestPayload, elements.casualPayloadEmbeddedBar, () => updateCasualRoute(true));
+    }
   }
 
   const reqTopPill = document.getElementById('casual-request-top-pill');
@@ -268,6 +285,7 @@ export function updateCasualRequestPill() {
         onSave: (savedText) => {
           if (elements.casualRequestPayload) {
             elements.casualRequestPayload.value = savedText;
+            if (elements.casualRequestPayload._dualLayer) elements.casualRequestPayload._dualLayer.refresh();
             updateCasualRequestPill();
             elements.casualRequestPayload.dispatchEvent(new Event('input', { bubbles: true }));
           }
@@ -567,40 +585,47 @@ export function renderCasualResponseBody(bodyText, hexText) {
   if (hexText !== undefined) lastHexCasualResponse = hexText || '';
   if (!elements.casualResponseBody) return;
 
-  if (casualViewMode === 'hex') {
+  if (casualViewMode === 'hex' || (lastCasualResponseData && lastCasualResponseData.isBinary && casualViewMode !== 'raw')) {
     elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
-  } else if (casualViewMode === 'raw') {
-    elements.casualResponseBody.textContent = lastRawCasualResponse;
-  } else {
-    if (lastCasualResponseData && lastCasualResponseData.isBinary) {
-      elements.casualResponseBody.textContent = lastHexCasualResponse || lastRawCasualResponse;
-    } else {
-      const discovered = discoverEmbeddedPayloads(lastRawCasualResponse);
-      if (discovered.length > 0) {
-        elements.casualResponseBody.innerHTML = renderFormattedWithNestedPreviews(lastRawCasualResponse, discovered, 'casual_res');
-      } else {
-        elements.casualResponseBody.innerHTML = highlightPayload(lastRawCasualResponse);
-      }
-    }
+    const topPillGroup = document.getElementById('casual-response-top-pill-group');
+    if (topPillGroup) topPillGroup.style.display = 'none';
+    return;
   }
 
+  if (lastCasualResponseData && lastCasualResponseData.isBinary && casualViewMode === 'raw') {
+    elements.casualResponseBody.textContent = lastRawCasualResponse;
+    const topPillGroup = document.getElementById('casual-response-top-pill-group');
+    if (topPillGroup) topPillGroup.style.display = 'none';
+    return;
+  }
+
+  const modeToggle = document.getElementById('casual-response-mode-toggle');
   const topPillGroup = document.getElementById('casual-response-top-pill-group');
   const topPill = document.getElementById('casual-response-top-pill');
-  if (topPillGroup && topPill) {
-    if (lastRawCasualResponse && lastRawCasualResponse.trim()) {
-      topPillGroup.style.display = 'inline-flex';
-      const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
-        || (lastCasualResponseHeaders && (lastCasualResponseHeaders['X-Casual-Buffer-Type'] || lastCasualResponseHeaders['x-casual-buffer-type']))
-        || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
-      const fmt = detectFormat(lastRawCasualResponse);
-      const sizeKb = (new Blob([lastRawCasualResponse]).size / 1024).toFixed(1);
-      const charset = detectCharset(lastRawCasualResponse, lastCasualResponseHeaders);
-      topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, charset);
-      topPill.title = elements.casualResponseBody.classList.contains('hidden') ? 'Click to expand' : 'Click to collapse';
-    } else {
-      topPillGroup.style.display = 'none';
-    }
-  }
+  const resMaxBtn = document.getElementById('btn-casual-response-maximize');
+
+  const bufferType = (lastCasualResponseData && lastCasualResponseData.bufferType)
+    || (lastCasualResponseHeaders && (lastCasualResponseHeaders['X-Casual-Buffer-Type'] || lastCasualResponseHeaders['x-casual-buffer-type']))
+    || (elements.casualBufferType ? elements.casualBufferType.value : 'JSON');
+  const charset = detectCharset(lastRawCasualResponse, lastCasualResponseHeaders);
+
+  createPayloadComponent(null, {
+    viewerEl: elements.casualResponseBody,
+    toggleEl: modeToggle,
+    pillEl: topPill,
+    pillGroupEl: topPillGroup,
+    maximizeBtn: resMaxBtn,
+    editBtn: document.getElementById('btn-casual-response-edit'),
+    readOnly: true,
+    editable: false,
+    readOnlyReason: 'Received Casual response buffer is read-only',
+    text: lastRawCasualResponse,
+    bufferType,
+    charset,
+    defaultMode: casualViewMode === 'raw' ? 'raw' : 'rich',
+    title: 'Casual Response Body',
+    context: 'casual-response'
+  });
 }
 
 export function displayCasualResponseResult(
@@ -661,7 +686,11 @@ export function displayCasualResponseResult(
     } else {
       const discovered = discoverEmbeddedPayloads(rawTrimmed);
       if (discovered.length > 0) {
-        elements.casualSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'casual_sent_req');
+        elements.casualSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'casual_sent_req', null, {
+          editable: false,
+          readOnlyReason: 'Sent request snapshot is read-only — edit the Request Payload input on the left',
+          context: 'casual-sent'
+        });
       } else {
         elements.casualSentBody.innerHTML = highlightPayload(rawTrimmed);
       }

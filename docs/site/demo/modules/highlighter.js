@@ -218,17 +218,19 @@ export function highlightJson(input) {
       jsonStr = String(input);
     }
   } else if (typeof input === 'string') {
+    jsonStr = input;
     const trimmed = input.trim();
     if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      isJson = true;
+    } else {
       try {
-        const parsed = JSON.parse(input);
-        jsonStr = JSON.stringify(parsed, null, 2);
+        JSON.parse(input);
         isJson = true;
       } catch (_) {
-        jsonStr = input;
+        if (/[{}[\]":]/.test(input)) {
+          isJson = true;
+        }
       }
-    } else {
-      jsonStr = input;
     }
   } else {
     jsonStr = String(input);

@@ -8,6 +8,8 @@ import { normalizeJsonPayload } from './base64.js';
 import { formatPayload, detectFormat } from './highlighter.js';
 import {
   attachEmbeddedPayloadsBar,
+  attachDualLayerEditor,
+  createPayloadComponent,
   pushViewportLayer,
   detectCharset,
   formatPayloadDescriptor
@@ -27,9 +29,65 @@ import { switchImportTab, handleBundleImport } from './import-export.js';
 let activeEditingStub = null;
 let isCloneMode = false;
 let activeEditorMode = 'form';
+let rawJsonComponent = null;
+
+function mountRawJsonComponent(defaultAction = 'view') {
+  const rawTextarea = document.getElementById('editor-raw-json');
+  const rawViewer = document.getElementById('editor-raw-json-viewer');
+  if (!rawTextarea) return null;
+
+  rawJsonComponent = createPayloadComponent(null, {
+    title: 'Stub Raw JSON',
+    text: rawTextarea.value,
+    format: 'json',
+    context: 'stub',
+    readOnly: false,
+    editable: true,
+    defaultMode: 'rich',
+    defaultAction: rawViewer ? defaultAction : 'edit',
+    viewerEl: rawViewer,
+    backingTextarea: rawTextarea,
+    toggleEl: elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'),
+    pillEl: document.getElementById('editor-raw-top-pill'),
+    pillGroupEl: document.getElementById('editor-raw-top-pill-group'),
+    formatBtn: document.getElementById('btn-editor-raw-format-json'),
+    maximizeBtn: document.getElementById('btn-editor-raw-maximize'),
+    editBtn: document.getElementById('btn-editor-raw-inline-edit'),
+    applyBtn: document.getElementById('btn-editor-raw-apply'),
+    cancelEditBtn: document.getElementById('btn-editor-raw-cancel-edit'),
+    copyBtn: document.getElementById('btn-editor-raw-copy'),
+    autoGrow: true
+  });
+  return rawJsonComponent;
+}
+let initialFormSnapshot = null;
+let initialRawSnapshot = null;
 
 export function getEditorMode() {
   return activeEditorMode;
+}
+
+export function isStubEditorDirty() {
+  const modal = document.getElementById('stub-editor-modal');
+  if (!modal || modal.classList.contains('hidden')) return false;
+  try {
+    if (activeEditorMode === 'json') {
+      const rawTextarea = document.getElementById('editor-raw-json');
+      return rawTextarea ? (rawTextarea.value !== initialRawSnapshot) : false;
+    } else {
+      return initialFormSnapshot !== null && JSON.stringify(buildStubFromForm()) !== initialFormSnapshot;
+    }
+  } catch (_) {
+    return false;
+  }
+}
+
+export function requestCloseStubEditor(force = false) {
+  if (force || !isStubEditorDirty() || window.confirm('You have unsaved changes in the stub editor. Discard changes?')) {
+    closeStubEditor();
+    return true;
+  }
+  return false;
 }
 
 export function handleToggleStub(stubId) {
@@ -584,6 +642,7 @@ export function setEditorMode(mode) {
     const stubObj = buildStubFromForm();
     if (rawTextarea) {
       rawTextarea.value = JSON.stringify(stubObj, null, 2);
+      mountRawJsonComponent('edit');
     }
     if (errorEl) {
       errorEl.classList.add('hidden');
@@ -594,6 +653,7 @@ export function setEditorMode(mode) {
     if (btnForm) btnForm.classList.remove('active');
     if (btnJson) btnJson.classList.add('active');
     activeEditorMode = 'json';
+    initialRawSnapshot = rawTextarea ? rawTextarea.value : '';
     return true;
   } else {
     if (rawTextarea && rawTextarea.value.trim()) {
@@ -620,6 +680,7 @@ export function setEditorMode(mode) {
     if (btnForm) btnForm.classList.add('active');
     if (btnJson) btnJson.classList.remove('active');
     activeEditorMode = 'form';
+    initialFormSnapshot = JSON.stringify(buildStubFromForm());
     return true;
   }
 }
@@ -630,7 +691,13 @@ export function formatRawEditorJson() {
   if (!rawTextarea || !rawTextarea.value.trim()) return;
   try {
     const parsed = JSON.parse(rawTextarea.value);
-    rawTextarea.value = JSON.stringify(parsed, null, 2);
+    const formatted = JSON.stringify(parsed, null, 2);
+    rawTextarea.value = formatted;
+    if (rawJsonComponent) {
+      rawJsonComponent.setText(formatted);
+    } else if (rawTextarea._dualLayer) {
+      rawTextarea._dualLayer.refresh();
+    }
     if (errorEl) {
       errorEl.classList.add('hidden');
       errorEl.textContent = '';
@@ -642,6 +709,15 @@ export function formatRawEditorJson() {
     }
     alert('Invalid JSON: ' + err.message);
   }
+}
+
+function cleanStubForWireMock(s) {
+  if (!s || typeof s !== 'object') return s;
+  const clean = { ...s };
+  delete clean._disabled;
+  delete clean._dynamic;
+  delete clean.isDynamic;
+  return clean;
 }
 
 export function openStubEditor(stub, clone = false) {
@@ -687,27 +763,54 @@ export function openStubEditor(stub, clone = false) {
   // Initialize raw JSON textarea with current stub
   const rawTextarea = document.getElementById('editor-raw-json');
   if (rawTextarea) {
-    const initialStub = clone
-      ? { ...stub, id: undefined, name: `${stub.name || 'Stub'} (Copy)` }
-      : (stub || buildStubFromForm());
+    let initialStub;
+    if (clone) {
+      initialStub = cleanStubForWireMock(stub);
+      initialStub.name = `${stub.name || 'Stub'} (Copy)`;
+      delete initialStub.id;
+      delete initialStub.uuid;
+    } else if (stub) {
+      initialStub = cleanStubForWireMock(stub);
+    } else {
+      initialStub = buildStubFromForm();
+    }
     rawTextarea.value = JSON.stringify(initialStub, null, 2);
   }
+  initialFormSnapshot = JSON.stringify(buildStubFromForm());
+  initialRawSnapshot = rawTextarea ? rawTextarea.value : '';
 
-  // Reset to form mode on open without re-parsing rawTextarea
+  // Setup mode panels: editing stubs uses direct JSON editor (no cumbersome form)
   const formPanel = document.getElementById('editor-form-panel');
   const jsonPanel = document.getElementById('editor-json-panel');
   const btnForm = document.getElementById('btn-editor-mode-form');
   const btnJson = document.getElementById('btn-editor-mode-json');
+  const modePills = document.querySelector('.editor-mode-pills');
   const errorEl = document.getElementById('editor-raw-json-error');
   if (errorEl) {
     errorEl.classList.add('hidden');
     errorEl.textContent = '';
   }
-  if (formPanel) formPanel.classList.remove('hidden');
-  if (jsonPanel) jsonPanel.classList.add('hidden');
-  if (btnForm) btnForm.classList.add('active');
-  if (btnJson) btnJson.classList.remove('active');
-  activeEditorMode = 'form';
+
+  const isEditingExisting = Boolean(stub && (stub.id != null || stub.uuid != null || clone));
+  mountRawJsonComponent(isEditingExisting ? 'view' : 'edit');
+
+  if (isEditingExisting) {
+    // When editing or cloning an existing stub: Direct JSON Editor (form removed for clean, robust editing)
+    if (modePills) modePills.classList.add('hidden');
+    if (formPanel) formPanel.classList.add('hidden');
+    if (jsonPanel) jsonPanel.classList.remove('hidden');
+    if (btnForm) btnForm.classList.remove('active');
+    if (btnJson) btnJson.classList.add('active');
+    activeEditorMode = 'json';
+  } else {
+    // When creating a new stub or using a template/quickstart (e.g. from journal snapshot)
+    if (modePills) modePills.classList.remove('hidden');
+    if (formPanel) formPanel.classList.remove('hidden');
+    if (jsonPanel) jsonPanel.classList.add('hidden');
+    if (btnForm) btnForm.classList.add('active');
+    if (btnJson) btnJson.classList.remove('active');
+    activeEditorMode = 'form';
+  }
 
   // Update Response Body Top Pill & Maximize
   const bodyEl = document.getElementById('editor-body');
@@ -722,6 +825,8 @@ export function openStubEditor(stub, clone = false) {
     }
   };
   if (bodyEl) {
+    attachDualLayerEditor(bodyEl, elements.editorBodyModeToggle || document.getElementById('editor-body-mode-toggle'));
+    if (bodyEl._dualLayer) bodyEl._dualLayer.refresh();
     bodyEl.oninput = updateBodyPill;
     updateBodyPill();
   }
@@ -748,36 +853,41 @@ export function openStubEditor(stub, clone = false) {
     };
   }
 
-  // Update Raw JSON Top Pill & Maximize
-  const rawTopPill = document.getElementById('editor-raw-top-pill');
-  const updateRawPill = () => {
-    if (rawTextarea && rawTopPill) {
-      const val = rawTextarea.value || '';
+  // Update Pattern Top Pill & Maximize
+  const patternEl = document.getElementById('editor-body-match-pattern');
+  const patternTopPill = document.getElementById('editor-pattern-top-pill');
+  const updatePatternPill = () => {
+    if (patternEl && patternTopPill) {
+      const val = patternEl.value || '';
+      const fmt = detectFormat(val).toUpperCase();
+      const charset = detectCharset(val);
       const sizeKb = (new Blob([val]).size / 1024).toFixed(1);
-      rawTopPill.textContent = formatPayloadDescriptor({ format: 'JSON', sizeKb });
+      patternTopPill.textContent = formatPayloadDescriptor({ format: fmt, charset, sizeKb });
     }
   };
-  if (rawTextarea) {
-    rawTextarea.oninput = updateRawPill;
-    updateRawPill();
+  if (patternEl) {
+    attachDualLayerEditor(patternEl, elements.editorPatternModeToggle || document.getElementById('editor-pattern-mode-toggle'));
+    if (patternEl._dualLayer) patternEl._dualLayer.refresh();
+    patternEl.oninput = updatePatternPill;
+    updatePatternPill();
   }
 
-  const btnRawMax = document.getElementById('btn-editor-raw-maximize');
-  if (btnRawMax) {
-    btnRawMax.onclick = (e) => {
+  const btnPatternMax = document.getElementById('btn-editor-pattern-maximize');
+  if (btnPatternMax) {
+    btnPatternMax.onclick = (e) => {
       e.preventDefault();
-      const val = rawTextarea ? rawTextarea.value : '';
+      const val = patternEl ? patternEl.value : '';
       pushViewportLayer({
-        title: 'Stub Raw JSON',
+        title: 'Stub Expected Pattern',
         text: val,
-        format: 'json',
-        context: 'stub',
+        format: detectFormat(val),
+        context: 'stub-pattern',
         mode: 'editor',
         onSave: (savedText) => {
-          if (rawTextarea) {
-            rawTextarea.value = savedText;
-            updateRawPill();
-            rawTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+          if (patternEl) {
+            patternEl.value = savedText;
+            updatePatternPill();
+            patternEl.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
       });
@@ -795,6 +905,8 @@ export function closeStubEditor() {
   activeEditingStub = null;
   isCloneMode = false;
   activeEditorMode = 'form';
+  initialFormSnapshot = null;
+  initialRawSnapshot = null;
 }
 
 export function saveStubEditor() {
@@ -808,7 +920,7 @@ export function saveStubEditor() {
       return;
     }
     try {
-      stubPayload = JSON.parse(rawTextarea.value);
+      stubPayload = cleanStubForWireMock(JSON.parse(rawTextarea.value));
       if (typeof stubPayload !== 'object' || stubPayload === null || Array.isArray(stubPayload)) {
         throw new Error('Stub mapping root must be a JSON object');
       }
@@ -824,9 +936,18 @@ export function saveStubEditor() {
     stubPayload = buildStubFromForm();
   }
 
-  const targetId = (!isCloneMode && activeEditingStub && activeEditingStub.id)
-    ? activeEditingStub.id
-    : (stubPayload.id && !isCloneMode ? stubPayload.id : null);
+  const existingId = (!isCloneMode && activeEditingStub)
+    ? (activeEditingStub.id || activeEditingStub.uuid)
+    : null;
+  const payloadId = (stubPayload && !isCloneMode)
+    ? (stubPayload.id || stubPayload.uuid)
+    : null;
+  const targetId = existingId || payloadId;
+
+  if (isCloneMode && stubPayload) {
+    delete stubPayload.id;
+    delete stubPayload.uuid;
+  }
 
   const isSnapshot = !targetId && stubPayload.metadata && stubPayload.metadata.source === 'recorded-proxy';
   const savePromise = (isCloneMode || !targetId)
@@ -888,10 +1009,18 @@ export function initStubLifecycleHandlers() {
 
   // Modal close/save buttons
   if (elements.btnCloseEditorModal) {
-    elements.btnCloseEditorModal.addEventListener('click', closeStubEditor);
+    elements.btnCloseEditorModal.addEventListener('click', () => requestCloseStubEditor());
   }
   if (elements.btnCancelEditor) {
-    elements.btnCancelEditor.addEventListener('click', closeStubEditor);
+    elements.btnCancelEditor.addEventListener('click', () => requestCloseStubEditor());
+  }
+  const stubEditorModal = document.getElementById('stub-editor-modal');
+  if (stubEditorModal) {
+    stubEditorModal.addEventListener('click', (e) => {
+      if (e.target === stubEditorModal) {
+        requestCloseStubEditor();
+      }
+    });
   }
   if (elements.btnSaveEditor) {
     elements.btnSaveEditor.addEventListener('click', saveStubEditor);
@@ -1023,18 +1152,27 @@ export function initStubLifecycleHandlers() {
     });
   }
 
-  // Attach embedded payload bars to stub editor textareas
+  // Attach dual-layer code editors & embedded payload bars to stub editor textareas
   const editorBody = document.getElementById('editor-body');
-  if (editorBody && elements.editorBodyEmbeddedBar) {
-    attachEmbeddedPayloadsBar(editorBody, elements.editorBodyEmbeddedBar);
+  if (editorBody) {
+    attachDualLayerEditor(editorBody, elements.editorBodyModeToggle || document.getElementById('editor-body-mode-toggle'));
+    if (elements.editorBodyEmbeddedBar) {
+      attachEmbeddedPayloadsBar(editorBody, elements.editorBodyEmbeddedBar);
+    }
   }
   const editorPattern = document.getElementById('editor-body-match-pattern');
-  if (editorPattern && elements.editorPatternEmbeddedBar) {
-    attachEmbeddedPayloadsBar(editorPattern, elements.editorPatternEmbeddedBar);
+  if (editorPattern) {
+    attachDualLayerEditor(editorPattern, elements.editorPatternModeToggle || document.getElementById('editor-pattern-mode-toggle'));
+    if (elements.editorPatternEmbeddedBar) {
+      attachEmbeddedPayloadsBar(editorPattern, elements.editorPatternEmbeddedBar);
+    }
   }
   const editorRaw = document.getElementById('editor-raw-json');
-  if (editorRaw && elements.editorRawEmbeddedBar) {
-    attachEmbeddedPayloadsBar(editorRaw, elements.editorRawEmbeddedBar);
+  if (editorRaw) {
+    attachDualLayerEditor(editorRaw, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
+    if (elements.editorRawEmbeddedBar) {
+      attachEmbeddedPayloadsBar(editorRaw, elements.editorRawEmbeddedBar);
+    }
   }
 }
 

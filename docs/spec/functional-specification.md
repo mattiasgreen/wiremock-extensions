@@ -234,10 +234,10 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Given** an API request or response payload contains escaped or encoded nested structures (e.g., escaped JSON inside JSON, XML inside an escaped JSON string, JSON inside XML CDATA, or Base64-encoded UTF-8 and single-byte non-UTF-8 payloads like ISO-8859-1 or KOI8-R).
 - **When** inspecting traffic in the Stub Catalog, Request Journal, HTTP Tester, or Casual Tester.
 - **Then** the engine automatically detects document syntax and character encoding (from XML prologs like `<?xml version="1.0" encoding="ISO-8859-1"?>`, `X-Casual-Charset`, or `Content-Type`), displaying concise descriptors (`JSON · 0.4 KB`, `XML · ISO-8859-1 · 0.2 KB`, `BASE64 · XML · KOI8-R · 0.3 KB`, `FIELDED · JSON · ISO-8859-1 · 0.4 KB`).
-- **And** the viewer auto-unnests embedded payloads inline by default with format badges and `Open in Lens` actions.
+- **And** the viewer auto-unnests embedded payloads inline by default with format badges and `Edit` / `Copy` actions.
 - **When** viewing or editing payloads in the Stub Editor (Response Body, Request Matcher, or Raw Stub JSON), HTTP Tester, or Casual Tester.
-- **Then** a live **Detected Embedded Payloads Bar** displays actionable chips for each discovered nested payload with its format, container encoding, and detected charset.
-- **When** the user clicks any embedded payload chip or lens button.
-- **Then** the **Nested Payload Lens** opens in a focused sub-editor with stacked breadcrumb drill-down (`Root ▸ $.node1 ▸ $.node2`), allowing independent pretty-printing, minification, node-scoped copying, and syntax validation.
-- **When** the user modifies the nested payload and clicks "Apply" or "Save All to Root".
-- **Then** the engine validates syntax (with a secondary `Force Apply Unvalidated` override for negative-testing stubs) and safely re-escapes and re-encodes the changes back through each layer's **Container Encoding Envelope** into the root wire payload—preserving exact single-byte character encoding on wire round-trips without corrupting sibling fields or outer quotes.
+- **Then** clicking `Edit` on any nested payload node activates an in-line, compact editor directly within the folded structure without separate detached viewports or modal stacking.
+- **When** the user modifies the nested payload and clicks "Apply".
+- **Then** the cascading engine executes **pure surgical in-place substitution** (direct JSON string literal replacement, XML CDATA slice substitution, or Base64 re-encoding) up the payload tree to the Root Document:
+  - Intermediate container envelopes act as translucent pass-throughs; all surrounding whitespace, indentation, line breaks, XML tags, and sibling fields are byte-for-byte preserved without newline or backslash explosions.
+  - The Root Document maintains the single source of truth for drafts with an "Unsaved Changes" dirty indicator, disabling duplicate root editor viewports and centralizing final persistence in the root's Save/Discard action.

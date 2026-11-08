@@ -150,7 +150,12 @@ import {
   validatePayload,
   applyNestedPayloadEdit,
   cascadeLensStackToRoot,
-  renderPayloadViewer
+  renderPayloadViewer,
+  attachDualLayerEditor,
+  pushViewportLayer,
+  popViewportLayer,
+  getActiveViewportLayer,
+  viewportStack
 } from './modules/payload-lens.js';
 import {
   formatPayload,
@@ -190,6 +195,11 @@ export {
   applyNestedPayloadEdit,
   cascadeLensStackToRoot,
   renderPayloadViewer,
+  attachDualLayerEditor,
+  pushViewportLayer,
+  popViewportLayer,
+  getActiveViewportLayer,
+  viewportStack,
   formatPayload,
   formatXml,
   minifyXml,
