@@ -511,10 +511,15 @@ export function selectStub(stub, updateRoute = true) {
   const topPillGroup = document.getElementById('stub-top-pill-group');
   const topPill = document.getElementById('stub-top-pill');
   const btnTopEdit = document.getElementById('btn-top-stub-edit');
+  const btnStubCopy = document.getElementById('btn-stub-copy');
   const btnStubMaximize = document.getElementById('btn-stub-maximize');
 
   if (btnTopEdit) {
-    btnTopEdit.style.display = isDynamic ? 'none' : 'inline-flex';
+    btnTopEdit.style.display = 'inline-flex';
+    btnTopEdit.disabled = Boolean(isDynamic);
+    btnTopEdit.title = isDynamic
+      ? 'Dynamic stateful model rule — edit via the Stateful Model editor'
+      : 'Edit stub mapping in editor modal';
   }
 
   createPayloadComponent(null, {
@@ -523,22 +528,19 @@ export function selectStub(stub, updateRoute = true) {
     pillEl: topPill,
     pillGroupEl: topPillGroup,
     maximizeBtn: btnStubMaximize,
+    copyBtn: btnStubCopy,
     editBtn: btnTopEdit,
-    onEdit: () => openStubEditor(stub, false),
+    onEdit: isDynamic ? null : () => openStubEditor(stub, false),
+    readOnly: true,
+    editable: false,
+    readOnlyReason: "Read-only stub preview — click '✏️ Edit' in the stub header above to modify this stub",
     text: rawStubJson,
     format: bodyFormat,
     charset: stubCharset,
     bufferType: normBuf,
     defaultMode: currentStubViewMode,
     title: `Stub: ${stub.name || stub.id}`,
-    context: 'stub',
-    onChange: (updatedStubJson) => {
-      try {
-        const parsed = JSON.parse(updatedStubJson);
-        Object.assign(stub, parsed);
-        selectStub(stub, false);
-      } catch (_) {}
-    }
+    context: 'stub'
   });
 
   if (updateRoute) {

@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 4d43a7e">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@4d43a7e)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/dual-layer-editor-and-viewport-hardening | Commit: 7c22f0c">v1.14.0 (feat/dual-layer-editor-and-viewport-hardening@7c22f0c)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -247,6 +247,7 @@
                     <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
                   </div>
                   <button type="button" id="btn-top-stub-edit" class="btn-payload-maximize btn-nested-edit" title="Edit stub mapping in editor modal">✏️ Edit</button>
+                  <button type="button" id="btn-stub-copy" class="btn btn-tiny" title="Copy stub mapping JSON">📋 Copy</button>
                   <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
                 </div>
               </div>
@@ -493,6 +494,7 @@
                               <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button>
                               <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button>
                             </div>
+                            <button type="button" id="btn-tester-response-edit" class="btn btn-tiny btn-viewer-inline-edit" disabled title="Received response payload is read-only">✏️ Edit</button>
                             <button type="button" id="btn-tester-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
@@ -659,6 +661,7 @@
                               <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button>
                               <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button>
                             </div>
+                            <button type="button" id="btn-casual-response-edit" class="btn btn-tiny btn-viewer-inline-edit" disabled title="Received Casual response buffer is read-only">✏️ Edit</button>
                             <button type="button" id="btn-casual-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
                           </span>
                         </div>
@@ -1113,20 +1116,25 @@
             <div class="form-group">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <label for="editor-raw-json"><strong>Raw WireMock Stub JSON:</strong> <span class="muted-text">Directly edit full stub mapping JSON</span></label>
+                  <label for="editor-raw-json"><strong>WireMock Stub JSON:</strong> <span class="muted-text">Foldable polyglot tree &amp; in-line editor</span></label>
                   <span class="preview-pill-group" id="editor-raw-top-pill-group" style="display: inline-flex;">
-                    <span class="preview-pill-badge" id="editor-raw-top-pill">JSON</span>
+                    <span class="preview-pill-badge" id="editor-raw-top-pill" role="button" tabindex="0" title="Click to collapse / expand">JSON</span>
                   </span>
                 </div>
                 <div style="display: flex; gap: 6px; align-items: center;">
                   <div class="editor-mode-toggle" id="editor-raw-mode-toggle" data-testid="editor-raw-mode-toggle">
-                    <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
-                    <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                    <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted polyglot tree">🎨 Rich</button>
+                    <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
                   </div>
-                  <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny" data-testid="btn-editor-raw-format-json">Format JSON</button>
+                  <button type="button" id="btn-editor-raw-inline-edit" class="btn btn-tiny btn-viewer-inline-edit" data-testid="btn-editor-raw-inline-edit" title="Edit top-level WireMock stub JSON in-line">✏️ Edit</button>
+                  <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny hidden" data-testid="btn-editor-raw-format-json" title="Format / indent JSON">✨ Format</button>
+                  <button type="button" id="btn-editor-raw-apply" class="btn btn-tiny btn-primary hidden" data-testid="btn-editor-raw-apply" title="Apply top-level JSON edits and return to Foldable Polyglot Viewer">✓ Apply</button>
+                  <button type="button" id="btn-editor-raw-cancel-edit" class="btn btn-tiny hidden" data-testid="btn-editor-raw-cancel-edit" title="Cancel top-level JSON edits">✕ Cancel</button>
+                  <button type="button" id="btn-editor-raw-copy" class="btn btn-tiny" data-testid="btn-editor-raw-copy" title="Copy root stub JSON">📋 Copy</button>
                   <button type="button" id="btn-editor-raw-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
                 </div>
               </div>
+              <pre id="editor-raw-json-viewer" class="code-block" data-testid="editor-raw-json-viewer"></pre>
               <textarea id="editor-raw-json" class="code-input" rows="20" style="font-family: monospace; font-size: 0.85rem; width: 100%; min-height: 380px;" placeholder="{ &quot;request&quot;: { ... }, &quot;response&quot;: { ... } }" data-testid="editor-raw-json"></textarea>
               <div id="editor-raw-embedded-bar" data-testid="editor-raw-embedded-bar" class="hidden"></div>
               <div id="editor-raw-json-error" class="text-error hidden" style="margin-top: 6px; font-size: 0.82rem;" data-testid="editor-raw-json-error"></div>
@@ -1423,27 +1431,21 @@
   <!-- Modal: Maximized Viewport & Stacked Layers -->
   <div id="modal-payload-lens" class="modal-backdrop hidden" data-testid="modal-payload-lens">
     <div class="modal modal-large">
-      <div class="modal-header">
-        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <h2 id="payload-lens-title" style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-                <span>⛶</span> Maximized Viewport
-              </h2>
-              <span id="payload-lens-dirty-indicator" class="viewport-dirty-badge hidden" data-testid="payload-lens-dirty-indicator">● Unsaved Changes</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <button id="btn-lens-view-edit-toggle" data-testid="btn-lens-view-edit-toggle" class="btn btn-tiny btn-secondary hidden" title="Switch between View and Edit mode">✏️ Edit</button>
-              <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Viewport (Esc)">&times;</button>
-            </div>
-          </div>
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: unset; padding: 6px 14px;">
+        <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">
+          <h2 id="payload-lens-title" style="margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+            <span>⛶</span> Maximized Viewport
+          </h2>
           <!-- Stacked Breadcrumb Trail -->
-          <div id="payload-lens-breadcrumbs" data-testid="payload-lens-breadcrumbs" class="payload-lens-breadcrumbs">
-            <!-- Dynamically populated stack breadcrumbs: Root (JSON) ▸ $.payload (XML) -->
-          </div>
+          <div id="payload-lens-breadcrumbs" data-testid="payload-lens-breadcrumbs" class="payload-lens-breadcrumbs" style="display: inline-flex; align-items: center; margin: 0; padding: 0;"></div>
+          <span id="payload-lens-dirty-indicator" class="viewport-dirty-badge hidden" data-testid="payload-lens-dirty-indicator">● Unsaved Changes</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <button id="btn-lens-view-edit-toggle" data-testid="btn-lens-view-edit-toggle" class="btn btn-tiny btn-secondary hidden" title="Switch between View and Edit mode">✏️ Edit</button>
+          <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Viewport (Esc)">&times;</button>
         </div>
       </div>
-      <div class="modal-body" style="padding-top: 10px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 0%;">
+      <div class="modal-body" style="padding: 4px 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 0%;">
         <!-- Viewer Container for formatted preview / read-only mode -->
         <div id="payload-viewport-viewer-container" class="hidden"></div>
 

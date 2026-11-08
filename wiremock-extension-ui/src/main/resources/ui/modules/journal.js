@@ -184,16 +184,23 @@ function buildRowHtml(req) {
     const reqFmt = reqBodyRaw ? detectFormat(reqBodyRaw) : 'text';
     const reqSizeKb = reqBodyRaw ? (new Blob([reqBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const reqB64 = decodeBase64Payload(reqBodyRaw);
+    const journalReadOnlyReason = "Recorded traffic is immutable — use '📸 Snapshot Stub' or '🚀 Replay in Tester' on the journal entry";
+    const journalSession = {
+      editable: false,
+      readOnlyReason: journalReadOnlyReason,
+      context: 'journal',
+      onSaveRoot: null
+    };
     const reqDiscovered = reqBodyRaw ? discoverEmbeddedPayloads(reqBodyRaw) : [];
     const reqBodyHtml = reqBodyRaw
       ? (reqDiscovered.length > 0
-          ? renderFormattedWithNestedPreviews(reqBodyRaw, reqDiscovered, `jrn_req_${req.id}`)
+          ? renderFormattedWithNestedPreviews(reqBodyRaw, reqDiscovered, `jrn_req_${req.id}`, null, journalSession)
           : highlightPayload(reqBodyRaw))
       : '<span style="color: var(--text-muted);">(empty)</span>';
     const reqB64Discovered = reqB64.hasBase64 ? discoverEmbeddedPayloads(reqB64.decodedFormatted) : [];
     const reqBodyDecodedHtml = reqB64.hasBase64
       ? (reqB64Discovered.length > 0
-          ? renderFormattedWithNestedPreviews(reqB64.decodedFormatted, reqB64Discovered, `jrn_req_b64_${req.id}`)
+          ? renderFormattedWithNestedPreviews(reqB64.decodedFormatted, reqB64Discovered, `jrn_req_b64_${req.id}`, null, journalSession)
           : highlightPayload(reqB64.decodedFormatted))
       : '';
 
@@ -206,13 +213,13 @@ function buildRowHtml(req) {
     const resDiscovered = resBodyRaw ? discoverEmbeddedPayloads(resBodyRaw) : [];
     const resBodyHtml = resBodyRaw
       ? (resDiscovered.length > 0
-          ? renderFormattedWithNestedPreviews(resBodyRaw, resDiscovered, `jrn_res_${req.id}`)
+          ? renderFormattedWithNestedPreviews(resBodyRaw, resDiscovered, `jrn_res_${req.id}`, null, journalSession)
           : highlightPayload(resBodyRaw))
       : '<span style="color: var(--text-muted);">(empty)</span>';
     const resB64Discovered = resB64.hasBase64 ? discoverEmbeddedPayloads(resB64.decodedFormatted) : [];
     const resBodyDecodedHtml = resB64.hasBase64
       ? (resB64Discovered.length > 0
-          ? renderFormattedWithNestedPreviews(resB64.decodedFormatted, resB64Discovered, `jrn_res_b64_${req.id}`)
+          ? renderFormattedWithNestedPreviews(resB64.decodedFormatted, resB64Discovered, `jrn_res_b64_${req.id}`, null, journalSession)
           : highlightPayload(resB64.decodedFormatted))
       : '';
 
@@ -274,6 +281,7 @@ function buildRowHtml(req) {
                     ${reqBodyRaw ? `
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqBadgeLabel)}</span>
+                        <button type="button" class="btn btn-tiny btn-viewer-inline-edit" disabled title="${escapeHtml(journalReadOnlyReason)}">✏️ Edit</button>
                         <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="req" data-id="${req.id}" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
                       </span>
                     ` : ''}
@@ -324,6 +332,7 @@ function buildRowHtml(req) {
                     ${resBodyRaw ? `
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resBadgeLabel)}</span>
+                        <button type="button" class="btn btn-tiny btn-viewer-inline-edit" disabled title="${escapeHtml(journalReadOnlyReason)}">✏️ Edit</button>
                         <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="res" data-id="${req.id}" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
                       </span>
                     ` : ''}
@@ -500,26 +509,9 @@ function setupEventDelegation() {
             format: fmt,
             context: 'journal',
             mode: 'viewer',
-            onSave: (savedText) => {
-              const reqMethod = (req.request && req.request.method) || 'GET';
-              const reqUrl = (req.request && req.request.url) || '/';
-              const rawStatus = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
-              const status = rawStatus === 404 ? 200 : rawStatus;
-              const syntheticStub = {
-                name: `${reqMethod} ${reqUrl}`,
-                request: {
-                  method: reqMethod,
-                  url: reqUrl,
-                  bodyPatterns: (type === 'req' && savedText) ? [{ equalToJson: savedText }] : undefined
-                },
-                response: {
-                  status,
-                  headers: { 'Content-Type': 'application/json' },
-                  body: type === 'res' ? savedText : ((req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '{\n  "status": "ok"\n}')
-                }
-              };
-              openStubEditor(syntheticStub, false);
-            }
+            editable: false,
+            readOnlyReason: "Recorded traffic is immutable — use '📸 Snapshot Stub' or '🚀 Replay in Tester' on the journal entry",
+            onSave: null
           });
         }
       }

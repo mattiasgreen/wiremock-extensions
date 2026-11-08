@@ -1,6 +1,6 @@
-# 12. Comprehensive UI Editing Deepening and Lifecycle Hardening
+# 12. Comprehensive UI Editing Deepening, Root Document Propagation, and Lifecycle Hardening
 
-Date: 2026-11-07
+Date: 2026-11-08
 
 ## Status
 
@@ -8,78 +8,59 @@ Accepted
 
 ## Context
 
-Following [ADR 0009](0009-dual-layer-code-editor-and-viewport-layout-hardening.md) and [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md), the UI achieved a unified rendering model for read-only payload surfaces and maximized viewports. However, an architectural audit of all payload and code input surfaces across `wiremock-extension-ui` revealed significant interface friction, shallow abstractions, and state-loss risks:
+Following [ADR 0009](0009-dual-layer-code-editor-and-viewport-layout-hardening.md) and [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md), an architectural audit of all payload viewers and code input surfaces across `wiremock-extension-ui` revealed four remaining sources of interface friction and shallow abstractions:
 
-1. **Fragmented Request Input Editing (HTTP & Casual Testers)**:
-   - `tester.js` (`#tester-body`) and `casual-tester.js` (`#casual-request-payload`) hand-rolled separate Dual-Layer editor instances, ad-hoc `✨ Format` button handlers, bespoke descriptor pill DOM modifications, and independent maximize event handlers.
-   - Neither input surface benefited from live structural linting (`⚠️ Invalid JSON/XML`), risking accidental submission of malformed payloads.
-
-2. **Leaky Stub Editor Modal Lifecycle (`lifecycle.js`)**:
-   - The primary Stub Editor modal (`#stub-editor-modal`) had sub-editors in Form Mode (`#editor-body`, `#editor-body-match-pattern`) that lacked Maximize viewport leverage and `[ 🎨 Rich | 📝 Raw ]` toggles.
-   - Switching between Form Mode (`#btn-editor-mode-form`) and Full JSON Mode (`#btn-editor-mode-json`) performed silent state overrides without checking for uncommitted edits.
-   - Dismissing the modal (via the `✕` close button, escape key, or clicking the background backdrop) lacked dirty-state guardrails, causing accidental loss of in-progress edits.
-
-3. **Unassisted Plain Textarea Inputs for Complex Specifications**:
-   - Stateful AST dynamic rules (`#dynamic-model-json` in `dynamic-stubs.js`), OpenAPI YAML/JSON specifications (`#openapi-spec-content` in `openapi.js`), and WireMock JSON bundle imports (`#bundle-content` in `import-export.js`) used native unassisted `<textarea>` elements.
-   - Users had zero syntax highlighting, zero format prettifying, zero live structural diagnostics, and no ability to maximize the editor to full screen for multi-hundred line specifications.
-
-4. **Shallow Bespoke Inline Block Editor**:
-   - `activateInlineBlockEditor` in `payload-lens.js` hand-crafted a separate inline toolbar DOM (`.inline-block-editor-toolbar`) and isolated validation routines detached from `createPayloadComponent`, preventing inline block editors from leveraging format prettifying or maximizing into a full-height viewport.
+1. **Raw Escaped Textarea in Stub Editing (`lifecycle.js`)**:
+   - While removing the cumbersome 20-field GUI form for editing existing stubs simplified the modal, opening `#stub-editor-modal` directly into a raw `<textarea>` (`#editor-raw-json`) meant that `response.body` and deep nested envelopes appeared as single-line escaped strings (`"{\n  \"transferId\": ..."`).
+   - Even when `[ 🎨 Rich ]` was active, the editor did not show the foldable polyglot tree because a single `<textarea>` cannot unescape embedded strings without breaking valid root JSON syntax.
+2. **Inconsistent Toolbar Actions Across Root vs. Subsections vs. Read-Only Views**:
+   - Nested subsections in the Maximized Viewport lacked `[ ✏️ Edit ]`, while read-only surfaces omitted `[ ✏️ Edit ]` entirely rather than showing a disabled button with an explanatory tooltip.
+   - Top-level workflow actions like Request Journal's `Snapshot as Stub` leaked into the Maximized Viewport footer (`#btn-lens-save-root`), confusing the boundary between viewing a payload and executing a top-level Journal row action.
+3. **Fragmented Request & Specification Input Editors**:
+   - `tester.js` (`#tester-body`), `casual-tester.js` (`#casual-request-payload`), `dynamic-stubs.js` (`#dynamic-model-json`), `openapi.js` (`#openapi-spec-content`), and `import-export.js` (`#bundle-content`) wired separate editor instances or plain textareas rather than sharing the unified **Root Document** and **Hierarchical In-Line Editing** contract.
+4. **Modal Dismissal Dirty-State Risks**:
+   - Dismissing `#stub-editor-modal` (via `✕`, Escape, or backdrop click) while transient in-memory edits were staged risked silent data loss without confirmation.
 
 ## Decision
 
-We establish a comprehensive deepening of all UI editing surfaces around the **Canonical Payload Surface** (`createPayloadComponent`) and the **Dual-Layer Code Editor** (`attachDualLayerEditor`):
+We deepen all UI viewing and editing surfaces around the **Universal Root Document Model** and **Hierarchical In-Line Editing** defined in [ADR 0010](0010-unified-payload-component-and-2x2-experience-matrix.md):
 
-### 1. Generalize `createPayloadComponent` for Request Input Editors
+### 1. Universal Root Document Ownership Across All Six Surfaces
 
-- Bind HTTP Tester (`#tester-body`) and Casual Tester (`#casual-request-payload`) request editors through `createPayloadComponent(null, { action: 'edit', backingTextarea: ... })`.
-- Callers provide their backing `<textarea>` and existing toolbar elements; `createPayloadComponent` automatically manages:
-  - Synchronized Dual-Layer syntax highlighting.
-  - Live non-blocking syntax validation pills (`⚠️ Invalid JSON` / `⚠️ Invalid XML`).
-  - Prettify format actions (`✨ Format`).
-  - Maximized viewport delegation with bi-directional value round-tripping.
-- Deletes over 80 lines of duplicated DOM query and event listener boilerplate from `tester.js` and `casual-tester.js`.
+Every surface owns a single **Root Document** in memory, with commit/save and discard/reset actions bound strictly to the top-level surface:
 
-### 2. Deepen Stub Editor Modal Lifecycle and Guard Edit State (`lifecycle.js`)
+| Surface | Root Document | Top-Level Commit Action | Top-Level Discard Action | `editable` State & Disabled Tooltip |
+| :--- | :--- | :--- | :--- | :--- |
+| **Stub Catalog Detail (`stubs.js`)** | Selected Stub Mapping JSON | *(None — Read-Only)* | *(None)* | `editable: false` (`"Read-only stub preview — click '✏️ Edit' in the stub header above to modify this stub"`) |
+| **Stub Editor Modal (`lifecycle.js`)** | Working Stub Mapping JSON | `[ 💾 Save Mapping ]` | `[ Cancel ]` / `✕` | `editable: true` |
+| **HTTP Tester (`tester.js`)** | Request Body (`#tester-body`) / Response Body | `[ 🚀 Send Request ]` | `[ ↺ Reset ]` | Request: `editable: true`; Response: `editable: false` (`"Received response payload is read-only"`) |
+| **Casual Tester (`casual-tester.js`)** | Request Buffer (`#casual-request-payload`) / Response Buffer | `[ 🚀 Execute Casual Call ]` | `[ ↺ Reset ]` | Request: `editable: true`; Response: `editable: false` (`"Received response payload is read-only"`) |
+| **Request Journal (`journal.js`)** | Recorded Request / Response Body | *(Top-level row action: `📸 Create Stub`)* | *(None)* | `editable: false` (`"Recorded traffic is immutable — use '📸 Create Stub' or '🧪 Replay in Tester' on the journal entry"`) |
+| **Spec & Model Modals (`dynamic-stubs.js`, `openapi.js`, `import-export.js`)** | Stateful AST / OpenAPI Spec / Bundle JSON | `[ 💾 Save / 📥 Import ]` | `[ Cancel ]` | `editable: true` |
 
-- Deepen the Stub Editor lifecycle seam in `lifecycle.js`:
-  - Equip modal sub-editors (`#editor-body`, `#editor-body-match-pattern`) with `createPayloadComponent` bindings, unlocking fullscreen Maximize capabilities directly from the modal form.
-  - Enforce safe bi-directional state synchronization when switching between Form Mode and Full Raw JSON Mode: if uncommitted edits exist that would be overwritten by a mode switch, the user is warned and prompted before proceeding.
-  - Add `requestCloseStubEditor()`: when closing via `✕`, Escape, or backdrop click, inspect dirty state across sub-editors and Raw JSON. If unsaved changes are present, prompt for confirmation before discarding.
+### 2. Polyglot Tree Viewer by Default & Unified In-Line `[ ✏️ Edit ]` $\rightarrow$ `[ ✓ Apply | ✕ Cancel ]`
 
-### 3. Reusable Code Input Adapter (`mountCodeInputEditor`)
+- **Stub Editor Modal (`lifecycle.js`)**:
+  - For existing or cloned stubs, the GUI form is hidden (retained only as a quickstart template when creating a new stub from scratch).
+  - The modal renders the **Foldable Polyglot Tree Viewer** by default so `response.body` and all nested JSON/XML/CDATA payloads are immediately unnested, syntax-highlighted, and foldable.
+  - Both the **Top-Level Stub Header** and every **Nested Subsection Header** render the standardized toolbar: `[ 🎨 Rich | 📝 Raw ] [ ✏️ Edit ] [ 📋 Copy ] [ ⛶ Maximize ]`.
+  - Clicking `[ ✏️ Edit ]` on the top header swaps the root view in-line into an auto-growing Dual-Layer Code Editor (`overflow-y: hidden`, no nested vertical scrollbars) to edit top-level stub properties; clicking `[ ✓ Apply ]` validates and returns to the polyglot tree.
+  - Clicking `[ ✏️ Edit ]` on any nested subsection swaps *only that subsection* in-line into an auto-growing Dual-Layer Code Editor for its unescaped content; clicking `[ ✓ Apply ]` validates, re-escapes into the in-memory Root Document via `applyNestedPayloadEdit`, and returns to the polyglot tree.
+  - Internal UI catalog metadata flags (`_disabled`, `_dynamic`, `isDynamic`) are stripped via `cleanStubForWireMock()` before display and before persistence.
 
-- Introduce a deep `mountCodeInputEditor(textareaEl, options)` adapter in `payload-lens.js`:
-  - Mounts a Dual-Layer Code Editor with auto-detected or specified syntax (JSON, YAML, AST).
-  - Automatically equips the input surface with a standardized action bar featuring live syntax validation pills, format prettifying (`✨ Format`), and fullscreen Maximize (`⛶ Maximize`).
-  - Powers `#dynamic-model-json` (Stateful AST), `#openapi-spec-content` (OpenAPI specs), and `#bundle-content` (WireMock bundle imports).
+### 3. Top-Scope Context Propagation into Maximized Viewport (`#modal-payload-lens`)
 
-### 4. Direct Canonical JSON Stub Editing (Form Removal for Existing Stubs)
+- Clicking `[ ⛶ Maximize ]` at any level propagates the top-scope `RootDocumentSession` (`{ rootText, editable, readOnlyReason, onUpdateRoot }`) into the Maximized Viewport.
+- In read-only contexts (Stub Detail, Request Journal, Tester Response), `[ ✏️ Edit ]` buttons on the top bar and all nested subsections inside the Maximized Viewport remain visible but **`disabled`** with their contextual tooltip.
+- `Snapshot as Stub` is removed from the Maximized Viewport modal footer; creating a stub from recorded traffic is exclusively a top-level Request Journal action (`📸 Create Stub`), which opens the Stub Editor Modal with a new, editable Root Document.
 
-- The canonical representation of a WireMock stub is its JSON mapping specification. WireMock developers do not want a complex, fragmented 20-field GUI form when modifying existing stubs.
-- When opening the stub editor for existing stubs (`stub != null` or cloned stubs):
-  - The modal opens directly in **JSON Editor Mode** (`activeEditorMode = 'json'`).
-  - The editor mode toggle pills (`.editor-mode-pills`) and form panel (`#editor-form-panel`) are completely hidden.
-  - WireMock developers edit clean, syntax-highlighted JSON directly with line numbers, live validation, formatting, and maximize support.
-- The GUI form is retained strictly as an optional **Quickstart Template** when creating a brand-new stub from scratch (`stub == null`).
-- Internal UI catalog metadata flags (`_disabled`, `_dynamic`, `isDynamic`) are cleanly stripped via `cleanStubForWireMock()` before populating the JSON editor or persisting to WireMock's Admin API, eliminating Jackson deserialization failures.
+### 4. Dirty-State Guardrails on Modal Dismissal
 
-### 5. Purge of Inline Block Editing from Read-Only Inspection Views
-
-- Attempts to embed in-situ editing widgets and protected token replacements inside read-only stub detail and journal request/response trees ([ADR 0011](0011-parallel-polyglot-nested-editor-and-protected-token-islands.md)) resulted in massive accidental complexity, visual fragmentation, detached XML/JSON blocks, and awkward layout voids.
-- `payload-lens.js` and `style.css` are purged of all inline block editing machinery (`activateInlineBlockEditor`, `.btn-nested-edit`, `.inline-block-editor`).
-- Read-only inspection views (Stub Details, Journal Request/Response, Casual Payloads) are dedicated strictly to clean visual inspection, polyglot syntax highlighting, format detection pills, nested unnesting, copying, and fullscreen maximize viewing.
-- Mutation belongs exclusively in dedicated editing surfaces (the modal JSON Editor or the HTTP/Casual Request Testers).
+- `requestCloseStubEditor()` and `requestCloseViewport()` inspect whether uncommitted in-line edits or staged Root Document modifications exist (`isDirty`), prompting for confirmation before discarding changes on `✕`, Escape, or backdrop clicks.
 
 ## Consequences
 
 ### Positive
-- **Elimination of Visual & Cognitive Overhead**: Read-only surfaces are pristine, legible, and unencumbered by detached editing boxes or confusing nested edit buttons.
-- **Fast, Direct Developer Workflow**: Editing stubs opens directly to full JSON with zero clicks wasted on form-to-JSON mode switching.
-- **Zero Schema Deserialization Friction**: Stripping internal catalog markers prevents WireMock Jackson deserializer errors (`UnrecognizedPropertyException`).
-- **Complete Editing Consistency**: Code inputs across HTTP Tester, Casual Tester, dynamic AST specifications, and OpenAPI imports share standardized syntax highlighting, validation, formatting, and maximize capabilities via `mountCodeInputEditor` and `createPayloadComponent`.
-- **Accidental Edit Loss Elimination**: Developers are protected against losing complex configurations during accidental modal dismissals or dirty transitions.
-
-### Negative / Trade-offs
-- Creating complex new stubs from scratch requires either typing raw JSON or using the initial form template quickstart.
-- Modal close handlers prompt when dirty state is detected before discarding.
+- **Complete Architectural Symmetry**: Every viewer and editor across the entire console is governed by the same Root Document Session and renders the exact same header toolbar at every nesting depth.
+- **UI Predictability via Disabled Tooltips**: Users never have to guess why an `[ ✏️ Edit ]` button disappeared; it is always in the same spot, disabled with a clear tooltip when inspecting immutable or preview surfaces.
+- **Clean Separation of Concerns**: Subsections stage transient edits into the Root Document via `[ ✓ Apply ]`; only the top-level surface commits the Root Document to the server or network.

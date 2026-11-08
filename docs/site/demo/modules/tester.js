@@ -262,7 +262,11 @@ export function displaySentRequest(method, url, headersText, bodyText) {
     } else {
       const discovered = discoverEmbeddedPayloads(rawTrimmed);
       if (discovered.length > 0) {
-        elements.testerSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'tester_sent_req');
+        elements.testerSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'tester_sent_req', null, {
+          editable: false,
+          readOnlyReason: 'Sent request snapshot is read-only — edit the Request Body input on the left',
+          context: 'tester-sent'
+        });
       } else {
         elements.testerSentBody.innerHTML = highlightPayload(rawTrimmed);
       }
@@ -314,39 +318,16 @@ export function renderTesterResponse(bodyText) {
     pillEl: topPill,
     pillGroupEl: topPillGroup,
     maximizeBtn: btnMax,
+    editBtn: document.getElementById('btn-tester-response-edit'),
+    readOnly: true,
+    editable: false,
+    readOnlyReason: 'Received response payload is read-only',
     text: bodyText,
     format: fmt,
     charset,
     defaultMode: state.testerViewMode === 'raw' ? 'raw' : 'rich',
     title: 'HTTP Tester Response',
-    context: 'tester-response',
-    onMaximize: () => {
-      pushViewportLayer({
-        title: 'HTTP Tester Response',
-        text: bodyText,
-        format: fmt,
-        charset,
-        context: 'tester-response',
-        mode: 'viewer',
-        onSave: (savedText) => {
-          const reqMethod = elements.testerMethod ? elements.testerMethod.value : 'GET';
-          const reqUrl = elements.testerUrl ? elements.testerUrl.value : '/';
-          const syntheticStub = {
-            name: `${reqMethod} ${reqUrl}`,
-            request: {
-              method: reqMethod,
-              url: reqUrl
-            },
-            response: {
-              status: parseInt(elements.testerResponseStatus?.textContent || '200', 10) || 200,
-              headers: { 'Content-Type': 'application/json' },
-              body: savedText
-            }
-          };
-          openStubEditor(syntheticStub, false);
-        }
-      });
-    }
+    context: 'tester-response'
   });
 }
 

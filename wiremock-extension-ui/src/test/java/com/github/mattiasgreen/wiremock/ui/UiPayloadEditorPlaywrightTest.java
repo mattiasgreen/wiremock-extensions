@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.ui;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.microsoft.playwright.Locator;
@@ -554,5 +555,228 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-cancel-dynamic").click();
         page.waitForSelector(
                 "#dynamic-stub-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+    }
+
+    @Test
+    @DisplayName(
+            "Hierarchical In-Line Editing: Polyglot unnesting by default, identical header toolbars, in-line edit swap without scrollbars, and disabled read-only consistency")
+    void testHierarchicalInLineEditingAndUnifiedHeaderToolbar() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 1. Create a stub with nested JSON inside response body
+        page.locator("#btn-create-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        page.locator("#editor-url").fill("/api/v1/hierarchical-test");
+        String nestedBody = "{\"transferId\": \"SWIFT-999\", \"status\": \"SETTLED\"}";
+        String rootMapping = "{\"status\": \"OK\", \"body\": \"" + nestedBody.replace("\"", "\\\"") + "\"}";
+        page.locator("#editor-body").fill(rootMapping);
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // 2. Select the created stub in catalog list
+        Locator stubCard = page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("/api/v1/hierarchical-test"))
+                .first();
+        stubCard.click();
+        page.waitForSelector("#stub-json-viewer");
+
+        // 3. Verify Read-Only consistency: [ ✏️ Edit ] is present on nested block but disabled with tooltip
+        Locator readOnlyNestedEdit =
+                page.locator("#stub-json-viewer .btn-nested-inline-edit").first();
+        assertThat(readOnlyNestedEdit.isVisible()).isTrue();
+        assertThat(readOnlyNestedEdit.isDisabled()).isTrue();
+        assertThat(readOnlyNestedEdit.getAttribute("title")).contains("Read-only");
+
+        // 4. Open Edit Stub Mapping modal (which now defaults directly to the Foldable Polyglot Tree Viewer)
+        page.locator("#btn-edit-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        page.waitForSelector("#editor-json-panel:not(.hidden)");
+
+        // 5. Verify the Raw JSON panel shows ONLY the Foldable Polyglot Tree Viewer (zero dual-viewport defect)
+        Locator rawViewer = page.locator("#editor-raw-json-viewer");
+        assertThat(rawViewer.isVisible()).isTrue();
+        assertThat(rawViewer.innerText()).contains("transferId");
+        assertThat(rawViewer.innerText()).contains("SWIFT-999");
+        Number viewerHeight = (Number) rawViewer.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(viewerHeight.doubleValue()).isGreaterThan(200.0);
+
+        Locator rawEditorWrapper = page.locator("#editor-json-panel .dual-layer-editor-wrapper");
+        assertThat(rawEditorWrapper.getAttribute("class")).contains("hidden");
+        Number editorHiddenHeight = (Number) rawEditorWrapper.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(editorHiddenHeight.doubleValue()).isEqualTo(0.0);
+
+        // 6. Verify top-level header has identical toolbar controls & test mutual exclusivity
+        Locator topEditBtn = page.locator("#btn-editor-raw-inline-edit");
+        Locator topApplyBtn = page.locator("#btn-editor-raw-apply");
+        Locator topCancelBtn = page.locator("#btn-editor-raw-cancel-edit");
+        assertThat(topEditBtn.isVisible()).isTrue();
+        assertThat(topApplyBtn.isVisible()).isFalse();
+        assertThat(topCancelBtn.isVisible()).isFalse();
+
+        // Top-level edit toggle: swaps between single viewer and single editor
+        topEditBtn.click();
+        assertThat(rawViewer.getAttribute("class")).contains("hidden");
+        Number viewerSwappedHiddenHeight = (Number) rawViewer.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(viewerSwappedHiddenHeight.doubleValue()).isEqualTo(0.0);
+        assertThat(rawEditorWrapper.getAttribute("class")).doesNotContain("hidden");
+        Number editorActiveHeight = (Number) rawEditorWrapper.evaluate("el => el.getBoundingClientRect().height");
+        assertThat(editorActiveHeight.doubleValue()).isGreaterThan(200.0);
+        assertThat(topApplyBtn.isVisible()).isTrue();
+        assertThat(topCancelBtn.isVisible()).isTrue();
+
+        // Apply top-level edit: swaps back to single viewer
+        topApplyBtn.click();
+        assertThat(rawViewer.isVisible()).isTrue();
+        assertThat(rawEditorWrapper.getAttribute("class")).contains("hidden");
+        assertThat(((Number) rawEditorWrapper.evaluate("el => el.getBoundingClientRect().height")).doubleValue())
+                .isEqualTo(0.0);
+
+        // 7. Verify subsection header has identical toolbar: Rich/Raw, [ ✏️ Edit ], [ 📋 Copy ], [ ⛶ Maximize ]
+        Locator nestedEditBtn =
+                page.locator("#editor-raw-json-viewer .btn-nested-inline-edit").first();
+        assertThat(nestedEditBtn.isVisible()).isTrue();
+        assertThat(nestedEditBtn.isEnabled()).isTrue();
+
+        Locator nestedCopyBtn =
+                page.locator("#editor-raw-json-viewer .btn-nested-copy").first();
+        assertThat(nestedCopyBtn.isVisible()).isTrue();
+
+        Locator nestedMaxBtn =
+                page.locator("#editor-raw-json-viewer .btn-nested-maximize").first();
+        assertThat(nestedMaxBtn.isVisible()).isTrue();
+
+        // 8. Click [ ✏️ Edit ] on the subsection: Swaps in-line into auto-growing editor with zero vertical scrollbars
+        nestedEditBtn.click();
+        Locator inlineShell = page.locator("#editor-raw-json-viewer .inline-editor-shell");
+        assertThat(inlineShell.isVisible()).isTrue();
+
+        Locator inlineTextarea = inlineShell.locator(".inline-editor-textarea");
+        assertThat(inlineTextarea.isVisible()).isTrue();
+        assertThat(inlineTextarea.inputValue()).contains("SWIFT-999");
+
+        // Verify zero vertical scrollbars on the in-line editor
+        String overflowY = (String) inlineTextarea.evaluate("el => window.getComputedStyle(el).overflowY");
+        assertThat(overflowY).isEqualTo("hidden");
+
+        // Verify [ ✨ Format ], [ ✓ Apply ], [ ✕ Cancel ] in the in-line toolbar
+        Locator inlineApplyBtn = inlineShell.locator(".btn-inline-apply");
+        Locator inlineCancelBtn = inlineShell.locator(".btn-inline-cancel");
+        assertThat(inlineApplyBtn.isVisible()).isTrue();
+        assertThat(inlineCancelBtn.isVisible()).isTrue();
+
+        // 9. Modify text inside the subsection in-line editor
+        inlineTextarea.fill("{\n  \"transferId\": \"SWIFT-EDITED-123\",\n  \"status\": \"SETTLED\"\n}");
+
+        // Click [ ✓ Apply ] to commit to Root Document in-memory
+        inlineApplyBtn.click();
+
+        // Verify returned to Foldable Polyglot Tree Viewer with updated text
+        assertThat(rawViewer.isVisible()).isTrue();
+        assertThat(rawViewer.innerText()).contains("SWIFT-EDITED-123");
+
+        // Backing textarea holds updated wire JSON
+        String updatedRawJson = page.locator("#editor-raw-json").inputValue();
+        assertThat(updatedRawJson).contains("SWIFT-EDITED-123");
+
+        // 10. Click [ 💾 Save Mapping ] and verify saved to server
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Stub Detail updates with new content asynchronously after loadData()
+        page.waitForSelector("#stub-json-viewer:has-text('SWIFT-EDITED-123')");
+        assertThat(page.locator("#stub-json-viewer").innerText()).contains("SWIFT-EDITED-123");
+    }
+
+    @Test
+    void testInnermostNestedPayloadInLineEditingCascadesToRoot() {
+        // 1. Register multi-format deep nested stub on the server
+        String bodyJson =
+                """
+                {
+                  "transferId": "SWIFT-2026-X891",
+                  "executionTrace": {
+                    "gatewayEnvelope": "{\\"routing\\":{\\"network\\":\\"SWIFT_NET\\",\\"bic\\":\\"NDEAFIHH\\"},\\"messagePayload\\":\\"<swiftMessage xmlns=\\\\\\"http://banking.corp/swift\\\\\\"><header><sender>SWIFT-EXT</sender></header><body><![CDATA[{\\\\\\"account\\\\\\":\\\\\\"ACC-112233\\\\\\",\\\\\\"auditTrail\\\\\\\":\\\\\\"{\\\\\\\\\\\\\\"auditor\\\\\\\\\\\\\\":\\\\\\\\\\\\\\"ISO20022-GATEWAY\\\\\\\\\\\\\\",\\\\\\\\\\\\\\"passed\\\\\\\\\\\\\\":true}\\\\\\"}]]></body></swiftMessage>\\"}"
+                  }
+                }
+                """;
+
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/b2b/swift-transfer"))
+                .withName("B2B SWIFT Transfer")
+                .willReturn(ok().withHeader("Content-Type", "application/json").withBody(bodyJson)));
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
+        page.waitForSelector("#stub-list");
+
+        // 2. Select the created stub in catalog list
+        Locator stubCard = page.locator(".stub-card")
+                .filter(new Locator.FilterOptions().setHasText("B2B SWIFT Transfer"))
+                .first();
+        stubCard.click();
+        page.waitForSelector("#stub-json-viewer");
+
+        // 3. Open Edit Stub Mapping modal
+        page.locator("#btn-edit-stub").click();
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+
+        // 4. Find the innermost nested edit button (for auditTrail inside CDATA inside XML inside JSON)
+        Locator allNestedEdits = page.locator("#editor-raw-json-viewer .btn-nested-inline-edit");
+        assertThat(allNestedEdits.count()).isGreaterThan(1);
+        Locator innermostEditBtn = allNestedEdits.last();
+        innermostEditBtn.scrollIntoViewIfNeeded();
+        innermostEditBtn.click();
+
+        // 5. Verify in-line editor shell appears for auditTrail
+        Locator inlineShell = page.locator("#editor-raw-json-viewer .inline-editor-shell");
+        page.waitForSelector("#editor-raw-json-viewer .inline-editor-shell");
+        Locator inlineTextarea = inlineShell.locator(".inline-editor-textarea");
+        String initialInnermost = inlineTextarea.inputValue();
+        assertThat(initialInnermost).contains("ISO20022-GATEWAY");
+
+        String initialRawJson = page.locator("#editor-raw-json").inputValue();
+
+        // 6. Change GATEWAY to GATEWAYYY surgically (compact format preserves byte length)
+        inlineTextarea.fill("{\"auditor\":\"ISO20022-GATEWAYYY\",\"passed\":true}");
+
+        // 7. Click Apply
+        inlineShell.locator(".btn-inline-apply").click();
+
+        // 8. Verify the polyglot viewer and backing textarea now contain GATEWAYYY and no duplicate old GATEWAY"
+        Locator rawViewer = page.locator("#editor-raw-json-viewer");
+        page.waitForSelector("#editor-raw-json-viewer:has-text('GATEWAYYY')");
+        assertThat(rawViewer.innerText()).contains("ISO20022-GATEWAYYY");
+
+        String updatedRawJson = page.locator("#editor-raw-json").inputValue();
+        assertThat(updatedRawJson).contains("ISO20022-GATEWAYYY");
+        assertThat(updatedRawJson).doesNotContain("ISO20022-GATEWAY\\\"");
+
+        // Verify surgical replacement: intermediate containers remain untouched without newline explosions
+        assertThat(updatedRawJson).doesNotContain("<swiftMessage xmlns=\\\"http://banking.corp/swift\\\">\\n");
+        assertThat(updatedRawJson)
+                .doesNotContain("<swiftMessage xmlns=\\\\\\\"http://banking.corp/swift\\\\\\\">\\\\n");
+        // Must strictly preserve compactness and not explode by hundreds of bytes like the un-surgical cascade did
+        assertThat(updatedRawJson.length() - initialRawJson.length()).isLessThan(50);
+
+        // 9. Now open Maximized Viewport directly from the editor viewer
+        page.locator("#btn-editor-raw-maximize").click();
+        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+
+        // Innermost section inside Maximized Viewport also reflects GATEWAYYY
+        Locator lensViewer = page.locator("#payload-viewport-viewer-container");
+        assertThat(lensViewer.innerText()).contains("ISO20022-GATEWAYYY");
+
+        // Close viewport
+        page.locator("#btn-close-payload-lens").click();
+        page.waitForSelector(
+                "#modal-payload-lens", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+
+        // Discard / close editor modal (accepting unsaved changes confirmation dialog)
+        page.onceDialog(dialog -> dialog.accept());
+        page.locator("#btn-cancel-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
     }
 }

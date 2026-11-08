@@ -9,6 +9,7 @@ import { formatPayload, detectFormat } from './highlighter.js';
 import {
   attachEmbeddedPayloadsBar,
   attachDualLayerEditor,
+  createPayloadComponent,
   pushViewportLayer,
   detectCharset,
   formatPayloadDescriptor
@@ -28,6 +29,37 @@ import { switchImportTab, handleBundleImport } from './import-export.js';
 let activeEditingStub = null;
 let isCloneMode = false;
 let activeEditorMode = 'form';
+let rawJsonComponent = null;
+
+function mountRawJsonComponent(defaultAction = 'view') {
+  const rawTextarea = document.getElementById('editor-raw-json');
+  const rawViewer = document.getElementById('editor-raw-json-viewer');
+  if (!rawTextarea) return null;
+
+  rawJsonComponent = createPayloadComponent(null, {
+    title: 'Stub Raw JSON',
+    text: rawTextarea.value,
+    format: 'json',
+    context: 'stub',
+    readOnly: false,
+    editable: true,
+    defaultMode: 'rich',
+    defaultAction: rawViewer ? defaultAction : 'edit',
+    viewerEl: rawViewer,
+    backingTextarea: rawTextarea,
+    toggleEl: elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'),
+    pillEl: document.getElementById('editor-raw-top-pill'),
+    pillGroupEl: document.getElementById('editor-raw-top-pill-group'),
+    formatBtn: document.getElementById('btn-editor-raw-format-json'),
+    maximizeBtn: document.getElementById('btn-editor-raw-maximize'),
+    editBtn: document.getElementById('btn-editor-raw-inline-edit'),
+    applyBtn: document.getElementById('btn-editor-raw-apply'),
+    cancelEditBtn: document.getElementById('btn-editor-raw-cancel-edit'),
+    copyBtn: document.getElementById('btn-editor-raw-copy'),
+    autoGrow: true
+  });
+  return rawJsonComponent;
+}
 let initialFormSnapshot = null;
 let initialRawSnapshot = null;
 
@@ -610,8 +642,7 @@ export function setEditorMode(mode) {
     const stubObj = buildStubFromForm();
     if (rawTextarea) {
       rawTextarea.value = JSON.stringify(stubObj, null, 2);
-      attachDualLayerEditor(rawTextarea, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
-      if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
+      mountRawJsonComponent('edit');
     }
     if (errorEl) {
       errorEl.classList.add('hidden');
@@ -660,8 +691,13 @@ export function formatRawEditorJson() {
   if (!rawTextarea || !rawTextarea.value.trim()) return;
   try {
     const parsed = JSON.parse(rawTextarea.value);
-    rawTextarea.value = JSON.stringify(parsed, null, 2);
-    if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
+    const formatted = JSON.stringify(parsed, null, 2);
+    rawTextarea.value = formatted;
+    if (rawJsonComponent) {
+      rawJsonComponent.setText(formatted);
+    } else if (rawTextarea._dualLayer) {
+      rawTextarea._dualLayer.refresh();
+    }
     if (errorEl) {
       errorEl.classList.add('hidden');
       errorEl.textContent = '';
@@ -739,8 +775,6 @@ export function openStubEditor(stub, clone = false) {
       initialStub = buildStubFromForm();
     }
     rawTextarea.value = JSON.stringify(initialStub, null, 2);
-    attachDualLayerEditor(rawTextarea, elements.editorRawModeToggle || document.getElementById('editor-raw-mode-toggle'));
-    if (rawTextarea._dualLayer) rawTextarea._dualLayer.refresh();
   }
   initialFormSnapshot = JSON.stringify(buildStubFromForm());
   initialRawSnapshot = rawTextarea ? rawTextarea.value : '';
@@ -758,6 +792,7 @@ export function openStubEditor(stub, clone = false) {
   }
 
   const isEditingExisting = Boolean(stub && (stub.id != null || stub.uuid != null || clone));
+  mountRawJsonComponent(isEditingExisting ? 'view' : 'edit');
 
   if (isEditingExisting) {
     // When editing or cloning an existing stub: Direct JSON Editor (form removed for clean, robust editing)
@@ -853,42 +888,6 @@ export function openStubEditor(stub, clone = false) {
             patternEl.value = savedText;
             updatePatternPill();
             patternEl.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        }
-      });
-    };
-  }
-
-  // Update Raw JSON Top Pill & Maximize
-  const rawTopPill = document.getElementById('editor-raw-top-pill');
-  const updateRawPill = () => {
-    if (rawTextarea && rawTopPill) {
-      const val = rawTextarea.value || '';
-      const sizeKb = (new Blob([val]).size / 1024).toFixed(1);
-      rawTopPill.textContent = formatPayloadDescriptor({ format: 'JSON', sizeKb });
-    }
-  };
-  if (rawTextarea) {
-    rawTextarea.oninput = updateRawPill;
-    updateRawPill();
-  }
-
-  const btnRawMax = document.getElementById('btn-editor-raw-maximize');
-  if (btnRawMax) {
-    btnRawMax.onclick = (e) => {
-      e.preventDefault();
-      const val = rawTextarea ? rawTextarea.value : '';
-      pushViewportLayer({
-        title: 'Stub Raw JSON',
-        text: val,
-        format: 'json',
-        context: 'stub',
-        mode: 'viewer',
-        onSave: (savedText) => {
-          if (rawTextarea) {
-            rawTextarea.value = savedText;
-            updateRawPill();
-            rawTextarea.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
       });

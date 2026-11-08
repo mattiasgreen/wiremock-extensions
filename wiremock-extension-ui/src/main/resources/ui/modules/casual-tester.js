@@ -615,6 +615,10 @@ export function renderCasualResponseBody(bodyText, hexText) {
     pillEl: topPill,
     pillGroupEl: topPillGroup,
     maximizeBtn: resMaxBtn,
+    editBtn: document.getElementById('btn-casual-response-edit'),
+    readOnly: true,
+    editable: false,
+    readOnlyReason: 'Received Casual response buffer is read-only',
     text: lastRawCasualResponse,
     bufferType,
     charset,
@@ -682,7 +686,11 @@ export function displayCasualResponseResult(
     } else {
       const discovered = discoverEmbeddedPayloads(rawTrimmed);
       if (discovered.length > 0) {
-        elements.casualSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'casual_sent_req');
+        elements.casualSentBody.innerHTML = renderFormattedWithNestedPreviews(rawTrimmed, discovered, 'casual_sent_req', null, {
+          editable: false,
+          readOnlyReason: 'Sent request snapshot is read-only — edit the Request Payload input on the left',
+          context: 'casual-sent'
+        });
       } else {
         elements.casualSentBody.innerHTML = highlightPayload(rawTrimmed);
       }

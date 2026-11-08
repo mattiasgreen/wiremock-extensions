@@ -134,6 +134,13 @@ public class UiDemoGifRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setDeviceScaleFactor(1));
         Page page = context.newPage();
+        page.onResponse(res -> {
+            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
+        });
+        page.onDialog(dialog -> {
+            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
+            dialog.accept();
+        });
 
         try {
             // Step 1: Open Stubs tab
@@ -172,6 +179,9 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2400);
 
         } finally {
+            if (stateEngine != null) {
+                stateEngine.clearAll();
+            }
             encoder.finish();
             context.close();
         }
@@ -194,6 +204,13 @@ public class UiDemoGifRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setDeviceScaleFactor(1));
         Page page = context.newPage();
+        page.onResponse(res -> {
+            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
+        });
+        page.onDialog(dialog -> {
+            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
+            dialog.accept();
+        });
 
         try {
             // Step 1: Open Request Journal tab
@@ -231,6 +248,9 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2200);
 
         } finally {
+            if (stateEngine != null) {
+                stateEngine.clearAll();
+            }
             encoder.finish();
             context.close();
         }
@@ -253,6 +273,13 @@ public class UiDemoGifRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setDeviceScaleFactor(1));
         Page page = context.newPage();
+        page.onResponse(res -> {
+            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
+        });
+        page.onDialog(dialog -> {
+            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
+            dialog.accept();
+        });
 
         try {
             // 1. Stubs view
@@ -287,6 +314,9 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2400);
 
         } finally {
+            if (stateEngine != null) {
+                stateEngine.clearAll();
+            }
             encoder.finish();
             context.close();
         }
@@ -309,6 +339,13 @@ public class UiDemoGifRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setDeviceScaleFactor(1));
         Page page = context.newPage();
+        page.onResponse(res -> {
+            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
+        });
+        page.onDialog(dialog -> {
+            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
+            dialog.accept();
+        });
 
         try {
             // Step 1: Open Scenarios tab directly
@@ -335,6 +372,9 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2200);
 
         } finally {
+            if (stateEngine != null) {
+                stateEngine.clearAll();
+            }
             encoder.finish();
             context.close();
         }
@@ -357,8 +397,16 @@ public class UiDemoGifRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setDeviceScaleFactor(1));
         Page page = context.newPage();
+        page.onResponse(res -> {
+            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
+        });
+        page.onDialog(dialog -> {
+            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
+            dialog.accept();
+        });
 
         try {
+            setupInitialStubs();
             wireMockServer.resetRequests();
 
             // Step 1: Open Stubs tab and display current initial state
@@ -372,7 +420,6 @@ public class UiDemoGifRecordingTest {
             page.waitForSelector("#bulk-actions-bar:not(.hidden)");
             recordFrame(page, encoder, 1100);
 
-            page.onceDialog(Dialog::accept);
             page.locator("#btn-bulk-delete").click();
             page.waitForSelector(".stub-list .empty-state");
             recordFrame(page, encoder, 1400);
@@ -531,6 +578,9 @@ public class UiDemoGifRecordingTest {
     }
 
     private void setupInitialStubs() {
+        if (stateEngine != null) {
+            stateEngine.clearAll();
+        }
         wireMockServer.resetAll();
         wireMockServer.stubFor(
                 get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));
@@ -597,11 +647,6 @@ public class UiDemoGifRecordingTest {
                 .willReturn(status(409)
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"error\": \"Order already delivered\"}")));
-
-        // Register default dynamic stateful simulation model
-        if (stateEngine != null) {
-            stateEngine.registerGlobalModel(createCasesModel());
-        }
     }
 
     private com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition createCasesModel() {
@@ -639,8 +684,19 @@ public class UiDemoGifRecordingTest {
                 .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
                 .setDeviceScaleFactor(1));
         Page page = context.newPage();
+        page.onResponse(res -> {
+            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
+        });
+        page.onDialog(dialog -> {
+            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
+            dialog.accept();
+        });
 
         try {
+            if (stateEngine != null) {
+                stateEngine.registerGlobalModel(createCasesModel());
+            }
+
             // Step 1: Open Stubs tab with unified stubs view
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
             applyZoom(page);
@@ -716,6 +772,9 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2600);
 
         } finally {
+            if (stateEngine != null) {
+                stateEngine.clearAll();
+            }
             encoder.finish();
             context.close();
         }

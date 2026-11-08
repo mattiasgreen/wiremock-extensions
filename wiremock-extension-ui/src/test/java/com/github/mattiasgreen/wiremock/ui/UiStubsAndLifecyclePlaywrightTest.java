@@ -244,6 +244,8 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         assertThat(page.locator("#editor-modal-title").textContent()).isEqualTo("Duplicate Stub Mapping");
 
         page.waitForSelector("#editor-json-panel:not(.hidden)");
+        page.locator("#btn-editor-raw-inline-edit").click();
+        page.waitForSelector("#editor-raw-json:not(.hidden)");
         String currentJson = page.locator("#editor-raw-json").inputValue();
         String updatedJson = currentJson
                 .replace("/api/v1/users", "/api/v1/users/cloned")
@@ -288,6 +290,8 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
 
         page.waitForSelector("#stub-editor-modal:not(.hidden)");
         page.waitForSelector("#editor-json-panel:not(.hidden)");
+        page.locator("#btn-editor-raw-inline-edit").click();
+        page.waitForSelector("#editor-raw-json:not(.hidden)");
         String activeJson = page.locator("#editor-raw-json").inputValue();
         page.locator("#editor-raw-json").fill(activeJson.replace("List Users API", "Updated Users API"));
         page.locator("#btn-save-editor").click();
@@ -303,6 +307,8 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         page.locator("#btn-edit-stub").click();
         page.waitForSelector("#stub-editor-modal:not(.hidden)");
         page.waitForSelector("#editor-json-panel:not(.hidden)");
+        page.locator("#btn-editor-raw-inline-edit").click();
+        page.waitForSelector("#editor-raw-json:not(.hidden)");
         String disabledJson = page.locator("#editor-raw-json").inputValue();
         page.locator("#editor-raw-json").fill(disabledJson.replace("Updated Users API", "Updated Disabled Users API"));
         page.locator("#btn-save-editor").click();

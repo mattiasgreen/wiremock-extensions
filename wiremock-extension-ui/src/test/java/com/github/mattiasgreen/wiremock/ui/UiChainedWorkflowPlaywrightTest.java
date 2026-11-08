@@ -75,15 +75,13 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         Locator viewportEditor = page.locator("#payload-lens-editor");
         assertThat(viewportEditor.inputValue()).contains("ORD-999");
 
-        // Action button in Journal context is "Snapshot as Stub"
-        Locator btnSaveRoot = page.locator("#btn-lens-save-root");
-        assertThat(btnSaveRoot.textContent()).contains("Snapshot as Stub");
-
-        // Step 5: Click "Snapshot as Stub" -> Opens Stub Editor modal pre-filled
-        btnSaveRoot.click();
-
-        // Viewport closes and Stub Editor modal opens
+        // Step 5: Close Viewport and click top-level "Create Stub from Request" on the journal row
+        page.locator("#btn-close-payload-lens").click();
         assertThat(viewportModal.getAttribute("class")).contains("hidden");
+
+        page.locator(".btn-create-stub-from-req").first().click();
+
+        // Stub Editor modal opens
         Locator stubEditorModal = page.locator("#stub-editor-modal");
         assertThat(stubEditorModal.isVisible()).isTrue();
 

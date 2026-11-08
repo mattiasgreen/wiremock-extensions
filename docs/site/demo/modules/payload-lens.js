@@ -454,7 +454,6 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
           format: 'json',
           encoding: 'JSON_STRING',
           charset: detectCharset(trimmedVal),
-          wasCompact: !val.includes('\n'),
           rawValue: val,
           unescapedValue: trimmedVal,
           formattedValue: JSON.stringify(parsedInner, null, 2),
@@ -478,7 +477,6 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
             format: 'kv',
             encoding: 'JSON_STRING',
             charset: detectCharset(trimmedVal),
-            wasCompact: !val.includes('\n'),
             rawValue: val,
             unescapedValue: trimmedVal,
             formattedValue: formatPayload(trimmedVal),
@@ -502,7 +500,6 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
         format: 'xml',
         encoding: 'JSON_STRING',
         charset: detectCharset(trimmedVal),
-        wasCompact: !val.includes('\n'),
         rawValue: val,
         unescapedValue: trimmedVal,
         formattedValue: formatXml(trimmedVal),
@@ -534,7 +531,6 @@ function analyzeStringValue(val, childPath, key, maxDepth, currentDepth) {
         format: innerFormat,
         encoding: b64Decoded.charset === 'UTF-8' ? 'BASE64_UTF8' : 'BASE64',
         charset: b64Decoded.charset,
-        wasCompact: !decodedText.includes('\n'),
         rawValue: val,
         unescapedValue: decodedText,
         formattedValue: formatPayload(decodedText),
@@ -579,7 +575,6 @@ function inspectXmlText(xmlText, path, results, maxDepth, currentDepth) {
         format: innerFormat,
         encoding: 'XML_CDATA',
         charset: detectCharset(cdataContent),
-        wasCompact: !cdataContent.includes('\n'),
         rawValue: cdataContent,
         unescapedValue: cdataContent,
         formattedValue: innerFormat === 'json' ? formatPayload(cdataContent) : formatXml(cdataContent),
@@ -608,7 +603,6 @@ function inspectXmlText(xmlText, path, results, maxDepth, currentDepth) {
           format: innerFormat,
           encoding: 'XML_ENTITY_TEXT',
           charset: detectCharset(unescaped),
-          wasCompact: !unescaped.includes('\n'),
           rawValue: content,
           unescapedValue: unescaped,
           formattedValue: innerFormat === 'json' ? formatPayload(unescaped) : formatXml(unescaped),
@@ -675,6 +669,47 @@ function setJsonPathValue(root, path, newValue) {
   return root;
 }
 
+function getRelativeJsonPath(childPath, parentPath) {
+  if (!childPath) return '';
+  if (!parentPath || parentPath === '$') {
+    return childPath.startsWith('$.') ? childPath.substring(2) : (childPath.startsWith('$') ? childPath.substring(1) : childPath);
+  }
+  if (childPath.startsWith(parentPath)) {
+    let rel = childPath.substring(parentPath.length);
+    while (rel.startsWith('.') || rel.startsWith('/')) {
+      rel = rel.substring(1);
+    }
+    return rel;
+  }
+  return childPath.startsWith('$.') ? childPath.substring(2) : childPath;
+}
+
+function hasJsonPath(obj, path) {
+  if (!obj || !path) return false;
+  const cleanPath = path.startsWith('$.') ? path.substring(2) : (path.startsWith('$') ? path.substring(1) : path);
+  const parts = cleanPath.split('.');
+  let curr = obj;
+  for (const p of parts) {
+    if (!curr || typeof curr !== 'object' || !(p in curr)) return false;
+    curr = curr[p];
+  }
+  return true;
+}
+
+function findKeyPathInObject(obj, targetKey, currentPath = '') {
+  if (!obj || typeof obj !== 'object') return null;
+  if (Object.prototype.hasOwnProperty.call(obj, targetKey)) {
+    return currentPath ? `${currentPath}.${targetKey}` : targetKey;
+  }
+  for (const k of Object.keys(obj)) {
+    if (obj[k] && typeof obj[k] === 'object') {
+      const found = findKeyPathInObject(obj[k], targetKey, currentPath ? `${currentPath}.${k}` : k);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 /**
  * Applies edited text of a child node back into its parent container text,
  * properly re-escaping according to the node's Container Encoding Envelope.
@@ -683,9 +718,10 @@ function setJsonPathValue(root, path, newValue) {
  * @param {object} nodeDescriptor
  * @param {string} editedChildText
  * @param {object} options { forceInvalid: boolean, minifyOnSave: boolean }
+ * @param {object} [parentDescriptor=null]
  * @returns {string} Re-escaped parent text
  */
-export function applyNestedPayloadEdit(parentText, nodeDescriptor, editedChildText, options = {}) {
+export function applyNestedPayloadEdit(parentText, nodeDescriptor, editedChildText, options = {}, parentDescriptor = null) {
   if (!nodeDescriptor) return editedChildText;
 
   // 1. Validation check
@@ -696,9 +732,9 @@ export function applyNestedPayloadEdit(parentText, nodeDescriptor, editedChildTe
     }
   }
 
-  // 2. Whitespace formatting
+  // 2. Whitespace handling: ONLY minify if explicitly requested; NEVER re-format intermediate envelopes
   let processedText = editedChildText;
-  if (options.minifyOnSave || (nodeDescriptor.wasCompact && options.minifyOnSave !== false)) {
+  if (options.minifyOnSave) {
     if (nodeDescriptor.format === 'json') {
       try {
         processedText = JSON.stringify(JSON.parse(editedChildText));
@@ -706,22 +742,26 @@ export function applyNestedPayloadEdit(parentText, nodeDescriptor, editedChildTe
     } else if (nodeDescriptor.format === 'xml') {
       processedText = minifyXml(editedChildText);
     }
-  } else {
-    processedText = formatPayload(editedChildText);
   }
 
-  // 3. Re-encode according to Container Encoding Envelope
+  // 3. Re-encode according to Container Encoding Envelope (surgical in-place substitution)
   if (nodeDescriptor.encoding === 'BASE64_UTF8' || nodeDescriptor.encoding === 'BASE64') {
     const editedPrologCharset = detectCharset(processedText);
     const targetCharset = editedPrologCharset !== 'UTF-8' ? editedPrologCharset : (nodeDescriptor.charset || 'UTF-8');
     const encoded = encodeToBase64(processedText, targetCharset);
-    return replaceNodeValueInParent(parentText, nodeDescriptor, encoded);
+    if (nodeDescriptor.rawValue && parentText.includes(nodeDescriptor.rawValue)) {
+      return parentText.replace(nodeDescriptor.rawValue, encoded);
+    }
+    return replaceNodeValueInParent(parentText, nodeDescriptor, encoded, parentDescriptor);
   }
 
   if (nodeDescriptor.encoding === 'XML_CDATA') {
     const cdataWrapper = `<![CDATA[${processedText}]]>`;
-    if (nodeDescriptor.rawValue && parentText.includes(nodeDescriptor.rawValue)) {
+    if (nodeDescriptor.rawValue && parentText.includes(`<![CDATA[${nodeDescriptor.rawValue}]]>`)) {
       return parentText.replace(`<![CDATA[${nodeDescriptor.rawValue}]]>`, cdataWrapper);
+    }
+    if (nodeDescriptor.rawValue && parentText.includes(nodeDescriptor.rawValue)) {
+      return parentText.replace(nodeDescriptor.rawValue, processedText);
     }
     return cdataWrapper;
   }
@@ -735,23 +775,39 @@ export function applyNestedPayloadEdit(parentText, nodeDescriptor, editedChildTe
   }
 
   // Standard JSON_STRING
-  return replaceNodeValueInParent(parentText, nodeDescriptor, processedText);
+  return replaceNodeValueInParent(parentText, nodeDescriptor, processedText, parentDescriptor);
 }
 
-function replaceNodeValueInParent(parentText, nodeDescriptor, newStringValue) {
+function replaceNodeValueInParent(parentText, nodeDescriptor, newStringValue, parentDescriptor = null) {
+  // 1. Surgical in-place substitution: if parent contains JSON-serialized rawValue, replace directly!
+  if (nodeDescriptor && nodeDescriptor.rawValue !== undefined && nodeDescriptor.rawValue !== null) {
+    const oldSerialized = JSON.stringify(nodeDescriptor.rawValue);
+    const newSerialized = JSON.stringify(newStringValue);
+    if (parentText.includes(oldSerialized)) {
+      return parentText.replace(oldSerialized, newSerialized);
+    }
+  }
+
+  // 2. Structured fallback if direct string match fails (e.g. altered whitespace in parent)
+  const parentPath = parentDescriptor ? parentDescriptor.path : '$';
+  let targetPath = getRelativeJsonPath(nodeDescriptor ? nodeDescriptor.path : null, parentPath);
   try {
     const parsedParent = JSON.parse(parentText);
-    if (nodeDescriptor.key && Object.prototype.hasOwnProperty.call(parsedParent, nodeDescriptor.key)) {
+    if (nodeDescriptor && nodeDescriptor.key && Object.prototype.hasOwnProperty.call(parsedParent, nodeDescriptor.key)) {
       parsedParent[nodeDescriptor.key] = newStringValue;
     } else {
-      setJsonPathValue(parsedParent, nodeDescriptor.path, newStringValue);
+      if (!targetPath || !hasJsonPath(parsedParent, targetPath)) {
+        const found = (nodeDescriptor && nodeDescriptor.key) ? findKeyPathInObject(parsedParent, nodeDescriptor.key) : null;
+        if (found) targetPath = found;
+      }
+      setJsonPathValue(parsedParent, targetPath, newStringValue);
     }
     // Retain indentation if parent was indented
     const isIndented = parentText.includes('\n');
     return JSON.stringify(parsedParent, null, isIndented ? 2 : undefined);
   } catch (_) {
     // String replacement fallback if parent is not parseable JSON
-    if (nodeDescriptor.rawValue && parentText.includes(nodeDescriptor.rawValue)) {
+    if (nodeDescriptor && nodeDescriptor.rawValue && parentText.includes(nodeDescriptor.rawValue)) {
       const escapedNew = JSON.stringify(newStringValue);
       // Strip outer quotes from JSON.stringify
       const innerEscaped = escapedNew.substring(1, escapedNew.length - 1);
@@ -780,11 +836,13 @@ export function cascadeLensStackToRoot(stackFrames, deepestEditedText, options =
     const parentFrame = stackFrames[i - 1];
     const parentText = parentFrame.text !== undefined ? parentFrame.text : parentFrame.payload;
     const descriptor = childFrame.descriptor || childFrame.targetNode;
+    const parentDescriptor = parentFrame.descriptor || parentFrame.targetNode;
     currentText = applyNestedPayloadEdit(
       parentText,
       descriptor,
       currentText,
-      options
+      options,
+      parentDescriptor
     );
     if (parentFrame.text !== undefined) parentFrame.text = currentText;
     if (parentFrame.payload !== undefined) parentFrame.payload = currentText;
@@ -816,10 +874,22 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
   const format = detectFormat(trimmed);
   const discovered = discoverEmbeddedPayloads(trimmed);
   const hasEmbedded = discovered.length > 0;
+  const editable = options.editable !== undefined ? Boolean(options.editable) : Boolean(options.onSaveRoot);
+  const readOnlyReason = options.readOnlyReason || 'Read-only payload view';
+  const session = options.session || {
+    editable,
+    readOnlyReason,
+    onSaveRoot: options.onSaveRoot || null
+  };
 
   // Create state container if not already initialized
   const viewerId = 'viewer_' + Math.random().toString(36).substring(2, 9);
   let isUnescaped = options.defaultUnescaped !== false && (hasEmbedded || format !== 'text');
+  let currentViewerText = trimmed;
+
+  const editDisabledAttr = editable
+    ? 'title="Edit root document in-line"'
+    : `disabled title="${escapeHtml(readOnlyReason)}"`;
 
   containerEl.innerHTML = `
     <div class="payload-viewer-box" id="${viewerId}">
@@ -833,6 +903,9 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
           </button>
         </div>
         <div class="payload-viewer-actions">
+          <button type="button" class="btn btn-tiny btn-viewer-inline-edit" ${editDisabledAttr}>
+            ✏️ Edit
+          </button>
           <button type="button" class="btn btn-tiny btn-copy-raw" title="Copy exact raw wire bytes">
             📋 Copy Raw
           </button>
@@ -848,22 +921,42 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
   `;
 
   const boxEl = containerEl.querySelector(`#${viewerId}`);
-  const codeEl = boxEl.querySelector('.payload-code-output');
+  const bodyEl = boxEl.querySelector('.payload-viewer-body');
 
   function renderContent() {
-    if (!isUnescaped) {
-      codeEl.innerHTML = highlightPayload(trimmed);
+    const activeDiscovered = discoverEmbeddedPayloads(currentViewerText);
+    const activeHasEmbedded = activeDiscovered.length > 0;
+    bodyEl.innerHTML = '<pre class="syntax-view"><code class="payload-code-output"></code></pre>';
+    const codeEl = bodyEl.querySelector('.payload-code-output');
+
+    if (!isUnescaped || !activeHasEmbedded) {
+      codeEl.innerHTML = highlightPayload(isUnescaped ? formatPayload(currentViewerText) : currentViewerText);
       return;
     }
 
-    if (!hasEmbedded) {
-      codeEl.innerHTML = highlightPayload(trimmed);
-      return;
-    }
+    const updatedSession = {
+      ...session,
+      editable,
+      readOnlyReason,
+      onSaveRoot: (newRootText) => {
+        currentViewerText = newRootText;
+        if (typeof options.onSaveRoot === 'function') {
+          options.onSaveRoot(newRootText);
+        }
+        renderContent();
+      }
+    };
 
     // Render formatted root with interactive Truncated Payload Previews
-    codeEl.innerHTML = renderFormattedWithNestedPreviews(trimmed, discovered, viewerId, options.onSaveRoot);
-    attachViewerEventListeners(boxEl, trimmed, discovered, options.onSaveRoot);
+    codeEl.innerHTML = renderFormattedWithNestedPreviews(
+      currentViewerText,
+      activeDiscovered,
+      viewerId,
+      updatedSession.onSaveRoot,
+      null,
+      currentViewerText,
+      updatedSession
+    );
   }
 
   // Bind Mode Toggles
@@ -876,19 +969,46 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
     });
   });
 
+  // Bind Top-level In-line Edit
+  const inlineEditBtn = boxEl.querySelector('.btn-viewer-inline-edit');
+  if (inlineEditBtn && editable) {
+    inlineEditBtn.addEventListener('click', () => {
+      if (typeof options.onRequestTopEdit === 'function') {
+        options.onRequestTopEdit();
+        return;
+      }
+      mountInlineBlockEditor({
+        containerEl: bodyEl,
+        initialText: isUnescaped ? formatPayload(currentViewerText) : currentViewerText,
+        format: detectFormat(currentViewerText),
+        mode: isUnescaped ? 'rich' : 'raw',
+        onApply: (editedText) => {
+          currentViewerText = editedText;
+          if (typeof options.onSaveRoot === 'function') {
+            options.onSaveRoot(editedText);
+          }
+          renderContent();
+        },
+        onCancel: () => {
+          renderContent();
+        }
+      });
+    });
+  }
+
   // Bind Copy Buttons
   const copyRawBtn = boxEl.querySelector('.btn-copy-raw');
   const copyFormattedBtn = boxEl.querySelector('.btn-copy-formatted');
 
   copyRawBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(trimmed).then(() => {
+    navigator.clipboard.writeText(currentViewerText).then(() => {
       copyRawBtn.textContent = '✓ Copied';
       setTimeout(() => { copyRawBtn.textContent = '📋 Copy Raw'; }, 1500);
     }).catch(() => {});
   });
 
   copyFormattedBtn.addEventListener('click', () => {
-    const formatted = formatPayload(trimmed);
+    const formatted = formatPayload(currentViewerText);
     navigator.clipboard.writeText(formatted).then(() => {
       copyFormattedBtn.textContent = '✓ Copied';
       setTimeout(() => { copyFormattedBtn.textContent = '✨ Copy Formatted'; }, 1500);
@@ -901,17 +1021,152 @@ export function renderPayloadViewer(containerEl, rawText, options = {}) {
 const viewerRegistry = new Map();
 const nodeRegistry = new Map();
 
-function registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot = null) {
-  viewerRegistry.set(viewerId, { rawText, discovered, onSaveRoot });
+function registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot = null, session = null) {
+  viewerRegistry.set(viewerId, { rawText, discovered, onSaveRoot, session });
 }
 
-export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId, onSaveRoot = null, ancestorFrames = null, rootText = null) {
-  const actualRootText = rootText !== null ? rootText : rawText;
-  const currentAncestorFrames = ancestorFrames !== null ? ancestorFrames : [
+/**
+ * Mounts an auto-growing, zero-vertical-scrollbar Dual-Layer Code Editor in-line inside a container
+ * with [✨ Format] [✓ Apply] [✕ Cancel] action bar and live syntax validation.
+ */
+export function mountInlineBlockEditor({
+  containerEl,
+  initialText = '',
+  format = 'json',
+  mode = 'rich',
+  actionBarHostEl = null,
+  onApply,
+  onCancel
+}) {
+  if (!containerEl) return null;
+  containerEl.classList.add('is-editing');
+
+  containerEl.innerHTML = `
+    <div class="inline-editor-shell" data-testid="inline-editor-shell">
+      <div class="inline-editor-toolbar">
+        <span class="payload-lint-pill hidden inline-editor-lint"></span>
+        <div class="inline-editor-actions">
+          <button type="button" class="btn btn-tiny btn-inline-format" title="Format / Prettify (${escapeHtml((format || 'TEXT').toUpperCase())})">✨ Format</button>
+          <button type="button" class="btn btn-tiny btn-primary btn-inline-apply" data-testid="btn-inline-apply" title="Apply changes transiently to Root Document">✓ Apply</button>
+          <button type="button" class="btn btn-tiny btn-secondary btn-inline-cancel" data-testid="btn-inline-cancel" title="Discard in-line edits and return to viewer">✕ Cancel</button>
+        </div>
+      </div>
+      <div class="inline-editor-body">
+        <textarea class="code-input inline-editor-textarea" data-testid="inline-editor-textarea" rows="2" spellcheck="false"></textarea>
+      </div>
+    </div>
+  `;
+
+  const shellEl = containerEl.querySelector('.inline-editor-shell');
+  const textarea = shellEl.querySelector('.inline-editor-textarea');
+  const lintEl = shellEl.querySelector('.inline-editor-lint');
+  const btnFormat = shellEl.querySelector('.btn-inline-format');
+  const btnApply = shellEl.querySelector('.btn-inline-apply');
+  const btnCancel = shellEl.querySelector('.btn-inline-cancel');
+
+  textarea.value = initialText;
+  const dualLayer = attachDualLayerEditor(textarea, null, {
+    autoGrow: true,
+    initialMode: mode === 'raw' ? 'raw' : 'rich'
+  });
+
+  function checkValidation() {
+    const val = textarea.value;
+    const fmt = format || detectFormat(val);
+    if (mode !== 'raw' && (fmt === 'json' || fmt === 'xml')) {
+      const res = validatePayload(val, fmt);
+      if (!res.valid) {
+        if (lintEl) {
+          lintEl.textContent = `⚠️ ${res.errorMessage}`;
+          lintEl.classList.remove('hidden');
+        }
+        return false;
+      }
+    }
+    if (lintEl) {
+      lintEl.textContent = '';
+      lintEl.classList.add('hidden');
+    }
+    return true;
+  }
+
+  textarea.addEventListener('input', checkValidation);
+
+  if (btnFormat) {
+    btnFormat.addEventListener('click', (e) => {
+      e.stopPropagation();
+      textarea.value = formatPayload(textarea.value);
+      if (dualLayer) dualLayer.refresh();
+      checkValidation();
+    });
+  }
+
+  if (btnApply) {
+    btnApply.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!checkValidation()) return;
+      containerEl.classList.remove('is-editing');
+      if (typeof onApply === 'function') {
+        onApply(textarea.value);
+      }
+    });
+  }
+
+  if (btnCancel) {
+    btnCancel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      containerEl.classList.remove('is-editing');
+      if (typeof onCancel === 'function') {
+        onCancel();
+      }
+    });
+  }
+
+  checkValidation();
+  return { shellEl, textarea, dualLayer, checkValidation };
+}
+
+export function renderFormattedWithNestedPreviews(
+  rawText,
+  discovered,
+  viewerId,
+  onSaveRoot = null,
+  ancestorFrames = null,
+  rootText = null,
+  session = null
+) {
+  let actualAncestorFrames = ancestorFrames;
+  let actualRootText = rootText;
+  let actualSession = session;
+
+  if (ancestorFrames && !Array.isArray(ancestorFrames) && typeof ancestorFrames === 'object') {
+    actualSession = ancestorFrames;
+    actualAncestorFrames = null;
+  } else if (onSaveRoot && typeof onSaveRoot === 'object' && !Array.isArray(onSaveRoot) && typeof onSaveRoot !== 'function') {
+    actualSession = onSaveRoot;
+    onSaveRoot = actualSession.onSaveRoot || null;
+  }
+
+  if (actualRootText === null || typeof actualRootText !== 'string') {
+    actualRootText = rawText;
+  }
+  const currentAncestorFrames = Array.isArray(actualAncestorFrames) ? actualAncestorFrames : [
     { text: rawText, descriptor: null, title: 'Root Wire Document', format: detectFormat(rawText) }
   ];
+  const resolvedEditable = actualSession && actualSession.editable !== undefined
+    ? Boolean(actualSession.editable)
+    : Boolean(onSaveRoot);
+  const resolvedReadOnlyReason = (actualSession && actualSession.readOnlyReason)
+    || 'Read-only preview — open in editor to modify';
+  const resolvedSession = {
+    editable: resolvedEditable,
+    readOnlyReason: resolvedReadOnlyReason,
+    onSaveRoot: onSaveRoot || (actualSession && actualSession.onSaveRoot) || null,
+    reRenderRoot: actualSession && actualSession.reRenderRoot ? actualSession.reRenderRoot : null,
+    context: (actualSession && actualSession.context) || 'stub'
+  };
 
-  registerPayloadViewer(viewerId, rawText, discovered, onSaveRoot);
+  registerPayloadViewer(viewerId, rawText, discovered, resolvedSession.onSaveRoot, resolvedSession);
   let formatted = formatPayload(rawText);
   const replacements = [];
 
@@ -919,30 +1174,35 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
   for (let i = 0; i < discovered.length; i++) {
     const node = discovered[i];
     const fullNodeId = `${viewerId}_n${i}`;
+    const nodeAncestorFrames = [
+      ...currentAncestorFrames,
+      { text: node.unescapedValue, descriptor: node, title: node.path, format: node.format }
+    ];
     nodeRegistry.set(fullNodeId, {
       node,
+      viewerId,
+      parentText: rawText,
       rootText: actualRootText,
       ancestorFrames: currentAncestorFrames,
-      onSaveRoot
+      nodeAncestorFrames,
+      onSaveRoot: resolvedSession.onSaveRoot,
+      session: resolvedSession
     });
 
     // Recursively render child payloads if discovered has children
     let innerHtml = '';
     if (node.children && node.children.length > 0) {
-      const childAncestorFrames = [
-        ...currentAncestorFrames,
-        { text: node.unescapedValue, descriptor: node, title: node.path, format: node.format }
-      ];
       innerHtml = renderFormattedWithNestedPreviews(
         node.unescapedValue,
         node.children,
         `${fullNodeId}_c`,
-        onSaveRoot,
-        childAncestorFrames,
-        actualRootText
+        resolvedSession.onSaveRoot,
+        nodeAncestorFrames,
+        actualRootText,
+        resolvedSession
       );
     } else {
-      innerHtml = highlightPayload(node.unescapedValue);
+      innerHtml = highlightPayload(formatPayload(node.unescapedValue));
     }
 
     const previewSnippet = node.unescapedValue.substring(0, 60).replace(/\s+/g, ' ');
@@ -953,7 +1213,11 @@ export function renderFormattedWithNestedPreviews(rawText, discovered, viewerId,
       charset: node.charset,
       sizeKb
     });
-    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><div class="editor-mode-toggle nested-mode-toggle" data-node-id="${fullNodeId}"><button type="button" class="btn btn-tiny active btn-nested-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button><button type="button" class="btn btn-tiny btn-nested-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button></div><button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
+    const editBtnAttrs = resolvedEditable
+      ? `title="Edit ${escapeHtml(node.path)} in-line"`
+      : `disabled title="${escapeHtml(resolvedReadOnlyReason)}"`;
+
+    const previewHtml = `<span class="truncated-payload-preview auto-expanded" data-node-id="${fullNodeId}" data-node-idx="${i}" data-viewer-id="${viewerId}" tabindex="0"><span class="preview-snippet">"${escapeHtml(previewSnippet)}..."</span><span class="preview-pill-group"><span class="preview-pill-badge btn-lens-expand-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(pillLabel)}</span><div class="editor-mode-toggle nested-mode-toggle" data-node-id="${fullNodeId}"><button type="button" class="btn btn-tiny active btn-nested-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button><button type="button" class="btn btn-tiny btn-nested-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button></div><button type="button" class="btn-payload-maximize btn-nested-inline-edit" data-node-id="${fullNodeId}" data-node-idx="${i}" ${editBtnAttrs}>✏️ Edit</button><button type="button" class="btn-payload-maximize btn-nested-copy" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Copy subsection payload">📋 Copy</button><button type="button" class="btn-payload-maximize btn-nested-maximize btn-lens-open-pill" data-node-id="${fullNodeId}" data-node-idx="${i}" title="Maximize in Fullscreen Viewport">⛶ Maximize</button></span><div class="inline-expanded-payload" id="${viewerId}_expanded_${i}"><pre class="inline-code"><code>${innerHtml}</code></pre></div></span>`;
 
     const token = `__LENS_TOKEN_${i}__`;
     const escapedInJson = JSON.stringify(node.rawValue);
@@ -1012,7 +1276,7 @@ if (typeof document !== 'undefined') {
       const nodeId = openBtn.getAttribute('data-node-id');
       const entry = nodeRegistry.get(nodeId);
       if (entry) {
-        openPayloadLens(entry.rootText, entry.node, entry.onSaveRoot, entry.ancestorFrames, 'viewer');
+        openPayloadLens(entry.rootText, entry.node, entry.onSaveRoot, entry.ancestorFrames, 'viewer', entry.session);
       } else {
         const parentPreview = openBtn.closest('.truncated-payload-preview');
         if (parentPreview) {
@@ -1020,10 +1284,96 @@ if (typeof document !== 'undefined') {
           const nodeIdx = parseInt(openBtn.getAttribute('data-node-idx'), 10);
           const stored = viewerRegistry.get(viewerId);
           if (stored && stored.discovered && stored.discovered[nodeIdx]) {
-            openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot, null, 'viewer');
+            openPayloadLens(stored.rawText, stored.discovered[nodeIdx], stored.onSaveRoot, null, 'viewer', stored.session);
           }
         }
       }
+      return;
+    }
+
+    const nestedCopyBtn = e.target.closest('.btn-nested-copy');
+    if (nestedCopyBtn) {
+      e.stopPropagation();
+      const nodeId = nestedCopyBtn.getAttribute('data-node-id');
+      const entry = nodeRegistry.get(nodeId);
+      if (entry && entry.node) {
+        const parentPreview = nestedCopyBtn.closest('.truncated-payload-preview');
+        const toggle = parentPreview ? parentPreview.querySelector(':scope > .preview-pill-group .nested-mode-toggle') : null;
+        const isRaw = toggle && toggle.querySelector('.btn-nested-mode-raw.active');
+        const textToCopy = isRaw ? entry.node.rawValue : formatPayload(entry.node.unescapedValue);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(textToCopy).catch(() => {});
+        }
+        nestedCopyBtn.textContent = '✓ Copied';
+        setTimeout(() => { nestedCopyBtn.textContent = '📋 Copy'; }, 1500);
+      }
+      return;
+    }
+
+    const nestedEditBtn = e.target.closest('.btn-nested-inline-edit');
+    if (nestedEditBtn) {
+      e.stopPropagation();
+      if (nestedEditBtn.disabled || nestedEditBtn.hasAttribute('disabled')) return;
+      const nodeId = nestedEditBtn.getAttribute('data-node-id');
+      const entry = nodeRegistry.get(nodeId);
+      const parentPreview = nestedEditBtn.closest('.truncated-payload-preview');
+      if (!entry || !parentPreview) return;
+
+      const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
+      if (!expandedDiv) return;
+
+      // Ensure expanded div is visible when entering edit
+      expandedDiv.classList.remove('hidden');
+      parentPreview.classList.add('auto-expanded');
+
+      const toggle = parentPreview.querySelector(':scope > .preview-pill-group .nested-mode-toggle');
+      const isRaw = toggle && toggle.querySelector('.btn-nested-mode-raw.active');
+      const initialVal = isRaw ? entry.node.rawValue : formatPayload(entry.node.unescapedValue);
+
+      nestedEditBtn.classList.add('hidden');
+      const restoreNestedView = () => {
+        nestedEditBtn.classList.remove('hidden');
+        if (isRaw) {
+          expandedDiv.innerHTML = `<pre class="inline-code mode-raw"><code>${highlightPayload(entry.node.rawValue)}</code></pre>`;
+        } else {
+          const hasKids = entry.node.children && entry.node.children.length > 0;
+          const content = hasKids
+            ? renderFormattedWithNestedPreviews(entry.node.unescapedValue, entry.node.children, `${nodeId}_c`, entry.onSaveRoot, entry.nodeAncestorFrames, entry.rootText, entry.session)
+            : highlightPayload(formatPayload(entry.node.unescapedValue));
+          expandedDiv.innerHTML = `<pre class="inline-code"><code>${content}</code></pre>`;
+        }
+      };
+
+      mountInlineBlockEditor({
+        containerEl: expandedDiv,
+        initialText: initialVal,
+        format: entry.node.format,
+        mode: isRaw ? 'raw' : 'rich',
+        onApply: (editedChildText) => {
+          nestedEditBtn.classList.remove('hidden');
+          const newRootText = cascadeLensStackToRoot(
+            entry.nodeAncestorFrames.map(f => ({
+              text: f.text,
+              descriptor: f.descriptor,
+              title: f.title,
+              format: f.format
+            })),
+            editedChildText,
+            { forceInvalid: Boolean(isRaw) }
+          );
+          if (typeof entry.onSaveRoot === 'function') {
+            entry.onSaveRoot(newRootText);
+          } else if (entry.session && typeof entry.session.reRenderRoot === 'function') {
+            entry.session.reRenderRoot(newRootText);
+          } else {
+            entry.node.unescapedValue = editedChildText;
+            restoreNestedView();
+          }
+        },
+        onCancel: () => {
+          restoreNestedView();
+        }
+      });
       return;
     }
 
@@ -1043,12 +1393,15 @@ if (typeof document !== 'undefined') {
 
         const expandedDiv = parentPreview.querySelector(':scope > .inline-expanded-payload') || parentPreview.querySelector('.inline-expanded-payload');
         if (expandedDiv && entry) {
-          if (mode === 'raw') {
+          const inlineTextarea = expandedDiv.querySelector('.inline-editor-textarea');
+          if (inlineTextarea && inlineTextarea._dualLayer) {
+            inlineTextarea._dualLayer.setMode(mode);
+          } else if (mode === 'raw') {
             expandedDiv.innerHTML = `<pre class="inline-code mode-raw"><code>${highlightPayload(entry.node.rawValue)}</code></pre>`;
           } else {
             const hasKids = entry.node.children && entry.node.children.length > 0;
             const content = hasKids
-              ? renderFormattedWithNestedPreviews(entry.node.unescapedValue, entry.node.children, `${nodeId}_c`, entry.onSaveRoot, entry.ancestorFrames, entry.rootText)
+              ? renderFormattedWithNestedPreviews(entry.node.unescapedValue, entry.node.children, `${nodeId}_c`, entry.onSaveRoot, entry.nodeAncestorFrames, entry.rootText, entry.session)
               : highlightPayload(formatPayload(entry.node.unescapedValue));
             expandedDiv.innerHTML = `<pre class="inline-code"><code>${content}</code></pre>`;
           }
@@ -1164,7 +1517,10 @@ export function attachDualLayerEditor(textareaEl, toggleContainerEl = null, opti
   const adjustHeight = () => {
     if (!isAutoGrow) return;
     const lines = (textareaEl.value || '').split('\n').length;
-    const calculatedHeight = Math.max(48, lines * 21 + 26);
+    const isInlineShell = Boolean(wrapper.closest('.inline-editor-shell'));
+    const calculatedHeight = isInlineShell
+      ? Math.max(24, lines * 19 + 8)
+      : Math.max(48, lines * 21 + 26);
     wrapper.style.height = `${calculatedHeight}px`;
     if (backdrop) backdrop.style.height = `${calculatedHeight}px`;
   };
@@ -1314,6 +1670,8 @@ export function createPayloadComponent(containerEl, {
   charset = null,
   context = 'stub',
   readOnly = false,
+  editable = !readOnly,
+  readOnlyReason = 'Read-only payload view',
   defaultMode = 'rich',
   defaultAction = 'view',
   backingTextarea = null,
@@ -1329,13 +1687,18 @@ export function createPayloadComponent(containerEl, {
   formatBtn = null,
   maximizeBtn = null,
   editBtn = null,
+  applyBtn = null,
+  cancelEditBtn = null,
+  copyBtn = null,
   onEdit = null,
   bufferType = null,
   autoGrow = false
 } = {}) {
+  const isEditable = Boolean(editable && !readOnly);
   let currentText = backingTextarea ? (backingTextarea.value || '') : (text || '');
+  let preEditText = currentText;
   let currentMode = defaultMode; // 'rich' | 'raw'
-  let currentAction = readOnly ? 'view' : defaultAction; // 'view' | 'edit'
+  let currentAction = !isEditable ? 'view' : defaultAction; // 'view' | 'edit'
   const componentId = 'upc_' + Math.random().toString(36).substring(2, 9);
 
   const cleanFormat = format || detectFormat(currentText);
@@ -1351,10 +1714,20 @@ export function createPayloadComponent(containerEl, {
   let btnRich = null;
   let btnRaw = null;
   let btnActionView = null;
-  let btnActionEdit = null;
+  let btnActionEdit = editBtn;
+  let btnApplyEdit = applyBtn;
+  let btnCancelEdit = cancelEditBtn;
   let btnFormat = formatBtn;
-  let btnCopy = null;
+  let btnCopy = copyBtn;
   let btnMax = maximizeBtn;
+
+  const session = {
+    editable: isEditable,
+    readOnlyReason: readOnlyReason || 'Read-only payload view',
+    context,
+    onSaveRoot: (newRootText) => syncText(newRootText, true),
+    reRenderRoot: (newRootText) => syncText(newRootText, true)
+  };
 
   if (isExternal) {
     if (toggleEl) {
@@ -1387,13 +1760,11 @@ export function createPayloadComponent(containerEl, {
               <button type="button" class="btn btn-tiny ${currentMode === 'rich' ? 'active' : ''} btn-mode-rich" data-mode="rich" title="Unescaped, formatted, indented">🎨 Rich</button>
               <button type="button" class="btn btn-tiny ${currentMode === 'raw' ? 'active' : ''} btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
             </div>
-            ${!readOnly ? `
             <div class="action-mode-toggle">
-              <button type="button" class="btn btn-tiny ${currentAction === 'view' ? 'active' : ''} btn-action-view" data-action="view" title="Read-only view">👁️ View</button>
-              <button type="button" class="btn btn-tiny ${currentAction === 'edit' ? 'active' : ''} btn-action-edit" data-action="edit" title="Editable mode">✏️ Edit</button>
+              <button type="button" class="btn btn-tiny ${currentAction === 'view' ? 'active' : ''} btn-action-view ${!isEditable ? 'hidden' : ''}" data-action="view" title="Read-only view">👁️ View</button>
+              <button type="button" class="btn btn-tiny ${currentAction === 'edit' ? 'active' : ''} btn-action-edit" data-action="edit" ${!isEditable ? `disabled title="${escapeHtml(session.readOnlyReason)}"` : 'title="Switch to in-line editor"'}>✏️ Edit</button>
             </div>
-            ` : ''}
-            ${!readOnly ? `<button type="button" class="btn btn-tiny btn-format-payload ${currentAction === 'edit' ? '' : 'hidden'}" title="Format/re-indent JSON/XML">✨ Format</button>` : ''}
+            ${isEditable ? `<button type="button" class="btn btn-tiny btn-format-payload ${currentAction === 'edit' ? '' : 'hidden'}" title="Format/re-indent JSON/XML">✨ Format</button>` : ''}
             <button type="button" class="btn btn-tiny btn-copy-payload" title="Copy payload text">📋 Copy</button>
             <button type="button" class="btn-payload-maximize btn-maximize-payload" title="Maximize in Fullscreen Viewport">⛶ Maximize</button>
           </div>
@@ -1423,8 +1794,11 @@ export function createPayloadComponent(containerEl, {
   }
 
   let dualLayerInstance = null;
-  if (!readOnly && textareaEl) {
+  if (isEditable && textareaEl) {
     dualLayerInstance = attachDualLayerEditor(textareaEl, toggleEl, { autoGrow });
+    if (isExternal && viewContainer) {
+      editContainer = textareaEl.closest('.dual-layer-editor-wrapper') || textareaEl.parentElement || textareaEl;
+    }
   }
 
   function updateDescriptor() {
@@ -1447,11 +1821,13 @@ export function createPayloadComponent(containerEl, {
 
   function renderView() {
     if (!viewContainer) return;
+    viewContainer._payloadSession = session;
+    viewContainer._rootText = currentText;
     viewContainer.classList.toggle('mode-raw', currentMode === 'raw');
     if (currentMode === 'rich') {
       const discovered = discoverEmbeddedPayloads(currentText);
       if (discovered.length > 0) {
-        viewContainer.innerHTML = renderFormattedWithNestedPreviews(currentText, discovered, `${componentId}_v`, null);
+        viewContainer.innerHTML = renderFormattedWithNestedPreviews(currentText, discovered, `${componentId}_v`, null, session);
       } else {
         viewContainer.innerHTML = highlightPayload(formatPayload(currentText));
       }
@@ -1476,9 +1852,11 @@ export function createPayloadComponent(containerEl, {
       }
     }
     if (backingPre) {
+      backingPre._payloadSession = session;
+      backingPre._rootText = newText;
       const discovered = discoverEmbeddedPayloads(newText);
       if (currentMode === 'rich' && discovered.length > 0) {
-        backingPre.innerHTML = renderFormattedWithNestedPreviews(newText, discovered, `${componentId}_bp`);
+        backingPre.innerHTML = renderFormattedWithNestedPreviews(newText, discovered, `${componentId}_bp`, null, session);
       } else {
         backingPre.innerHTML = highlightPayload(currentMode === 'rich' ? formatPayload(newText) : newText);
       }
@@ -1496,12 +1874,12 @@ export function createPayloadComponent(containerEl, {
   }
 
   function validate() {
-    if (!lintPill) return;
+    if (!lintPill) return true;
     const trimmed = (currentText || '').trim();
     if (!trimmed) {
       lintPill.classList.add('hidden');
       lintPill.textContent = '';
-      return;
+      return true;
     }
     let targetFormat = cleanFormat;
     if (!targetFormat || targetFormat === 'text') {
@@ -1516,11 +1894,12 @@ export function createPayloadComponent(containerEl, {
       if (!res.valid) {
         lintPill.classList.remove('hidden');
         lintPill.textContent = `⚠️ Invalid ${targetFormat.toUpperCase()}: ${res.errorMessage}`;
-        return;
+        return false;
       }
     }
     lintPill.classList.add('hidden');
     lintPill.textContent = '';
+    return true;
   }
 
   function setMode(mode) {
@@ -1537,16 +1916,37 @@ export function createPayloadComponent(containerEl, {
     }
   }
 
-  function setAction(action) {
-    if (readOnly) return;
-    currentAction = action === 'edit' ? 'edit' : 'view';
-    if (btnActionView && btnActionEdit) {
+  function updateToolbarActionState() {
+    if (btnActionView && btnActionEdit && !isExternal) {
       btnActionView.classList.toggle('active', currentAction === 'view');
       btnActionEdit.classList.toggle('active', currentAction === 'edit');
     }
-    if (btnFormat) {
+    if (isExternal && viewContainer && editContainer) {
+      if (btnActionEdit) {
+        btnActionEdit.classList.toggle('hidden', currentAction === 'edit');
+      }
+      if (btnApplyEdit) {
+        btnApplyEdit.classList.toggle('hidden', currentAction !== 'edit');
+      }
+      if (btnCancelEdit) {
+        btnCancelEdit.classList.toggle('hidden', currentAction !== 'edit');
+      }
+      if (btnFormat) {
+        btnFormat.classList.toggle('hidden', currentAction !== 'edit');
+      }
+    } else if (btnFormat && !isExternal) {
       btnFormat.classList.toggle('hidden', currentAction !== 'edit');
     }
+  }
+
+  function setAction(action) {
+    if (!isEditable) return;
+    const nextAction = action === 'edit' ? 'edit' : 'view';
+    if (nextAction === 'edit' && currentAction !== 'edit') {
+      preEditText = currentText;
+    }
+    currentAction = nextAction;
+    updateToolbarActionState();
     if (currentAction === 'view') {
       if (editContainer) {
         editContainer.classList.add('hidden');
@@ -1554,11 +1954,13 @@ export function createPayloadComponent(containerEl, {
       }
       if (viewContainer) {
         viewContainer.classList.remove('hidden');
+        viewContainer.style.display = '';
       }
       renderView();
     } else {
       if (viewContainer) {
         viewContainer.classList.add('hidden');
+        viewContainer.style.display = 'none';
       }
       if (editContainer) {
         editContainer.classList.remove('hidden');
@@ -1575,7 +1977,13 @@ export function createPayloadComponent(containerEl, {
   if (btnRich) btnRich.onclick = (e) => { e.stopPropagation(); setMode('rich'); };
   if (btnRaw) btnRaw.onclick = (e) => { e.stopPropagation(); setMode('raw'); };
   if (btnActionView) btnActionView.onclick = (e) => { e.stopPropagation(); setAction('view'); };
-  if (btnActionEdit) btnActionEdit.onclick = (e) => { e.stopPropagation(); setAction('edit'); };
+  if (btnActionEdit && !isExternal) {
+    btnActionEdit.onclick = (e) => {
+      e.stopPropagation();
+      if (!isEditable) return;
+      setAction('edit');
+    };
+  }
 
   if (btnFormat) {
     btnFormat.onclick = (e) => {
@@ -1590,8 +1998,9 @@ export function createPayloadComponent(containerEl, {
       e.stopPropagation();
       const copyVal = currentMode === 'rich' ? formatPayload(currentText) : currentText;
       navigator.clipboard.writeText(copyVal).then(() => {
+        const orig = btnCopy.textContent;
         btnCopy.textContent = '✓ Copied';
-        setTimeout(() => { btnCopy.textContent = '📋 Copy'; }, 1500);
+        setTimeout(() => { btnCopy.textContent = orig; }, 1500);
       }).catch(() => {});
     };
   }
@@ -1608,7 +2017,9 @@ export function createPayloadComponent(containerEl, {
           format: cleanFormat,
           charset: cleanCharset,
           context,
-          mode: currentAction === 'edit' ? 'editor' : 'viewer',
+          editable: isEditable,
+          readOnlyReason: session.readOnlyReason,
+          mode: 'viewer',
           onSave: (savedText) => {
             syncText(savedText);
             if (typeof onSave === 'function') {
@@ -1620,18 +2031,45 @@ export function createPayloadComponent(containerEl, {
     };
   }
 
-  if (editBtn) {
-    editBtn.onclick = (e) => {
+  if (editBtn && isExternal) {
+    if (!isEditable && !onEdit) {
+      editBtn.disabled = true;
+      editBtn.title = session.readOnlyReason;
+    } else {
+      editBtn.disabled = false;
+      editBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (typeof onEdit === 'function') {
+          onEdit();
+        } else if (viewContainer && editContainer) {
+          setAction('edit');
+        }
+      };
+    }
+  }
+
+  if (btnApplyEdit) {
+    btnApplyEdit.onclick = (e) => {
       e.stopPropagation();
-      if (typeof onEdit === 'function') {
-        onEdit();
+      if (!validate()) return;
+      setAction('view');
+      if (typeof onChange === 'function') {
+        onChange(currentText);
       }
+    };
+  }
+
+  if (btnCancelEdit) {
+    btnCancelEdit.onclick = (e) => {
+      e.stopPropagation();
+      syncText(preEditText, false);
+      setAction('view');
     };
   }
 
   if (descPill) {
     descPill.onclick = () => {
-      if (viewContainer) {
+      if (viewContainer && currentAction === 'view') {
         const isHidden = viewContainer.classList.toggle('hidden');
         descPill.title = isHidden ? 'Click to expand' : 'Click to collapse';
       }
@@ -1649,7 +2087,9 @@ export function createPayloadComponent(containerEl, {
 
   // Initial render
   updateDescriptor();
-  if (currentAction === 'view') {
+  if (isExternal && viewContainer && editContainer) {
+    setAction(currentAction);
+  } else if (currentAction === 'view') {
     renderView();
   } else {
     validate();
@@ -1662,6 +2102,7 @@ export function createPayloadComponent(containerEl, {
     setMode,
     getAction: () => currentAction,
     setAction,
+    session,
     refresh: () => {
       updateDescriptor();
       if (currentAction === 'view') renderView();
@@ -1853,11 +2294,16 @@ export function pushViewportLayer({
   charset = null,
   context = 'stub',
   mode = 'viewer',
+  editable = undefined,
+  readOnlyReason = 'Read-only payload view',
   descriptor = null,
   onSave = null
 }) {
   const cleanFormat = format || detectFormat(text);
   const cleanCharset = charset || detectCharset(text);
+  const isEditable = editable !== undefined
+    ? Boolean(editable)
+    : (Boolean(onSave) && context !== 'journal' && context !== 'tester-response');
   const layer = {
     id: `vp_${Date.now()}_${viewportStack.length}`,
     title,
@@ -1867,7 +2313,9 @@ export function pushViewportLayer({
     format: cleanFormat,
     charset: cleanCharset,
     context,
-    mode,
+    mode: isEditable ? mode : 'viewer',
+    editable: isEditable,
+    readOnlyReason: readOnlyReason || 'Read-only payload view',
     descriptor,
     onSave
   };
@@ -1964,7 +2412,8 @@ export function saveActiveViewport() {
           parent.currentText,
           active.descriptor,
           savedText,
-          { forceInvalid: false, minifyOnSave: false }
+          { forceInvalid: false, minifyOnSave: false },
+          parent.descriptor
         );
         parent.currentText = updatedParent;
         parent.isDirty = parent.currentText !== parent.initialText;
@@ -2003,7 +2452,11 @@ function saveActiveViewportInPlace() {
   setTimeout(() => toast.remove(), 1500);
 }
 
-export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null, mode = 'editor') {
+export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallback, ancestorFrames = null, mode = 'editor', session = null) {
+  const isEditable = session ? Boolean(session.editable) : Boolean(onSaveRootCallback);
+  const readOnlyReason = session && session.readOnlyReason ? session.readOnlyReason : 'Read-only payload view';
+  const context = session && session.context ? session.context : 'nested';
+
   // If ancestorFrames exist, seed the stack with ancestor frames
   if (viewportStack.length === 0) {
     if (ancestorFrames && ancestorFrames.length > 0) {
@@ -2012,8 +2465,10 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
           title: frame.title || 'Root Document',
           text: frame.text,
           format: frame.format,
-          context: 'nested',
+          context,
           mode: 'viewer',
+          editable: isEditable,
+          readOnlyReason,
           descriptor: frame.descriptor,
           onSave: onSaveRootCallback
         });
@@ -2023,8 +2478,10 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
         title: 'Root Wire Document',
         text: rootText,
         format: detectFormat(rootText),
-        context: 'nested',
+        context,
         mode: 'viewer',
+        editable: isEditable,
+        readOnlyReason,
         descriptor: null,
         onSave: onSaveRootCallback
       });
@@ -2038,8 +2495,10 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
     text: formattedNodeText,
     format: initialNodeDescriptor.format,
     charset: initialNodeDescriptor.charset,
-    context: 'nested',
-    mode,
+    context,
+    mode: isEditable ? mode : 'viewer',
+    editable: isEditable,
+    readOnlyReason,
     descriptor: initialNodeDescriptor,
     onSave: (savedText) => {
       if (typeof onSaveRootCallback === 'function') {
@@ -2051,7 +2510,7 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
             format: f.format
           })),
           savedText,
-          { forceInvalid: false, minifyOnSave: false }
+          { forceInvalid: false }
         );
         onSaveRootCallback(finalRoot);
       }
@@ -2121,12 +2580,21 @@ function renderViewportModal() {
         charset: frame.charset,
         sizeKb
       });
-      bHtml += `
-        <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-stack-idx="${i}" role="button" tabindex="0">
-          ${escapeHtml(frame.title)} <span class="format-tag">(${escapeHtml(frameTag)})</span>
-        </span>
-        ${!isLast ? '<span class="breadcrumb-sep">▸</span>' : ''}
-      `;
+      if (i === 0 && viewportStack.length === 1) {
+        bHtml += `
+          <span class="breadcrumb-item active" data-stack-idx="0" role="button" tabindex="0">
+            <span class="sr-only">${escapeHtml(frame.title)}</span>
+            <span class="format-tag">(${escapeHtml(frameTag)})</span>
+          </span>
+        `;
+      } else {
+        bHtml += `
+          <span class="breadcrumb-item ${isLast ? 'active' : ''}" data-stack-idx="${i}" role="button" tabindex="0">
+            ${escapeHtml(frame.title)} <span class="format-tag">(${escapeHtml(frameTag)})</span>
+          </span>
+          ${!isLast ? '<span class="breadcrumb-sep">▸</span>' : ''}
+        `;
+      }
     }
     breadcrumbsEl.innerHTML = bHtml;
 
@@ -2147,16 +2615,21 @@ function renderViewportModal() {
     validateCurrentEditor();
   }
 
-  const isViewerMode = currentFrame.mode === 'viewer';
+  const isEditable = Boolean(currentFrame.editable);
+  const isViewerMode = !isEditable || currentFrame.mode === 'viewer';
   const modeToggleBtn = elements.btnLensViewEditToggle || document.getElementById('btn-lens-view-edit-toggle');
 
   if (modeToggleBtn) {
-    if (currentFrame.context === 'journal') {
-      modeToggleBtn.classList.add('hidden');
+    modeToggleBtn.classList.remove('hidden');
+    if (!isEditable) {
+      modeToggleBtn.innerHTML = '✏️ Edit';
+      modeToggleBtn.disabled = true;
+      modeToggleBtn.title = currentFrame.readOnlyReason || 'Read-only payload view';
+      modeToggleBtn.onclick = null;
     } else {
-      modeToggleBtn.classList.remove('hidden');
+      modeToggleBtn.disabled = false;
       modeToggleBtn.innerHTML = isViewerMode ? '✏️ Edit' : '👁️ View';
-      modeToggleBtn.title = isViewerMode ? 'Switch to Fullscreen Editor' : 'Switch to Syntax Highlighted Viewer';
+      modeToggleBtn.title = isViewerMode ? 'Switch to Fullscreen Editor' : 'Switch to Foldable Polyglot Viewer';
       modeToggleBtn.onclick = (e) => {
         e.preventDefault();
         currentFrame.mode = isViewerMode ? 'editor' : 'viewer';
@@ -2170,15 +2643,27 @@ function renderViewportModal() {
     if (viewerContainerEl) {
       viewerContainerEl.classList.remove('hidden');
       renderPayloadViewer(viewerContainerEl, currentFrame.currentText, {
-        onSaveRoot: currentFrame.onSave
+        editable: isEditable,
+        readOnlyReason: currentFrame.readOnlyReason,
+        context: currentFrame.context,
+        onSaveRoot: isEditable ? (updatedFrameText) => {
+          setViewportContent(updatedFrameText);
+          if (editorEl) editorEl.value = updatedFrameText;
+          renderViewportModal();
+        } : null
       });
     }
     if (cancelBtn) cancelBtn.textContent = 'Close';
     if (saveRootBtn) {
-      if (currentFrame.context === 'journal' || currentFrame.context === 'tester-response') {
-        saveRootBtn.textContent = '📸 Snapshot as Stub';
-        saveRootBtn.title = 'Snapshot this payload as an active WireMock mock stub';
+      if (isEditable && currentFrame.isDirty) {
         saveRootBtn.classList.remove('hidden');
+        if (currentFrame.context === 'tester-request') {
+          saveRootBtn.textContent = '💾 Save to Request';
+        } else if (currentFrame.context === 'stub') {
+          saveRootBtn.textContent = '💾 Save Mapping';
+        } else {
+          saveRootBtn.textContent = viewportStack.length > 1 ? '💾 Save All to Root' : '💾 Save';
+        }
       } else {
         saveRootBtn.classList.add('hidden');
       }
@@ -2429,10 +2914,13 @@ export function initPayloadLensModal() {
       const childFrame = viewportStack.pop();
       const parentFrame = getActiveViewportLayer();
       if (parentFrame && childFrame && childFrame.descriptor) {
-        const updatedParent = applyNestedPayloadEdit(parentFrame.currentText, childFrame.descriptor, editorEl.value, {
-          forceInvalid: false,
-          minifyOnSave
-        });
+        const updatedParent = applyNestedPayloadEdit(
+          parentFrame.currentText,
+          childFrame.descriptor,
+          editorEl.value,
+          { forceInvalid: false, minifyOnSave },
+          parentFrame.descriptor
+        );
         parentFrame.currentText = updatedParent;
         parentFrame.isDirty = true;
       }

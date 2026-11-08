@@ -1565,6 +1565,89 @@ public class UiModuleUnitTest {
 
     @Test
     @DisplayName(
+            "Nested Payload Lens: Surgical in-place substitution preserves intermediate container whitespace and byte fidelity across 5 nested layers")
+    void testSurgicalInPlaceCascadePreservesIntermediateWhitespaceAndEnvelopes() {
+        String script =
+                """
+            async () => {
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot } = await import('./modules/payload-lens.js');
+
+                // Build a 5-layer multi-format structure cleanly with JSON.stringify
+                const innermost = JSON.stringify({ auditor: "ISO20022-GATEWAY", passed: true });
+                const cdataJson = JSON.stringify({ account: "ACC-112233", auditTrail: innermost });
+                const xml = "<swiftMessage><header><sender>SWIFT</sender></header><body><![CDATA[" + cdataJson + "]]></body></swiftMessage>";
+                const gatewayJson = JSON.stringify({ routing: { network: "SWIFT_NET" }, messagePayload: xml });
+                const bodyJson = JSON.stringify({ transferId: "SWIFT-2026-X891", executionTrace: { gatewayEnvelope: gatewayJson } }, null, 2);
+                const initialStub = {
+                    id: "demo-stub-multiformat-deep",
+                    name: "B2B SWIFT Transfer",
+                    response: {
+                        status: 200,
+                        body: bodyJson
+                    },
+                    _disabled: false,
+                    _dynamic: false
+                };
+
+                const rawStubJson = JSON.stringify(initialStub, null, 2);
+                const discovered = discoverEmbeddedPayloads(rawStubJson);
+
+                function buildAllFrames(rawText, disc, current = [{ text: rawText, descriptor: null, title: 'Root', format: 'json' }]) {
+                    const leaves = [];
+                    for (const node of disc) {
+                        const frames = [...current, { text: node.unescapedValue, descriptor: node, title: node.path, format: node.format }];
+                        if (node.children && node.children.length > 0) {
+                            leaves.push(...buildAllFrames(node.unescapedValue, node.children, frames));
+                        } else {
+                            leaves.push({ node, frames });
+                        }
+                    }
+                    return leaves;
+                }
+
+                const leaves = buildAllFrames(rawStubJson, discovered);
+                const auditLeaf = leaves.find(l => l.node.key === 'auditTrail');
+
+                // Perform surgical edit on innermost leaf: GATEWAY -> GATEWAYYY (+2 characters)
+                const editedInnermost = auditLeaf.node.unescapedValue.replace("ISO20022-GATEWAY", "ISO20022-GATEWAYYY");
+                const newRootJson = cascadeLensStackToRoot(auditLeaf.frames, editedInnermost);
+
+                // Parse each level to verify complete structural fidelity
+                const pRoot = JSON.parse(newRootJson);
+                const pBody = JSON.parse(pRoot.response.body);
+                const pEnv = JSON.parse(pBody.executionTrace.gatewayEnvelope);
+                const cdataStart = pEnv.messagePayload.indexOf('<![CDATA[');
+                const cdataEnd = pEnv.messagePayload.indexOf(']]>');
+                const cdataContent = pEnv.messagePayload.substring(cdataStart + 9, cdataEnd);
+                const pCdata = JSON.parse(cdataContent);
+                const pAudit = JSON.parse(pCdata.auditTrail);
+
+                return {
+                    lengthDiff: newRootJson.length - rawStubJson.length,
+                    hasGatewayyy: newRootJson.includes("ISO20022-GATEWAYYY"),
+                    hasOldGateway: newRootJson.includes('ISO20022-GATEWAY\\"'),
+                    preservedDisabled: pRoot._disabled === false,
+                    preservedDynamic: pRoot._dynamic === false,
+                    auditor: pAudit.auditor,
+                    passed: pAudit.passed
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("lengthDiff")).isEqualTo(2);
+        assertThat(result.get("hasGatewayyy")).isEqualTo(true);
+        assertThat(result.get("hasOldGateway")).isEqualTo(false);
+        assertThat(result.get("preservedDisabled")).isEqualTo(true);
+        assertThat(result.get("preservedDynamic")).isEqualTo(true);
+        assertThat(result.get("auditor")).isEqualTo("ISO20022-GATEWAYYY");
+        assertThat(result.get("passed")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
             "Nested Payload Lens: Syntax validation blocks invalid payload while forceInvalid allows negative testing")
     void testValidationAndForceApplyOverride() {
         String script =
