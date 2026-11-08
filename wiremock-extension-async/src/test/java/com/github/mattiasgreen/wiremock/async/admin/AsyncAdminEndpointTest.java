@@ -84,4 +84,36 @@ class AsyncAdminEndpointTest {
         assertThat(json.get("destination").asText()).isEqualTo("orders.notifications");
         assertThat(json.has("id")).isTrue();
     }
+
+    @Test
+    @DisplayName("GET /__admin/async/journal should return recorded journal events")
+    void shouldReturnAsyncJournal() throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/journal"))
+                .GET()
+                .build();
+
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        assertThat(resp.statusCode()).isEqualTo(200);
+
+        JsonNode json = MAPPER.readTree(resp.body());
+        assertThat(json.has("journal")).isTrue();
+        assertThat(json.has("count")).isTrue();
+    }
+
+    @Test
+    @DisplayName("GET /__admin/async/stubs should return harvested offline stubs")
+    void shouldReturnAsyncStubs() throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/stubs"))
+                .GET()
+                .build();
+
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        assertThat(resp.statusCode()).isEqualTo(200);
+
+        JsonNode json = MAPPER.readTree(resp.body());
+        assertThat(json.has("stubs")).isTrue();
+        assertThat(json.has("count")).isTrue();
+    }
 }
