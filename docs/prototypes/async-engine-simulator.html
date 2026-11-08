@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WireMock Async Messaging Engine Prototype Simulator</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #1f6feb;
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+      --purple: #bc8cff;
+      --font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4 { color: #f0f6fc; }
+    p { margin-bottom: 12px; }
+
+    .header-banner {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      margin-bottom: 8px;
+    }
+    .badge.prototype {
+      background: rgba(210, 153, 34, 0.15);
+      color: var(--warning);
+      border-color: rgba(210, 153, 34, 0.3);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 960px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Tabs */
+    .tab-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      color: #f0f6fc;
+      background: rgba(110, 118, 129, 0.1);
+    }
+    .tab-btn.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    /* Step buttons */
+    .walkthrough-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.6);
+      transition: border-color 0.15s;
+    }
+    .walkthrough-step.active-step {
+      border-color: var(--accent);
+      background: rgba(88, 166, 255, 0.05);
+    }
+    .step-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--border);
+      color: #f0f6fc;
+      font-size: 12px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .active-step .step-badge {
+      background: var(--accent);
+    }
+    .step-content {
+      flex: 1;
+    }
+    .step-content strong {
+      display: block;
+      color: #f0f6fc;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .step-content p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #21262d;
+      color: #c9d1d9;
+      transition: all 0.15s ease;
+    }
+    .btn:hover:not(:disabled) {
+      background: #30363d;
+      border-color: #8b949e;
+      color: #fff;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn-success {
+      background: #238636;
+      border-color: #2ea043;
+      color: #fff;
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #2ea043;
+    }
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+
+    /* Action bar */
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    /* State Inspector styling */
+    .state-panel {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 140px;
+      max-height: 260px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .broker-box {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #0d1117;
+    }
+    .broker-header {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--accent);
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .queue-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 6px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .queue-row:last-child { border-bottom: none; }
+    .msg-count {
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: #21262d;
+      font-size: 10px;
+      color: var(--accent);
+      font-weight: bold;
+    }
+    .msg-count.has-msgs {
+      background: rgba(63, 185, 80, 0.2);
+      color: var(--success);
+    }
+
+    .diff-highlight {
+      background: rgba(210, 153, 34, 0.15);
+      color: #ffdf5d;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+
+    /* Journal feed */
+    .journal-entry {
+      padding: 8px 10px;
+      border-left: 3px solid var(--accent);
+      background: rgba(13, 17, 23, 0.8);
+      margin-bottom: 6px;
+      border-radius: 0 4px 4px 0;
+      font-size: 11px;
+    }
+    .journal-entry.mock { border-left-color: var(--success); }
+    .journal-entry.proxy { border-left-color: var(--warning); }
+    .journal-entry.http { border-left-color: var(--purple); }
+    .journal-time {
+      color: var(--text-muted);
+      font-size: 10px;
+      margin-bottom: 2px;
+    }
+    .journal-title {
+      font-weight: bold;
+      color: #f0f6fc;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Header and State Question -->
+  <div class="header-banner">
+    <span class="badge prototype">Logic & State Prototype</span>
+    <h1>WireMock Async Messaging & Queue Simulation Engine</h1>
+    <p style="margin-top: 8px; color: #8b949e; font-size: 13px;">
+      <strong>Design Question:</strong> Can WireMock seamlessly simulate multi-protocol async messaging
+      (Kafka, AMQP 1.0, Casual Queue, IBM MQ) with dual-broker competing-consumer isolation, live proxy harvesting,
+      and HTTP 202 webhook callbacks <em>without</em> embedding bloated, multi-gigabyte broker daemons?
+    </p>
+  </div>
+
+  <div class="grid-2">
+    <!-- Left Column: Guided Walkthroughs & Free Play -->
+    <div>
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-title">
+          <span>1. Guided Scenarios</span>
+          <span style="font-size: 11px; color: var(--text-muted);">Step-by-step verification</span>
+        </div>
+
+        <div class="tab-nav">
+          <button class="tab-btn active" onclick="switchScenario('request-reply')">1. Request-Reply MEP</button>
+          <button class="tab-btn" onclick="switchScenario('fire-forget')">2. Fire & Forget Sink</button>
+          <button class="tab-btn" onclick="switchScenario('queue-bridge')">3. Dual-Broker Bridge</button>
+          <button class="tab-btn" onclick="switchScenario('http-trigger')">4. HTTP Callback Trigger</button>
+        </div>
+
+        <div id="scenario-container">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>2. Free-Play Actions</span>
+          <button class="btn btn-sm" onclick="resetEngineState()">Reset State</button>
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted);">
+          Trigger individual operations directly in any order to stress-test arbitrary state combinations.
+        </p>
+
+        <div class="action-bar">
+          <button class="btn" onclick="engine.produceToBrokerA('orders.inbound', {orderId:'901', tier:'VIP'}, 'corr-901', 'orders.responses')">
+            Produce to Test Broker (corr-901)
+          </button>
+          <button class="btn" onclick="engine.triggerHttpCall('/api/v1/payments/submit', {amount: 250.00, currency: 'USD'})">
+            Invoke HTTP POST /payments (202 Callback)
+          </button>
+          <button class="btn" onclick="engine.bridgeCycle('orders.inbound')">
+            Run Queue Bridge Cycle
+          </button>
+          <button class="btn" onclick="engine.simulateUpstreamReply('orders.responses', 'corr-901', {status: 'UPSTREAM_APPROVED'})">
+            System B Upstream Reply (Broker B)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Live State Panels & Observability Feed -->
+    <div>
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-title">
+          <span>Message Brokers & Virtual Queues</span>
+          <span id="queue-status-badge" class="badge">Isolated Dual-Broker</span>
+        </div>
+
+        <div id="brokers-view">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-title">
+          <span>Active WireMock Stubs & Catalog</span>
+          <span id="stub-count-badge" class="badge">2 Stubs</span>
+        </div>
+        <div id="stubs-view" class="state-panel"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>WireMock Async Journal & Otel Metrics</span>
+          <span id="journal-count-badge" class="badge">0 Events</span>
+        </div>
+        <div id="journal-view" class="state-panel" style="max-height: 240px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Portable Logic Engine Module (Pure JS, No DOM, Liftable into Real System) -->
+  <script>
+    class AsyncWireMockLogicEngine {
+      constructor() {
+        this.reset();
+      }
+
+      reset() {
+        // Dual Broker Topology
+        this.brokers = {
+          brokerA: {
+            name: "Broker A (WireMock Test Broker)",
+            queues: {
+              "orders.inbound": [],
+              "orders.responses": [],
+              "payments.events": []
+            }
+          },
+          brokerB: {
+            name: "Broker B (Real Upstream Broker)",
+            queues: {
+              "orders.inbound": [],
+              "orders.responses": []
+            }
+          }
+        };
+
+        // Active Stubs
+        this.stubs = [
+          {
+            id: "stub-order-mock",
+            type: "async",
+            protocol: "kafka",
+            destination: "orders.inbound",
+            matchPayloadKeyword: "TIER_STANDARD",
+            replyDestination: "{{message.replyTo}}",
+            replyPayload: JSON.stringify({ status: "MOCK_ORDER_APPROVED", limit: 5000 }),
+            source: "configured"
+          },
+          {
+            id: "stub-http-callback",
+            type: "http-to-async",
+            url: "/api/v1/payments/submit",
+            httpStatus: 202,
+            httpBody: { status: "ACCEPTED", paymentId: "PAY-GENERATED" },
+            produce: {
+              protocol: "kafka",
+              destination: "payments.events",
+              key: "PAY-GENERATED",
+              payload: JSON.stringify({ paymentId: "PAY-GENERATED", status: "SETTLED", amount: 250.00 })
+            },
+            source: "configured"
+          }
+        ];
+
+        // Harvested Stubs Catalog
+        this.harvestedCatalog = [];
+
+        // Observability
+        this.journal = [];
+        this.otelMetrics = {
+          "wiremock.async.consumed.total": 0,
+          "wiremock.async.produced.total": 0,
+          "wiremock.async.proxied.total": 0
+        };
+
+        this.lastAction = "Engine Initialized";
+      }
+
+      // Producer action
+      produceToBrokerA(queueName, payloadObj, correlationId = null, replyTo = null) {
+        const msg = {
+          id: "msg-" + Math.floor(Math.random() * 10000),
+          correlationId: correlationId || ("corr-" + Math.floor(Math.random() * 1000)),
+          replyTo: replyTo,
+          payload: typeof payloadObj === 'string' ? payloadObj : JSON.stringify(payloadObj),
+          timestamp: new Date().toISOString()
+        };
+        if (!this.brokers.brokerA.queues[queueName]) {
+          this.brokers.brokerA.queues[queueName] = [];
+        }
+        this.brokers.brokerA.queues[queueName].push(msg);
+        this.otelMetrics["wiremock.async.produced.total"]++;
+        this.lastAction = `System A produced message ${msg.id} on Broker A / ${queueName}`;
+        this.addJournalEntry("PRODUCE", `System A produced to Broker A [${queueName}]: ${msg.payload}`, "broker");
+        return msg;
+      }
+
+      // Bridge cycle: inspects Broker A inbound, matches against stubs or proxies to Broker B
+      bridgeCycle(queueName) {
+        const q = this.brokers.brokerA.queues[queueName];
+        if (!q || q.length === 0) {
+          this.lastAction = `Bridge cycle: queue ${queueName} on Broker A is empty`;
+          return null;
+        }
+
+        const msg = q.shift();
+        this.otelMetrics["wiremock.async.consumed.total"]++;
+
+        // 1. Check configured stubs
+        for (const stub of this.stubs) {
+          if (stub.type === "async" && stub.destination === queueName && msg.payload.includes(stub.matchPayloadKeyword)) {
+            this.lastAction = `Mock Hit: Intercepted ${msg.id} on Broker A -> replying without touching Broker B!`;
+            this.otelMetrics["wiremock.async.produced.total"]++;
+
+            const replyTarget = msg.replyTo || "orders.responses";
+            const replyMsg = {
+              id: "reply-" + Math.floor(Math.random() * 10000),
+              correlationId: msg.correlationId,
+              payload: stub.replyPayload,
+              timestamp: new Date().toISOString()
+            };
+            this.brokers.brokerA.queues[replyTarget].push(replyMsg);
+            this.addJournalEntry("MOCK_MATCH", `Served mock reply for ${msg.correlationId} on Broker A [${replyTarget}]`, "mock");
+            return { action: "mock", reply: replyMsg };
+          }
+        }
+
+        // 2. Check harvested catalog
+        for (const stub of this.harvestedCatalog) {
+          if (stub.destination === queueName && msg.payload.includes(stub.matchPayloadKeyword)) {
+            this.lastAction = `Harvested Replay: Replayed live-captured stub for ${msg.correlationId}!`;
+            this.otelMetrics["wiremock.async.produced.total"]++;
+
+            const replyTarget = msg.replyTo || "orders.responses";
+            const replyMsg = {
+              id: "harvest-reply-" + Math.floor(Math.random() * 10000),
+              correlationId: msg.correlationId,
+              payload: stub.replyPayload,
+              timestamp: new Date().toISOString()
+            };
+            this.brokers.brokerA.queues[replyTarget].push(replyMsg);
+            this.addJournalEntry("HARVESTED_REPLAY", `Replayed harvested stub on Broker A [${replyTarget}]`, "mock");
+            return { action: "harvested_replay", reply: replyMsg };
+          }
+        }
+
+        // 3. Proxy forward to Broker B (Real Upstream) with identical queue name!
+        this.otelMetrics["wiremock.async.proxied.total"]++;
+        if (!this.brokers.brokerB.queues[queueName]) {
+          this.brokers.brokerB.queues[queueName] = [];
+        }
+        this.brokers.brokerB.queues[queueName].push(msg);
+        this.lastAction = `Proxy Forward: No stub match -> bridged message ${msg.id} to Real Upstream Broker B`;
+        this.addJournalEntry("PROXY_FORWARD", `Bridged to Real Broker B [${queueName}] with identical queue name!`, "proxy");
+        return { action: "proxied", forwarded: msg };
+      }
+
+      // Upstream System B processes and replies on Broker B
+      simulateUpstreamReply(replyQueue, correlationId, replyPayloadObj) {
+        const replyMsg = {
+          id: "upstream-reply-" + Math.floor(Math.random() * 10000),
+          correlationId: correlationId,
+          payload: typeof replyPayloadObj === 'string' ? replyPayloadObj : JSON.stringify(replyPayloadObj),
+          timestamp: new Date().toISOString()
+        };
+        if (!this.brokers.brokerB.queues[replyQueue]) {
+          this.brokers.brokerB.queues[replyQueue] = [];
+        }
+        this.brokers.brokerB.queues[replyQueue].push(replyMsg);
+
+        // Bridge intercepts reply from Broker B, forwards to Broker A, and auto-records stub!
+        this.harvestAndForwardReply(replyQueue, replyMsg);
+        return replyMsg;
+      }
+
+      harvestAndForwardReply(replyQueue, replyMsg) {
+        // Remove from Broker B
+        const bQ = this.brokers.brokerB.queues[replyQueue];
+        const idx = bQ.indexOf(replyMsg);
+        if (idx !== -1) bQ.splice(idx, 1);
+
+        // Record harvested stub
+        const keywordMatch = "TIER_ENTERPRISE";
+        this.harvestedCatalog.push({
+          id: "harvested-" + Math.floor(Math.random() * 10000),
+          destination: "orders.inbound",
+          matchPayloadKeyword: keywordMatch,
+          replyPayload: replyMsg.payload,
+          capturedAt: new Date().toISOString()
+        });
+
+        // Forward to Broker A for System A
+        this.brokers.brokerA.queues[replyQueue].push(replyMsg);
+        this.otelMetrics["wiremock.async.produced.total"]++;
+        this.lastAction = `Captured Upstream Reply -> Forwarded to System A & Harvested stub into catalog!`;
+        this.addJournalEntry("HARVESTED_RECORD", `Harvested live exchange for offline stub replay!`, "proxy");
+      }
+
+      // HTTP-to-Queue Trigger
+      triggerHttpCall(url, body) {
+        const stub = this.stubs.find(s => s.type === "http-to-async" && s.url === url);
+        if (!stub) {
+          this.lastAction = `HTTP 404: No stub found for ${url}`;
+          return { status: 404 };
+        }
+
+        this.addJournalEntry("HTTP_INBOUND", `HTTP POST ${url} -> Returned 202 Accepted`, "http");
+
+        // Execute async produce directive
+        const dest = stub.produce.destination;
+        const outMsg = {
+          id: "async-cb-" + Math.floor(Math.random() * 10000),
+          correlationId: "http-corr-" + Math.floor(Math.random() * 1000),
+          payload: stub.produce.payload,
+          protocol: stub.produce.protocol,
+          timestamp: new Date().toISOString()
+        };
+        if (!this.brokers.brokerA.queues[dest]) {
+          this.brokers.brokerA.queues[dest] = [];
+        }
+        this.brokers.brokerA.queues[dest].push(outMsg);
+        this.otelMetrics["wiremock.async.produced.total"]++;
+
+        this.lastAction = `HTTP POST ${url} (202 Accepted) triggered async event on Broker A [${dest}]`;
+        this.addJournalEntry("ASYNC_CALLBACK", `Dispatched Kafka message to [${dest}]: ${outMsg.payload}`, "mock");
+
+        return {
+          status: stub.httpStatus,
+          body: stub.httpBody,
+          asyncMessage: outMsg
+        };
+      }
+
+      addJournalEntry(kind, message, category = "broker") {
+        this.journal.unshift({
+          id: "j-" + Date.now() + "-" + Math.floor(Math.random() * 100),
+          timestamp: new Date().toLocaleTimeString(),
+          kind: kind,
+          message: message,
+          category: category
+        });
+      }
+    }
+  </script>
+
+  <!-- Presentation & Walkthrough Shell -->
+  <script>
+    const engine = new AsyncWireMockLogicEngine();
+
+    const SCENARIOS = {
+      "request-reply": {
+        title: "1. Request-Reply MEP (Kafka / Casual)",
+        description: "System A sends an order marked 'TIER_STANDARD' with a correlationId and replyTo queue. WireMock intercepts the message and publishes the mock reply directly to System A's reply queue. Broker B (Real Upstream) receives 0 messages.",
+        steps: [
+          {
+            title: "1. System A produces TIER_STANDARD order",
+            detail: "Sends message to Broker A [orders.inbound] with correlationId 'req-101' and replyTo 'orders.responses'.",
+            action: () => engine.produceToBrokerA("orders.inbound", { orderId: "ord-101", tier: "TIER_STANDARD" }, "req-101", "orders.responses")
+          },
+          {
+            title: "2. WireMock Queue Bridge intercepts message",
+            detail: "Matches against 'TIER_STANDARD' stub. Replies with MOCK_ORDER_APPROVED on Broker A. Broker B is untouched.",
+            action: () => engine.bridgeCycle("orders.inbound")
+          },
+          {
+            title: "3. Verify System A receives mock reply",
+            detail: "Check Broker A [orders.responses] queue. Notice Broker B remains 100% clean.",
+            action: () => {}
+          }
+        ]
+      },
+      "fire-forget": {
+        title: "2. Fire & Forget Sink (Kafka Producer)",
+        description: "System A publishes telemetry batches into a Kafka topic. WireMock acts as an in-process Netty sink, acknowledging the produce request without storing state or requiring a real Kafka cluster.",
+        steps: [
+          {
+            title: "1. Client emits telemetry event batch",
+            detail: "Produce payment settled event to payments.events topic on Broker A.",
+            action: () => engine.produceToBrokerA("payments.events", { eventId: "ev-501", status: "SETTLED", amount: 49.99 })
+          },
+          {
+            title: "2. WireMock In-Process Sink acknowledges",
+            detail: "Journal registers synthetic serve event with protocol=kafka and increments Prometheus metrics.",
+            action: () => engine.addJournalEntry("KAFKA_SINK_ACK", "Netty codec emitted ProduceResponse v7 (partition 0, offset 1, errorCode=0)", "mock")
+          }
+        ]
+      },
+      "queue-bridge": {
+        title: "3. Dual-Broker Bridge (Proxy & Harvest)",
+        description: "System A produces an unmatched 'TIER_ENTERPRISE' message. The Bridge forwards it across to Broker B where Real System B resides. System B's reply is intercepted, forwarded to System A, and harvested into WireMock's catalog for instant subsequent mock replay!",
+        steps: [
+          {
+            title: "1. Produce unmatched TIER_ENTERPRISE message",
+            detail: "System A sends order to Broker A [orders.inbound]. No mock exists for enterprise.",
+            action: () => engine.produceToBrokerA("orders.inbound", { orderId: "ord-999", tier: "TIER_ENTERPRISE" }, "req-999", "orders.responses")
+          },
+          {
+            title: "2. Bridge proxies to Broker B with identical queue name",
+            detail: "Broker A is drained. Broker B now holds the order for real System B.",
+            action: () => engine.bridgeCycle("orders.inbound")
+          },
+          {
+            title: "3. Real System B consumes & replies on Broker B",
+            detail: "Bridge intercepts reply, returns it to System A, and auto-records a harvested stub!",
+            action: () => engine.simulateUpstreamReply("orders.responses", "req-999", { status: "UPSTREAM_VERIFIED_VIP", tier: "ENTERPRISE" })
+          },
+          {
+            title: "4. Replay: System A sends second enterprise message",
+            detail: "Now served directly from harvested catalog in memory without touching Broker B!",
+            action: () => {
+              engine.produceToBrokerA("orders.inbound", { orderId: "ord-1000", tier: "TIER_ENTERPRISE" }, "req-1000", "orders.responses");
+              engine.bridgeCycle("orders.inbound");
+            }
+          }
+        ]
+      },
+      "http-trigger": {
+        title: "4. HTTP 202 REST Triggering Kafka Callback",
+        description: "Older enterprise integration: System A invokes HTTP POST /api/v1/payments/submit, receives HTTP 202 Accepted, and WireMock's ServeEventListener asynchronously emits a Kafka event on payments.events.",
+        steps: [
+          {
+            title: "1. Client executes HTTP POST /api/v1/payments/submit",
+            detail: "WireMock responds with 202 Accepted and triggers metadata.async.produce asynchronously.",
+            action: () => engine.triggerHttpCall("/api/v1/payments/submit", { amount: 250.00, currency: "USD" })
+          },
+          {
+            title: "2. Verify async message on payments.events",
+            detail: "Inspect payments.events queue and check OTEL metrics counter for wiremock.async.produced.total.",
+            action: () => {}
+          }
+        ]
+      }
+    };
+
+    let currentScenarioKey = "request-reply";
+    let currentStepIndex = 0;
+
+    function switchScenario(key) {
+      currentScenarioKey = key;
+      currentStepIndex = 0;
+      engine.reset();
+
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+
+      renderAll();
+    }
+
+    function resetEngineState() {
+      engine.reset();
+      currentStepIndex = 0;
+      renderAll();
+    }
+
+    function executeStep(stepIndex) {
+      const scenario = SCENARIOS[currentScenarioKey];
+      if (scenario && scenario.steps[stepIndex]) {
+        scenario.steps[stepIndex].action();
+        currentStepIndex = stepIndex + 1;
+        renderAll();
+      }
+    }
+
+    function renderAll() {
+      renderScenarioView();
+      renderBrokersView();
+      renderStubsView();
+      renderJournalView();
+    }
+
+    function renderScenarioView() {
+      const container = document.getElementById("scenario-container");
+      const scenario = SCENARIOS[currentScenarioKey];
+
+      let html = `
+        <h3 style="font-size: 14px; margin-bottom: 6px;">${scenario.title}</h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">${scenario.description}</p>
+        <div class="steps-wrapper">
+      `;
+
+      scenario.steps.forEach((step, idx) => {
+        const isCurrent = idx === currentStepIndex;
+        const isDone = idx < currentStepIndex;
+        html += `
+          <div class="walkthrough-step ${isCurrent ? 'active-step' : ''}">
+            <div class="step-badge" style="${isDone ? 'background: var(--success);' : ''}">${isDone ? '✓' : (idx + 1)}</div>
+            <div class="step-content">
+              <strong>${step.title}</strong>
+              <p>${step.detail}</p>
+              <button class="btn btn-sm ${isCurrent ? 'btn-primary' : ''}"
+                      ${idx > currentStepIndex ? 'disabled' : ''}
+                      onclick="executeStep(${idx})">
+                ${isDone ? 'Re-run Step' : 'Execute Step'}
+              </button>
+            </div>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+
+    function renderBrokersView() {
+      const container = document.getElementById("brokers-view");
+      let html = "";
+
+      for (const [key, b] of Object.entries(engine.brokers)) {
+        html += `
+          <div class="broker-box">
+            <div class="broker-header">
+              <span>${b.name}</span>
+              <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">In-Memory Protocol Seam</span>
+            </div>
+        `;
+
+        for (const [qName, msgs] of Object.entries(b.queues)) {
+          const hasMsgs = msgs.length > 0;
+          html += `
+            <div class="queue-row">
+              <span style="color: #f0f6fc;">${qName}</span>
+              <div>
+                <span class="msg-count ${hasMsgs ? 'has-msgs' : ''}">${msgs.length} msgs</span>
+              </div>
+            </div>
+          `;
+          if (hasMsgs) {
+            msgs.forEach(m => {
+              html += `
+                <div style="font-size: 10px; color: var(--text-muted); padding: 2px 8px 4px 16px; background: rgba(0,0,0,0.2);">
+                  ↳ <strong>[${m.correlationId || m.id}]</strong>: ${escapeHtml(m.payload)}
+                </div>
+              `;
+            });
+          }
+        }
+
+        html += `</div>`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function renderStubsView() {
+      const container = document.getElementById("stubs-view");
+      const badge = document.getElementById("stub-count-badge");
+      const totalStubs = engine.stubs.length + engine.harvestedCatalog.length;
+      badge.textContent = `${totalStubs} Stubs (${engine.harvestedCatalog.length} Harvested)`;
+
+      let content = "=== Configured Active Stubs ===\n";
+      engine.stubs.forEach(s => {
+        content += `• [${s.type.toUpperCase()}] ${s.destination || s.url}\n`;
+        if (s.matchPayloadKeyword) content += `  Match Keyword: "${s.matchPayloadKeyword}"\n`;
+        if (s.replyPayload) content += `  Reply: ${s.replyPayload}\n`;
+        if (s.produce) content += `  Produce On Call: ${s.produce.destination} (${s.produce.protocol})\n`;
+      });
+
+      if (engine.harvestedCatalog.length > 0) {
+        content += "\n=== Live Harvested Stubs (Auto-Recorded) ===\n";
+        engine.harvestedCatalog.forEach(h => {
+          content += `★ [HARVESTED] ${h.destination} (keyword: "${h.matchPayloadKeyword}")\n`;
+          content += `  Reply: ${h.replyPayload}\n`;
+        });
+      }
+
+      container.textContent = content;
+    }
+
+    function renderJournalView() {
+      const container = document.getElementById("journal-view");
+      const badge = document.getElementById("journal-count-badge");
+      badge.textContent = `${engine.journal.length} Events`;
+
+      if (engine.journal.length === 0) {
+        container.innerHTML = `<span style="color: var(--text-muted);">No events recorded yet. Run a scenario or free-play action.</span>`;
+        return;
+      }
+
+      let html = `<div style="margin-bottom: 8px; font-weight: bold; color: var(--accent);">OTEL Counters: Consumed: ${engine.otelMetrics["wiremock.async.consumed.total"]} | Produced: ${engine.otelMetrics["wiremock.async.produced.total"]} | Proxied: ${engine.otelMetrics["wiremock.async.proxied.total"]}</div>`;
+
+      engine.journal.forEach(j => {
+        html += `
+          <div class="journal-entry ${j.category}">
+            <div class="journal-time">[${j.timestamp}] ${j.kind}</div>
+            <div class="journal-title">${escapeHtml(j.message)}</div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Initial render
+    renderAll();
+  </script>
+</body>
+</html>
