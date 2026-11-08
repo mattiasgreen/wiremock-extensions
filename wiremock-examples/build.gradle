@@ -7,6 +7,8 @@ dependencies {
     testImplementation libs.playwright
     testImplementation libs.resilience4j.circuitbreaker
     testImplementation libs.resilience4j.retry
+    testImplementation 'org.apache.kafka:kafka-clients:3.9.0'
+    testImplementation 'org.apache.qpid:protonj2-client:1.4.0'
 }
 
 tasks.register('recordDemoVideos', Test) {
