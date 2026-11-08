@@ -353,6 +353,9 @@ body {
 .badge-PATCH { background-color: var(--badge-patch); }
 .badge-ANY { background-color: var(--badge-default); }
 .badge-CASUAL { background-color: #0d9488; letter-spacing: 0.02em; }
+.badge-KAFKA { background-color: #7c3aed; letter-spacing: 0.02em; }
+.badge-AMQP { background-color: #d97706; letter-spacing: 0.02em; }
+.badge-ASYNC { background-color: #2563eb; letter-spacing: 0.02em; }
 
 .stub-card-url {
   font-family: monospace;

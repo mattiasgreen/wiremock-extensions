@@ -3,9 +3,11 @@ package com.github.mattiasgreen.wiremock.bundle;
 import com.github.mattiasgreen.wiremock.casual.CasualConfiguration;
 import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
+import com.github.mattiasgreen.wiremock.journal.store.CompressedStores;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.common.SingleRootFileSource;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 
 public class StandaloneDevServer {
@@ -46,6 +48,8 @@ public class StandaloneDevServer {
         System.out.println("👉 NetEm Journal:       http://localhost:" + server.port() + "/__admin/tcp-netem/journal");
         System.out.println("👉 Prometheus Metrics:  http://localhost:" + server.port() + "/__admin/metrics/prometheus");
         System.out.println("👉 Tracing & Logging:   W3C Context Propagation & MDC Active");
+        System.out.println("👉 Zstd Journal:        http://localhost:" + server.port() + "/__admin/journal/stats");
+        System.out.println("👉 Async Engine:        http://localhost:" + server.port() + "/__admin/async/status");
         System.out.println("👉 Admin API:           http://localhost:" + server.port() + "/__admin/mappings");
         System.out.println("=================================================================");
         System.out.println("Press Ctrl+C to terminate the server.");
@@ -165,6 +169,7 @@ public class StandaloneDevServer {
         WireMockConfiguration options = WireMockConfiguration.options()
                 .port(port)
                 .usingFilesUnderDirectory(effectiveRootDir)
+                .withStores(new CompressedStores(new SingleRootFileSource(effectiveRootDir)))
                 .extensionScanningEnabled(true);
         WireMockServer server = new WireMockServer(options);
         server.start();

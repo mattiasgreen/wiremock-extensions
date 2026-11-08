@@ -121,6 +121,17 @@ public record TrafficClassification(
             } else if (request.header("X-Casual-Service").isPresent()
                     || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
                 protocol = "casual";
+            } else if (request.header("X-Async-Channel").isPresent()
+                    || (request.getUrl() != null && request.getUrl().startsWith("/__async/"))) {
+                if (request.header("X-Async-Protocol").isPresent()) {
+                    protocol = request.header("X-Async-Protocol").firstValue().toLowerCase(Locale.ROOT);
+                } else if (request.getUrl() != null && request.getUrl().startsWith("/__async/")) {
+                    String sub = request.getUrl().substring("/__async/".length());
+                    int slashIdx = sub.indexOf('/');
+                    protocol = slashIdx > 0 ? sub.substring(0, slashIdx).toLowerCase(Locale.ROOT) : "async";
+                } else {
+                    protocol = "async";
+                }
             } else if ((request.header("Content-Type").isPresent()
                             && request.header("Content-Type").firstValue().contains("application/grpc"))
                     || request.header("X-Grpc-Service").isPresent()) {
@@ -156,6 +167,22 @@ public record TrafficClassification(
                 } else {
                     rpcStatus = "OK";
                 }
+            } else if ("kafka".equals(protocol) || "amqp".equals(protocol) || "async".equals(protocol)) {
+                rpcSystem = protocol;
+                if (request.header("X-Async-Channel").isPresent()) {
+                    rpcService = request.header("X-Async-Channel").firstValue();
+                } else if (request.getUrl() != null && request.getUrl().startsWith("/__async/")) {
+                    String sub = request.getUrl().substring("/__async/".length());
+                    int slashIdx = sub.indexOf('/');
+                    if (slashIdx >= 0 && slashIdx < sub.length() - 1) {
+                        String dest = sub.substring(slashIdx + 1);
+                        int queryIdx = dest.indexOf('?');
+                        rpcService = queryIdx >= 0 ? dest.substring(0, queryIdx) : dest;
+                    } else {
+                        rpcService = sub;
+                    }
+                }
+                rpcStatus = "OK";
             }
         }
 
