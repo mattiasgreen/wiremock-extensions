@@ -467,4 +467,96 @@ class CasualEndToEndIntegrationTest {
             connection.close();
         }
     }
+
+    @Test
+    @DisplayName(
+            "Scenario 7: Multi-Service Forwarding, Unified Journal Introspection, and Admin API Stub Snapshotting & Offline Replay")
+    void shouldForwardMultipleCasualServicesInspectJournalSnapshotStubsAndReplayOffline() throws Exception {
+        harness.getWireMockServer().resetAll();
+
+        // 1. Seed dynamic proxy mapping for all Casual services forwarding to Upstream Server B
+        harness.getWireMockServer()
+                .stubFor(post(urlMatching("/__casual/services/.*"))
+                        .withName("Live Casual Dynamic Proxy")
+                        .atPriority(10)
+                        .withMetadata(Map.of(
+                                "project", "order-fulfillment",
+                                "mode", "proxy",
+                                "targetBaseUrl",
+                                        "casual://127.0.0.1:"
+                                                + harness.getUpstreamNode().getPort()))
+                        .willReturn(aResponse().withStatus(200)));
+
+        // 2. Client initiates two transactional calls across distinct services (orders and shipping)
+        String orderPayload = "{\"orderId\":\"ORD-8801\",\"items\":[\"sku-1\",\"sku-2\"],\"total\":199.95}";
+        String shippingPayload = "{\"orderId\":\"ORD-8801\",\"carrier\":\"FedEx\",\"priority\":\"EXPRESS\"}";
+
+        TransactionOutcome orderOutcome =
+                harness.getClientInitiator().executeInTransaction("casual/orders", orderPayload);
+        TransactionOutcome shippingOutcome =
+                harness.getClientInitiator().executeInTransaction("casual/shipping", shippingPayload);
+
+        // Verify both transactions committed through Upstream Server B
+        assertThat(orderOutcome.committed()).isTrue();
+        assertThat(orderOutcome.replyPayload()).contains("\"service\":\"casual/orders\"");
+        assertThat(orderOutcome.replyPayload()).contains("\"processedBy\":\"upstream-server-B\"");
+
+        assertThat(shippingOutcome.committed()).isTrue();
+        assertThat(shippingOutcome.replyPayload()).contains("\"service\":\"casual/shipping\"");
+        assertThat(shippingOutcome.replyPayload()).contains("\"processedBy\":\"upstream-server-B\"");
+
+        assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(2);
+
+        // 3. Journal Introspection: Verify Request Journal captured both invocations with full metadata
+        var serveEvents = harness.getWireMockServer().getAllServeEvents();
+        assertThat(serveEvents).hasSize(2);
+
+        var shippingEvent = serveEvents.stream()
+                .filter(e -> e.getRequest().getUrl().equals("/__casual/services/casual/shipping"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(shippingEvent.getRequest().getBodyAsString()).isEqualTo(shippingPayload);
+        assertThat(shippingEvent.getResponse().getBodyAsString()).contains("\"service\":\"casual/shipping\"");
+
+        var orderEvent = serveEvents.stream()
+                .filter(e -> e.getRequest().getUrl().equals("/__casual/services/casual/orders"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(orderEvent.getRequest().getBodyAsString()).isEqualTo(orderPayload);
+        assertThat(orderEvent.getResponse().getBodyAsString()).contains("\"service\":\"casual/orders\"");
+
+        // 4. Stub Snapshotting: Freeze live proxied exchanges into persistent offline stubs
+        var snapshotResult = harness.getWireMockServer()
+                .snapshotRecord(recordSpec()
+                        .makeStubsPersistent(false)
+                        .extractTextBodiesOver(Long.MAX_VALUE)
+                        .extractBinaryBodiesOver(Long.MAX_VALUE));
+        assertThat(snapshotResult.getStubMappings()).hasSizeGreaterThanOrEqualTo(2);
+
+        // 5. Complete Server Decoupling: Shut down Upstream Server B completely
+        harness.stopUpstreamServer();
+
+        // 6. Offline Replay: Re-execute both transactional calls while Upstream Server B is offline
+        TransactionOutcome orderReplay =
+                harness.getClientInitiator().executeInTransaction("casual/orders", orderPayload);
+        TransactionOutcome shippingReplay =
+                harness.getClientInitiator().executeInTransaction("casual/shipping", shippingPayload);
+
+        // Both calls succeed offline, returning identical snapshotted payloads and synthetic XA_OK commit
+        assertThat(orderReplay.committed()).isTrue();
+        assertThat(orderReplay.replyPayload()).isEqualTo(orderOutcome.replyPayload());
+        assertThat(orderReplay.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(orderReplay.commitReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+
+        assertThat(shippingReplay.committed()).isTrue();
+        assertThat(shippingReplay.replyPayload()).isEqualTo(shippingOutcome.replyPayload());
+        assertThat(shippingReplay.prepareReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+        assertThat(shippingReplay.commitReturnCode()).isEqualTo(XAReturnCode.XA_OK);
+
+        // Zero network leakage: Upstream Server B call count remains 2
+        assertThat(harness.getUpstreamNode().getServiceCallCount()).isEqualTo(2);
+
+        // Journal now records 4 total events (2 proxied live + 2 offline mock hits)
+        assertThat(harness.getWireMockServer().getAllServeEvents()).hasSize(4);
+    }
 }

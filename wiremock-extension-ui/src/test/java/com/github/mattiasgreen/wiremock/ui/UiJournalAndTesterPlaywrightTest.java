@@ -734,4 +734,99 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-close-payload-lens").click();
         assertThat(modal.isHidden()).isTrue();
     }
+
+    @Test
+    @DisplayName(
+            "Scenario 35: Live Proxy Forwarding, Journal Introspection, Stub Snapshotting, and Decoupled Offline Replay")
+    void testProxyForwardingJournalIntrospectionSnapshotAndDecoupledReplay() throws Exception {
+        WireMockServer upstreamCatalog =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstreamCatalog.start();
+
+        try {
+            // 1. Upstream backend serves catalog product details
+            upstreamCatalog.stubFor(get(urlEqualTo("/api/v1/catalog/products/prod-99"))
+                    .willReturn(okJson("{\"productId\":\"prod-99\",\"name\":\"HyperDrive\",\"stock\":15}")));
+
+            // 2. WireMock proxies /api/v1/catalog/.* to upstreamCatalog
+            wireMockServer.stubFor(any(urlMatching("/api/v1/catalog/.*"))
+                    .withName("Live Proxy (Catalog)")
+                    .atPriority(10)
+                    .withMetadata(Map.of("project", "Catalog", "mode", "proxy"))
+                    .willReturn(aResponse().proxiedFrom(upstreamCatalog.baseUrl())));
+
+            // 3. Dispatch live proxied request through WireMock
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/catalog/products/prod-99"))
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).contains("HyperDrive");
+
+            // 4. Open WireMock Console UI -> Journal Tab
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+            page.waitForSelector("#journal-table");
+
+            // Filter by Proxied verdict pill
+            page.locator("#btn-journal-verdict-proxied").click();
+            page.waitForSelector("#journal-list tr[data-verdict='proxied']");
+
+            // Introspect journal row
+            Locator proxiedRow =
+                    page.locator("#journal-list tr[data-verdict='proxied']").first();
+            assertThat(proxiedRow.textContent()).contains("/api/v1/catalog/products/prod-99");
+            assertThat(proxiedRow.textContent()).contains("200");
+            assertThat(proxiedRow.textContent()).contains("PROXIED");
+
+            // Verify Snapshot Filtered Proxied button is active with count 1
+            Locator snapshotBtn = page.locator("#btn-journal-snapshot-filtered");
+            page.waitForSelector("#btn-journal-snapshot-filtered:not([disabled])");
+            assertThat(page.locator("#journal-proxied-count").textContent()).isEqualTo("1");
+
+            // Expand row details to verify payload lens and row snapshot button
+            proxiedRow.click();
+            page.waitForSelector("tr[data-testid='journal-detail-row']");
+            assertThat(page.locator("tr[data-testid='journal-detail-row']").textContent())
+                    .contains("HyperDrive");
+            assertThat(page.locator("tr[data-testid='journal-detail-row'] .btn-snapshot-req")
+                            .isVisible())
+                    .isTrue();
+
+            // 5. Trigger Snapshot action from Journal
+            snapshotBtn.click();
+            page.waitForSelector("#btn-journal-snapshot-filtered:has-text('Snapshotted')");
+            assertThat(snapshotBtn.textContent()).contains("Snapshotted 1!");
+
+            // 6. Navigate to Stubs tab, verify newly created snapshot stub, and toggle project to STUBS MODE
+            page.locator("#nav-tab-stubs").click();
+            page.waitForSelector("#stub-list .stub-card");
+
+            Locator newStubCard = page.locator(".stub-card", new Page.LocatorOptions().setHasText("prod-99"));
+            assertThat(newStubCard.count()).isGreaterThanOrEqualTo(1);
+
+            // Verify Project Lifecycle Bar shows LIVE PROXY and toggle to STUBS MODE
+            page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
+            assertThat(page.locator("#project-mode-badge").textContent()).isEqualTo("LIVE PROXY");
+
+            page.locator("#btn-project-mode-toggle").click();
+            page.waitForSelector("#project-mode-badge:has-text('STUBS MODE')");
+            assertThat(page.locator("#project-mode-badge").textContent()).isEqualTo("STUBS MODE");
+
+            // 7. Complete Server Decoupling: Shut down Upstream Catalog Server
+            upstreamCatalog.stop();
+
+            // 8. Replay request through WireMock while upstream is completely offline
+            HttpResponse<String> replayResponse = client.send(request, HttpResponse.BodyHandlers.ofString());
+            assertThat(replayResponse.statusCode()).isEqualTo(200);
+            assertThat(replayResponse.body()).contains("HyperDrive");
+
+            assertThat(pageErrors).isEmpty();
+        } finally {
+            if (upstreamCatalog.isRunning()) {
+                upstreamCatalog.stop();
+            }
+        }
+    }
 }
