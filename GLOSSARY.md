@@ -30,6 +30,10 @@ _Avoid_: buffer label, casual type tag, payload info
 The bidirectional translation of Casual FML/FML32 (`.FIELDED` / `CFIELD/`) binary buffers into structured JSON without requiring pre-registered field definitions in a field table (`casual-fields.json`). Derives concrete wire data types directly from the 64-bit real field ID bitmask (`type = realId / 0x2000000`), synthesizes deterministic `FLD_<realId>` JSON properties, auto-unnests embedded binary documents, and enables bidirectional wire re-encoding for offline stubs.
 _Avoid_: raw binary fallback, blind Base64 encoding, untyped fielded dump
 
+**Casual Queue Mediation**:
+The bidirectional translation of native Casual 1.9 queue wire frames (`ENQUEUE_REQUEST` 6100, `DEQUEUE_REQUEST` 6200) into synthetic WireMock `ServeEvent` probes (`/__casual/queues/<name>/enqueue`, `/__casual/queues/<name>/dequeue`), matching stubs on payload, properties regex selectors, and reply queues, while maintaining stateful retry delays, 2PC XA commit/rollback transitions, and automatic dead-letter error queues (`<name>.error`).
+_Avoid_: casual queue proxy, XATMI queue adapter, casual queue listener
+
 ### Async Messaging & Queue Mocking
 
 **Async Message Stubbing**:
