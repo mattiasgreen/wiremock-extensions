@@ -14,3 +14,6 @@ Guidelines and architectural topology for `wiremock-extension-async` (Beta).
 4. **Token Hygiene & Inner Loop**:
    - Inner Loop Test: `./gradlew :wiremock-extension-async:test --tests "ClassName.methodName" -q --console=plain`
    - Pre-Commit Gate: `./gradlew :wiremock-extension-async:spotbugsMain :wiremock-extension-async:test -q --console=plain`
+5. **Reference Documentation**:
+   - Subsystem Architecture, Sequence Diagrams & Production Stub Examples: [`wiremock-extension-async/README.md`](README.md)
+   - Detailed Async Mocking Specification: [`docs/spec/async-mocking.md`](../docs/spec/async-mocking.md)
