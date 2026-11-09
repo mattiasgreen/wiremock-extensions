@@ -91,6 +91,10 @@ class UiDemoModePlaywrightTest {
         Locator kycStub = page.locator("#stub-list .stub-card:has-text('Banking KYC Verification')");
         assertThat(kycStub.count()).isGreaterThanOrEqualTo(1);
 
+        // Verify Async Kafka stub is preloaded in demo catalog
+        Locator kafkaStub = page.locator("#stub-list .stub-card:has-text('Kafka Events Sink')");
+        assertThat(kafkaStub.count()).isGreaterThanOrEqualTo(1);
+
         // Click KYC stub to view details
         kycStub.first().click();
         page.waitForSelector("#stub-detail-view:not(.hidden)");
@@ -106,6 +110,15 @@ class UiDemoModePlaywrightTest {
         // Switch back to All
         page.locator("#btn-filter-all").click();
 
+        // Filter by Async Messaging project
+        Locator projectSelect = page.locator("#project-filter-select");
+        if (projectSelect.isVisible()) {
+            projectSelect.selectOption("Async Messaging");
+            Locator asyncFilteredCards = page.locator("#stub-list .stub-card");
+            assertThat(asyncFilteredCards.count()).isGreaterThanOrEqualTo(2);
+            projectSelect.selectOption("");
+        }
+
         // 4. Verify Request Journal Tab
         page.locator("#nav-tab-journal").click();
         page.waitForSelector("#journal-list tr[data-testid='journal-row']");
@@ -113,6 +126,23 @@ class UiDemoModePlaywrightTest {
         Locator journalRows = page.locator("#journal-list tr[data-testid='journal-row']");
         int initialJournalCount = journalRows.count();
         assertThat(initialJournalCount).isGreaterThanOrEqualTo(4);
+
+        // Verify preloaded protocol badges in Demo Journal
+        assertThat(page.locator("#journal-list .badge-KAFKA").count()).isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .badge-CONSUME").count()).isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .badge-ENQUEUE").count()).isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .badge-DEQUEUE").count()).isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .pill-proxy-error").count()).isGreaterThanOrEqualTo(1);
+
+        // Expand Async Kafka row
+        Locator kafkaRow =
+                page.locator("#journal-list tr[data-testid='journal-row']:has-text('/__async/kafka/orders.events')");
+        assertThat(kafkaRow.count()).isGreaterThanOrEqualTo(1);
+        kafkaRow.first().click();
+        page.waitForSelector("tr[data-testid='journal-detail-row']");
+        assertThat(page.locator("tr[data-testid='journal-detail-row'] .btn-snapshot-req")
+                        .count())
+                .isGreaterThanOrEqualTo(1);
 
         // Expand KYC request row to inspect preview chips
         Locator kycRow = page.locator("#journal-list tr[data-testid='journal-row']:has-text('/api/v1/kyc/verify')");

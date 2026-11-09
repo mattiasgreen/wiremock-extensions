@@ -72,6 +72,19 @@ function getHeader(headers, name) {
  */
 export function getRequestVerdict(req) {
   const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+  const status = req.response ? req.response.status : (req.responseDefinition ? req.responseDefinition.status : 0);
+  const asyncError = getHeader(resHeaders, 'x-async-error');
+  if (status === 502 || Boolean(asyncError)) {
+    const errorMsg = asyncError || 'Bad Gateway (502)';
+    return {
+      key: 'proxy_error',
+      type: 'proxy_error',
+      label: '⚠️ PROXY_ERROR',
+      cssClass: 'pill-unmatched pill-proxy-error',
+      stubDetail: `Proxy Error (502): ${errorMsg}`,
+      tooltip: `Async or proxy forwarding failure (502 Bad Gateway): ${errorMsg}`
+    };
+  }
   const isStateful = getHeader(resHeaders, 'x-wiremock-stateful') === 'true';
   if (isStateful) {
     const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
@@ -151,13 +164,22 @@ function buildRowHtml(req) {
   const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
   const casualService = getHeader(reqHeaders, 'x-casual-service')
     || (url.startsWith('/__casual/services/') ? url.substring('/__casual/services/'.length) : null);
-  const isCasual = Boolean(casualService);
+  const casualQueue = getHeader(reqHeaders, 'x-casual-queue')
+    || (url.startsWith('/__casual/queues/') ? url.split('/')[3] : null);
+  const casualOperation = getHeader(reqHeaders, 'x-casual-operation')
+    || (url.endsWith('/enqueue') ? 'ENQUEUE' : (url.endsWith('/dequeue') ? 'DEQUEUE' : null));
+  const isCasual = Boolean(casualService || casualQueue || url.startsWith('/__casual/'));
   const asyncChannel = getHeader(reqHeaders, 'x-async-channel')
     || (url.startsWith('/__async/') ? url.split('/')[3] || url.substring('/__async/'.length) : null);
   const asyncProtocol = (getHeader(reqHeaders, 'x-async-protocol')
     || (url.startsWith('/__async/') ? url.split('/')[2] : 'async') || 'async').toUpperCase();
   const isAsync = Boolean(asyncChannel || url.startsWith('/__async/'));
-  const displayMethod = isCasual ? 'CASUAL' : isAsync ? asyncProtocol : method;
+  const isCustomQueueMethod = method === 'ENQUEUE' || method === 'DEQUEUE' || method === 'CONSUME';
+  const displayMethod = isCustomQueueMethod
+    ? method
+    : (casualOperation
+        ? casualOperation
+        : (isCasual ? 'CASUAL' : (isAsync ? asyncProtocol : method)));
   const casualErrorState = isCasual
     ? (getHeader(resHeaders, 'x-casual-error-state')
         || (status >= 200 && status < 300 ? 'OK' : (status === 404 ? 'TPENOENT' : 'TPESVCFAIL')))

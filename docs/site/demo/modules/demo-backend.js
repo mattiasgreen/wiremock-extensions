@@ -415,6 +415,155 @@ const SEED_STUBS = [
       },
       tags: ['casual', 'xatmi', 'echo']
     }
+  },
+  {
+    id: 'demo-stub-async-kafka-orders',
+    name: 'Kafka Events Sink: orders.events',
+    request: {
+      method: 'CONSUME',
+      urlPattern: '/__async/kafka/orders.events',
+      headers: {
+        'Content-Type': { contains: 'application/json' }
+      },
+      bodyPatterns: [{ matchesJsonPath: '$.orderId' }]
+    },
+    response: {
+      status: 204,
+      headers: {
+        'X-Async-Ack': 'ack',
+        'X-Async-Protocol': 'kafka',
+        'X-Async-Partition': '0'
+      }
+    },
+    metadata: {
+      project: 'Async Messaging',
+      protocol: 'kafka',
+      channel: 'orders.events',
+      ackPolicy: 'ack',
+      tags: ['async', 'kafka', 'fire-and-forget', 'events']
+    }
+  },
+  {
+    id: 'demo-stub-async-amqp-payments',
+    name: 'AMQP 1.0: payments.requests (Request-Reply with Polyglot XML)',
+    request: {
+      method: 'CONSUME',
+      urlPattern: '/__async/amqp/payments.requests',
+      headers: {
+        'x-currency': { equalTo: 'EUR' }
+      },
+      bodyPatterns: [{ matchesJsonPath: '$.payment.amount' }]
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Async-Correlation-Id': '{{request.headers.X-Async-Correlation-Id}}',
+        'X-Async-Reply-Channel': 'payments.replies',
+        'X-Processed-By': 'wiremock-async-engine'
+      },
+      body: JSON.stringify(
+        {
+          transactionId: 'TX-AMQP-992144',
+          status: 'APPROVED',
+          amount: 1500.0,
+          currency: 'EUR',
+          clearingReference: 'CLR-SEPA-9921',
+          auditReceipt:
+            '<receipt xmlns="http://bank.example/audit"><status>SETTLED</status><clearedTimestamp>2026-11-09T14:30:00Z</clearedTimestamp><ledgerRef>LEDG-AMQP-009</ledgerRef></receipt>'
+        },
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'Async Messaging',
+      protocol: 'amqp',
+      broker: 'amqp://127.0.0.1:5672',
+      channel: 'payments.requests',
+      ackPolicy: 'ack',
+      tags: ['async', 'amqp', 'request-reply', 'payments', 'nested-payload']
+    }
+  },
+  {
+    id: 'demo-stub-async-http-trigger',
+    name: 'REST Checkout with Asynchronous Kafka Event Trigger',
+    request: {
+      method: 'POST',
+      urlPattern: '/api/v1/orders/async-checkout',
+      headers: {
+        'Content-Type': { contains: 'application/json' }
+      }
+    },
+    response: {
+      status: 202,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify(
+        {
+          orderId: 'ORD-9901-ASYNC',
+          status: 'ACCEPTED',
+          message: 'Order accepted for asynchronous fulfillment'
+        },
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'Async Messaging',
+      async: {
+        produce: [
+          {
+            protocol: 'kafka',
+            destination: 'notifications.broadcast',
+            key: 'ORD-9901-ASYNC',
+            payload: '{"orderId":"ORD-9901-ASYNC","event":"ORDER_PLACED","status":"PENDING_PAYMENT"}',
+            delayMs: 50
+          }
+        ]
+      },
+      tags: ['async', 'kafka', 'callback', 'http-trigger']
+    }
+  },
+  {
+    id: 'demo-stub-casual-queue-billing',
+    name: 'Casual Queue: billing.q (2PC/XA Dequeue)',
+    request: {
+      method: 'POST',
+      urlPattern: '/__casual/queues/billing.q/dequeue'
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-WireMock-Protocol': 'casual',
+        'X-Casual-Queue': 'billing.q',
+        'X-Casual-Operation': 'dequeue',
+        'X-Simulation-Engine': 'in-browser-demo'
+      },
+      body: JSON.stringify(
+        [
+          {
+            id: 'msg-casual-queue-881',
+            payload: {
+              invoiceId: 'INV-2026-881',
+              amount: 7420.0,
+              currency: 'SEK',
+              status: 'PENDING'
+            }
+          }
+        ],
+        null,
+        2
+      )
+    },
+    metadata: {
+      project: 'Casual Gateway',
+      protocol: 'casual',
+      queue: 'billing.q',
+      tags: ['casual', 'queue', 'dequeue', 'xatmi']
+    }
   }
 ];
 
@@ -850,6 +999,245 @@ const SEED_REQUESTS = [
       id: 'demo-stub-casual-settle-payment',
       name: 'Casual XATMI: settlePayment (Nested XML Audit)'
     }
+  },
+  {
+    id: 'req-demo-async-kafka',
+    request: {
+      url: '/__async/kafka/orders.events',
+      absoluteUrl: 'http://localhost:8080/__async/kafka/orders.events',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Async-Channel': 'orders.events',
+        'X-Async-Protocol': 'kafka',
+        'X-Correlation-Id': 'kafka-corr-8821-ord',
+        'X-Async-Partition': '0',
+        'X-Async-Offset': '1042'
+      },
+      body: JSON.stringify(
+        {
+          orderId: 'ORD-KAFKA-8821',
+          customerId: 'CUST-9902',
+          event: 'ORDER_CREATED',
+          timestamp: 1731165600000,
+          items: [
+            {
+              sku: 'SKU-PRO-01',
+              name: 'Mechanical Keyboard',
+              price: 149.99,
+              quantity: 1
+            }
+          ]
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 18000
+    },
+    response: {
+      status: 204,
+      headers: {
+        'X-Async-Ack': 'ack',
+        'X-Async-Protocol': 'kafka',
+        'X-Async-Partition': '0'
+      },
+      body: ''
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 3, totalTimeMillis: 5 },
+    stubMapping: {
+      id: 'demo-stub-async-kafka-orders',
+      name: 'Kafka Events Sink: orders.events'
+    }
+  },
+  {
+    id: 'req-demo-async-amqp',
+    request: {
+      url: '/__async/amqp/payments.requests',
+      absoluteUrl: 'http://localhost:8080/__async/amqp/payments.requests',
+      method: 'CONSUME',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-currency': 'EUR',
+        'X-Async-Channel': 'payments.requests',
+        'X-Async-Protocol': 'amqp',
+        'X-Async-Correlation-Id': 'amqp-corr-9921-pay',
+        'X-Async-Reply-To': 'payments.replies'
+      },
+      body: JSON.stringify(
+        {
+          payment: {
+            paymentId: 'PAY-EUR-9921',
+            amount: 1500.0,
+            currency: 'EUR',
+            debtorIban: 'SE45500000000583920182',
+            creditorIban: 'DE89370400440532013000'
+          },
+          polyglotPayload:
+            '<paymentAuthorization xmlns="http://bank.example/sepa"><mandateId>MND-88219</mandateId><scheme>CORE</scheme><signDate>2026-11-09</signDate></paymentAuthorization>'
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 48000
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Async-Correlation-Id': 'amqp-corr-9921-pay',
+        'X-Async-Reply-Channel': 'payments.replies',
+        'X-Processed-By': 'wiremock-async-engine'
+      },
+      body: JSON.stringify(
+        {
+          transactionId: 'TX-AMQP-992144',
+          status: 'APPROVED',
+          amount: 1500.0,
+          currency: 'EUR',
+          clearingReference: 'CLR-SEPA-9921',
+          auditReceipt:
+            '<receipt xmlns="http://bank.example/audit"><status>SETTLED</status><clearedTimestamp>2026-11-09T14:30:00Z</clearedTimestamp><ledgerRef>LEDG-AMQP-009</ledgerRef></receipt>'
+        },
+        null,
+        2
+      )
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 85, totalTimeMillis: 91 },
+    stubMapping: {
+      id: 'demo-stub-async-amqp-payments',
+      name: 'AMQP 1.0: payments.requests (Request-Reply with Polyglot XML)'
+    }
+  },
+  {
+    id: 'req-demo-async-proxy-error',
+    request: {
+      url: '/__async/amqp/orders.faulty',
+      absoluteUrl: 'http://localhost:8080/__async/amqp/orders.faulty',
+      method: 'CONSUME',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Async-Channel': 'orders.faulty',
+        'X-Async-Protocol': 'amqp'
+      },
+      body: JSON.stringify(
+        {
+          orderId: 'ORD-FAULTY-99',
+          action: 'PROCESS_IMMEDIATE'
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 75000
+    },
+    response: {
+      status: 502,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Async-Error': 'Destination queue [orders.faulty] missing on remote broker',
+        'X-Async-DLQ-Target': 'orders.faulty.error'
+      },
+      body: JSON.stringify(
+        {
+          error: 'ASYNC_PROXY_ERROR',
+          status: 502,
+          reason: 'QueueNotFoundException',
+          details: 'Remote broker rejected link attachment: destination queue [orders.faulty] missing on remote broker'
+        },
+        null,
+        2
+      )
+    },
+    wasMatched: false,
+    timing: { serveTimeMillis: 12, totalTimeMillis: 15 }
+  },
+  {
+    id: 'req-demo-casual-queue-01',
+    request: {
+      url: '/__casual/queues/billing.q/enqueue',
+      absoluteUrl: 'http://localhost:8080/__casual/queues/billing.q/enqueue',
+      method: 'ENQUEUE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WireMock-Protocol': 'casual',
+        'X-Casual-Queue': 'billing.q',
+        'X-Casual-Operation': 'enqueue'
+      },
+      body: JSON.stringify(
+        {
+          invoiceId: 'INV-2026-881',
+          amount: 7420.0,
+          currency: 'SEK',
+          customer: 'Nordic Solutions AB'
+        },
+        null,
+        2
+      ),
+      loggedDate: Date.now() - 110000
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-WireMock-Protocol': 'casual',
+        'X-Casual-Queue': 'billing.q',
+        'X-Casual-Operation': 'enqueue'
+      },
+      body: JSON.stringify(
+        {
+          id: 'msg-casual-queue-881',
+          status: 'ENQUEUED',
+          queue: 'billing.q',
+          enqueuedAt: '2026-11-09T14:40:00Z'
+        },
+        null,
+        2
+      )
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 6, totalTimeMillis: 8 }
+  },
+  {
+    id: 'req-demo-casual-queue-02',
+    request: {
+      url: '/__casual/queues/billing.q/dequeue',
+      absoluteUrl: 'http://localhost:8080/__casual/queues/billing.q/dequeue',
+      method: 'DEQUEUE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WireMock-Protocol': 'casual',
+        'X-Casual-Queue': 'billing.q',
+        'X-Casual-Operation': 'dequeue'
+      },
+      body: '',
+      loggedDate: Date.now() - 135000
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-WireMock-Protocol': 'casual',
+        'X-Casual-Queue': 'billing.q',
+        'X-Casual-Operation': 'dequeue'
+      },
+      body: JSON.stringify(
+        [
+          {
+            id: 'msg-casual-queue-881',
+            payload: {
+              invoiceId: 'INV-2026-881',
+              amount: 7420.0,
+              status: 'PENDING'
+            }
+          }
+        ],
+        null,
+        2
+      )
+    },
+    wasMatched: true,
+    timing: { serveTimeMillis: 9, totalTimeMillis: 12 }
   }
 ];
 
@@ -1171,15 +1559,75 @@ class InMemoryDemoBackend {
     // 8. Async Messaging & Queue Simulation (Beta)
     if (pathname === '/__admin/async/status') {
       if (method === 'GET') {
+        const asyncRequests = this.requests.filter(r => {
+          const u = (r.request && r.request.url) || '';
+          return u.startsWith('/__async/') || u.startsWith('/__casual/queues/');
+        });
         return responseJson(200, {
           status: 'UP',
           beta: true,
           mode: 'MOCK',
-          kafkaSinkPort: 0,
-          messagesConsumed: 0,
-          messagesPublished: 0
+          kafkaSinkPort: 9092,
+          messagesConsumed: asyncRequests.length,
+          messagesPublished: 24,
+          activeBrokers: 2
         });
       }
+    }
+
+    if (pathname === '/__admin/async/journal') {
+      if (method === 'GET') {
+        return responseJson(200, {
+          journal: [
+            'KAFKA_CONSUME:orders.events:{"orderId":"ORD-KAFKA-8821"}',
+            'AMQP_CONSUME:payments.requests:{"payment":{"paymentId":"PAY-EUR-9921"}}',
+            'PUBLISH:payments.replies:{"transactionId":"TX-AMQP-992144"}',
+            'ASYNC_PROXY_ERROR:502:orders.faulty:Destination queue missing on remote broker'
+          ]
+        });
+      }
+    }
+
+    if (pathname === '/__admin/async/stubs') {
+      if (method === 'GET') {
+        const asyncStubs = this.stubs.filter(s => s.metadata && (s.metadata.async || s.metadata.protocol === 'kafka' || s.metadata.protocol === 'amqp' || s.metadata.queue));
+        return responseJson(200, { stubs: asyncStubs });
+      }
+    }
+
+    if (pathname === '/__admin/async/publish' && method === 'POST') {
+      const payload = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+      const dest = payload.destination || 'orders.inbound';
+      const proto = payload.protocol || 'amqp';
+      const syntheticReq = {
+        id: `req-demo-pub-${Date.now()}`,
+        request: {
+          url: `/__async/${proto}/${dest}`,
+          absoluteUrl: `http://localhost:8080/__async/${proto}/${dest}`,
+          method: 'CONSUME',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Async-Channel': dest,
+            'X-Async-Protocol': proto,
+            'X-Async-Correlation-Id': payload.correlationId || `corr-${Date.now()}`
+          },
+          body: typeof payload.payload === 'string' ? payload.payload : JSON.stringify(payload.payload || {}, null, 2),
+          loggedDate: Date.now()
+        },
+        response: {
+          status: 200,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ status: 'ACKNOWLEDGED', destination: dest })
+        },
+        wasMatched: true,
+        timing: { serveTimeMillis: 4, totalTimeMillis: 6 }
+      };
+      this.requests.unshift(syntheticReq);
+      return responseJson(200, {
+        status: 'PUBLISHED',
+        destination: dest,
+        publishedAt: new Date().toISOString()
+      });
     }
 
     // 9. Journal Compression & Anti-OOM (Beta)
@@ -1309,8 +1757,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/cross-extension-alignment',
-        commit: '225f38c'
+        branch: 'feat/async-docs-expansion',
+        commit: '4a9a137'
       });
     }
 
