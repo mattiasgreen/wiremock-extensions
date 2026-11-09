@@ -56,6 +56,30 @@ _Avoid_: message pipe, queue router, broker link
 A deep module unifying in-process Kafka wire sinks, queue bridging, stub matching, offline stub harvesting, and telemetry journaling behind a cohesive lifecycle and routing interface.
 _Avoid_: async manager, queue coordinator, message helper
 
+**Consumer Feed Stubbing**:
+The declarative configuration of staged or triggered message feeds waiting to be polled and consumed by the System Under Test (SUT) from an in-process Kafka topic or AMQP queue, supporting `on-subscribe`, `immediate`, and causal HTTP trigger timing via `metadata.async.feed`.
+_Avoid_: consumer mock, topic injector, poll stub
+
+**In-Process Wire Server**:
+A lightweight, zero-daemon TCP protocol server running inside the WireMock process (e.g. `KafkaWireSink`, `AmqpServer`) that speaks native binary wire protocols (`bootstrap.servers=localhost:9092`, `amqp://localhost:5672`), enabling real client libraries to connect without external broker containers or consensus engines.
+_Avoid_: embedded broker, mock broker, fake server
+
+**Queue Mediation Bridge**:
+An architectural pattern where the System Under Test connects to an external or developer queue manager (such as an ephemeral IBM MQ container via port 1414), while WireMock connects as an AMQP 1.0 or native client to the same queue manager, intercepting inbound request queues, evaluating stubs, and dispatching correlated replies without reverse-engineering proprietary wire protocols.
+_Avoid_: queue proxy, broker interceptor, middleman
+
+**Queue Rewriting**:
+The practice of routing test traffic through virtual or prefix-scoped queue names (e.g. `DEV.QUEUE.1.SUT_STUB` $\to$ `DEV.QUEUE.1`) on a single shared broker to eliminate competing-consumer race conditions between the SUT and live upstream systems.
+_Avoid_: queue renaming, alias routing, channel mangling
+
+**Credit-Based Flow Mediation**:
+The protocol-governed delivery of asynchronous messages according to AMQP 1.0 `Flow` link credits and disposition settlement states (`Accepted`, `Rejected`, `Released`), ensuring consumer pacing and enabling verification of consumer acknowledgments and dead-letter routing.
+_Avoid_: backpressure throttle, link flow mock, disposition tracker
+
+**Async Proxy Error (502)**:
+The standardized WireMock `ServeEvent` and UI representation generated when a message cannot be bridged to an upstream destination due to a missing queue, broker connection outage, or authorization failure, preserving the source payload for 1-click inspection, replay, or offline stub snapshotting.
+_Avoid_: bridge failure, queue error, broken pipe
+
 ### Web Console & Developer UI
 
 **Stub Catalog**:
