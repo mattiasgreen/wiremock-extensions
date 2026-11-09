@@ -1780,7 +1780,12 @@ public class UiModuleUnitTest {
                     casualStatus: casualResult.status,
                     casualHasEcho: casualResult.payload.includes('ACC-101'),
                     hasCasualStub: demoBackend.stubs.some(s => s.id === 'demo-stub-casual-credit-inquiry'),
-                    hasCasualJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/services/creditScoreInquiry'))
+                    hasCasualJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/services/creditScoreInquiry')),
+                    hasAsyncKafkaStub: demoBackend.stubs.some(s => s.id === 'demo-stub-async-kafka-orders'),
+                    hasAsyncAmqpStub: demoBackend.stubs.some(s => s.id === 'demo-stub-async-amqp-payments'),
+                    hasAsyncJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__async/kafka/orders.events')),
+                    hasCasualQueueJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/queues/billing.q/enqueue')),
+                    asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP'
                 };
             }
         """;
@@ -1795,6 +1800,11 @@ public class UiModuleUnitTest {
         assertThat(result.get("hasEchoService")).isEqualTo(true);
         assertThat(result.get("hasCasualStub")).isEqualTo(true);
         assertThat(result.get("hasCasualJournalEntry")).isEqualTo(true);
+        assertThat(result.get("hasAsyncKafkaStub")).isEqualTo(true);
+        assertThat(result.get("hasAsyncAmqpStub")).isEqualTo(true);
+        assertThat(result.get("hasAsyncJournalEntry")).isEqualTo(true);
+        assertThat(result.get("hasCasualQueueJournalEntry")).isEqualTo(true);
+        assertThat(result.get("asyncStatusUp")).isEqualTo(true);
         assertThat(((Number) result.get("completeOrderStatus")).intValue()).isEqualTo(200);
         assertThat(result.get("completeOrderDelivered")).isEqualTo(true);
         assertThat(result.get("scenarioAfterComplete")).isEqualTo("COMPLETED");
