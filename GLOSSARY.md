@@ -15,7 +15,7 @@ The bidirectional translation between Casual XATMI messages (`ServiceBuffer`, `E
 _Avoid_: HTTP mapping, buffer conversion, protocol bridge
 
 **Protocol Version Normalization**:
-Adapting Casual network frames (`SERVICE_CALL_REQUEST`, `SERVICE_CALL_REPLY`) to match the negotiated `ProtocolVersion` (`1.0`/`1.2` with inline `XID` vs. `1.3+` with `SpanId` and no reply `XID`) on a specific TCP connection.
+Adapting Casual network frames (`SERVICE_CALL_REQUEST`, `SERVICE_CALL_REPLY`, and Queue frames `ENQUEUE_REPLY` 6101 vs. `ENQUEUE_REPLY_V_1_3` 6102, `DEQUEUE_REPLY` 6201 vs. `DEQUEUE_REPLY_V_1_3` 6202) to match the negotiated `ProtocolVersion` (`1.0`/`1.2` with inline `XID` vs. `1.3+` with `SpanId` and `QueueErrorCode`) on a specific TCP connection.
 _Avoid_: frame downgrading, version rebuilding
 
 **2PC Transaction Coordinator**:
@@ -83,6 +83,14 @@ _Avoid_: backpressure throttle, link flow mock, disposition tracker
 **Async Proxy Error (502)**:
 The standardized WireMock `ServeEvent` and UI representation generated when a message cannot be bridged to an upstream destination due to a missing queue, broker connection outage, or authorization failure, preserving the source payload for 1-click inspection, replay, or offline stub snapshotting.
 _Avoid_: bridge failure, queue error, broken pipe
+
+**In-Memory AMQP Reference Broker**:
+An embedded ActiveMQ Artemis instance running strictly within test scope on a dynamic TCP port, providing authentic multi-queue routing, durable storage, and credit-based flow control for E2E bridge verification without Docker.
+_Avoid_: fake broker, test queue stub, mock amqp server
+
+**Asynchronous Journal Inspection**:
+The verification of recorded async and queue messages in the Web Console UI via headless Playwright, asserting message payloads, protocol badges, timing, and proxying verdicts (`stubbed`, `proxied`, `proxy_error`).
+_Avoid_: UI async test, web tester check, visual queue spy
 
 ### Web Console & Developer UI
 
