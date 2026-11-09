@@ -766,6 +766,15 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("[{\"id\":\"msg-101\",\"payload\":{\"invoiceId\":\"INV-9\"}}]")));
 
+        // Setup 4: Async Kafka channel route
+        wireMockServer.stubFor(post(urlEqualTo("/__async/kafka/orders.events"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("X-Async-Channel", "orders.events")
+                        .withHeader("X-Async-Protocol", "kafka")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":\"COMMITTED\",\"orderId\":\"ORD-KAFKA-1\"}")));
+
         // Trigger HTTP calls
         HttpClient client = HttpClient.newHttpClient();
         client.send(
@@ -786,6 +795,16 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                 HttpRequest.newBuilder()
                         .uri(URI.create(wireMockServer.baseUrl() + "/__casual/queues/billing.q/dequeue"))
                         .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__async/kafka/orders.events"))
+                        .header("X-Async-Channel", "orders.events")
+                        .header("X-Async-Protocol", "kafka")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"orderId\":\"ORD-KAFKA-1\",\"action\":\"CREATE\"}"))
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
 
@@ -814,5 +833,42 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector("#jrn-res-body-" + reqId);
         Locator resBody = page.locator("#jrn-res-body-" + reqId);
         assertThat(resBody.textContent()).contains("INV-9");
+
+        // Verify Async Kafka row and badge
+        Locator asyncRow = page.locator("#journal-list tr.journal-row:has-text('/__async/kafka/orders.events')")
+                .first();
+        assertThat(asyncRow.locator(".badge-KAFKA").textContent()).isEqualTo("KAFKA");
+
+        // Click to expand async Kafka row
+        asyncRow.click();
+        String asyncReqId = asyncRow.getAttribute("data-request-id");
+        page.waitForSelector("#jrn-res-body-" + asyncReqId);
+        Locator asyncResBody = page.locator("#jrn-res-body-" + asyncReqId);
+        assertThat(asyncResBody.textContent()).contains("COMMITTED");
+
+        // Click 📸 Snapshot Stub on async journal entry
+        Locator snapshotBtn = page.locator(
+                "tr[data-testid='journal-detail-row'][data-request-id='" + asyncReqId + "'] .btn-snapshot-req");
+        assertThat(snapshotBtn.isVisible()).isTrue();
+        snapshotBtn.click();
+
+        // Verify Stub Editor modal opens pre-filled for async snapshot stub
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        Locator modalTitle = page.locator("#editor-modal-title");
+        assertThat(modalTitle.textContent()).isEqualTo("Snapshot Stub from Journal");
+        assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/__async/kafka/orders.events");
+        assertThat(page.locator("#editor-body").inputValue()).contains("COMMITTED");
+
+        // Save snapshot stub and verify it persists
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal",
+                new com.microsoft.playwright.Page.WaitForSelectorOptions()
+                        .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
+
+        assertThat(wireMockServer.listAllStubMappings().getMappings().stream()
+                        .anyMatch(s -> "/__async/kafka/orders.events"
+                                .equals(s.getRequest().getUrl())))
+                .isTrue();
     }
 }
