@@ -190,4 +190,27 @@ class CasualQueueStoreTest {
         CasualDequeueReplyMessage deq = store.dequeue(createDequeueReq(queue, null), ProtocolVersion.VERSION_1_3);
         assertThat(deq.getCode()).isEqualTo(QueueErrorCode.NO_MESSAGE);
     }
+
+    @Test
+    @DisplayName("Should preserve polyglot payloads (XML string nested inside JSON) without corruption")
+    void shouldPreservePolyglotXmlInsideJsonPayloadRoundtrip() {
+        String queue = "orders.polyglot.q";
+        store.createQueue(queue, 3, 500);
+
+        String nestedXml =
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><order id=\"ORD-888\"><item price=\"49.99\">Widget</item></order></soap:Body></soap:Envelope>";
+        String polyglotJson = "{\"orderId\":\"ORD-888\",\"format\":\"SOAP\",\"envelope\":\""
+                + nestedXml.replace("\"", "\\\"") + "\"}";
+
+        store.enqueue(createEnqueueReq(queue, polyglotJson, null), ProtocolVersion.VERSION_1_3);
+
+        CasualDequeueReplyMessage reply = store.dequeue(createDequeueReq(queue, null), ProtocolVersion.VERSION_1_3);
+        assertThat(reply.getCode()).isEqualTo(QueueErrorCode.OK);
+        assertThat(reply.getMessages()).hasSize(1);
+
+        String extractedPayload =
+                CasualBufferUtils.extractPayload(reply.getMessages().get(0).getPayload());
+        assertThat(extractedPayload).isEqualTo(polyglotJson);
+        assertThat(extractedPayload).contains(nestedXml.replace("\"", "\\\""));
+    }
 }

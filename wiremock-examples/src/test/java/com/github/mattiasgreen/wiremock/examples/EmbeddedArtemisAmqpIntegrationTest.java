@@ -155,4 +155,50 @@ class EmbeddedArtemisAmqpIntegrationTest {
         // Verify Journal audit recorded the proxy forward
         assertThat(engine.getJournal()).anyMatch(j -> j.contains("PROXY_FORWARD:upstream.orders.456"));
     }
+
+    @Test
+    @DisplayName("Should bridge polyglot payload (XML nested inside JSON) to Artemis broker intact")
+    void shouldRouteAndBridgePolyglotXmlInsideJsonMessage() throws Exception {
+        artemisServer.createQueue(QueueConfiguration.of("upstream.polyglot.789").setRoutingType(RoutingType.ANYCAST));
+
+        // Rule to forward polyglot orders
+        engine.addBridgeRule("Polyglot Orders", 50, "orders\\.polyglot\\.(.*)", "", "upstream.polyglot.$1");
+
+        String nestedXml =
+                "<trade xmlns=\"http://bank.example.com/trade\"><id>TRD-789</id><security>IBM</security><quantity>1000</quantity></trade>";
+        String polyglotJson = "{\"tradeId\":\"TRD-789\",\"protocol\":\"FIX_XML\",\"xmlPayload\":\""
+                + nestedXml.replace("\"", "\\\"") + "\"}";
+
+        AsyncMessage polyglotMsg = AsyncMessage.builder()
+                .correlationId("corr-poly-789")
+                .destination("orders.polyglot.789")
+                .payload(polyglotJson)
+                .headers(Map.of("content-type", "application/json", "x-polyglot", "true"))
+                .build();
+
+        localTestBroker.send("orders.polyglot.789", polyglotMsg);
+        boolean processed = engine.processInbound("orders.polyglot.789");
+        assertThat(processed).isTrue();
+
+        try (Connection conn = qpidClient.connect("127.0.0.1", artemisPort)) {
+            Receiver receiver = conn.openReceiver("upstream.polyglot.789");
+            Delivery delivery = receiver.receive(5, TimeUnit.SECONDS);
+
+            assertThat(delivery).isNotNull();
+            Message<?> msg = delivery.message();
+            byte[] bodyBytes = (byte[]) msg.body();
+            String payload = new String(bodyBytes, StandardCharsets.UTF_8);
+
+            assertThat(payload).isEqualTo(polyglotJson);
+            assertThat(payload).contains(nestedXml.replace("\"", "\\\""));
+            assertThat(msg.correlationId()).isEqualTo("corr-poly-789");
+            assertThat(msg.property("x-polyglot")).isEqualTo("true");
+
+            delivery.accept();
+            receiver.close();
+        }
+
+        // Verify Journal audit recorded the polyglot forward
+        assertThat(engine.getJournal()).anyMatch(j -> j.contains("PROXY_FORWARD:upstream.polyglot.789"));
+    }
 }
