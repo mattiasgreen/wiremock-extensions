@@ -356,6 +356,9 @@ body {
 .badge-KAFKA { background-color: #7c3aed; letter-spacing: 0.02em; }
 .badge-AMQP { background-color: #d97706; letter-spacing: 0.02em; }
 .badge-ASYNC { background-color: #2563eb; letter-spacing: 0.02em; }
+.badge-CONSUME { background-color: #0284c7; letter-spacing: 0.02em; }
+.badge-ENQUEUE { background-color: #059669; letter-spacing: 0.02em; }
+.badge-DEQUEUE { background-color: #d97706; letter-spacing: 0.02em; }
 
 .stub-card-url {
   font-family: monospace;
@@ -853,6 +856,11 @@ body {
 .pill-unmatched {
   color: var(--status-5xx);
   font-weight: 600;
+}
+
+.pill-proxy-error {
+  color: #f59e0b !important;
+  font-weight: 700;
 }
 
 /* HTTP Request Tester */

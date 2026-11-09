@@ -15,7 +15,7 @@ The bidirectional translation between Casual XATMI messages (`ServiceBuffer`, `E
 _Avoid_: HTTP mapping, buffer conversion, protocol bridge
 
 **Protocol Version Normalization**:
-Adapting Casual network frames (`SERVICE_CALL_REQUEST`, `SERVICE_CALL_REPLY`) to match the negotiated `ProtocolVersion` (`1.0`/`1.2` with inline `XID` vs. `1.3+` with `SpanId` and no reply `XID`) on a specific TCP connection.
+Adapting Casual network frames (`SERVICE_CALL_REQUEST`, `SERVICE_CALL_REPLY`, and Queue frames `ENQUEUE_REPLY` 6101 vs. `ENQUEUE_REPLY_V_1_3` 6102, `DEQUEUE_REPLY` 6201 vs. `DEQUEUE_REPLY_V_1_3` 6202) to match the negotiated `ProtocolVersion` (`1.0`/`1.2` with inline `XID` vs. `1.3+` with `SpanId` and `QueueErrorCode`) on a specific TCP connection.
 _Avoid_: frame downgrading, version rebuilding
 
 **2PC Transaction Coordinator**:
@@ -29,6 +29,10 @@ _Avoid_: buffer label, casual type tag, payload info
 **Schema-less Fielded Buffer Mediation**:
 The bidirectional translation of Casual FML/FML32 (`.FIELDED` / `CFIELD/`) binary buffers into structured JSON without requiring pre-registered field definitions in a field table (`casual-fields.json`). Derives concrete wire data types directly from the 64-bit real field ID bitmask (`type = realId / 0x2000000`), synthesizes deterministic `FLD_<realId>` JSON properties, auto-unnests embedded binary documents, and enables bidirectional wire re-encoding for offline stubs.
 _Avoid_: raw binary fallback, blind Base64 encoding, untyped fielded dump
+
+**Casual Queue Mediation**:
+The bidirectional translation of native Casual 1.9 queue wire frames (`ENQUEUE_REQUEST` 6100, `DEQUEUE_REQUEST` 6200) into synthetic WireMock `ServeEvent` probes (`/__casual/queues/<name>/enqueue`, `/__casual/queues/<name>/dequeue`), matching stubs on payload, properties regex selectors, and reply queues, while maintaining stateful retry delays, 2PC XA commit/rollback transitions, and automatic dead-letter error queues (`<name>.error`).
+_Avoid_: casual queue proxy, XATMI queue adapter, casual queue listener
 
 ### Async Messaging & Queue Mocking
 
@@ -55,6 +59,38 @@ _Avoid_: message pipe, queue router, broker link
 **Async Messaging Engine**:
 A deep module unifying in-process Kafka wire sinks, queue bridging, stub matching, offline stub harvesting, and telemetry journaling behind a cohesive lifecycle and routing interface.
 _Avoid_: async manager, queue coordinator, message helper
+
+**Consumer Feed Stubbing**:
+The declarative configuration of staged or triggered message feeds waiting to be polled and consumed by the System Under Test (SUT) from an in-process Kafka topic or AMQP queue, supporting `on-subscribe`, `immediate`, and causal HTTP trigger timing via `metadata.async.feed`.
+_Avoid_: consumer mock, topic injector, poll stub
+
+**In-Process Wire Server**:
+A lightweight, zero-daemon TCP protocol server running inside the WireMock process (e.g. `KafkaWireSink`, `AmqpServer`) that speaks native binary wire protocols (`bootstrap.servers=localhost:9092`, `amqp://localhost:5672`), enabling real client libraries to connect without external broker containers or consensus engines.
+_Avoid_: embedded broker, mock broker, fake server
+
+**Queue Mediation Bridge**:
+An architectural pattern where the System Under Test connects to an external or developer queue manager (such as an ephemeral IBM MQ container via port 1414), while WireMock connects as an AMQP 1.0 or native client to the same queue manager, intercepting inbound request queues, evaluating stubs, and dispatching correlated replies without reverse-engineering proprietary wire protocols.
+_Avoid_: queue proxy, broker interceptor, middleman
+
+**Queue Rewriting**:
+The practice of routing test traffic through virtual or prefix-scoped queue names (e.g. `DEV.QUEUE.1.SUT_STUB` $\to$ `DEV.QUEUE.1`) on a single shared broker to eliminate competing-consumer race conditions between the SUT and live upstream systems.
+_Avoid_: queue renaming, alias routing, channel mangling
+
+**Credit-Based Flow Mediation**:
+The protocol-governed delivery of asynchronous messages according to AMQP 1.0 `Flow` link credits and disposition settlement states (`Accepted`, `Rejected`, `Released`), ensuring consumer pacing and enabling verification of consumer acknowledgments and dead-letter routing.
+_Avoid_: backpressure throttle, link flow mock, disposition tracker
+
+**Async Proxy Error (502)**:
+The standardized WireMock `ServeEvent` and UI representation generated when a message cannot be bridged to an upstream destination due to a missing queue, broker connection outage, or authorization failure, preserving the source payload for 1-click inspection, replay, or offline stub snapshotting.
+_Avoid_: bridge failure, queue error, broken pipe
+
+**In-Memory AMQP Reference Broker**:
+An embedded ActiveMQ Artemis instance running strictly within test scope on a dynamic TCP port, providing authentic multi-queue routing, durable storage, and credit-based flow control for E2E bridge verification without Docker.
+_Avoid_: fake broker, test queue stub, mock amqp server
+
+**Asynchronous Journal Inspection**:
+The verification of recorded async and queue messages in the Web Console UI via headless Playwright, asserting message payloads, protocol badges, timing, and proxying verdicts (`stubbed`, `proxied`, `proxy_error`).
+_Avoid_: UI async test, web tester check, visual queue spy
 
 ### Web Console & Developer UI
 

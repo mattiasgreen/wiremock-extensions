@@ -21,6 +21,7 @@ import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.XAFlags;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
 import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
+import se.laz.casual.api.queue.QueueMessage;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.config.ConfigurationOptions;
 import se.laz.casual.config.ConfigurationService;
@@ -32,6 +33,11 @@ import se.laz.casual.network.outbound.NettyNetworkConnection;
 import se.laz.casual.network.protocol.messages.CasualNWMessageImpl;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.EnqueueMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
@@ -378,6 +384,73 @@ public class CasualClient implements AutoCloseable {
         CasualNWMessage<CasualTransactionResourceRollbackRequestMessage> nwMsg =
                 CasualNWMessageImpl.of(correlationId, req);
         CompletableFuture<CasualNWMessage<CasualTransactionResourceRollbackReplyMessage>> future =
+                getActiveConnection().request(nwMsg);
+        return future.get(timeoutSeconds, TimeUnit.SECONDS).getMessage();
+    }
+
+    public CasualEnqueueReplyMessage enqueue(String queueName, String jsonPayload) throws Exception {
+        return enqueue(queueName, jsonPayload, XID.NULL_XID);
+    }
+
+    public CasualEnqueueReplyMessage enqueue(String queueName, String jsonPayload, Xid xid) throws Exception {
+        connect();
+        ServiceBuffer buffer = ServiceBuffer.of(JsonBuffer.of(jsonPayload));
+        QueueMessage qm = QueueMessage.createBuilder()
+                .withId(UUID.randomUUID())
+                .withPayload(buffer)
+                .build();
+        EnqueueMessage em = EnqueueMessage.of(qm);
+
+        CasualEnqueueRequestMessage req = CasualEnqueueRequestMessage.createBuilder()
+                .withExecution(UUID.randomUUID())
+                .withQueueName(queueName)
+                .withXid(xid != null ? xid : XID.NULL_XID)
+                .withMessage(em)
+                .build();
+
+        UUID correlationId = UUID.randomUUID();
+        CasualNWMessage<CasualEnqueueRequestMessage> nwMsg = CasualNWMessageImpl.of(correlationId, req);
+        CompletableFuture<CasualNWMessage<CasualEnqueueReplyMessage>> future =
+                getActiveConnection().request(nwMsg);
+        return future.get(timeoutSeconds, TimeUnit.SECONDS).getMessage();
+    }
+
+    public CasualDequeueReplyMessage dequeue(String queueName) throws Exception {
+        return dequeue(queueName, XID.NULL_XID);
+    }
+
+    public CasualDequeueReplyMessage dequeue(String queueName, Xid xid) throws Exception {
+        connect();
+        CasualDequeueRequestMessage req = CasualDequeueRequestMessage.createBuilder()
+                .withExecution(UUID.randomUUID())
+                .withQueueName(queueName)
+                .withXid(xid != null ? xid : XID.NULL_XID)
+                .withSelectorProperties("")
+                .withSelectorUUID(new UUID(0, 0))
+                .withBlock(false)
+                .build();
+
+        UUID correlationId = UUID.randomUUID();
+        CasualNWMessage<CasualDequeueRequestMessage> nwMsg = CasualNWMessageImpl.of(correlationId, req);
+        CompletableFuture<CasualNWMessage<CasualDequeueReplyMessage>> future =
+                getActiveConnection().request(nwMsg);
+        return future.get(timeoutSeconds, TimeUnit.SECONDS).getMessage();
+    }
+
+    public CasualDomainDiscoveryReplyMessage discoverQueues(List<String> queueNames) throws Exception {
+        CasualDomainDiscoveryRequestMessage.CasualDomainDiscoveryRequestMessageBuilder builder =
+                CasualDomainDiscoveryRequestMessage.createBuilder();
+        builder.setExecution(UUID.randomUUID());
+        builder.setDomainId(domainId);
+        builder.setDomainName(domainName);
+        builder.setServiceNames(Collections.emptyList());
+        builder.setQueueNames(queueNames != null ? queueNames : Collections.emptyList());
+
+        CasualDomainDiscoveryRequestMessage discoveryReq = builder.build();
+        UUID correlationId = UUID.randomUUID();
+        CasualNWMessage<CasualDomainDiscoveryRequestMessage> nwMsg =
+                CasualNWMessageImpl.of(correlationId, discoveryReq);
+        CompletableFuture<CasualNWMessage<CasualDomainDiscoveryReplyMessage>> future =
                 getActiveConnection().request(nwMsg);
         return future.get(timeoutSeconds, TimeUnit.SECONDS).getMessage();
     }

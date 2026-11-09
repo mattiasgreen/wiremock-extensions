@@ -89,7 +89,8 @@ class AsyncEngineTest {
         // Metrics & journal
         assertThat(engine.getMessagesConsumed()).isEqualTo(1L);
         assertThat(engine.getMessagesProxied()).isEqualTo(1L);
-        assertThat(engine.getJournal()).contains("PROXY_FORWARD:{\"orderId\":\"ORD-777\",\"amount\":49.99}");
+        assertThat(engine.getJournal())
+                .contains("PROXY_FORWARD:orders.input:{\"orderId\":\"ORD-777\",\"amount\":49.99}");
     }
 
     @Test

@@ -19,6 +19,10 @@ import java.util.Optional;
  * @param ackPolicy acknowledgment policy
  * @param mode operating mode (MOCK vs PROXY)
  * @param produce outbound message instructions
+ * @param channelPattern regex pattern for wildcard channel matching
+ * @param proxyBroker upstream broker URI for proxy forwarding
+ * @param proxyChannel upstream destination channel or replacement pattern
+ * @param feed consumer feed stub configuration
  */
 public record AsyncMetadata(
         String protocol,
@@ -26,7 +30,11 @@ public record AsyncMetadata(
         String channel,
         AckPolicy ackPolicy,
         AsyncMode mode,
-        List<AsyncProduceDirective> produce) {
+        List<AsyncProduceDirective> produce,
+        String channelPattern,
+        String proxyBroker,
+        String proxyChannel,
+        AsyncFeedDirective feed) {
 
     public AsyncMetadata {
         protocol = Objects.requireNonNullElse(protocol, "kafka");
@@ -35,6 +43,19 @@ public record AsyncMetadata(
         ackPolicy = Objects.requireNonNullElse(ackPolicy, AckPolicy.ACK);
         mode = Objects.requireNonNullElse(mode, AsyncMode.MOCK);
         produce = produce != null ? List.copyOf(produce) : Collections.emptyList();
+        channelPattern = Objects.requireNonNullElse(channelPattern, "");
+        proxyBroker = Objects.requireNonNullElse(proxyBroker, "");
+        proxyChannel = Objects.requireNonNullElse(proxyChannel, "");
+    }
+
+    public AsyncMetadata(
+            String protocol,
+            String broker,
+            String channel,
+            AckPolicy ackPolicy,
+            AsyncMode mode,
+            List<AsyncProduceDirective> produce) {
+        this(protocol, broker, channel, ackPolicy, mode, produce, "", "", "", null);
     }
 
     @SuppressWarnings("unchecked")
@@ -55,6 +76,10 @@ public record AsyncMetadata(
         AckPolicy ackPolicy = AckPolicy.fromString((String) map.get("ackPolicy"));
         AsyncMode mode = AsyncMode.fromString((String) map.get("mode"));
 
+        String channelPattern = (String) map.getOrDefault("channelPattern", "");
+        String proxyBroker = (String) map.getOrDefault("proxyBroker", "");
+        String proxyChannel = (String) map.getOrDefault("proxyChannel", "");
+
         List<AsyncProduceDirective> produceList = new ArrayList<>();
         Object produceObj = map.get("produce");
         if (produceObj instanceof List<?> list) {
@@ -67,6 +92,22 @@ public record AsyncMetadata(
             produceList.add(AsyncProduceDirective.fromMap((Map<String, Object>) singleMap));
         }
 
-        return Optional.of(new AsyncMetadata(protocol, broker, channel, ackPolicy, mode, produceList));
+        AsyncFeedDirective feed = null;
+        Object feedObj = map.get("feed");
+        if (feedObj instanceof Map<?, ?> feedMap) {
+            feed = AsyncFeedDirective.fromMap((Map<String, Object>) feedMap);
+        }
+
+        return Optional.of(new AsyncMetadata(
+                protocol,
+                broker,
+                channel,
+                ackPolicy,
+                mode,
+                produceList,
+                channelPattern,
+                proxyBroker,
+                proxyChannel,
+                feed));
     }
 }

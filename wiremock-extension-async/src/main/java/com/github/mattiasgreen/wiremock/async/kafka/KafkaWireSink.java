@@ -9,6 +9,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -22,6 +23,8 @@ public class KafkaWireSink implements AutoCloseable {
 
     private final int requestedPort;
     private final Consumer<KafkaProduceRecord> recordConsumer;
+    private final List<KafkaWireCodec> activeCodecs = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<KafkaProduceRecord> preStagedRecords = new java.util.concurrent.CopyOnWriteArrayList<>();
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
@@ -30,6 +33,15 @@ public class KafkaWireSink implements AutoCloseable {
     public KafkaWireSink(int port, Consumer<KafkaProduceRecord> recordConsumer) {
         this.requestedPort = port;
         this.recordConsumer = Objects.requireNonNullElse(recordConsumer, r -> {});
+    }
+
+    public void stageRecord(KafkaProduceRecord record) {
+        if (record != null) {
+            preStagedRecords.add(record);
+            for (KafkaWireCodec codec : activeCodecs) {
+                codec.stageRecord(record);
+            }
+        }
     }
 
     public synchronized void start() throws InterruptedException {
@@ -50,7 +62,13 @@ public class KafkaWireSink implements AutoCloseable {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new KafkaWireCodec(boundPort, recordConsumer));
+                        KafkaWireCodec codec = new KafkaWireCodec(boundPort, recordConsumer);
+                        for (KafkaProduceRecord pre : preStagedRecords) {
+                            codec.stageRecord(pre);
+                        }
+                        activeCodecs.add(codec);
+                        ch.closeFuture().addListener(f -> activeCodecs.remove(codec));
+                        ch.pipeline().addLast(codec);
                     }
                 });
 
@@ -68,6 +86,8 @@ public class KafkaWireSink implements AutoCloseable {
 
     @Override
     public synchronized void close() {
+        preStagedRecords.clear();
+        activeCodecs.clear();
         if (serverChannel != null) {
             try {
                 serverChannel.close().sync();

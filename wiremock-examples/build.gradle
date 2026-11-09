@@ -9,6 +9,8 @@ dependencies {
     testImplementation libs.resilience4j.retry
     testImplementation libs.kafka.clients
     testImplementation libs.protonj2.client
+    testImplementation libs.artemis.server
+    testImplementation libs.artemis.amqp.protocol
 }
 
 tasks.register('recordDemoVideos', Test) {

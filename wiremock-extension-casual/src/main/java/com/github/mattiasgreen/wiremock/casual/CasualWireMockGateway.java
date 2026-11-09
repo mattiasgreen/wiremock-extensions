@@ -20,9 +20,14 @@ import org.slf4j.LoggerFactory;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.config.ConfigurationOptions;
 import se.laz.casual.config.ConfigurationService;
+import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueRequestMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
@@ -38,7 +43,8 @@ import se.laz.casual.network.protocol.messages.transaction.CasualTransactionReso
  * to WireMock stub definitions using {@link CasualHttpMediation}, {@link CasualStorePort},
  * and {@link CasualTransactionCoordinator}.
  */
-public class CasualWireMockGateway implements AutoCloseable, CasualServer.TransactionHandler {
+public class CasualWireMockGateway
+        implements AutoCloseable, CasualServer.TransactionHandler, CasualServer.QueueHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(CasualWireMockGateway.class);
 
@@ -55,6 +61,7 @@ public class CasualWireMockGateway implements AutoCloseable, CasualServer.Transa
 
     private final ConcurrentHashMap<String, CasualClient> upstreamClients = new ConcurrentHashMap<>();
     private final CasualTransactionCoordinator transactionCoordinator = new CasualTransactionCoordinator();
+    private final CasualQueueStore queueStore = new CasualQueueStore();
 
     private CasualServer server;
 
@@ -143,6 +150,8 @@ public class CasualWireMockGateway implements AutoCloseable, CasualServer.Transa
                 .discoveryHandler(this::handleDiscovery)
                 .serviceHandler(this::handleServiceCall)
                 .transactionHandler(this)
+                .queueHandler(this)
+                .queueDiscoveryHandler((names, ver) -> queueStore.getDiscoveredQueues(names, ver))
                 .build();
         server.start();
         LOG.info("CasualWireMockGateway listening on TCP port {}", server.getPort());
@@ -161,6 +170,10 @@ public class CasualWireMockGateway implements AutoCloseable, CasualServer.Transa
 
     public CasualTransactionCoordinator getTransactionCoordinator() {
         return transactionCoordinator;
+    }
+
+    public CasualQueueStore getQueueStore() {
+        return queueStore;
     }
 
     public CasualStorePort getStorePort() {
@@ -385,11 +398,43 @@ public class CasualWireMockGateway implements AutoCloseable, CasualServer.Transa
 
     @Override
     public CasualTransactionResourceCommitReplyMessage commit(CasualTransactionResourceCommitRequestMessage req) {
+        queueStore.commit(req.getXid());
         return transactionCoordinator.commit(req);
     }
 
     @Override
     public CasualTransactionResourceRollbackReplyMessage rollback(CasualTransactionResourceRollbackRequestMessage req) {
+        queueStore.rollback(req.getXid());
         return transactionCoordinator.rollback(req);
+    }
+
+    @Override
+    public CasualEnqueueReplyMessage enqueue(CasualEnqueueRequestMessage req, ProtocolVersion version) {
+        ImmutableRequest probeReq = CasualHttpMediation.buildQueueEnqueueProbeRequest(storePort.getBaseUrl(), req);
+        CasualEnqueueReplyMessage reply = queueStore.enqueue(req, version);
+        int statusCode = 200;
+        String jsonPayload = CasualBufferUtils.extractPayload(
+                req.getMessage() != null ? req.getMessage().getPayload() : null);
+        ServeEvent event = CasualHttpMediation.buildQueueServeEvent(
+                probeReq, statusCode, jsonPayload != null ? jsonPayload : "{}", req.getQueueName(), "enqueue");
+        storePort.recordServeEvent(event);
+        return reply;
+    }
+
+    @Override
+    public CasualDequeueReplyMessage dequeue(CasualDequeueRequestMessage req, ProtocolVersion version) {
+        ImmutableRequest probeReq = CasualHttpMediation.buildQueueDequeueProbeRequest(storePort.getBaseUrl(), req);
+        CasualDequeueReplyMessage reply = queueStore.dequeue(req, version);
+        int statusCode = 200;
+        String body = "[]";
+        if (reply.getMessages() != null && !reply.getMessages().isEmpty()) {
+            body = CasualBufferUtils.extractPayload(reply.getMessages().get(0).getPayload());
+        } else {
+            statusCode = 204;
+        }
+        ServeEvent event = CasualHttpMediation.buildQueueServeEvent(
+                probeReq, statusCode, body != null ? body : "[]", req.getQueueName(), "dequeue");
+        storePort.recordServeEvent(event);
+        return reply;
     }
 }

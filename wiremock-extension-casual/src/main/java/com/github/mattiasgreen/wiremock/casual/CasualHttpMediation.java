@@ -24,6 +24,9 @@ import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.network.ProtocolVersion;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.EnqueueMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 
@@ -381,6 +384,78 @@ public final class CasualHttpMediation {
             sb.append(String.format(Locale.ROOT, "%02x", b));
         }
         return sb.toString();
+    }
+
+    public static ImmutableRequest buildQueueEnqueueProbeRequest(String baseUrl, CasualEnqueueRequestMessage req) {
+        String queueName = req.getQueueName();
+        EnqueueMessage em = req.getMessage();
+        ServiceBuffer payloadBuffer = em != null ? em.getPayload() : null;
+        String bufferType = (payloadBuffer != null && !payloadBuffer.isEmpty()) ? payloadBuffer.getType() : "JSON";
+        String requestPayload = CasualBufferUtils.extractPayload(payloadBuffer);
+        String executionId = (req.getExecution() != null ? req.getExecution() : UUID.randomUUID()).toString();
+
+        String resolvedBase = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : "http://localhost:8080";
+        String absoluteUrl = resolvedBase + "/__casual/queues/" + queueName + "/enqueue";
+
+        ImmutableRequest.Builder builder = ImmutableRequest.create()
+                .withMethod(RequestMethod.fromString("ENQUEUE"))
+                .withAbsoluteUrl(absoluteUrl)
+                .withHeader("Content-Type", "application/json")
+                .withHeader("X-WireMock-Protocol", "casual")
+                .withHeader("X-Casual-Queue", queueName)
+                .withHeader("X-Casual-Operation", "enqueue")
+                .withHeader("X-Casual-Buffer-Type", bufferType)
+                .withHeader("X-Casual-Execution", executionId);
+
+        if (req.getXid() != null && !XID.NULL_XID.equals(req.getXid())) {
+            Xid xid = req.getXid();
+            builder.withHeader("X-Casual-Xid", formatXid(xid));
+        }
+
+        return builder.withBody(requestPayload != null ? requestPayload.getBytes(StandardCharsets.UTF_8) : new byte[0])
+                .build();
+    }
+
+    public static ImmutableRequest buildQueueDequeueProbeRequest(String baseUrl, CasualDequeueRequestMessage req) {
+        String queueName = req.getQueueName();
+        String executionId = (req.getExecution() != null ? req.getExecution() : UUID.randomUUID()).toString();
+
+        String resolvedBase = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : "http://localhost:8080";
+        String absoluteUrl = resolvedBase + "/__casual/queues/" + queueName + "/dequeue";
+
+        ImmutableRequest.Builder builder = ImmutableRequest.create()
+                .withMethod(RequestMethod.fromString("DEQUEUE"))
+                .withAbsoluteUrl(absoluteUrl)
+                .withHeader("Content-Type", "application/json")
+                .withHeader("X-WireMock-Protocol", "casual")
+                .withHeader("X-Casual-Queue", queueName)
+                .withHeader("X-Casual-Operation", "dequeue")
+                .withHeader("X-Casual-Execution", executionId);
+
+        if (req.getXid() != null && !XID.NULL_XID.equals(req.getXid())) {
+            Xid xid = req.getXid();
+            builder.withHeader("X-Casual-Xid", formatXid(xid));
+        }
+
+        return builder.withBody(new byte[0]).build();
+    }
+
+    public static ServeEvent buildQueueServeEvent(
+            Request wiremockRequest, int statusCode, String messageJson, String queueName, String operation) {
+        ResponseDefinition responseDef = ResponseDefinition.ok();
+        Response response = Response.response()
+                .status(statusCode)
+                .headers(new HttpHeaders(
+                        new HttpHeader("Content-Type", "application/json"),
+                        new HttpHeader("X-WireMock-Protocol", "casual"),
+                        new HttpHeader("X-Casual-Queue", queueName),
+                        new HttpHeader("X-Casual-Operation", operation)))
+                .body(messageJson.getBytes(StandardCharsets.UTF_8))
+                .build();
+        ServeEvent serveEvent = ServeEvent.of(wiremockRequest).withResponseDefinition(responseDef);
+        serveEvent.beforeSend();
+        serveEvent.afterSend();
+        return serveEvent.complete(response, DataTruncationSettings.DEFAULTS);
     }
 
     private static Optional<XAReturnCode> extractVoteOverride(HttpHeaders headers, String headerName) {

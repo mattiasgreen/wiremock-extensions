@@ -33,7 +33,12 @@ import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectReplyMe
 import se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryRequestMessage;
+import se.laz.casual.network.protocol.messages.domain.Queue;
 import se.laz.casual.network.protocol.messages.domain.Service;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueRequestMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueRequestMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
@@ -60,6 +65,17 @@ public class CasualServer implements AutoCloseable {
         List<Service> discover(List<String> serviceNames);
     }
 
+    public interface QueueHandler {
+        CasualEnqueueReplyMessage enqueue(CasualEnqueueRequestMessage request, ProtocolVersion version);
+
+        CasualDequeueReplyMessage dequeue(CasualDequeueRequestMessage request, ProtocolVersion version);
+    }
+
+    @FunctionalInterface
+    public interface QueueDiscoveryHandler {
+        List<Queue> discover(List<String> queueNames, ProtocolVersion version);
+    }
+
     public interface TransactionHandler {
         CasualTransactionResourcePrepareReplyMessage prepare(CasualTransactionResourcePrepareRequestMessage request);
 
@@ -74,6 +90,8 @@ public class CasualServer implements AutoCloseable {
     private final ServiceHandler serviceHandler;
     private final DiscoveryHandler discoveryHandler;
     private final TransactionHandler transactionHandler;
+    private final QueueHandler queueHandler;
+    private final QueueDiscoveryHandler queueDiscoveryHandler;
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -86,7 +104,7 @@ public class CasualServer implements AutoCloseable {
             String domainName,
             ServiceHandler serviceHandler,
             DiscoveryHandler discoveryHandler) {
-        this(port, domainId, domainName, serviceHandler, discoveryHandler, null);
+        this(port, domainId, domainName, serviceHandler, discoveryHandler, null, null, null);
     }
 
     public CasualServer(
@@ -96,12 +114,26 @@ public class CasualServer implements AutoCloseable {
             ServiceHandler serviceHandler,
             DiscoveryHandler discoveryHandler,
             TransactionHandler transactionHandler) {
+        this(port, domainId, domainName, serviceHandler, discoveryHandler, transactionHandler, null, null);
+    }
+
+    public CasualServer(
+            int port,
+            UUID domainId,
+            String domainName,
+            ServiceHandler serviceHandler,
+            DiscoveryHandler discoveryHandler,
+            TransactionHandler transactionHandler,
+            QueueHandler queueHandler,
+            QueueDiscoveryHandler queueDiscoveryHandler) {
         this.port = port;
         this.domainId = Objects.requireNonNull(domainId, "domainId must not be null");
         this.domainName = Objects.requireNonNull(domainName, "domainName must not be null");
         this.serviceHandler = Objects.requireNonNull(serviceHandler, "serviceHandler must not be null");
         this.discoveryHandler = discoveryHandler;
         this.transactionHandler = transactionHandler;
+        this.queueHandler = queueHandler;
+        this.queueDiscoveryHandler = queueDiscoveryHandler;
     }
 
     public static Builder builder() {
@@ -115,6 +147,8 @@ public class CasualServer implements AutoCloseable {
         private ServiceHandler serviceHandler;
         private DiscoveryHandler discoveryHandler;
         private TransactionHandler transactionHandler;
+        private QueueHandler queueHandler;
+        private QueueDiscoveryHandler queueDiscoveryHandler;
 
         public Builder port(int port) {
             this.port = port;
@@ -146,8 +180,26 @@ public class CasualServer implements AutoCloseable {
             return this;
         }
 
+        public Builder queueHandler(QueueHandler queueHandler) {
+            this.queueHandler = queueHandler;
+            return this;
+        }
+
+        public Builder queueDiscoveryHandler(QueueDiscoveryHandler queueDiscoveryHandler) {
+            this.queueDiscoveryHandler = queueDiscoveryHandler;
+            return this;
+        }
+
         public CasualServer build() {
-            return new CasualServer(port, domainId, domainName, serviceHandler, discoveryHandler, transactionHandler);
+            return new CasualServer(
+                    port,
+                    domainId,
+                    domainName,
+                    serviceHandler,
+                    discoveryHandler,
+                    transactionHandler,
+                    queueHandler,
+                    queueDiscoveryHandler);
         }
     }
 
@@ -249,6 +301,10 @@ public class CasualServer implements AutoCloseable {
                 handleCommit(ctx, (CasualNWMessage<CasualTransactionResourceCommitRequestMessage>) msg);
             } else if (type == CasualNWMessageType.REQUEST_ROLLBACK) {
                 handleRollback(ctx, (CasualNWMessage<CasualTransactionResourceRollbackRequestMessage>) msg);
+            } else if (type == CasualNWMessageType.ENQUEUE_REQUEST) {
+                handleEnqueue(ctx, (CasualNWMessage<CasualEnqueueRequestMessage>) msg);
+            } else if (type == CasualNWMessageType.DEQUEUE_REQUEST) {
+                handleDequeue(ctx, (CasualNWMessage<CasualDequeueRequestMessage>) msg);
             } else {
                 String safeType = String.valueOf(type).replaceAll("[\r\n]", "");
                 LOG.error(
@@ -317,10 +373,50 @@ public class CasualServer implements AutoCloseable {
                     ? discoveryHandler.discover(req.getServiceNames())
                     : Collections.emptyList();
             reply.setServices(services);
-            reply.setQueues(Collections.emptyList());
+
+            List<Queue> queues = queueDiscoveryHandler != null
+                    ? queueDiscoveryHandler.discover(req.getQueueNames(), version)
+                    : Collections.emptyList();
+            reply.setQueues(queues);
 
             CasualNWMessage<CasualDomainDiscoveryReplyMessage> replyMsg =
                     CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
+            ctx.writeAndFlush(replyMsg);
+        }
+
+        private void handleEnqueue(ChannelHandlerContext ctx, CasualNWMessage<CasualEnqueueRequestMessage> msg) {
+            if (queueHandler == null) {
+                LOG.error(
+                        "[CASUAL-SERVER-QUEUE] Enqueue request received but no QueueHandler registered. Closing connection.");
+                ctx.close();
+                return;
+            }
+            ProtocolVersion version = ProtocolVersion.VERSION_1_0;
+            try {
+                version = protocolHolder.get();
+            } catch (CasualProtocolException e) {
+                LOG.debug("Protocol version not yet available on enqueue: {}", e.getMessage());
+            }
+            CasualEnqueueReplyMessage reply = queueHandler.enqueue(msg.getMessage(), version);
+            CasualNWMessage<CasualEnqueueReplyMessage> replyMsg = CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
+            ctx.writeAndFlush(replyMsg);
+        }
+
+        private void handleDequeue(ChannelHandlerContext ctx, CasualNWMessage<CasualDequeueRequestMessage> msg) {
+            if (queueHandler == null) {
+                LOG.error(
+                        "[CASUAL-SERVER-QUEUE] Dequeue request received but no QueueHandler registered. Closing connection.");
+                ctx.close();
+                return;
+            }
+            ProtocolVersion version = ProtocolVersion.VERSION_1_0;
+            try {
+                version = protocolHolder.get();
+            } catch (CasualProtocolException e) {
+                LOG.debug("Protocol version not yet available on dequeue: {}", e.getMessage());
+            }
+            CasualDequeueReplyMessage reply = queueHandler.dequeue(msg.getMessage(), version);
+            CasualNWMessage<CasualDequeueReplyMessage> replyMsg = CasualNWMessageImpl.of(msg.getCorrelationId(), reply);
             ctx.writeAndFlush(replyMsg);
         }
 

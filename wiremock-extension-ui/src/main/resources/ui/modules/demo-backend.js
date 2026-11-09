@@ -1309,8 +1309,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/cross-extension-alignment',
-        commit: '225f38c'
+        branch: 'feat/async-consumer-mocking-and-mediation',
+        commit: '60b3509'
       });
     }
 
