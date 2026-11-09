@@ -2,7 +2,6 @@ dependencies {
     implementation libs.netty.all
     implementation libs.jackson.databind
     implementation libs.jackson.datatype.jsr310
-
-    testImplementation libs.kafka.clients
-    testImplementation libs.protonj2.client
+    implementation libs.kafka.clients
+    implementation libs.protonj2.client
 }

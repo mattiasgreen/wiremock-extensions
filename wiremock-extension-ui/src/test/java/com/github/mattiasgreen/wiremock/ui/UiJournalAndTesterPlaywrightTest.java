@@ -734,4 +734,85 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-close-payload-lens").click();
         assertThat(modal.isHidden()).isTrue();
     }
+
+    @Test
+    @DisplayName("Should render custom CONSUME, ENQUEUE, DEQUEUE badges and PROXY_ERROR amber verdict pill")
+    void testAsyncAndQueueJournalRendering() throws Exception {
+        // Setup 1: 502 proxy error with x-async-error
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/async-failed"))
+                .willReturn(aResponse()
+                        .withStatus(502)
+                        .withHeader("X-Async-Error", "Destination queue [orders.dlq] missing on remote broker")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":\"ASYNC_PROXY_ERROR\",\"status\":502}")));
+
+        // Setup 2: Casual enqueue route
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/queues/billing.q/enqueue"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("X-WireMock-Protocol", "casual")
+                        .withHeader("X-Casual-Queue", "billing.q")
+                        .withHeader("X-Casual-Operation", "enqueue")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":\"msg-101\",\"status\":\"ENQUEUED\"}")));
+
+        // Setup 3: Casual dequeue route
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/queues/billing.q/dequeue"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("X-WireMock-Protocol", "casual")
+                        .withHeader("X-Casual-Queue", "billing.q")
+                        .withHeader("X-Casual-Operation", "dequeue")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("[{\"id\":\"msg-101\",\"payload\":{\"invoiceId\":\"INV-9\"}}]")));
+
+        // Trigger HTTP calls
+        HttpClient client = HttpClient.newHttpClient();
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/async-failed"))
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"amount\":100}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__casual/queues/billing.q/enqueue"))
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"invoiceId\":\"INV-9\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__casual/queues/billing.q/dequeue"))
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        // Navigate to Request Journal in UI
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+        page.waitForSelector("#journal-table");
+
+        // Verify PROXY_ERROR row
+        page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/async-failed')");
+        Locator errorRow = page.locator("#journal-list tr.journal-row:has-text('/api/v1/async-failed')")
+                .first();
+        assertThat(errorRow.locator(".pill-proxy-error").textContent()).contains("PROXY_ERROR");
+
+        // Verify ENQUEUE badge and DEQUEUE badge
+        Locator enqueueRow = page.locator("#journal-list tr.journal-row:has-text('/__casual/queues/billing.q/enqueue')")
+                .first();
+        assertThat(enqueueRow.locator(".badge-ENQUEUE").textContent()).isEqualTo("ENQUEUE");
+
+        Locator dequeueRow = page.locator("#journal-list tr.journal-row:has-text('/__casual/queues/billing.q/dequeue')")
+                .first();
+        assertThat(dequeueRow.locator(".badge-DEQUEUE").textContent()).isEqualTo("DEQUEUE");
+
+        // Click to expand and inspect response body
+        dequeueRow.click();
+        String reqId = dequeueRow.getAttribute("data-request-id");
+        page.waitForSelector("#jrn-res-body-" + reqId);
+        Locator resBody = page.locator("#jrn-res-body-" + reqId);
+        assertThat(resBody.textContent()).contains("INV-9");
+    }
 }

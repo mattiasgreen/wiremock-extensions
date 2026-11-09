@@ -32,11 +32,15 @@ import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.Flag;
 import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
+import se.laz.casual.api.queue.QueueErrorCode;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
+import se.laz.casual.network.protocol.messages.domain.Queue;
 import se.laz.casual.network.protocol.messages.domain.Service;
+import se.laz.casual.network.protocol.messages.queue.CasualDequeueReplyMessage;
+import se.laz.casual.network.protocol.messages.queue.CasualEnqueueReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallReplyMessage;
 import se.laz.casual.network.protocol.messages.service.CasualServiceCallRequestMessage;
 import se.laz.casual.network.protocol.messages.transaction.CasualTransactionResourceCommitReplyMessage;
@@ -2031,5 +2035,47 @@ class CasualWireMockGatewayTest {
                 upstreamWireMock.stop();
             }
         }
+    }
+
+    @Test
+    @DisplayName("Should enqueue and dequeue messages over TCP gateway and journal ServeEvents")
+    void shouldEnqueueAndDequeueOverTcpGatewayAndJournalServeEvents() throws Exception {
+        String queueName = "gateway.orders.q";
+        gateway.getQueueStore().createQueue(queueName, 3, 500);
+
+        // 1. Client enqueues message over TCP
+        String orderPayload = "{\"orderId\":\"ORD-400\",\"amount\":99.95}";
+        CasualEnqueueReplyMessage enqueueReply = client.enqueue(queueName, orderPayload);
+        assertThat(enqueueReply).isNotNull();
+        assertThat(enqueueReply.getCode()).isEqualTo(QueueErrorCode.OK);
+        assertThat(enqueueReply.getId()).isNotNull();
+
+        // 2. Client dequeues message over TCP
+        CasualDequeueReplyMessage dequeueReply = client.dequeue(queueName);
+        assertThat(dequeueReply).isNotNull();
+        assertThat(dequeueReply.getCode()).isEqualTo(QueueErrorCode.OK);
+        assertThat(dequeueReply.getMessages()).hasSize(1);
+        String dequeuedPayload = CasualBufferUtils.extractPayload(
+                dequeueReply.getMessages().get(0).getPayload());
+        assertThat(dequeuedPayload).isEqualTo(orderPayload);
+
+        // 3. Verify discovery advertises the queue
+        CasualDomainDiscoveryReplyMessage discoveryReply = client.discoverQueues(List.of());
+        assertThat(discoveryReply.getQueues()).hasSize(2); // queue + .error DLQ
+        assertThat(discoveryReply.getQueues()).extracting(Queue::getName).contains(queueName, queueName + ".error");
+
+        // 4. Verify ServeEvents were recorded in WireMock request journal
+        List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> events = wireMockServer.getAllServeEvents();
+        assertThat(events).hasSize(2);
+
+        com.github.tomakehurst.wiremock.stubbing.ServeEvent enqueueEvent = events.get(1); // older event
+        assertThat(enqueueEvent.getRequest().getUrl()).isEqualTo("/__casual/queues/" + queueName + "/enqueue");
+        assertThat(enqueueEvent.getRequest().getHeader("X-Casual-Queue")).isEqualTo(queueName);
+        assertThat(enqueueEvent.getRequest().getHeader("X-Casual-Operation")).isEqualTo("enqueue");
+
+        com.github.tomakehurst.wiremock.stubbing.ServeEvent dequeueEvent = events.get(0); // newest event
+        assertThat(dequeueEvent.getRequest().getUrl()).isEqualTo("/__casual/queues/" + queueName + "/dequeue");
+        assertThat(dequeueEvent.getRequest().getHeader("X-Casual-Queue")).isEqualTo(queueName);
+        assertThat(dequeueEvent.getRequest().getHeader("X-Casual-Operation")).isEqualTo("dequeue");
     }
 }

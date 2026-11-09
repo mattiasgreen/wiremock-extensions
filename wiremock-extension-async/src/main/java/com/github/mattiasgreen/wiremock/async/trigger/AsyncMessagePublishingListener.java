@@ -61,6 +61,21 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
         }
 
         AsyncMetadata metadata = maybeMetadata.get();
+        if (metadata.feed() != null
+                && "call-triggered".equalsIgnoreCase(metadata.feed().trigger())) {
+            for (com.github.mattiasgreen.wiremock.async.model.AsyncFeedRecord rec :
+                    metadata.feed().records()) {
+                AsyncMessage message = AsyncMessage.builder()
+                        .destination(metadata.feed().destination())
+                        .protocol(metadata.feed().protocol())
+                        .key(rec.key())
+                        .payload(rec.payload())
+                        .headers(rec.headers())
+                        .build();
+                messagePublisher.accept(metadata.feed().destination(), message);
+            }
+        }
+
         if (metadata.produce().isEmpty()) {
             return;
         }

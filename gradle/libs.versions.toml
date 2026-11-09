@@ -20,6 +20,7 @@ netty = "4.1.121.Final"
 kafka = "3.9.0"
 protonj2 = "1.4.0"
 zstd = "1.5.6-9"
+artemis = "2.39.0"
 
 [libraries]
 zstd-jni = { module = "com.github.luben:zstd-jni", version.ref = "zstd" }
@@ -55,6 +56,8 @@ prometheus-metrics-exposition-formats = { module = "io.prometheus:prometheus-met
 swagger-parser = { module = "io.swagger.parser.v3:swagger-parser", version.ref = "swagger-parser" }
 kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
 protonj2-client = { module = "org.apache.qpid:protonj2-client", version.ref = "protonj2" }
+artemis-server = { module = "org.apache.activemq:artemis-server", version.ref = "artemis" }
+artemis-amqp-protocol = { module = "org.apache.activemq:artemis-amqp-protocol", version.ref = "artemis" }
 findsecbugs-plugin = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version.ref = "findsecbugs" }
 
 [plugins]
