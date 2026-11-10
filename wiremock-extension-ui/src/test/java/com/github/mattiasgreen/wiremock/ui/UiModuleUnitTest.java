@@ -1785,7 +1785,8 @@ public class UiModuleUnitTest {
                     hasAsyncAmqpStub: demoBackend.stubs.some(s => s.id === 'demo-stub-async-amqp-payments'),
                     hasAsyncJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__async/kafka/orders.events')),
                     hasCasualQueueJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/queues/billing.q/enqueue')),
-                    asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP'
+                    asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP',
+                    asyncHarvestedOk: (await (await demoBackend.handleRequest('/__admin/async/harvested', { method: 'GET' })).json()).count === 0
                 };
             }
         """;
@@ -1805,6 +1806,7 @@ public class UiModuleUnitTest {
         assertThat(result.get("hasAsyncJournalEntry")).isEqualTo(true);
         assertThat(result.get("hasCasualQueueJournalEntry")).isEqualTo(true);
         assertThat(result.get("asyncStatusUp")).isEqualTo(true);
+        assertThat(result.get("asyncHarvestedOk")).isEqualTo(true);
         assertThat(((Number) result.get("completeOrderStatus")).intValue()).isEqualTo(200);
         assertThat(result.get("completeOrderDelivered")).isEqualTo(true);
         assertThat(result.get("scenarioAfterComplete")).isEqualTo("COMPLETED");

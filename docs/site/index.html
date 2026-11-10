@@ -165,6 +165,16 @@
             <li>Human-readable Fielded (FML) &amp; CSTRING JSON translation</li>
           </ul>
         </div>
+
+        <div class="card">
+          <h3>📨 In-Process Async &amp; Queue Mocking</h3>
+          <p>In-process Netty Kafka wire sink (port 9092) and AMQP 1.0 broker engine. Record, snapshot, and mock event-driven messaging directly inside WireMock's unified journal.</p>
+          <ul style="margin-top: 0.75rem;">
+            <li>In-process binary Kafka TCP RPC sink (zero Docker/Zookeeper)</li>
+            <li>HTTP-to-Queue triggers via <code>ServeEventListener</code></li>
+            <li>Synthetic <code>CONSUME</code> journal &amp; polyglot XML/JSON payloads</li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
@@ -238,7 +248,8 @@ http://localhost:8080/__admin/ui/
 http://localhost:8080/__admin/openapi/import
 http://localhost:8080/__admin/metrics/prometheus
 http://localhost:8080/__admin/netem/proxies
-http://localhost:8080/__admin/casual/config</code></pre>
+http://localhost:8080/__admin/casual/config
+http://localhost:8080/__admin/async/status</code></pre>
         </div>
       </div>
     </div>
@@ -305,6 +316,14 @@ http://localhost:8080/__admin/casual/config</code></pre>
               <td class="cross">Delay Only</td>
               <td class="cross">No</td>
               <td class="check">Yes (Toxiproxy / Java 21)</td>
+            </tr>
+            <tr>
+              <td><strong>In-Process Event &amp; Queue Mocking</strong></td>
+              <td class="cross">No (HTTP Only)</td>
+              <td class="cross">No</td>
+              <td class="cross">No</td>
+              <td class="partial">Partial (AsyncAPI / K8s)</td>
+              <td class="check">Yes (Kafka Netty + AMQP 1.0)</td>
             </tr>
             <tr>
               <td><strong>JVM / JUnit Embedding</strong></td>

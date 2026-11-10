@@ -1588,10 +1588,9 @@ class InMemoryDemoBackend {
       }
     }
 
-    if (pathname === '/__admin/async/stubs') {
+    if (pathname === '/__admin/async/harvested' || pathname === '/__admin/async/stubs') {
       if (method === 'GET') {
-        const asyncStubs = this.stubs.filter(s => s.metadata && (s.metadata.async || s.metadata.protocol === 'kafka' || s.metadata.protocol === 'amqp' || s.metadata.queue));
-        return responseJson(200, { stubs: asyncStubs });
+        return responseJson(200, { count: 0, harvested: [] });
       }
     }
 
@@ -1757,8 +1756,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/async-docs-expansion',
-        commit: '4a9a137'
+        branch: 'feat/async-harvested-endpoint-and-gh-pages',
+        commit: '4e326b5'
       });
     }
 
