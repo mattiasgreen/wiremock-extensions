@@ -254,7 +254,7 @@ function buildRowHtml(req) {
     <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${protocol.toLowerCase()}" data-testid="journal-row">
       <td><span class="journal-chevron">▶</span></td>
       <td>${time}</td>
-      <td><span class="protocol-badge protocol-${protocol.toLowerCase()} badge-${protocol}" title="${protocolTooltip}">${protocol}</span></td>
+      <td><span class="protocol-badge http-badge protocol-${protocol.toLowerCase()} badge-${protocol}" title="${protocolTooltip}">${protocol}</span></td>
       <td><span class="http-badge badge-${operation}" title="${operationTooltip}">${operation}</span></td>
       <td title="${escapeHtml(url)}">
         <span class="journal-target-clean">${escapeHtml(cleanTarget)}</span>

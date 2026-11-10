@@ -157,7 +157,7 @@ class BankingDemoVideoRecordingTest {
         assertThat(casualJournalRow.getAttribute("data-protocol")).isEqualTo("casual");
         assertThat(casualJournalRow.locator(".http-badge.badge-CASUAL").textContent())
                 .isEqualTo("CASUAL");
-        assertThat(casualJournalRow.locator("td").nth(4).textContent()).isEqualTo("OK");
+        assertThat(casualJournalRow.locator("td").nth(5).textContent()).isEqualTo("OK");
         cursor.glideAndClick(casualJournalRow);
         page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 

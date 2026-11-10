@@ -20,63 +20,30 @@
 ## 2. Subsystem Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Clients["Systems Under Test (SUT)"]
-        KClient["Kafka Producer / Consumer (Port 9092)"]
-        AClient["AMQP 1.0 Client (Port 5672)"]
-        CClient["Casual XATMI Client (Port 7712)"]
-        HClient["HTTP REST Client (Port 8080)"]
+flowchart LR
+    subgraph SUT["Systems Under Test"]
+        Client["Event Producers & Consumers<br/>(Kafka · AMQP · HTTP · Casual)"]
     end
 
-    subgraph Ingress["WireMock Network Ingress Layer"]
-        KSink["Kafka Wire Codec (Netty In-Process Sink)"]
-        AServer["AMQP 1.0 Server (Proton-J2 Netty)"]
-        CGateway["Casual Protocol Gateway (Netty XATMI)"]
-        HFilter["WireMock HTTP Filter & Dispatcher"]
+    subgraph WM["WireMock Standalone"]
+        direction TB
+        Ingress["Protocol Ingress<br/>(Netty Wire Sinks)"]
+        Engine["AsyncEngine<br/>(Priority Router & Bridge)"]
+        Store[("Stub Catalog<br/>mappings/")]
+        Journal["Request Journal<br/>(ServeEvents)"]
+
+        Ingress --> Engine
+        Engine <--> Store
+        Engine --> Journal
     end
 
-    subgraph Core["WireMock Async Engine & Core"]
-        AEngine["AsyncEngine (Priority Router & Bridge)"]
-        MStore["Stub Mapping Store (mappings/)"]
-        Journal["Zstd Request Journal (ServeEvent Pipeline)"]
-        Trigger["AsyncMessagePublishingListener (ServeEventListener)"]
+    subgraph Upstream["Live Upstream (Optional)"]
+        Broker["Enterprise Brokers<br/>(Kafka · Artemis · RabbitMQ · IBM MQ)"]
     end
 
-    subgraph Observability["Observability & Management"]
-        WebUI["Vanilla ES6 Console (/__admin/ui/#journal)"]
-        OTel["OpenTelemetry Metrics & W3C Trace Spans"]
-        Prom["Prometheus Scrape Endpoint (/__admin/metrics/prometheus)"]
-    end
-
-    subgraph Egress["Upstream Enterprise Brokers"]
-        ExtArtemis["ActiveMQ Artemis Broker"]
-        ExtRabbit["RabbitMQ / AMQP Broker"]
-        ExtKafka["Real Apache Kafka Cluster"]
-        ExtIBMMQ["IBM MQ 9.3+ LTS Broker"]
-    end
-
-    KClient -->|TCP Wire Protocol| KSink
-    AClient -->|AMQP 1.0 Frames| AServer
-    CClient -->|XATMI ENQUEUE/DEQUEUE| CGateway
-    HClient -->|REST HTTP POST 202/204| HFilter
-
-    KSink --> AEngine
-    AServer --> AEngine
-    CGateway --> AEngine
-    HFilter --> Trigger
-
-    AEngine <--> MStore
-    AEngine -->|Synthetic CONSUME| Journal
-    Trigger -->|metadata.async.produce| AEngine
-
-    Journal --> WebUI
-    AEngine --> OTel
-    OTel --> Prom
-
-    AEngine -.->|Priority Fallback $1 Rewrite| ExtArtemis
-    AEngine -.->|AMQP Bridge| ExtRabbit
-    AEngine -.->|Forward Producer| ExtKafka
-    AEngine -.->|AMQP Channel| ExtIBMMQ
+    Client -->|Native Wire Protocol| Ingress
+    Engine -->|Mock Reply| Client
+    Engine -.->|Proxy / Bridge Forward| Broker
 ```
 
 ---
@@ -89,13 +56,15 @@ When running unit tests or standalone WireMock in Docker containers, WireMock op
 
 ```mermaid
 flowchart LR
-    SUT["System Under Test (SUT)"] -->|Kafka / AMQP| WM["WireMock Standalone"]
-    subgraph WM["WireMock Container"]
-        Sink["In-Process Netty Sink"]
-        Engine["AsyncEngine Mock Router"]
-        Store["In-Memory Stub Store"]
+    SUT["System Under Test"] -->|Kafka / AMQP| Sink["In-Process Netty Sink"]
+
+    subgraph WM["WireMock Standalone (Zero-Ops)"]
+        Sink --> Engine["AsyncEngine"]
+        Engine <--> Store[("Stub Mappings")]
+        Engine --> Journal["Request Journal"]
     end
-    Engine --> Store
+
+    Engine -->|Mock Reply / Ack| SUT
 ```
 
 ### 3.2. Topology 2: Dual-Broker Priority Bridge with Regex Rewriting
@@ -104,16 +73,12 @@ Solves the competing-consumer problem across Kafka, ActiveMQ, RabbitMQ, and IBM 
 
 ```mermaid
 flowchart LR
-    SUT["SUT (Client)"] -->|orders.standard.456| LocalB["Local / Test Broker"]
-    LocalB -->|Ingress| WM["WireMock AsyncEngine"]
+    SUT["System Under Test"] -->|orders.standard.456| TestBroker["Test Broker"]
+    TestBroker --> WM["WireMock AsyncEngine"]
 
-    subgraph Decision["Priority Evaluation Engine"]
-        WM -->|Priority 1: Mock Match?| MockReply["Mock Stub Reply -> SUT"]
-        WM -->|Priority 100: Fallback Bridge| Rewrite["Rewrite: upstream.orders.$1"]
-    end
-
-    Rewrite -->|Forwarded Message| RemoteB["Upstream Live Broker"]
-    RemoteB --> Downstream["Downstream Backend System"]
+    WM -->|Priority 1: Mock Match| SUT
+    WM -->|Priority 100: Rewrite ($1)| LiveBroker["Live Upstream Broker<br/>(upstream.orders.456)"]
+    LiveBroker --> Backend["Downstream Services"]
 ```
 
 ---
@@ -124,93 +89,83 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant SUT as System Under Test
-    participant Server as WireMock AMQP / Kafka Server
-    participant Engine as AsyncEngine
-    participant Journal as ServeEvent Request Journal
-    participant UI as Web Console UI
+    autonumber
+    actor SUT as System Under Test
+    participant WM as WireMock (Async Engine)
+    participant Journal as Request Journal
 
-    SUT->>Server: Send Message (Destination: orders.inbound, CorrelId: CORR-101)
-    Server->>Engine: Ingest Message
-    Engine->>Engine: Match Stub Pattern (method: CONSUME, urlPath: /__async/amqp/orders.inbound)
-    Engine->>Journal: Record Synthetic ServeEvent (Status: 200, Method: CONSUME)
-    Journal->>UI: Stream Event with AMQP badge and Canonical Payload Lens
-    Engine->>SUT: Publish Reply (Destination: orders.replies, CorrelId: CORR-101, Status: APPROVED)
+    SUT->>WM: Publish message (orders.inbound, correlationId: CORR-101)
+    WM->>WM: Match stub (CONSUME /__async/amqp/orders.inbound)
+    WM->>Journal: Record ServeEvent (Status: 200)
+    WM-->>SUT: Correlated reply (orders.replies, status: APPROVED)
 ```
 
 ### 4.2. Priority Bridge with Upstream Forwarding & Regex Rewriting
 
 ```mermaid
 sequenceDiagram
-    participant SUT as Client System
-    participant LocalBroker as Local Test Broker
-    participant Engine as WireMock AsyncEngine
-    participant RemoteBroker as Live Upstream Broker (Artemis / Kafka)
+    autonumber
+    actor SUT as Client System
+    participant WM as WireMock AsyncEngine
+    participant Upstream as Upstream Broker (Artemis / Kafka)
     participant Journal as Request Journal
 
-    SUT->>LocalBroker: Send orders.standard.889
-    LocalBroker->>Engine: Inbound Message Event
-    Engine->>Engine: Check High-Priority Mocks (No match)
-    Engine->>Engine: Match Bridge Rule "orders.standard.(.*)" -> Priority 100
-    Engine->>Engine: Rewrite Destination to "upstream.orders.889" ($1)
-    Engine->>RemoteBroker: Proxy Forward Message
-    Engine->>Journal: Record PROXY_FORWARD:upstream.orders.889
-    RemoteBroker-->>Engine: Settlement / Ack
+    SUT->>WM: Send message (orders.standard.889)
+    Note over WM: No mock matched -> Apply bridge rule<br/>Rewrite: orders.standard.(.*) -> upstream.orders.$1
+    WM->>Upstream: Forward to upstream.orders.889
+    Upstream-->>WM: Acknowledge
+    WM->>Journal: Record PROXY_FORWARD event
 ```
 
 ### 4.3. Upstream Failure, 502 Bad Gateway & DLQ Diversion
 
 ```mermaid
 sequenceDiagram
-    participant SUT as Client System
-    participant Engine as WireMock AsyncEngine
-    participant RemoteBroker as Remote Upstream Broker
-    participant DLQ as Dead Letter Queue (.error / .dlq)
-    participant UI as Web Console Journal
+    autonumber
+    actor SUT as Client System
+    participant WM as WireMock AsyncEngine
+    participant Upstream as Upstream Broker
+    participant DLQ as Dead Letter Queue
+    participant Journal as Request Journal
 
-    SUT->>Engine: Send Message to Target Channel
-    Engine->>RemoteBroker: Forward Message
-    RemoteBroker-->>Engine: Connection Refused / Queue Missing
-    Note over Engine: 4-Pillar 502 Bad Gateway Evaluation
-    Engine->>DLQ: Divert to orders.inbound.dlq
-    Engine->>UI: Record ASYNC_PROXY_ERROR:502 (Header: X-Async-Error)
-    Note over UI: Row displays Amber Verdict Pill: ⚠️ PROXY_ERROR
+    SUT->>WM: Send message to target channel
+    WM->>Upstream: Forward message
+    Upstream--xWM: Connection refused / queue missing
+    WM->>DLQ: Divert to dead letter queue (.dlq)
+    WM->>Journal: Record ASYNC_PROXY_ERROR (502 Bad Gateway)
 ```
 
 ### 4.4. Synchronous HTTP REST Call Triggering Asynchronous Kafka Event
 
 ```mermaid
 sequenceDiagram
-    participant Client as REST Client
-    participant HTTP as WireMock HTTP Engine
-    participant Listener as AsyncMessagePublishingListener
+    autonumber
+    actor Client as REST Client
+    participant WM as WireMock HTTP Engine
     participant Broker as Kafka / AMQP Broker
 
-    Client->>HTTP: POST /api/v1/orders (Body: {"customerId":"CUST-10"})
-    HTTP-->>Client: 202 Accepted (Body: {"orderId":"ORD-999","status":"ACCEPTED"})
-    HTTP->>Listener: afterComplete(ServeEvent)
-    Note over Listener: Virtual Thread Unmount / Delay 50ms
-    Listener->>Broker: Publish to orders.events (Payload: {"orderId":"ORD-999", ...})
+    Client->>WM: POST /api/v1/orders
+    WM-->>Client: 202 Accepted {"orderId": "ORD-999"}
+    Note over WM: Async listener triggers background publish
+    WM->>Broker: Publish to orders.events {"orderId": "ORD-999", "status": "ACCEPTED"}
 ```
 
 ### 4.5. 1-Click Snapshot Stubbing from Web Console Request Journal
 
 ```mermaid
 sequenceDiagram
-    participant Dev as Developer
-    participant UI as Web Console (/__admin/ui/#journal)
-    participant API as Stub Lifecycle Admin API
-    participant Store as WireMock Stub Store
+    autonumber
+    actor Dev as Developer
+    participant UI as Web Console
+    participant Admin as Stub Lifecycle Admin API
+    participant Store as Stub Store
 
-    Dev->>UI: Inspect Async Row (Badge: KAFKA, Channel: orders.events)
-    UI->>UI: Expand Row -> View Decoded Payload Lens
-    Dev->>UI: Click "📸 Snapshot Stub" (.btn-snapshot-req)
-    UI->>API: POST /__admin/stubs/snapshot-template {requestId}
-    API-->>UI: Return Populated StubMapping JSON Definition
-    UI->>UI: Open #stub-editor-modal with URL /__async/kafka/orders.events
-    Dev->>UI: Click "💾 Save Mapping" (#btn-save-editor)
-    UI->>Store: POST /__admin/mappings (Persist Disabled or Active Stub)
-    UI->>Dev: Notification: Stub Saved to Catalog
+    Dev->>UI: Inspect async event in Journal
+    Dev->>UI: Click "Snapshot Stub"
+    UI->>Admin: Generate stub template from requestId
+    Admin-->>UI: Pre-populated stub mapping
+    Dev->>UI: Save mapping
+    UI->>Store: Persist stub to catalog
 ```
 
 ---
