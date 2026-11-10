@@ -871,4 +871,78 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                                 .equals(s.getRequest().getUrl())))
                 .isTrue();
     }
+
+    @Test
+    @DisplayName("Scenario 20: Unified Multi-Protocol Tester protocol picker, quick templates, and address bars")
+    void testUnifiedMultiProtocolTesterWorkbench() {
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
+        page.waitForSelector("#tab-tester.active");
+
+        // Verify top nav title
+        assertThat(page.locator("#nav-tab-tester").textContent()).contains("Tester");
+
+        // Verify HTTP default
+        page.waitForSelector("#btn-tester-proto-http");
+        assertThat(page.locator("#btn-tester-proto-http").getAttribute("class")).contains("active");
+        page.waitForSelector("#tester-bar-http");
+        assertThat(page.locator("#tester-bar-http").isVisible()).isTrue();
+        assertThat(page.locator("#tester-bar-kafka").isVisible()).isFalse();
+        assertThat(page.locator("#tester-bar-amqp").isVisible()).isFalse();
+        assertThat(page.locator("#tester-bar-casual").isVisible()).isFalse();
+
+        // Switch to Kafka
+        page.locator("#btn-tester-proto-kafka").click();
+        assertThat(page.locator("#btn-tester-proto-kafka").getAttribute("class"))
+                .contains("active");
+        assertThat(page.locator("#tester-bar-kafka").isVisible()).isTrue();
+        assertThat(page.locator("#tester-bar-http").isVisible()).isFalse();
+        assertThat(page.locator("#tester-section-headers-kafka").isVisible()).isTrue();
+        assertThat(page.locator("#tester-body-label").textContent()).isEqualTo("Event Payload");
+
+        // Switch to AMQP
+        page.locator("#btn-tester-proto-amqp").click();
+        assertThat(page.locator("#btn-tester-proto-amqp").getAttribute("class")).contains("active");
+        assertThat(page.locator("#tester-bar-amqp").isVisible()).isTrue();
+        assertThat(page.locator("#tester-bar-kafka").isVisible()).isFalse();
+        assertThat(page.locator("#tester-section-headers-amqp").isVisible()).isTrue();
+        assertThat(page.locator("#tester-body-label").textContent()).isEqualTo("Message Payload");
+
+        // Switch to Casual
+        page.locator("#btn-tester-proto-casual").click();
+        assertThat(page.locator("#btn-tester-proto-casual").getAttribute("class"))
+                .contains("active");
+        assertThat(page.locator("#tester-bar-casual").isVisible()).isTrue();
+        assertThat(page.locator("#tester-section-headers-casual").isVisible()).isTrue();
+        assertThat(page.locator("#tester-body-label").textContent()).isEqualTo("Buffer Payload");
+
+        // Test Quick Templates: Kafka
+        page.locator("#tester-quick-templates").selectOption("kafka-order-event");
+        assertThat(page.locator("#btn-tester-proto-kafka").getAttribute("class"))
+                .contains("active");
+        assertThat(page.locator("#tester-kafka-topic").inputValue()).isEqualTo("orders.events");
+        assertThat(page.locator("#tester-kafka-key").inputValue()).isEqualTo("ORD-1001");
+        assertThat(page.locator("#tester-body").inputValue()).contains("ORDER_CREATED");
+
+        // Test Quick Templates: AMQP
+        page.locator("#tester-quick-templates").selectOption("amqp-orders-inbound");
+        assertThat(page.locator("#btn-tester-proto-amqp").getAttribute("class")).contains("active");
+        assertThat(page.locator("#tester-amqp-dest").inputValue()).isEqualTo("orders.inbound");
+        assertThat(page.locator("#tester-amqp-correlation").inputValue()).isEqualTo("corr-amqp-01");
+        assertThat(page.locator("#tester-body").inputValue()).contains("alice@example.com");
+
+        // Test Quick Templates: Casual
+        page.locator("#tester-quick-templates").selectOption("casual-echo");
+        assertThat(page.locator("#btn-tester-proto-casual").getAttribute("class"))
+                .contains("active");
+        assertThat(page.locator("#tester-casual-service").inputValue()).isEqualTo("echoService");
+        assertThat(page.locator("#tester-casual-buffer").inputValue()).isEqualTo("JSON");
+
+        // Test History filter pills
+        page.locator("#btn-tester-hist-kafka").click();
+        assertThat(page.locator("#btn-tester-hist-kafka").getAttribute("class")).contains("active");
+        page.locator("#btn-tester-hist-all").click();
+        assertThat(page.locator("#btn-tester-hist-all").getAttribute("class")).contains("active");
+
+        assertThat(pageErrors).isEmpty();
+    }
 }

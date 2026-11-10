@@ -54,6 +54,8 @@ import {
   setTesterHistoryCollapsed,
   toggleTesterHistory,
   renderLocalHeaderChips,
+  switchTesterProtocol,
+  applyQuickTemplate,
   initTesterTab
 } from './modules/tester.js';
 import {
@@ -266,6 +268,10 @@ registerRouteHandlers({
     }
   },
   applyTester: (params) => {
+    const proto = params.get('proto');
+    if (proto) {
+      switchTesterProtocol(proto, false);
+    }
     const m = params.get('m');
     if (m && elements.testerMethod) elements.testerMethod.value = m;
     const p = params.get('p');
@@ -276,6 +282,7 @@ registerRouteHandlers({
     if (b && elements.testerBody) elements.testerBody.value = fromBase64(b);
   },
   applyCasual: (params) => {
+    switchTesterProtocol('casual', false);
     const s = params.get('s');
     if (s && elements.casualServiceName) elements.casualServiceName.value = s;
     const b = params.get('b');

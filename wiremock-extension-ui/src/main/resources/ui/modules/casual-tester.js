@@ -19,6 +19,7 @@ import {
 } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
+import { saveTesterHistoryItem } from './tester.js';
 
 const CASUAL_HISTORY_KEY = 'wiremock_ui_casual_history';
 const CASUAL_COLLAPSED_KEY = 'wiremock_ui_casual_history_collapsed';
@@ -874,6 +875,23 @@ export function executeCasualRequest() {
         sizeBytes: data.sizeBytes,
         payloadHex: data.payloadHex || ''
       });
+
+      saveTesterHistoryItem({
+        timestamp: Date.now(),
+        protocol: 'casual',
+        method: 'CALL',
+        url: service,
+        serviceName: service,
+        bufferType: bufferType,
+        headersText: customHeaders ? Object.entries(customHeaders).map(([k,v]) => `${k}: ${v}`).join('\n') : '',
+        bodyText: payload,
+        status: (data.errorState === 'OK' || !data.errorState) ? 'OK' : data.errorState,
+        statusText: data.errorState || 'OK',
+        duration: data.durationMs || elapsed,
+        size: data.sizeBytes !== undefined ? data.sizeBytes : (data.payload ? new Blob([data.payload]).size : 0),
+        responseHeaders: data.headers ? Object.entries(data.headers).map(([k,v]) => `${k}: ${v}`) : [],
+        responseBody: data.payload || ''
+      });
       updateCasualRoute(true);
     })
     .catch(err => {
@@ -896,6 +914,23 @@ export function executeCasualRequest() {
         durationMs: elapsed,
         execution: '',
         responsePayload: err.message
+      });
+
+      saveTesterHistoryItem({
+        timestamp: Date.now(),
+        protocol: 'casual',
+        method: 'CALL',
+        url: service,
+        serviceName: service,
+        bufferType: bufferType,
+        headersText: customHeaders ? Object.entries(customHeaders).map(([k,v]) => `${k}: ${v}`).join('\n') : '',
+        bodyText: payload,
+        status: 'ERR',
+        statusText: err.message,
+        duration: elapsed,
+        size: 0,
+        responseHeaders: [],
+        responseBody: err.message
       });
     })
     .finally(() => {

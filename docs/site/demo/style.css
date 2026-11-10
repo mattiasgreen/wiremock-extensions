@@ -912,9 +912,19 @@ body {
 
 .tester-main-panel {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   height: 100%;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.tester-split-workbench {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   gap: 16px;
   overflow: hidden;
 }
@@ -931,6 +941,117 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px;
+}
+
+.tester-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.tester-proto-picker {
+  display: inline-flex;
+  gap: 4px;
+  background-color: var(--bg-tertiary);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.tester-proto-picker .filter-pill {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tester-proto-picker .filter-pill:hover {
+  color: var(--text-main);
+  background-color: var(--bg-surface);
+}
+
+.tester-proto-picker .filter-pill.active {
+  background-color: var(--accent-color);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.tester-templates-wrapper {
+  margin-left: auto;
+}
+
+.tester-quick-templates {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.tester-quick-templates:focus {
+  border-color: var(--accent-color);
+}
+
+.tester-history-filters {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  flex-wrap: wrap;
+}
+
+.tester-history-filters .filter-pill {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.tester-settlement-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-tertiary);
+  border-left: 4px solid var(--accent-color);
+  border-radius: 4px;
+  font-size: 0.84rem;
+  margin-bottom: 8px;
+}
+
+.tester-settlement-banner.status-settled {
+  border-left-color: #10b981;
+}
+
+.tester-settlement-banner.status-error {
+  border-left-color: #ef4444;
+}
+
+.tester-settlement-banner.hidden {
+  display: none !important;
+}
+
+.tester-proto-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.tester-proto-bar.hidden {
+  display: none !important;
 }
 
 .tester-url-bar {
