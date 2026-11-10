@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/async-harvested-endpoint-and-gh-pages | Commit: 4e326b5">v1.14.0 (feat/async-harvested-endpoint-and-gh-pages@4e326b5)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/journal-protocol-column-and-semantics | Commit: d719a40">v1.14.0 (feat/journal-protocol-column-and-semantics@d719a40)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -282,6 +282,13 @@
                 <button type="button" class="filter-pill journal-verdict-pill" data-verdict="stateful" id="btn-journal-verdict-stateful" data-testid="btn-journal-verdict-stateful" title="Served locally by in-memory Stateful AST engine">🧠 Stateful</button>
                 <button type="button" class="filter-pill journal-verdict-pill" data-verdict="unmatched" id="btn-journal-verdict-unmatched" data-testid="btn-journal-verdict-unmatched" title="No matching stub, stateful rule, or proxy route (404)">⚠️ Unmatched</button>
               </div>
+              <div class="status-filter-pills journal-protocol-pills" data-testid="journal-protocol-pills">
+                <button type="button" class="filter-pill journal-protocol-pill active" data-protocol="all" id="btn-journal-proto-all" data-testid="btn-journal-proto-all">All Protocols</button>
+                <button type="button" class="filter-pill journal-protocol-pill" data-protocol="http" id="btn-journal-proto-http" data-testid="btn-journal-proto-http">HTTP</button>
+                <button type="button" class="filter-pill journal-protocol-pill" data-protocol="kafka" id="btn-journal-proto-kafka" data-testid="btn-journal-proto-kafka">Kafka</button>
+                <button type="button" class="filter-pill journal-protocol-pill" data-protocol="amqp" id="btn-journal-proto-amqp" data-testid="btn-journal-proto-amqp">AMQP</button>
+                <button type="button" class="filter-pill journal-protocol-pill" data-protocol="casual" id="btn-journal-proto-casual" data-testid="btn-journal-proto-casual">Casual</button>
+              </div>
               <label class="checkbox-label"><input type="checkbox" id="filter-unmatched-only" data-testid="filter-unmatched-only"> Show unmatched (404) only</label>
               <label class="checkbox-label"><input type="checkbox" id="journal-auto-refresh" data-testid="journal-auto-refresh"> Live auto-refresh (3s)</label>
               <label class="select-label" title="Filter requests by datetime range">
@@ -319,15 +326,16 @@
               <tr>
                 <th style="width: 24px;"></th>
                 <th>Time</th>
-                <th>Method</th>
-                <th>URL</th>
+                <th style="width: 80px;">Protocol</th>
+                <th>Operation</th>
+                <th>Target / URL</th>
                 <th>Status</th>
                 <th>Resolution</th>
                 <th>Duration</th>
               </tr>
             </thead>
             <tbody id="journal-list" data-testid="journal-list" data-state="ready">
-              <tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>
+              <tr><td colspan="8" class="text-center">No requests recorded yet.</td></tr>
             </tbody>
           </table>
         </div>

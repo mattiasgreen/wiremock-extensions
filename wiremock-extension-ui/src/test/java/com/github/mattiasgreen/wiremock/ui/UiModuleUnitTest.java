@@ -2466,4 +2466,90 @@ public class UiModuleUnitTest {
         assertThat(result.get("isRichActiveAgain")).isEqualTo(true);
         assertThat(result.get("isAutoDegradedToRaw")).isEqualTo(true);
     }
+
+    @Test
+    @DisplayName("journal: Protocol column, SUT operation verbs, clean targets, and protocol filtering")
+    void testJournalProtocolColumnAndOperationSemantics() {
+        String script =
+                """
+            async () => {
+                const { state } = await import('./modules/state.js');
+                const { detectRequestProtocol, renderJournal } = await import('./modules/journal.js');
+                const { demoBackend } = await import('./modules/demo-backend.js');
+
+                demoBackend.reset();
+                state.currentRequests = demoBackend.requests;
+                state.journalVerdictFilter = 'all';
+                state.journalProtocolFilter = 'all';
+
+                // 1. Verify detectRequestProtocol
+                const httpReq = state.currentRequests.find(r => r.request.url.startsWith('/api/'));
+                const casualReq = state.currentRequests.find(r => r.request.url.startsWith('/__casual/'));
+                const kafkaReq = state.currentRequests.find(r => r.request.url.startsWith('/__async/kafka/'));
+                const amqpReq = state.currentRequests.find(r => r.request.url.startsWith('/__async/amqp/'));
+
+                const httpProto = detectRequestProtocol(httpReq);
+                const casualProto = detectRequestProtocol(casualReq);
+                const kafkaProto = detectRequestProtocol(kafkaReq);
+                const amqpProto = detectRequestProtocol(amqpReq);
+
+                // 2. Render all in Journal
+                renderJournal();
+                const totalRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+                const kafkaBadges = document.querySelectorAll('#journal-list .protocol-kafka').length;
+                const amqpBadges = document.querySelectorAll('#journal-list .protocol-amqp').length;
+                const casualBadges = document.querySelectorAll('#journal-list .protocol-casual').length;
+                const httpBadges = document.querySelectorAll('#journal-list .protocol-http').length;
+                const produceBadges = document.querySelectorAll('#journal-list .badge-PRODUCE').length;
+
+                // 3. Test protocol filtering - Kafka only
+                state.journalProtocolFilter = 'kafka';
+                renderJournal();
+                const kafkaFilteredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+
+                // 4. Test protocol filtering - Casual only
+                state.journalProtocolFilter = 'casual';
+                renderJournal();
+                const casualFilteredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+
+                // 5. Reset filter
+                state.journalProtocolFilter = 'all';
+                renderJournal();
+                const restoredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+
+                return {
+                    httpProto,
+                    casualProto,
+                    kafkaProto,
+                    amqpProto,
+                    totalRows,
+                    hasKafkaBadges: kafkaBadges >= 1,
+                    hasAmqpBadges: amqpBadges >= 1,
+                    hasCasualBadges: casualBadges >= 1,
+                    hasHttpBadges: httpBadges >= 1,
+                    hasProduceBadges: produceBadges >= 1,
+                    kafkaFilteredRows,
+                    casualFilteredRows,
+                    restoredRows
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("httpProto")).isEqualTo("http");
+        assertThat(result.get("casualProto")).isEqualTo("casual");
+        assertThat(result.get("kafkaProto")).isEqualTo("kafka");
+        assertThat(result.get("amqpProto")).isEqualTo("amqp");
+        assertThat(((Number) result.get("totalRows")).intValue()).isGreaterThanOrEqualTo(4);
+        assertThat(result.get("hasKafkaBadges")).isEqualTo(true);
+        assertThat(result.get("hasAmqpBadges")).isEqualTo(true);
+        assertThat(result.get("hasCasualBadges")).isEqualTo(true);
+        assertThat(result.get("hasHttpBadges")).isEqualTo(true);
+        assertThat(result.get("hasProduceBadges")).isEqualTo(true);
+        assertThat(((Number) result.get("kafkaFilteredRows")).intValue()).isGreaterThanOrEqualTo(1);
+        assertThat(((Number) result.get("casualFilteredRows")).intValue()).isGreaterThanOrEqualTo(1);
+        assertThat(result.get("restoredRows")).isEqualTo(result.get("totalRows"));
+    }
 }

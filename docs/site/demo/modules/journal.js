@@ -166,20 +166,79 @@ function buildRowHtml(req) {
     || (url.startsWith('/__casual/services/') ? url.substring('/__casual/services/'.length) : null);
   const casualQueue = getHeader(reqHeaders, 'x-casual-queue')
     || (url.startsWith('/__casual/queues/') ? url.split('/')[3] : null);
-  const casualOperation = getHeader(reqHeaders, 'x-casual-operation')
+  const casualOperationRaw = getHeader(reqHeaders, 'x-casual-operation')
     || (url.endsWith('/enqueue') ? 'ENQUEUE' : (url.endsWith('/dequeue') ? 'DEQUEUE' : null));
+  const casualOperation = casualOperationRaw ? casualOperationRaw.toUpperCase() : null;
   const isCasual = Boolean(casualService || casualQueue || url.startsWith('/__casual/'));
   const asyncChannel = getHeader(reqHeaders, 'x-async-channel')
     || (url.startsWith('/__async/') ? url.split('/')[3] || url.substring('/__async/'.length) : null);
-  const asyncProtocol = (getHeader(reqHeaders, 'x-async-protocol')
+  const asyncProtocolRaw = (getHeader(reqHeaders, 'x-async-protocol')
     || (url.startsWith('/__async/') ? url.split('/')[2] : 'async') || 'async').toUpperCase();
   const isAsync = Boolean(asyncChannel || url.startsWith('/__async/'));
-  const isCustomQueueMethod = method === 'ENQUEUE' || method === 'DEQUEUE' || method === 'CONSUME';
-  const displayMethod = isCustomQueueMethod
-    ? method
-    : (casualOperation
-        ? casualOperation
-        : (isCasual ? 'CASUAL' : (isAsync ? asyncProtocol : method)));
+
+  // 1. Determine Protocol
+  let protocol = 'HTTP';
+  if (isCasual) {
+    protocol = 'CASUAL';
+  } else if (isAsync) {
+    protocol = (asyncProtocolRaw === 'ASYNC' ? 'ASYNC' : asyncProtocolRaw);
+  }
+
+  // 2. Determine Operation (reflecting SUT action)
+  let operation = method;
+  if (isCasual) {
+    if (casualOperation) {
+      operation = casualOperation;
+    } else {
+      operation = 'CALL';
+    }
+  } else if (isAsync) {
+    if (method === 'ENQUEUE' || method === 'DEQUEUE' || method === 'CONSUME' || method === 'PRODUCE' || method === 'PUBLISH') {
+      operation = method;
+    } else if (protocol === 'KAFKA') {
+      operation = 'PRODUCE';
+    } else if (protocol === 'AMQP') {
+      operation = 'PUBLISH';
+    } else {
+      operation = method;
+    }
+  }
+
+  // 3. Determine Clean Target
+  let cleanTarget = url;
+  if (isCasual) {
+    if (casualService) {
+      cleanTarget = casualService;
+    } else if (casualQueue) {
+      cleanTarget = `${casualQueue}${casualOperation ? ' (' + casualOperation.toLowerCase() + ')' : ''}`;
+    }
+  } else if (isAsync) {
+    if (asyncChannel) {
+      cleanTarget = asyncChannel;
+    } else if (url.startsWith('/__async/kafka/')) {
+      cleanTarget = url.substring('/__async/kafka/'.length);
+    } else if (url.startsWith('/__async/amqp/')) {
+      cleanTarget = url.substring('/__async/amqp/'.length);
+    }
+  }
+
+  // 4. Tooltips
+  let protocolTooltip = 'HTTP REST Protocol';
+  if (protocol === 'KAFKA') protocolTooltip = 'Kafka Binary Wire Sink (:9092)';
+  else if (protocol === 'AMQP') protocolTooltip = 'AMQP 1.0 Broker (:5672)';
+  else if (protocol === 'CASUAL') protocolTooltip = 'Casual XATMI Domain Gateway (:7772)';
+  else if (protocol === 'ASYNC') protocolTooltip = 'Asynchronous Messaging Engine';
+
+  let operationTooltip = `HTTP ${method}`;
+  if (isCasual) {
+    operationTooltip = casualOperation ? `Casual Queue ${casualOperation}` : 'Casual XATMI Service Call (tpcall)';
+  } else if (isAsync) {
+    if (operation === 'PRODUCE') operationTooltip = 'SUT produced record to topic (KafkaProducer.send)';
+    else if (operation === 'PUBLISH') operationTooltip = 'SUT published message to queue/channel';
+    else if (operation === 'CONSUME') operationTooltip = 'SUT consumed message from queue/topic';
+    else operationTooltip = `${protocol} ${operation}`;
+  }
+
   const casualErrorState = isCasual
     ? (getHeader(resHeaders, 'x-casual-error-state')
         || (status >= 200 && status < 300 ? 'OK' : (status === 404 ? 'TPENOENT' : 'TPESVCFAIL')))
@@ -192,12 +251,14 @@ function buildRowHtml(req) {
   const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
 
   let html = `
-    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${isCasual ? 'casual' : isAsync ? 'async' : 'http'}" data-testid="journal-row">
+    <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${protocol.toLowerCase()}" data-testid="journal-row">
       <td><span class="journal-chevron">▶</span></td>
       <td>${time}</td>
-      <td><span class="http-badge badge-${displayMethod}" title="${isCasual ? 'Casual XATMI Service Call (tpcall)' : isAsync ? `${asyncProtocol} Message Event` : escapeHtml(method)}">${displayMethod}</span></td>
+      <td><span class="protocol-badge protocol-${protocol.toLowerCase()} badge-${protocol}" title="${protocolTooltip}">${protocol}</span></td>
+      <td><span class="http-badge badge-${operation}" title="${operationTooltip}">${operation}</span></td>
       <td title="${escapeHtml(url)}">
-        ${escapeHtml(url)}
+        <span class="journal-target-clean">${escapeHtml(cleanTarget)}</span>
+        ${cleanTarget !== url ? `<span class="journal-target-raw" style="color: var(--text-muted); font-size: 0.78rem; margin-left: 6px; opacity: 0.75;">(${escapeHtml(url)})</span>` : ''}
       </td>
       <td>${escapeHtml(String(displayStatus))}</td>
       <td class="${verdict.cssClass}" title="${escapeHtml(verdict.tooltip)}">${verdict.label}</td>
@@ -266,11 +327,11 @@ function buildRowHtml(req) {
 
     html += `
       <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">
-        <td colspan="7">
+        <td colspan="8">
           <div class="journal-detail-content">
             ${verdict.key === 'unmatched' ? `
             <div class="journal-unmatched-diagnostic" data-testid="journal-unmatched-diagnostic">
-              <span>⚠️ <strong>Unmatched Request:</strong> WireMock had no matching stub or service proxy route for <code>${escapeHtml(displayMethod)} ${escapeHtml(url)}</code>. Create a stub directly from this captured request or replay it in the HTTP Tester.</span>
+              <span>⚠️ <strong>Unmatched Request:</strong> WireMock had no matching stub or service proxy route for <code>${escapeHtml(operation)} ${escapeHtml(url)}</code>. Create a stub directly from this captured request or replay it in the HTTP Tester.</span>
               <button class="btn btn-small btn-primary btn-create-stub-from-req" data-id="${req.id}" data-testid="btn-create-stub-from-req">➕ Create Stub from Request</button>
             </div>
             ` : ''}
@@ -293,7 +354,7 @@ function buildRowHtml(req) {
               ` : ''}
               <div class="journal-detail-card">
                 <div class="journal-card-header">
-                  <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService)}")` : isAsync ? `${asyncProtocol} Event: ${escapeHtml(asyncChannel || url)}` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
+                  <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService || cleanTarget)}")` : isAsync ? `${protocol} ${operation}: ${escapeHtml(cleanTarget || url)}` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                     <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill ${isCasual ? 'Casual ' : 'HTTP '}Tester with this exact request">🚀 Replay in ${isCasual ? 'Casual ' : ''}Tester</button>
                     <button class="btn btn-small btn-journal-copy-curl" data-id="${req.id}" data-testid="btn-journal-copy-curl" title="Copy request as cURL command">📋 Copy cURL</button>
@@ -783,6 +844,27 @@ function setupEventDelegation() {
   });
 }
 
+export function detectRequestProtocol(req) {
+  const reqHeaders = (req && req.request && req.request.headers) || {};
+  const url = (req && req.request && req.request.url) || '';
+  const isCasual = Boolean(
+    getHeader(reqHeaders, 'x-casual-service') ||
+    getHeader(reqHeaders, 'x-casual-queue') ||
+    url.startsWith('/__casual/')
+  );
+  if (isCasual) return 'casual';
+  const isAsync = Boolean(
+    getHeader(reqHeaders, 'x-async-channel') ||
+    url.startsWith('/__async/')
+  );
+  if (isAsync) {
+    const proto = (getHeader(reqHeaders, 'x-async-protocol')
+      || (url.startsWith('/__async/') ? url.split('/')[2] : 'async') || 'async').toLowerCase();
+    return proto;
+  }
+  return 'http';
+}
+
 export function renderJournal(resetLimit = true) {
   setupEventDelegation();
   setupLazyScroll();
@@ -790,6 +872,7 @@ export function renderJournal(resetLimit = true) {
   const filter = (elements.journalSearch ? elements.journalSearch.value : '').trim();
   const unmatchedOnly = elements.filterUnmatchedOnly ? elements.filterUnmatchedOnly.checked : false;
   const verdictFilter = state.journalVerdictFilter || 'all';
+  const protocolFilter = state.journalProtocolFilter || 'all';
   const sinceMs = state.journalSince ? new Date(state.journalSince).getTime() : null;
   const untilMs = state.journalUntil ? new Date(state.journalUntil).getTime() : null;
 
@@ -797,6 +880,8 @@ export function renderJournal(resetLimit = true) {
     const verdict = getRequestVerdict(r);
     if (unmatchedOnly && verdict.key !== 'unmatched') return false;
     if (verdictFilter !== 'all' && verdict.key !== verdictFilter) return false;
+    const proto = detectRequestProtocol(r);
+    if (protocolFilter !== 'all' && proto !== protocolFilter) return false;
     if (sinceMs !== null || untilMs !== null) {
       const loggedDate = r.request && r.request.loggedDate;
       if (loggedDate) {
@@ -810,7 +895,7 @@ export function renderJournal(resetLimit = true) {
     if (!filter) return true;
     const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
     const statefulEntity = getHeader(rHeaders, 'x-wiremock-stateful-entity') || '';
-    return matchesJournalEntry(r, filter, statefulEntity, `${verdict.key} ${verdict.type} ${verdict.label}`);
+    return matchesJournalEntry(r, filter, statefulEntity, `${verdict.key} ${verdict.type} ${verdict.label} ${proto}`);
   });
 
   const proxiedFiltered = lastFilteredRequests.filter(r => getRequestVerdict(r).key === 'proxied');
@@ -835,11 +920,11 @@ export function renderJournal(resetLimit = true) {
 
   if (total === 0) {
     if (unmatchedOnly || verdictFilter === 'unmatched') {
-      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No unmatched requests recorded.</td></tr>';
-    } else if (filter || verdictFilter !== 'all' || sinceMs !== null || untilMs !== null) {
-      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No matching requests found.</td></tr>';
+      elements.journalList.innerHTML = '<tr><td colspan="8" class="text-center">No unmatched requests recorded.</td></tr>';
+    } else if (filter || verdictFilter !== 'all' || protocolFilter !== 'all' || sinceMs !== null || untilMs !== null) {
+      elements.journalList.innerHTML = '<tr><td colspan="8" class="text-center">No matching requests found.</td></tr>';
     } else {
-      elements.journalList.innerHTML = '<tr><td colspan="7" class="text-center">No requests recorded yet.</td></tr>';
+      elements.journalList.innerHTML = '<tr><td colspan="8" class="text-center">No requests recorded yet.</td></tr>';
     }
     return;
   }
@@ -882,6 +967,19 @@ export function initJournalTab() {
         renderJournal();
         loadJournal();
         setRoute('journal', { unmatched: isNowUnmatched ? 'true' : null }, true);
+      });
+    }
+  });
+
+  ['all', 'http', 'kafka', 'amqp', 'casual'].forEach(proto => {
+    const btn = document.getElementById(`btn-journal-proto-${proto}`);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.journal-protocol-pill').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        state.journalProtocolFilter = proto;
+        renderJournal();
+        setRoute('journal', { proto: proto !== 'all' ? proto : null }, true);
       });
     }
   });

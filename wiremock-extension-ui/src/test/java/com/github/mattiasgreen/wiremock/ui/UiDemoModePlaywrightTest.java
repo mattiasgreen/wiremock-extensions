@@ -130,9 +130,26 @@ class UiDemoModePlaywrightTest {
         // Verify preloaded protocol badges in Demo Journal
         assertThat(page.locator("#journal-list .badge-KAFKA").count()).isGreaterThanOrEqualTo(1);
         assertThat(page.locator("#journal-list .badge-CONSUME").count()).isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .badge-PRODUCE").count()).isGreaterThanOrEqualTo(1);
         assertThat(page.locator("#journal-list .badge-ENQUEUE").count()).isGreaterThanOrEqualTo(1);
         assertThat(page.locator("#journal-list .badge-DEQUEUE").count()).isGreaterThanOrEqualTo(1);
         assertThat(page.locator("#journal-list .pill-proxy-error").count()).isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .protocol-badge.protocol-kafka").count())
+                .isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .protocol-badge.protocol-amqp").count())
+                .isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .protocol-badge.protocol-casual").count())
+                .isGreaterThanOrEqualTo(1);
+
+        // Test Protocol Filter Pills
+        page.locator("#btn-journal-proto-kafka").click();
+        assertThat(page.locator("#journal-list tr[data-testid='journal-row']").count())
+                .isGreaterThanOrEqualTo(1);
+        assertThat(page.locator("#journal-list .protocol-badge.protocol-casual").count())
+                .isEqualTo(0);
+        page.locator("#btn-journal-proto-all").click();
+        assertThat(page.locator("#journal-list tr[data-testid='journal-row']").count())
+                .isEqualTo(initialJournalCount);
 
         // Expand Async Kafka row
         Locator kafkaRow =
