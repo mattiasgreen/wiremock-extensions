@@ -74,7 +74,7 @@ public class AsyncEngine implements AutoCloseable {
         }
         kafkaSink = new KafkaWireSink(port, record -> {
             messagesConsumed.incrementAndGet();
-            journal.add("KAFKA_CONSUME:" + record.topic() + ":" + record.value());
+            journal.add("KAFKA_PRODUCE:" + record.topic() + ":" + record.value());
             if (recordConsumer != null) {
                 recordConsumer.accept(record);
             }
@@ -114,7 +114,7 @@ public class AsyncEngine implements AutoCloseable {
         }
         amqpServer = new AmqpServer(port, msg -> {
             messagesConsumed.incrementAndGet();
-            journal.add("AMQP_CONSUME:" + msg.destination() + ":" + msg.payload());
+            journal.add("AMQP_PUBLISH:" + msg.destination() + ":" + msg.payload());
             testBroker.send(msg.destination(), msg);
             if (messageConsumer != null) {
                 messageConsumer.accept(msg);

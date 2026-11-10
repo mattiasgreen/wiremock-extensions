@@ -1005,7 +1005,7 @@ const SEED_REQUESTS = [
     request: {
       url: '/__async/kafka/orders.events',
       absoluteUrl: 'http://localhost:8080/__async/kafka/orders.events',
-      method: 'POST',
+      method: 'PRODUCE',
       headers: {
         'Content-Type': 'application/json',
         'X-Async-Channel': 'orders.events',
@@ -1756,8 +1756,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/async-harvested-endpoint-and-gh-pages',
-        commit: '4e326b5'
+        branch: 'feat/journal-protocol-column-and-semantics',
+        commit: 'd719a40'
       });
     }
 
