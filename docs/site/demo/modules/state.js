@@ -143,6 +143,8 @@ export const state = {
   allScenarios: [],
   testerHistory: [],
   testerHistoryCollapsed: false,
+  testerProtocol: 'http',
+  testerHistoryProtocolFilter: 'all',
   testerViewMode: 'highlighted',
   lastRawResponseBody: '',
   lastResponseHeaders: '',

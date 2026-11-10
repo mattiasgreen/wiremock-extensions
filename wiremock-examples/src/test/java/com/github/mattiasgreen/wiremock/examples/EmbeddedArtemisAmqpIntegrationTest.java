@@ -201,4 +201,41 @@ class EmbeddedArtemisAmqpIntegrationTest {
         // Verify Journal audit recorded the polyglot forward
         assertThat(engine.getJournal()).anyMatch(j -> j.contains("PROXY_FORWARD:upstream.polyglot.789"));
     }
+
+    @Test
+    @DisplayName(
+            "Should publish AMQP message directly to Artemis queue via message broker producer and verify settlement")
+    void shouldPublishAmqpMessageDirectlyToArtemisQueue() throws Exception {
+        String queueName = "upstream.direct.publish";
+        artemisServer.createQueue(QueueConfiguration.of(queueName).setRoutingType(RoutingType.ANYCAST));
+
+        AsyncMessage outboundMsg = AsyncMessage.builder()
+                .correlationId("corr-direct-publish-001")
+                .destination(queueName)
+                .payload("{\"action\":\"DISPATCH\",\"orderId\":\"ORD-8821\",\"amount\":349.99}")
+                .headers(Map.of("tenant", "acme-corp", "x-priority", "urgent"))
+                .build();
+
+        // Act: publish directly via artemisOutboundBroker
+        artemisOutboundBroker.send(queueName, outboundMsg);
+
+        // Assert: consume from Artemis using Proton-J2 client and verify payload and application properties
+        try (Connection conn = qpidClient.connect("127.0.0.1", artemisPort)) {
+            Receiver receiver = conn.openReceiver(queueName);
+            Delivery delivery = receiver.receive(5, TimeUnit.SECONDS);
+
+            assertThat(delivery).isNotNull();
+            Message<?> msg = delivery.message();
+            byte[] bodyBytes = (byte[]) msg.body();
+            String payload = new String(bodyBytes, StandardCharsets.UTF_8);
+
+            assertThat(payload).contains("\"orderId\":\"ORD-8821\"");
+            assertThat(msg.correlationId()).isEqualTo("corr-direct-publish-001");
+            assertThat(msg.property("tenant")).isEqualTo("acme-corp");
+            assertThat(msg.property("x-priority")).isEqualTo("urgent");
+
+            delivery.accept();
+            receiver.close();
+        }
+    }
 }

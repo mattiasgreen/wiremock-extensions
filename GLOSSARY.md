@@ -225,3 +225,21 @@ _Avoid_: journal defrag, store rebalancing, memory garbage clean
 **Traffic Classification**:
 An immutable domain representation derived from a WireMock `ServeEvent` and `Request` that encapsulates protocol detection (`http`, `casual`, `grpc`), routing outcome (`stubbed`, `proxied`, `fault`, `unmatched`), upstream proxy target, RPC service/error metadata, and elapsed duration.
 _Avoid_: request inspector, traffic sniffer, protocol detector
+
+### Unified Multi-Protocol Tester & Workbench
+
+**Unified Multi-Protocol Tester**:
+A single consolidated interactive workbench in the WireMock Console UI capable of dispatching and testing across HTTP, Kafka, AMQP, and Casual XATMI protocols from a unified address bar and execution history.
+_Avoid_: HTTP tester, Casual tester, multi-tab tester
+
+**Multi-Protocol Dispatch Workbench**:
+The shared execution controller that morphs address bar inputs and headers drawers dynamically to match the selected protocol (HTTP URL/method, Kafka topic/key, AMQP destination/correlation-id, Casual service/buffer-type) while preserving the underlying DualLayerCodeEditor and PayloadLens across all transports.
+_Avoid_: request bar, protocol switcher, input form
+
+**Protocol-Native Settlement Inspector**:
+The dual-pane execution inspector rendering protocol-specific outcome banners (HTTP status codes, Kafka partition/offset acknowledgments, AMQP transfer settlements and correlated replies, Casual XATMI return codes and buffer descriptors) alongside full-fidelity request and response payload lenses.
+_Avoid_: response viewer, ack inspector, result box
+
+**Protocol Segmented Control**:
+The top-level interactive selector (`[HTTP] [Kafka] [AMQP] [Casual]`) within the Tester workbench that controls protocol-specific input morphing, quick templates filtering, and dispatch seam delegation.
+_Avoid_: protocol pills, tab picker, protocol tabs

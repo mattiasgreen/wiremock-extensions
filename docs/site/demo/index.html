@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/journal-protocol-column-and-semantics | Commit: d719a40">v1.14.0 (feat/journal-protocol-column-and-semantics@d719a40)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/unified-protocol-tester | Commit: a44ff97">v1.14.0 (feat/unified-protocol-tester@a44ff97)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -49,7 +49,7 @@
           <span id="journal-count" class="hidden">0</span>
         </button>
         <button class="tab nav-tab" data-tab="tab-tester" role="tab" id="nav-tab-tester" data-testid="nav-tab-tester">
-          <span class="tab-icon">🚀</span> HTTP Tester
+          <span class="tab-icon">⚡</span> Tester
         </button>
         <button class="tab nav-tab" data-tab="tab-casual" role="tab" id="nav-tab-casual" data-testid="nav-tab-casual">
           <span class="tab-icon">🔌</span> Casual Tester
@@ -341,7 +341,7 @@
         </div>
       </div>
 
-      <!-- Tab 3: HTTP Tester (Full Width) -->
+      <!-- Tab 3: Unified Multi-Protocol Tester (Full Width) -->
       <div id="tab-tester" class="tab-content" data-testid="tab-tester">
         <!-- Contextual Pre-Fill Banner -->
         <div id="tester-context-banner" class="tester-context-banner hidden" data-testid="tester-context-banner">
@@ -367,6 +367,16 @@
                   <button id="btn-toggle-tester-history" data-testid="btn-toggle-tester-history" class="btn btn-tiny btn-history-collapse" title="Collapse history sidebar">◀</button>
                 </div>
               </div>
+
+              <!-- Multi-Protocol History Filter Chips -->
+              <div class="tester-history-filters" id="tester-history-filters" data-testid="tester-history-filters">
+                <button type="button" class="filter-pill active" data-filter="all" id="btn-tester-hist-all" data-testid="btn-tester-hist-all">All</button>
+                <button type="button" class="filter-pill" data-filter="http" id="btn-tester-hist-http" data-testid="btn-tester-hist-http">HTTP</button>
+                <button type="button" class="filter-pill" data-filter="kafka" id="btn-tester-hist-kafka" data-testid="btn-tester-hist-kafka">Kafka</button>
+                <button type="button" class="filter-pill" data-filter="amqp" id="btn-tester-hist-amqp" data-testid="btn-tester-hist-amqp">AMQP</button>
+                <button type="button" class="filter-pill" data-filter="casual" id="btn-tester-hist-casual" data-testid="btn-tester-hist-casual">Casual</button>
+              </div>
+
               <div id="tester-history-list" data-testid="tester-history-list" class="tester-history-list">
                 <div class="empty-state text-small">No requests sent yet.</div>
               </div>
@@ -382,9 +392,44 @@
 
             <!-- Center & Right Split Panels: Request Builder & Response Inspector -->
             <div class="tester-main-panel">
-              <!-- Request Builder Panel -->
-              <div class="tester-request-panel" data-testid="tester-request-panel">
-                <div class="tester-url-bar">
+              <!-- Top Toolbar: Protocol Segmented Control & Quick Templates -->
+              <div class="tester-top-bar" id="tester-top-bar" data-testid="tester-top-bar">
+                <div class="tester-proto-picker" id="tester-proto-picker" role="radiogroup" aria-label="Select Protocol" data-testid="tester-proto-picker">
+                  <button type="button" class="filter-pill active" data-protocol="http" id="btn-tester-proto-http" data-testid="btn-tester-proto-http">HTTP</button>
+                  <button type="button" class="filter-pill" data-protocol="kafka" id="btn-tester-proto-kafka" data-testid="btn-tester-proto-kafka">Kafka</button>
+                  <button type="button" class="filter-pill" data-protocol="amqp" id="btn-tester-proto-amqp" data-testid="btn-tester-proto-amqp">AMQP</button>
+                  <button type="button" class="filter-pill" data-protocol="casual" id="btn-tester-proto-casual" data-testid="btn-tester-proto-casual">Casual</button>
+                </div>
+
+                <div class="tester-templates-wrapper">
+                  <select id="tester-quick-templates" class="tester-quick-templates" data-testid="tester-quick-templates" title="Load pre-configured test template">
+                    <option value="">⚡ Quick Templates...</option>
+                    <optgroup label="HTTP (REST)">
+                      <option value="http-get-users">GET /api/v1/users</option>
+                      <option value="http-post-order">POST /api/v1/orders (Create Order)</option>
+                    </optgroup>
+                    <optgroup label="Kafka (Event Stream)">
+                      <option value="kafka-order-event">PRODUCE orders.events</option>
+                      <option value="kafka-payments-stream">PRODUCE payments.stream</option>
+                    </optgroup>
+                    <optgroup label="AMQP 1.0 (Queues & Topics)">
+                      <option value="amqp-orders-inbound">PUBLISH orders.inbound</option>
+                      <option value="amqp-req-reply">PUBLISH orders.requests (Req/Rep)</option>
+                    </optgroup>
+                    <optgroup label="Casual XATMI">
+                      <option value="casual-echo">CALL echoService (JSON)</option>
+                      <option value="casual-charge">CALL billing/charge (JSON)</option>
+                      <option value="casual-enqueue">ENQUEUE order.queue</option>
+                    </optgroup>
+                  </select>
+                </div>
+              </div>
+
+              <div class="tester-split-workbench">
+                <!-- Request Builder Panel -->
+                <div class="tester-request-panel" data-testid="tester-request-panel">
+                <!-- HTTP Address Bar -->
+                <div class="tester-url-bar tester-proto-bar" id="tester-bar-http" data-testid="tester-bar-http">
                   <select id="tester-method" data-testid="tester-method" class="tester-method-select">
                     <option value="GET">GET</option>
                     <option value="POST">POST</option>
@@ -398,8 +443,40 @@
                   <button id="btn-tester-send" data-testid="btn-tester-send" class="btn btn-primary" title="Send Request (Ctrl+Enter)">🚀 Send</button>
                 </div>
 
+                <!-- Kafka Address Bar -->
+                <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-kafka" data-testid="tester-bar-kafka">
+                  <span class="http-badge badge-produce" style="padding: 7px 11px; font-weight: 700;">PRODUCE</span>
+                  <input type="text" id="tester-kafka-topic" data-testid="tester-kafka-topic" placeholder="Topic name (e.g. orders.events)" value="orders.events" autocomplete="off" style="flex: 2;">
+                  <input type="text" id="tester-kafka-key" data-testid="tester-kafka-key" placeholder="Key (e.g. ORD-101)" value="ORD-101" autocomplete="off" style="flex: 1;">
+                  <input type="number" id="tester-kafka-partition" data-testid="tester-kafka-partition" placeholder="Partition (opt)" style="width: 100px;" autocomplete="off">
+                  <button id="btn-tester-send-kafka" data-testid="btn-tester-send-kafka" class="btn btn-primary" title="Produce Kafka Message (Ctrl+Enter)">🚀 Produce Message</button>
+                </div>
+
+                <!-- AMQP Address Bar -->
+                <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-amqp" data-testid="tester-bar-amqp">
+                  <span class="http-badge badge-publish" style="padding: 7px 11px; font-weight: 700;">PUBLISH</span>
+                  <input type="text" id="tester-amqp-dest" data-testid="tester-amqp-dest" placeholder="Queue / Destination (e.g. orders.inbound)" value="orders.inbound" autocomplete="off" style="flex: 2;">
+                  <input type="text" id="tester-amqp-correlation" data-testid="tester-amqp-correlation" placeholder="Correlation ID (e.g. corr-101)" value="test-corr-101" autocomplete="off" style="flex: 1;">
+                  <input type="text" id="tester-amqp-reply-to" data-testid="tester-amqp-reply-to" placeholder="Reply-To queue (opt)" autocomplete="off" style="flex: 1;">
+                  <button id="btn-tester-send-amqp" data-testid="btn-tester-send-amqp" class="btn btn-primary" title="Publish AMQP Message (Ctrl+Enter)">🚀 Publish Message</button>
+                </div>
+
+                <!-- Casual Address Bar in Unified Tester -->
+                <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-casual" data-testid="tester-bar-casual">
+                  <span class="http-badge badge-call" style="padding: 7px 11px; font-weight: 700;">CALL</span>
+                  <input type="text" id="tester-casual-service" data-testid="tester-casual-service" placeholder="Service name (e.g. echoService, billing/charge)..." value="echoService" autocomplete="off" style="flex:2;">
+                  <select id="tester-casual-buffer" data-testid="tester-casual-buffer" class="tester-method-select" style="min-width:90px;" title="Casual Buffer Type">
+                    <option value="JSON">JSON</option>
+                    <option value="CSTRING">CSTRING</option>
+                    <option value="FIELDED">FIELDED</option>
+                    <option value="X_OCTET">X_OCTET</option>
+                  </select>
+                  <button id="btn-tester-send-casual" data-testid="btn-tester-send-casual" class="btn btn-primary" title="Execute Casual Service Call (Ctrl+Enter)">🔌 Execute tpcall</button>
+                </div>
+
                 <div class="tester-subcontrols">
-                  <div class="tester-section">
+                  <!-- HTTP Headers Section -->
+                  <div class="tester-section" id="tester-section-headers-http">
                     <div class="tester-section-header">
                       <span>Request Headers</span>
                       <div class="preset-badges">
@@ -432,10 +509,46 @@
                     <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
                   </div>
 
+                  <!-- Kafka Headers Section -->
+                  <div class="tester-section hidden" id="tester-section-headers-kafka" data-testid="tester-section-headers-kafka">
+                    <div class="tester-section-header">
+                      <span>Record Headers (Key: Value)</span>
+                      <div class="preset-badges">
+                        <span class="preset-badge" id="btn-preset-kafka-corr" title="Add x-correlation-id header">+ Correlation ID</span>
+                        <span class="preset-badge" id="btn-preset-kafka-tenant" title="Add x-tenant-id header">+ Tenant</span>
+                      </div>
+                    </div>
+                    <textarea id="tester-kafka-headers" class="code-input" rows="3" placeholder="x-tenant-id: acme-corp&#10;x-correlation-id: corr-kafka-01"></textarea>
+                  </div>
+
+                  <!-- AMQP Headers Section -->
+                  <div class="tester-section hidden" id="tester-section-headers-amqp" data-testid="tester-section-headers-amqp">
+                    <div class="tester-section-header">
+                      <span>Application Properties</span>
+                      <div class="preset-badges">
+                        <span class="preset-badge" id="btn-preset-amqp-tenant" title="Add tenant property">+ Tenant</span>
+                        <span class="preset-badge" id="btn-preset-amqp-reply" title="Add reply property">+ Reply Type</span>
+                      </div>
+                    </div>
+                    <textarea id="tester-amqp-headers" class="code-input" rows="3" placeholder="tenant: acme-retail&#10;env: staging"></textarea>
+                  </div>
+
+                  <!-- Casual Headers Section in Unified Tester -->
+                  <div class="tester-section hidden" id="tester-section-headers-casual" data-testid="tester-section-headers-casual">
+                    <div class="tester-section-header">
+                      <span>Call Flags & Headers</span>
+                      <div class="preset-badges">
+                        <span class="preset-badge" id="btn-tester-casual-preset-tx" title="Add X-Casual-Transaction-State header">+ TX State</span>
+                      </div>
+                    </div>
+                    <textarea id="tester-casual-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;X-Casual-Service: echoService&#10;X-Casual-Buffer-Type: JSON"></textarea>
+                  </div>
+
+                  <!-- Shared Request Body / Payload Section -->
                   <div class="tester-section" id="tester-body-section">
                     <div class="tester-section-header">
                       <div style="display: flex; align-items: center; gap: 8px;">
-                        <span>Request Body</span>
+                        <span id="tester-body-label">Request Body</span>
                         <span class="preview-pill-group" id="tester-request-top-pill-group" style="display: none;">
                           <span class="preview-pill-badge" id="tester-request-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
                           <button type="button" id="btn-tester-request-maximize" class="btn-payload-maximize" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
@@ -485,6 +598,12 @@
                   </div>
                 </div>
 
+                <!-- Protocol Settlement Banner -->
+                <div id="tester-settlement-banner" class="tester-settlement-banner hidden" data-testid="tester-settlement-banner">
+                  <span id="tester-settlement-icon">✅</span>
+                  <span id="tester-settlement-text">Settled</span>
+                </div>
+
                 <div id="tester-inspector-content" class="tester-inspector-content">
                   <!-- Response View Container -->
                   <div id="tester-view-response" class="inspector-view active">
@@ -532,6 +651,7 @@
           </div>
         </div>
       </div>
+    </div>
 
       <!-- Tab 3b: Casual Tester (Full Width) -->
       <div id="tab-casual" class="tab-content" data-testid="tab-casual">
@@ -699,6 +819,9 @@
           </div>
         </div>
       </div>
+
+
+
 
       <!-- Tab 4: Scenarios (Full Width) -->
       <div id="tab-scenarios" class="tab-content" data-testid="tab-scenarios">

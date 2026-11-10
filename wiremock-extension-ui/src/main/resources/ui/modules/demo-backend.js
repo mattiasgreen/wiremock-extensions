@@ -1597,13 +1597,14 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/async/publish' && method === 'POST') {
       const payload = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
       const dest = payload.destination || 'orders.inbound';
-      const proto = payload.protocol || 'amqp';
+      const proto = (payload.protocol || 'amqp').toLowerCase();
+      const opMethod = proto === 'kafka' ? 'PRODUCE' : 'PUBLISH';
       const syntheticReq = {
         id: `req-demo-pub-${Date.now()}`,
         request: {
           url: `/__async/${proto}/${dest}`,
           absoluteUrl: `http://localhost:8080/__async/${proto}/${dest}`,
-          method: 'CONSUME',
+          method: opMethod,
           headers: {
             'Content-Type': 'application/json',
             'X-Async-Channel': dest,
@@ -1622,11 +1623,47 @@ class InMemoryDemoBackend {
         timing: { serveTimeMillis: 4, totalTimeMillis: 6 }
       };
       this.requests.unshift(syntheticReq);
-      return responseJson(200, {
-        status: 'PUBLISHED',
-        destination: dest,
-        publishedAt: new Date().toISOString()
-      });
+
+      if (proto === 'kafka') {
+        const partition = (payload.partition !== undefined && payload.partition !== '') ? parseInt(payload.partition, 10) : 0;
+        return responseJson(200, {
+          published: true,
+          id: syntheticReq.id,
+          protocol: 'kafka',
+          destination: dest,
+          partition: partition,
+          offset: 42 + Math.floor(Math.random() * 100),
+          key: payload.key || null,
+          publishedAt: new Date().toISOString()
+        });
+      } else {
+        const hasReplyTo = !!payload.replyTo;
+        if (hasReplyTo) {
+          return responseJson(200, {
+            published: true,
+            id: syntheticReq.id,
+            protocol: 'amqp',
+            destination: dest,
+            settlement: 'ACCEPTED',
+            replyReceived: true,
+            replyQueue: payload.replyTo,
+            replyCorrelationId: payload.correlationId || `corr-${Date.now()}`,
+            replyPayload: JSON.stringify({
+              orderId: 'ORD-' + Math.floor(Math.random() * 9000 + 1000),
+              status: 'CONFIRMED',
+              processedAt: new Date().toISOString()
+            }, null, 2)
+          });
+        }
+        return responseJson(200, {
+          published: true,
+          id: syntheticReq.id,
+          protocol: 'amqp',
+          destination: dest,
+          settlement: 'ACCEPTED',
+          publishedAt: new Date().toISOString()
+        });
+      }
     }
 
     // 9. Journal Compression & Anti-OOM (Beta)
@@ -1756,8 +1793,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/journal-protocol-column-and-semantics',
-        commit: 'd719a40'
+        branch: 'feat/unified-protocol-tester',
+        commit: 'a44ff97'
       });
     }
 
