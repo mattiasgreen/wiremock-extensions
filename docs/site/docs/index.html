@@ -46,6 +46,7 @@
         <li><a href="#ext-netem">TCP NetEm Chaos</a></li>
         <li><a href="#ext-openapi">OpenAPI Ingestion</a></li>
         <li><a href="#ext-casual">Casual (XATMI) Gateway</a></li>
+        <li><a href="#ext-async">Async Messaging (Kafka &amp; AMQP)</a></li>
         <li><a href="#ext-otel">OpenTelemetry &amp; Scrape</a></li>
         <li><a href="#ext-logging">JSON MDC Logging</a></li>
       </ul>
@@ -293,14 +294,127 @@ POST http://localhost:8080/__admin/mappings
         <div id="ext-async" class="card" style="margin-bottom: 2rem;">
           <h3>📬 Asynchronous Messaging &amp; Queue Simulation (`wiremock-extension-async`) <span class="badge blue">Beta</span></h3>
           <p>
-            Enables in-process asynchronous message broker simulation and hybrid HTTP-to-queue flows without launching heavyweight Docker brokers or ZooKeeper daemons.
+            Enables in-process asynchronous message broker simulation, event streaming, and hybrid HTTP-to-queue flows without launching heavyweight Docker brokers, Kafka clusters, or ZooKeeper/KRaft daemons.
           </p>
           <ul style="margin: 0.75rem 0 1rem 1.25rem;">
-            <li><strong>In-Process Kafka Wire Sink</strong>: Zero-dependency Netty TCP server implementing binary Kafka RPC framing (<code>ApiVersions</code>, <code>Metadata</code>, <code>InitProducerId</code>, <code>Produce</code>) compatible with official <code>org.apache.kafka.clients.producer.KafkaProducer</code>.</li>
-            <li><strong>HTTP-to-Queue Trigger Listener</strong>: WireMock <code>ServeEventListener</code> that evaluates dynamic jsonPath templates (e.g. <code>{{jsonPath response.body '$.id'}}</code>) and asynchronously produces messages to target queues/topics.</li>
-            <li><strong>Dual-Broker Async Bridge</strong>: Provides in-memory isolation for unit tests and forward/harvest proxy modes for upstream broker simulation.</li>
-            <li><strong>Admin API &amp; Telemetry</strong>: Query status via <code>GET /__admin/async/status</code>, inspect consumed messages, and trigger manual event publications.</li>
+            <li><strong>In-Process Kafka Wire Sink</strong>: Zero-dependency Netty TCP server on port 9092 implementing binary Kafka RPC framing (<code>ApiVersions</code>, <code>Metadata</code>, <code>InitProducerId</code>, <code>Produce</code>) directly compatible with official <code>org.apache.kafka.clients.producer.KafkaProducer</code>.</li>
+            <li><strong>Synthetic Journal Mediation</strong>: Inbound messages are translated into synthetic WireMock <code>ServeEvent</code> records with <code>CONSUME</code> method and <code>/__async/{protocol}/{channel}</code> URLs, appearing seamlessly in the Request Journal.</li>
+            <li><strong>AMQP 1.0 &amp; Request-Reply</strong>: In-process queue broker supporting correlation-id matching, transactional acknowledgments (<code>ack</code> / <code>nack</code> / <code>reject</code>), and polyglot XML/JSON payloads.</li>
+            <li><strong>HTTP-to-Queue Trigger Listener</strong>: <code>ServeEventListener</code> (<code>AsyncMessagePublishingListener</code>) that evaluates dynamic jsonPath templates (e.g. <code>{{jsonPath response.body '$.orderId'}}</code>) upon HTTP completion and asynchronously produces outbound messages.</li>
+            <li><strong>Dual-Broker Proxy &amp; Snapshotting</strong>: Live proxy bridging that harvests wire traffic from upstream brokers into standard offline WireMock stubs.</li>
           </ul>
+
+          <h4 style="margin-top: 1.25rem;">Admin API Routes</h4>
+          <div class="table-wrapper" style="margin: 0.75rem 0 1.25rem;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Route</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>GET</code></td>
+                  <td><code>/__admin/async/status</code></td>
+                  <td>Returns broker health, active sinks, connection lease counters, and consumed/published metrics.</td>
+                </tr>
+                <tr>
+                  <td><code>GET</code></td>
+                  <td><code>/__admin/async/journal</code></td>
+                  <td>Returns recent in-process async event strings (<code>CONSUME</code>, <code>PUBLISH</code>, <code>PROXY_FORWARD</code>, <code>ASYNC_PROXY_ERROR</code>).</td>
+                </tr>
+                <tr>
+                  <td><code>GET</code></td>
+                  <td><code>/__admin/async/harvested</code></td>
+                  <td>Returns transient wire messages harvested by the proxy bridge before snapshotting. <i>(Note: All registered async stubs are standard WireMock stubs queried via <code>GET /__admin/mappings</code>)</i>.</td>
+                </tr>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/__admin/async/publish</code></td>
+                  <td>Injects a synthetic outbound message into a destination queue or topic for test harness coordination.</td>
+                </tr>
+                <tr>
+                  <td><code>POST</code></td>
+                  <td><code>/__admin/async/sinks/kafka</code></td>
+                  <td>Dynamically starts or reconfigures the in-process Netty Kafka wire sink port.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4 style="margin-top: 1.25rem;">Example 1: Inbound Kafka Event Mock Stub</h4>
+          <pre class="code-block"><code>{
+  <span class="str">"name"</span>: <span class="str">"Kafka Events Sink: orders.events"</span>,
+  <span class="str">"request"</span>: {
+    <span class="str">"method"</span>: <span class="str">"CONSUME"</span>,
+    <span class="str">"urlPattern"</span>: <span class="str">"/__async/kafka/orders\\.events"</span>,
+    <span class="str">"headers"</span>: {
+      <span class="str">"Content-Type"</span>: { <span class="str">"contains"</span>: <span class="str">"application/json"</span> }
+    }
+  },
+  <span class="str">"response"</span>: {
+    <span class="str">"status"</span>: 204,
+    <span class="str">"headers"</span>: {
+      <span class="str">"X-Async-Ack"</span>: <span class="str">"ack"</span>,
+      <span class="str">"X-Async-Protocol"</span>: <span class="str">"kafka"</span>
+    }
+  },
+  <span class="str">"metadata"</span>: {
+    <span class="str">"protocol"</span>: <span class="str">"kafka"</span>,
+    <span class="str">"channel"</span>: <span class="str">"orders.events"</span>,
+    <span class="str">"ackPolicy"</span>: <span class="str">"ack"</span>
+  }
+}</code></pre>
+
+          <h4 style="margin-top: 1.25rem;">Example 2: AMQP 1.0 Request-Reply with Polyglot XML-in-JSON</h4>
+          <pre class="code-block"><code>{
+  <span class="str">"name"</span>: <span class="str">"AMQP Payments: Request-Reply"</span>,
+  <span class="str">"request"</span>: {
+    <span class="str">"method"</span>: <span class="str">"CONSUME"</span>,
+    <span class="str">"urlPattern"</span>: <span class="str">"/__async/amqp/payments\\.requests"</span>,
+    <span class="str">"headers"</span>: {
+      <span class="str">"x-currency"</span>: { <span class="str">"equalTo"</span>: <span class="str">"EUR"</span> }
+    }
+  },
+  <span class="str">"response"</span>: {
+    <span class="str">"status"</span>: 200,
+    <span class="str">"headers"</span>: {
+      <span class="str">"Content-Type"</span>: <span class="str">"application/json; charset=utf-8"</span>,
+      <span class="str">"X-Async-Correlation-Id"</span>: <span class="str">"{{request.headers.X-Async-Correlation-Id}}"</span>,
+      <span class="str">"X-Async-Reply-Channel"</span>: <span class="str">"payments.replies"</span>
+    },
+    <span class="str">"body"</span>: <span class="str">"{\"status\":\"SETTLED\",\"rawIsoXml\":\"&lt;Document xmlns=\\\"urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08\\\"&gt;&lt;GrpHdr&gt;&lt;MsgId&gt;EUR-992144&lt;/MsgId&gt;&lt;/GrpHdr&gt;&lt;/Document&gt;\"}"</span>
+  },
+  <span class="str">"metadata"</span>: {
+    <span class="str">"protocol"</span>: <span class="str">"amqp"</span>,
+    <span class="str">"channel"</span>: <span class="str">"payments.requests"</span>
+  }
+}</code></pre>
+
+          <h4 style="margin-top: 1.25rem;">Example 3: HTTP-to-Queue Async Trigger Action</h4>
+          <pre class="code-block"><code>{
+  <span class="str">"name"</span>: <span class="str">"HTTP Order API triggering Kafka Event"</span>,
+  <span class="str">"request"</span>: {
+    <span class="str">"method"</span>: <span class="str">"POST"</span>,
+    <span class="str">"url"</span>: <span class="str">"/api/v1/orders"</span>
+  },
+  <span class="str">"response"</span>: {
+    <span class="str">"status"</span>: 201,
+    <span class="str">"body"</span>: <span class="str">"{\"orderId\": \"ORD-7718\", \"state\": \"CREATED\"}"</span>
+  },
+  <span class="str">"postServeActions"</span>: [
+    {
+      <span class="str">"name"</span>: <span class="str">"asyncPublish"</span>,
+      <span class="str">"parameters"</span>: {
+        <span class="str">"protocol"</span>: <span class="str">"kafka"</span>,
+        <span class="str">"destination"</span>: <span class="str">"orders.events"</span>,
+        <span class="str">"payloadTemplate"</span>: <span class="str">"{\"eventType\": \"OrderCreated\", \"orderId\": \"{{jsonPath response.body '$.orderId'}}\"}"</span>
+      }
+    }
+  ]
+}</code></pre>
         </div>
         <div id="ext-otel" class="card" style="margin-bottom: 2rem;">
           <h3>📊 OpenTelemetry &amp; Metrics (`wiremock-extension-otel`)</h3>

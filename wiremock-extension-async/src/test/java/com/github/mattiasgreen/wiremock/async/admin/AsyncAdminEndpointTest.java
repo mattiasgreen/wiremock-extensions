@@ -102,7 +102,23 @@ class AsyncAdminEndpointTest {
     }
 
     @Test
-    @DisplayName("GET /__admin/async/stubs should return harvested offline stubs")
+    @DisplayName("GET /__admin/async/harvested should return live messages harvested by the proxy bridge")
+    void shouldReturnHarvestedMessages() throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/harvested"))
+                .GET()
+                .build();
+
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        assertThat(resp.statusCode()).isEqualTo(200);
+
+        JsonNode json = MAPPER.readTree(resp.body());
+        assertThat(json.has("harvested")).isTrue();
+        assertThat(json.has("count")).isTrue();
+    }
+
+    @Test
+    @DisplayName("GET /__admin/async/stubs should return harvested offline stubs (deprecated alias)")
     void shouldReturnAsyncStubs() throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/stubs"))

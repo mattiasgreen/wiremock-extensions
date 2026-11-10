@@ -527,7 +527,7 @@ The extension exposes management routes under `/__admin/async/` for health monit
 | :--- | :--- | :--- |
 | `GET` | `/__admin/async/status` | Returns active sinks, connection lease counters, and consumed/produced metrics. |
 | `GET` | `/__admin/async/journal` | Returns recent in-process async journal events (`CONSUME`, `PUBLISH`, `PROXY_FORWARD`, `ASYNC_PROXY_ERROR`). |
-| `GET` | `/__admin/async/stubs` | Returns list of registered async mock stubs. |
+| `GET` | `/__admin/async/harvested` | Returns transient wire messages harvested by the live proxy bridge before being snapshotted into stubs. *(Note: All registered async stubs are standard WireMock stubs queried via `GET /__admin/mappings`)*. |
 | `POST` | `/__admin/async/publish` | Injects a synthetic outbound message into a destination queue or topic for test harness coordination. |
 | `POST` | `/__admin/async/sinks/kafka` | Dynamically starts or reconfigures the in-process Netty Kafka wire sink. |
 

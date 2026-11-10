@@ -86,7 +86,26 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
             }
         });
 
-        // GET /__admin/async/stubs
+        // GET /__admin/async/harvested - Returns live wire messages harvested by the proxy bridge
+        router.add(RequestMethod.GET, "/async/harvested", (admin, serveEvent, pathParams) -> {
+            try {
+                Map<String, Object> resp = Map.of(
+                        "count", engine.getHarvestedStubs().size(),
+                        "harvested", engine.getHarvestedStubs());
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(MAPPER.writeValueAsString(resp))
+                        .build();
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                return ResponseDefinitionBuilder.responseDefinition()
+                        .withStatus(500)
+                        .build();
+            }
+        });
+
+        // GET /__admin/async/stubs (Deprecated alias for /async/harvested; registered stubs live under
+        // /__admin/mappings)
         router.add(RequestMethod.GET, "/async/stubs", (admin, serveEvent, pathParams) -> {
             try {
                 Map<String, Object> resp = Map.of(
