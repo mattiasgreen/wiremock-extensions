@@ -2479,7 +2479,7 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
         text: rootText,
         format: detectFormat(rootText),
         context,
-        mode: 'viewer',
+        mode: isEditable ? mode : 'viewer',
         editable: isEditable,
         readOnlyReason,
         descriptor: null,
@@ -2488,34 +2488,36 @@ export function openPayloadLens(rootText, initialNodeDescriptor, onSaveRootCallb
     }
   }
 
-  // Push the target node descriptor layer
-  const formattedNodeText = formatPayload(initialNodeDescriptor.unescapedValue);
-  pushViewportLayer({
-    title: initialNodeDescriptor.path,
-    text: formattedNodeText,
-    format: initialNodeDescriptor.format,
-    charset: initialNodeDescriptor.charset,
-    context,
-    mode: isEditable ? mode : 'viewer',
-    editable: isEditable,
-    readOnlyReason,
-    descriptor: initialNodeDescriptor,
-    onSave: (savedText) => {
-      if (typeof onSaveRootCallback === 'function') {
-        const finalRoot = cascadeLensStackToRoot(
-          viewportStack.map(f => ({
-            text: f.currentText,
-            descriptor: f.descriptor,
-            title: f.title,
-            format: f.format
-          })),
-          savedText,
-          { forceInvalid: false }
-        );
-        onSaveRootCallback(finalRoot);
+  // Push the target node descriptor layer if navigating to a specific node
+  if (initialNodeDescriptor) {
+    const formattedNodeText = formatPayload(initialNodeDescriptor.unescapedValue);
+    pushViewportLayer({
+      title: initialNodeDescriptor.path,
+      text: formattedNodeText,
+      format: initialNodeDescriptor.format,
+      charset: initialNodeDescriptor.charset,
+      context,
+      mode: isEditable ? mode : 'viewer',
+      editable: isEditable,
+      readOnlyReason,
+      descriptor: initialNodeDescriptor,
+      onSave: (savedText) => {
+        if (typeof onSaveRootCallback === 'function') {
+          const finalRoot = cascadeLensStackToRoot(
+            viewportStack.map(f => ({
+              text: f.currentText,
+              descriptor: f.descriptor,
+              title: f.title,
+              format: f.format
+            })),
+            savedText,
+            { forceInvalid: false }
+          );
+          onSaveRootCallback(finalRoot);
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 export function closePayloadLens(force = false) {

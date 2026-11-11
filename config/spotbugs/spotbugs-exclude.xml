@@ -41,6 +41,14 @@
         <Class name="com.github.mattiasgreen.wiremock.async.engine.AsyncEngine"/>
         <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
     </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry"/>
+        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
+    </Match>
+    <Match>
+        <Class name="com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService"/>
+        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
+    </Match>
 
     <!-- Exclude browser launcher and local file operations in desktop client WireMockStudio -->
     <Match>

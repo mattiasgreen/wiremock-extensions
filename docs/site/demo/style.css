@@ -252,7 +252,10 @@ body {
 /* Sidebar visibility based on active tab:
    Visible for Stubs and Tester; hidden for Journal and Scenarios to maximize table/visualizer space */
 .main-container[data-active-tab="tab-journal"] .sidebar,
-.main-container[data-active-tab="tab-scenarios"] .sidebar {
+.main-container[data-active-tab="tab-scenarios"] .sidebar,
+.main-container[data-active-tab="tab-casual"] .sidebar,
+.main-container[data-active-tab="tab-netem"] .sidebar,
+.main-container[data-active-tab="tab-queues"] .sidebar {
   display: none;
 }
 
@@ -4139,5 +4142,187 @@ a[disabled].cap-disabled,
   background: rgba(56, 189, 248, 0.25);
   border-color: #38bdf8;
 }
+
+/* ==========================================================================
+   Async Queues & Topics Explorer (ADR 0023)
+   ========================================================================== */
+
+.queues-workspace {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.queues-sidebar {
+  width: 340px;
+  flex-shrink: 0;
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.queues-sidebar-header {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.queues-sidebar-header .search-bar {
+  border-bottom: none;
+  padding: 10px 12px;
+}
+
+.queues-filter-pills {
+  padding: 0 12px 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.queues-filter-pill {
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.queues-filter-pill:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+}
+
+.queues-filter-pill.active {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+}
+
+.queues-destination-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.queues-dest-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-left-color 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+.queues-dest-item:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.queues-dest-item.active {
+  background-color: rgba(56, 189, 248, 0.08);
+  border-left-color: var(--accent-color);
+}
+
+.queues-content-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+}
+
+.queues-header-bar {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+.queues-table-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.queues-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.queues-message-row {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.queues-message-row:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.queues-message-row.expanded {
+  background-color: rgba(56, 189, 248, 0.05);
+}
+
+.queues-cell-chevron {
+  width: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.queues-cell-time {
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.queues-cell-key,
+.queues-cell-corr {
+  font-family: monospace;
+  font-size: 0.8rem;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queues-cell-size {
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.queues-cell-preview {
+  font-family: monospace;
+  font-size: 0.82rem;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queues-cell-preview code {
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.queues-cell-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.queues-drawer-row td {
+  padding: 0 !important;
+}
+
 
 

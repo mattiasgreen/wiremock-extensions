@@ -213,4 +213,34 @@ class CasualQueueStoreTest {
         assertThat(extractedPayload).isEqualTo(polyglotJson);
         assertThat(extractedPayload).contains(nestedXml.replace("\"", "\\\""));
     }
+
+    @Test
+    @DisplayName("Should peek, delete by UUID, and purge messages in queue")
+    void shouldPeekDeleteAndPurgeMessages() {
+        String queue = "inspection.q";
+        store.createQueue(queue, 3, 1000);
+
+        CasualEnqueueRequestMessage req1 = createEnqueueReq(queue, "{\"msg\":1}", null);
+        CasualEnqueueRequestMessage req2 = createEnqueueReq(queue, "{\"msg\":2}", null);
+        store.enqueue(req1, ProtocolVersion.VERSION_1_0);
+        CasualEnqueueReplyMessage reply2 = store.enqueue(req2, ProtocolVersion.VERSION_1_0);
+        UUID id2 = reply2.getId();
+
+        assertThat(store.getQueueSize(queue)).isEqualTo(2);
+
+        // Peek does not consume
+        var peeked = store.peekMessages(queue);
+        assertThat(peeked).hasSize(2);
+        assertThat(store.getQueueSize(queue)).isEqualTo(2);
+
+        // Delete single message by UUID
+        boolean deleted = store.deleteMessage(queue, id2);
+        assertThat(deleted).isTrue();
+        assertThat(store.getQueueSize(queue)).isEqualTo(1);
+
+        // Purge queue
+        store.purgeQueue(queue);
+        assertThat(store.getQueueSize(queue)).isEqualTo(0);
+        assertThat(store.peekMessages(queue)).isEmpty();
+    }
 }

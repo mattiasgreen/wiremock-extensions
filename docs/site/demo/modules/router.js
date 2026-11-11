@@ -14,7 +14,9 @@ export const TAB_ROUTES = {
   'tab-casual': 'tab-casual',
   'scenarios': 'tab-scenarios',
   'netem': 'tab-netem',
-  'tab-netem': 'tab-netem'
+  'tab-netem': 'tab-netem',
+  'queues': 'tab-queues',
+  'tab-queues': 'tab-queues'
 };
 
 export const ROUTE_FOR_TAB = {
@@ -23,7 +25,8 @@ export const ROUTE_FOR_TAB = {
   'tab-tester': 'tester',
   'tab-casual': 'casual',
   'tab-scenarios': 'scenarios',
-  'tab-netem': 'netem'
+  'tab-netem': 'netem',
+  'tab-queues': 'queues'
 };
 
 export function toBase64(str) {
@@ -123,13 +126,15 @@ let onApplyJournalRoute = null;
 let onApplyTesterRoute = null;
 let onApplyCasualRoute = null;
 let onApplyNetEmRoute = null;
+let onApplyQueuesRoute = null;
 
-export function registerRouteHandlers({ applyStubs, applyJournal, applyTester, applyCasual, applyNetEm }) {
+export function registerRouteHandlers({ applyStubs, applyJournal, applyTester, applyCasual, applyNetEm, applyQueues }) {
   onApplyStubsRoute = applyStubs;
   onApplyJournalRoute = applyJournal;
   onApplyTesterRoute = applyTester;
   onApplyCasualRoute = applyCasual;
   onApplyNetEmRoute = applyNetEm;
+  onApplyQueuesRoute = applyQueues;
 }
 
 export function applyRouteFromUrl() {
@@ -149,6 +154,8 @@ export function applyRouteFromUrl() {
       if (onApplyCasualRoute) onApplyCasualRoute(params);
     } else if (route === 'netem') {
       if (onApplyNetEmRoute) onApplyNetEmRoute(params);
+    } else if (route === 'queues') {
+      if (onApplyQueuesRoute) onApplyQueuesRoute(params);
     }
   } finally {
     state.isSyncingRoute = false;

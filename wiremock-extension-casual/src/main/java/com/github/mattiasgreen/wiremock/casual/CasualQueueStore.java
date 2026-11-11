@@ -368,6 +368,30 @@ public class CasualQueueStore {
         return q != null ? q.size() : 0;
     }
 
+    public synchronized List<StoredMessage> peekMessages(String queueName) {
+        Deque<StoredMessage> q = queues.get(queueName);
+        return q != null ? new ArrayList<>(q) : Collections.emptyList();
+    }
+
+    public synchronized boolean deleteMessage(String queueName, UUID messageId) {
+        Deque<StoredMessage> q = queues.get(queueName);
+        if (q == null || messageId == null) {
+            return false;
+        }
+        return q.removeIf(m -> messageId.equals(m.getId()));
+    }
+
+    public synchronized void purgeQueue(String queueName) {
+        Deque<StoredMessage> q = queues.get(queueName);
+        if (q != null) {
+            q.clear();
+        }
+    }
+
+    public synchronized List<String> listQueues() {
+        return new ArrayList<>(queueConfigs.keySet());
+    }
+
     public synchronized void clear() {
         queues.clear();
         uncommittedEnqueues.clear();

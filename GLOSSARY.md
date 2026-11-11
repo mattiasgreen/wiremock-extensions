@@ -92,6 +92,42 @@ _Avoid_: fake broker, test queue stub, mock amqp server
 The verification of recorded async and queue messages in the Web Console UI via headless Playwright, asserting message payloads, protocol badges, timing, and proxying verdicts (`stubbed`, `proxied`, `proxy_error`).
 _Avoid_: UI async test, web tester check, visual queue spy
 
+**Async Destination Explorer**:
+The unified Web Console UI surface (`📬 Queues & Topics`) and REST control plane (`/__admin/async/destinations`) for inspecting, browsing, payload editing, and purging queues, topics, and staged message feeds across Kafka, AMQP, Casual, and In-Memory channels.
+_Avoid_: queue manager, topic dashboard, async inspector
+
+**Synchronous Upstream Bridge Acknowledgment**:
+The operational contract where WireMock's protocol ingress blocks acknowledgment to the System Under Test until the forwarded message is confirmed by the upstream remote broker (Kafka, AMQP, or Casual), preserving end-to-end delivery guarantees and failing fast with 502 Bad Gateway upon upstream network or queue errors.
+_Avoid_: async forward, background relay, optimistic ack
+
+**Compensating Queue Edit**:
+The workflow of modifying an unconsumed or log-based message by opening it in the Polyglot Payload Lens, editing document layers with cascading serialization, and publishing a successor replacement record (with optional cancellation, dequeue, or tombstoning of the superseded message).
+_Avoid_: in-place wire edit, log mutation, dirty patch
+
+**Declarative Broker Configuration**:
+A read-only, file-backed configuration model where broker connections and cluster coordinates are loaded on startup from a declarative definition (`connections.json` or CLI parameters), supporting export and runtime inspection via the Admin API without permitting mutating writes to the underlying version-controlled file.
+_Avoid_: dynamic connection file, self-mutating config, broker state store
+
+**Corpus-Based Message Filtering**:
+The real-time client-side evaluation of boolean search queries (`AND`, `OR`, implicit token conjunctions) against a concatenated searchable text corpus extracted from message keys, transport headers, correlation IDs, and polyglot payload bodies.
+_Avoid_: payload grep, regex scan, message string filter
+
+**Broker Connection Registry**:
+A centralized configuration store (`AsyncBrokerRegistry`) and Admin API (`/__admin/async/connections`) managing remote cluster connection coordinates, authentication credentials (SASL, TLS), and client pools for Kafka, AMQP, and Casual backends, cleanly decoupling broker infrastructure secrets from stub mapping files.
+_Avoid_: broker config bag, cluster map, connection helper
+
+**Live Broker Catalog**:
+The active discovery mechanism that queries connected broker instances directly (via `AdminClient.listTopics()` for Kafka, `CasualClient.discoverQueues()` for Casual, or AMQP address management) to populate the live destination tree in the UI, avoiding static stub parsing or speculative channel guessing.
+_Avoid_: topic scanner, queue crawler, channel discovery daemon
+
+**Detached Transient Consumer**:
+A read-only, non-committing Kafka consumer with an ephemeral client ID and direct partition assignment that seeks backwards from partition high-water marks to inspect recent records without joining consumer groups, triggering rebalances, or committing offsets.
+_Avoid_: topic spy, shadow consumer, offset snooper
+
+**Casual Remote Queue Inspector**:
+An isolated protocol adapter seam encapsulating non-destructive queue message inspection against remote Casual domains via transactional dequeue and rollback, providing an exchange point for upstream non-destructive browse protocol frames without leaking transaction mechanics into the Admin API.
+_Avoid_: casual peek helper, rollback inspector, queue snooper
+
 ### Web Console & Developer UI
 
 **Stub Catalog**:

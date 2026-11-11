@@ -24,6 +24,9 @@ dependencies {
 
     standaloneRuntime libs.wiremock
     standaloneRuntime libs.logback.classic
+
+    testImplementation libs.artemis.server
+    testImplementation libs.artemis.amqp.protocol
 }
 
 application {
@@ -35,6 +38,16 @@ tasks.register('runStandalone', JavaExec) {
     description = 'Runs WireMock standalone with all extensions, TCP NetEm, Casual gateway, and active UI'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer'
+    if (project.hasProperty('args')) {
+        args project.property('args').toString().split('\\s+')
+    }
+}
+
+tasks.register('runWithArtemis', JavaExec) {
+    group = 'application'
+    description = 'Runs WireMock standalone with embedded ActiveMQ Artemis AMQP 1.0 broker and configured connection'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServerWithArtemis'
     if (project.hasProperty('args')) {
         args project.property('args').toString().split('\\s+')
     }

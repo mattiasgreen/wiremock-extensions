@@ -3,6 +3,7 @@ dependencies {
     testImplementation project(':wiremock-extension-stateful')
     testImplementation project(':wiremock-extension-tcp-netem')
     testImplementation project(':wiremock-extension-casual')
+    testImplementation project(':wiremock-extension-async')
     testImplementation libs.playwright
     testImplementation libs.jackson.databind
     testImplementation libs.animated.gif.lib

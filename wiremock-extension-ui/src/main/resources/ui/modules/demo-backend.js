@@ -1241,6 +1241,227 @@ const SEED_REQUESTS = [
   }
 ];
 
+const SEED_ASYNC_CONNECTIONS = [
+  {
+    id: 'embedded-artemis',
+    protocol: 'amqp',
+    name: 'ActiveMQ Artemis (Embedded)',
+    endpoint: '127.0.0.1:61616',
+    status: 'HEALTHY',
+    properties: {
+      'amqp.protocol': '1.0',
+      'client.id': 'wm-artemis-client',
+      'amqp.idleTimeout': '30000'
+    }
+  },
+  {
+    id: 'prod-cluster-kafka',
+    protocol: 'kafka',
+    name: 'Kafka Event Backbone',
+    endpoint: 'localhost:9092',
+    status: 'HEALTHY',
+    properties: {
+      'client.id': 'wm-kafka-sink',
+      'compression.type': 'snappy'
+    }
+  },
+  {
+    id: 'mainframe-casual',
+    protocol: 'casual',
+    name: 'Casual Domain Gateway',
+    endpoint: '127.0.0.1:7772',
+    status: 'HEALTHY',
+    properties: {
+      'domain.id': 'finance-xatmi'
+    }
+  }
+];
+
+const SEED_ASYNC_DESTINATIONS = [
+  { id: 'dest-kafka-orders', name: 'orders.events', protocol: 'kafka', type: 'topic', brokerId: 'prod-cluster-kafka', messageCount: 3 },
+  { id: 'dest-amqp-payments', name: 'payments.requests', protocol: 'amqp', type: 'queue', brokerId: 'enterprise-broker', messageCount: 2 },
+  { id: 'dest-casual-billing', name: 'billing.forward', protocol: 'casual', type: 'queue', brokerId: 'mainframe-casual', messageCount: 2 },
+  { id: 'dest-inmem-audit', name: 'internal.audit', protocol: 'in-memory', type: 'queue', brokerId: 'local', messageCount: 1 }
+];
+
+const SEED_ASYNC_MESSAGES = {
+  'kafka/orders.events': [
+    {
+      id: 'msg-k-101',
+      protocol: 'kafka',
+      destination: 'orders.events',
+      key: 'ORD-8821',
+      partition: 0,
+      offset: 1042,
+      timestamp: Date.now() - 120000,
+      correlationId: 'corr-ord-8821',
+      replyTo: null,
+      headers: {
+        'x-tenant-id': 'emea-retail',
+        'traceparent': '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+      },
+      payload: JSON.stringify({
+        orderId: 'ORD-8821',
+        customer: 'Acme Corp',
+        legacyXmlInvoice: '<?xml version="1.0" encoding="UTF-8"?>\n<invoice id="INV-9921">\n  <total currency="USD">1250.00</total>\n  <item sku="SKU-441" qty="2">Widget</item>\n</invoice>'
+      }, null, 2),
+      size: 260
+    },
+    {
+      id: 'msg-k-102',
+      protocol: 'kafka',
+      destination: 'orders.events',
+      key: 'ORD-8822',
+      partition: 1,
+      offset: 412,
+      timestamp: Date.now() - 60000,
+      correlationId: 'corr-ord-8822',
+      replyTo: null,
+      headers: {
+        'x-tenant-id': 'apac-shipping'
+      },
+      payload: JSON.stringify({
+        orderId: 'ORD-8822',
+        customer: 'Global Logistics',
+        items: [
+          { sku: 'ITEM-99', quantity: 5 }
+        ],
+        status: 'SHIPPED'
+      }, null, 2),
+      size: 145
+    },
+    {
+      id: 'msg-k-103',
+      protocol: 'kafka',
+      destination: 'orders.events',
+      key: 'ORD-8823',
+      partition: 0,
+      offset: 1043,
+      timestamp: Date.now() - 10000,
+      correlationId: 'corr-ord-8823',
+      replyTo: null,
+      headers: {
+        'x-tenant-id': 'emea-retail'
+      },
+      payload: JSON.stringify({
+        orderId: 'ORD-8823',
+        customer: 'Starlight Retail',
+        status: 'PENDING'
+      }, null, 2),
+      size: 98
+    }
+  ],
+  'amqp/payments.requests': [
+    {
+      id: 'msg-amqp-201',
+      protocol: 'amqp',
+      destination: 'payments.requests',
+      key: 'PAY-EUR-9921',
+      partition: null,
+      offset: 0,
+      timestamp: Date.now() - 45000,
+      correlationId: 'corr-pay-9921',
+      replyTo: 'payments.replies',
+      headers: {
+        'content-type': 'application/json',
+        'x-amqp-delivery-mode': '2'
+      },
+      payload: JSON.stringify({
+        paymentId: 'PAY-EUR-9921',
+        amount: 850.5,
+        currency: 'EUR',
+        method: 'SEPA'
+      }, null, 2),
+      size: 112
+    },
+    {
+      id: 'msg-amqp-202',
+      protocol: 'amqp',
+      destination: 'payments.requests',
+      key: 'PAY-USD-9922',
+      partition: null,
+      offset: 1,
+      timestamp: Date.now() - 20000,
+      correlationId: 'corr-pay-9922',
+      replyTo: 'payments.replies',
+      headers: {
+        'content-type': 'application/json'
+      },
+      payload: JSON.stringify({
+        paymentId: 'PAY-USD-9922',
+        amount: 2200.0,
+        currency: 'USD',
+        method: 'CARD'
+      }, null, 2),
+      size: 114
+    }
+  ],
+  'casual/billing.forward': [
+    {
+      id: 'msg-casual-301',
+      protocol: 'casual',
+      destination: 'billing.forward',
+      key: 'INV-2026-881',
+      partition: null,
+      offset: 0,
+      timestamp: Date.now() - 80000,
+      correlationId: 'corr-casual-billing-881',
+      replyTo: null,
+      headers: {
+        'X-Casual-Service': 'billingService',
+        'X-Casual-Buffer-Type': 'JSON'
+      },
+      payload: JSON.stringify({
+        invoiceId: 'INV-2026-881',
+        amount: 7420.0,
+        status: 'PENDING'
+      }, null, 2),
+      size: 88
+    },
+    {
+      id: 'msg-casual-302',
+      protocol: 'casual',
+      destination: 'billing.forward',
+      key: 'INV-2026-882',
+      partition: null,
+      offset: 1,
+      timestamp: Date.now() - 30000,
+      correlationId: 'corr-casual-billing-882',
+      replyTo: null,
+      headers: {
+        'X-Casual-Service': 'billingService',
+        'X-Casual-Buffer-Type': 'JSON'
+      },
+      payload: JSON.stringify({
+        invoiceId: 'INV-2026-882',
+        amount: 1950.0,
+        status: 'PROCESSED'
+      }, null, 2),
+      size: 90
+    }
+  ],
+  'in-memory/internal.audit': [
+    {
+      id: 'msg-inmem-401',
+      protocol: 'in-memory',
+      destination: 'internal.audit',
+      key: 'AUD-001',
+      partition: null,
+      offset: 0,
+      timestamp: Date.now() - 15000,
+      correlationId: 'corr-aud-001',
+      replyTo: null,
+      headers: {},
+      payload: JSON.stringify({
+        event: 'USER_LOGIN',
+        user: 'admin',
+        ip: '127.0.0.1'
+      }, null, 2),
+      size: 72
+    }
+  ]
+};
+
 class InMemoryDemoBackend {
   constructor() {
     this.stubs = JSON.parse(JSON.stringify(SEED_STUBS));
@@ -1250,6 +1471,9 @@ class InMemoryDemoBackend {
     this.statefulModels = JSON.parse(JSON.stringify(SEED_STATEFUL_MODELS));
     this.netemProxies = JSON.parse(JSON.stringify(SEED_NETEM_PROXIES));
     this.casualServices = JSON.parse(JSON.stringify(SEED_CASUAL_SERVICES));
+    this.asyncConnections = JSON.parse(JSON.stringify(SEED_ASYNC_CONNECTIONS));
+    this.asyncDestinations = JSON.parse(JSON.stringify(SEED_ASYNC_DESTINATIONS));
+    this.asyncMessages = JSON.parse(JSON.stringify(SEED_ASYNC_MESSAGES));
     this.enabled = this.shouldAutoEnable();
   }
 
@@ -1666,6 +1890,118 @@ class InMemoryDemoBackend {
       }
     }
 
+    // 8b. Async Destinations & Messages Explorer (ADR 0023)
+    if (pathname === '/__admin/async/destinations' && method === 'GET') {
+      return responseJson(200, {
+        destinations: this.asyncDestinations
+      });
+    }
+
+    const destMsgMatch = pathname.match(/^\/__admin\/async\/destinations\/([^/]+)\/([^/]+)\/messages$/);
+    if (destMsgMatch) {
+      const proto = decodeURIComponent(destMsgMatch[1]);
+      const destName = decodeURIComponent(destMsgMatch[2]);
+      const key = `${proto}/${destName}`;
+
+      if (method === 'GET') {
+        const msgs = this.asyncMessages[key] || [];
+        return responseJson(200, { messages: msgs });
+      }
+
+      if (method === 'POST') {
+        const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+        if (!body.id) body.id = 'msg-demo-' + Date.now();
+        body.protocol = proto;
+        body.destination = destName;
+        body.timestamp = Date.now();
+        body.size = body.payload ? body.payload.length : 0;
+        if (!this.asyncMessages[key]) {
+          this.asyncMessages[key] = [];
+        }
+        const existingIdx = this.asyncMessages[key].findIndex(m => m.id === body.id);
+        if (existingIdx !== -1) {
+          this.asyncMessages[key][existingIdx] = body;
+        } else {
+          this.asyncMessages[key].unshift(body);
+        }
+        const d = this.asyncDestinations.find(x => x.protocol === proto && x.name === destName);
+        if (d) d.messageCount = this.asyncMessages[key].length;
+        return responseJson(201, body);
+      }
+    }
+
+    const singleMsgMatch = pathname.match(/^\/__admin\/async\/destinations\/([^/]+)\/([^/]+)\/messages\/([^/]+)$/);
+    if (singleMsgMatch && method === 'DELETE') {
+      const proto = decodeURIComponent(singleMsgMatch[1]);
+      const destName = decodeURIComponent(singleMsgMatch[2]);
+      const msgId = decodeURIComponent(singleMsgMatch[3]);
+      const key = `${proto}/${destName}`;
+      if (this.asyncMessages[key]) {
+        this.asyncMessages[key] = this.asyncMessages[key].filter(m => m.id !== msgId);
+        const d = this.asyncDestinations.find(x => x.protocol === proto && x.name === destName);
+        if (d) d.messageCount = this.asyncMessages[key].length;
+      }
+      return responseText(204, '');
+    }
+
+    const purgeDestMatch = pathname.match(/^\/__admin\/async\/destinations\/([^/]+)\/([^/]+)$/);
+    if (purgeDestMatch && method === 'DELETE') {
+      const proto = decodeURIComponent(purgeDestMatch[1]);
+      const destName = decodeURIComponent(purgeDestMatch[2]);
+      const key = `${proto}/${destName}`;
+      this.asyncMessages[key] = [];
+      const d = this.asyncDestinations.find(x => x.protocol === proto && x.name === destName);
+      if (d) d.messageCount = 0;
+      return responseText(204, '');
+    }
+
+    // Async Connections (ADR 0025)
+    if (pathname === '/__admin/async/connections') {
+      if (method === 'GET') {
+        return responseJson(200, {
+          count: this.asyncConnections.length,
+          connections: this.asyncConnections
+        });
+      }
+      if (method === 'POST') {
+        const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+        const incoming = Array.isArray(body)
+          ? body
+          : (Array.isArray(body.connections) ? body.connections : [body]);
+
+        const registered = [];
+        for (const item of incoming) {
+          if (!item || !item.id) continue;
+          const conn = {
+            id: String(item.id).trim(),
+            protocol: (item.protocol || 'kafka').toLowerCase(),
+            name: item.name || item.id,
+            endpoint: item.endpoint || '',
+            status: 'HEALTHY',
+            properties: item.properties || {}
+          };
+          this.asyncConnections = this.asyncConnections.filter(c => c.id !== conn.id);
+          this.asyncConnections.push(conn);
+          registered.push(conn);
+        }
+
+        if (registered.length === 0) {
+          return responseJson(400, { error: 'No valid connection objects found (id is required)' });
+        }
+        return responseJson(201, {
+          count: registered.length,
+          connections: registered
+        });
+      }
+    }
+
+    const deleteConnMatch = pathname.match(/^\/__admin\/async\/connections\/([^/]+)$/);
+    if (deleteConnMatch && method === 'DELETE') {
+      const connId = decodeURIComponent(deleteConnMatch[1]);
+      this.asyncConnections = this.asyncConnections.filter(c => c.id !== connId);
+      return responseText(204, '');
+    }
+
     // 9. Journal Compression & Anti-OOM (Beta)
     if (pathname === '/__admin/journal/stats') {
       if (method === 'GET') {
@@ -1793,8 +2129,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/unified-protocol-tester',
-        commit: 'a44ff97'
+        branch: 'explore_async_queues_ui',
+        commit: '4a53d61'
       });
     }
 

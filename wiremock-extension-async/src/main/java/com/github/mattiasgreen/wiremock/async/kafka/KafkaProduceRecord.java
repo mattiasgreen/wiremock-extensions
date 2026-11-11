@@ -32,4 +32,8 @@ public record KafkaProduceRecord(
         value = Objects.requireNonNullElse(value, "");
         headers = headers != null ? Map.copyOf(headers) : Collections.emptyMap();
     }
+
+    public static KafkaProduceRecord of(String topic, String key, String value) {
+        return new KafkaProduceRecord(topic, 0, key, value, Collections.emptyMap(), 0L, System.currentTimeMillis());
+    }
 }

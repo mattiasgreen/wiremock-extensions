@@ -16,6 +16,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -109,6 +110,31 @@ public class AmqpServer implements AutoCloseable {
 
     public synchronized int getPort() {
         return boundPort;
+    }
+
+    public synchronized List<String> listQueues() {
+        return Collections.unmodifiableList(new ArrayList<>(stagedFeeds.keySet()));
+    }
+
+    public synchronized List<AsyncMessage> peekQueue(String queue) {
+        if (queue == null) return Collections.emptyList();
+        Deque<AsyncMessage> q = stagedFeeds.get(queue);
+        return q != null ? Collections.unmodifiableList(new ArrayList<>(q)) : Collections.emptyList();
+    }
+
+    public synchronized boolean deleteMessage(String queue, String messageId) {
+        if (queue == null || messageId == null) return false;
+        Deque<AsyncMessage> q = stagedFeeds.get(queue);
+        if (q == null) return false;
+        return q.removeIf(m -> messageId.equals(m.id()));
+    }
+
+    public synchronized void purgeQueue(String queue) {
+        if (queue == null) return;
+        Deque<AsyncMessage> q = stagedFeeds.get(queue);
+        if (q != null) {
+            q.clear();
+        }
     }
 
     public synchronized boolean isRunning() {

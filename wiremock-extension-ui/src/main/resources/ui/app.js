@@ -141,6 +141,12 @@ import {
   deactivateNetEm
 } from './modules/netem.js';
 import {
+  initQueues,
+  refreshQueues,
+  filterDestinations,
+  filterMessages
+} from './modules/queues.js';
+import {
   renderTargetCapabilities,
   applyCapabilityVisibility
 } from './modules/capabilities.js';
@@ -208,7 +214,11 @@ export {
   highlightXml,
   highlightPayload,
   detectFormat,
-  demoBackend
+  demoBackend,
+  initQueues,
+  refreshQueues,
+  filterDestinations,
+  filterMessages
 };
 
 // Normalize base pathname with trailing slash for relative neighbor URLs (e.g. ../swagger-ui/)
@@ -234,6 +244,7 @@ initCasualTester();
 initScenariosTab();
 initTargetConnectionModal({ loadData, loadVersionInfo });
 initNetEmTab();
+initQueues();
 initPayloadLensModal();
 
 registerRouteHandlers({
@@ -292,6 +303,9 @@ registerRouteHandlers({
   },
   applyNetEm: () => {
     activateNetEm();
+  },
+  applyQueues: () => {
+    refreshQueues();
   }
 });
 
@@ -304,6 +318,9 @@ elements.tabs.forEach(tab => {
       activateNetEm();
     } else {
       deactivateNetEm();
+    }
+    if (target === 'tab-queues') {
+      refreshQueues();
     }
   });
 });
@@ -330,9 +347,12 @@ function boot() {
   renderLocalHeaderChips();
   loadData();
   loadVersionInfo();
+  refreshQueues();
   const { route } = parseHash();
   if (route === 'netem') {
     activateNetEm();
+  } else if (route === 'queues') {
+    refreshQueues();
   }
 }
 
