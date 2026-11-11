@@ -189,7 +189,7 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
     }
 
     @Test
-    @DisplayName("Should inspect broker connections modal and copy declarative GitOps JSON")
+    @DisplayName("Should inspect broker connections, load protocol template, register via JSON, and export")
     void testBrokerConnectionsModal() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?demo=true#queues");
         page.waitForSelector("#tab-queues.active");
@@ -202,7 +202,23 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(modal.isVisible()).isTrue();
         assertThat(page.locator("#queues-brokers-tbody").textContent()).contains("embedded-artemis");
         assertThat(page.locator("#queues-brokers-tbody").textContent()).contains("ActiveMQ Artemis (Embedded)");
-        assertThat(page.locator("#queues-brokers-gitops-json").textContent()).contains("embedded-artemis");
+        assertThat(page.locator("#queues-brokers-export-json").textContent()).contains("embedded-artemis");
+
+        // Load Protocol Template
+        page.selectOption("#queues-broker-template-select", "amqp-k8s");
+        Locator jsonEditor = page.locator("#queues-broker-json-editor");
+        assertThat(jsonEditor.inputValue()).contains("artemis-k8s");
+        assertThat(jsonEditor.inputValue()).contains("${AMQP_PASSWORD}");
+
+        // Prettify
+        page.locator("#btn-queues-prettify-json").click();
+        assertThat(page.locator("#queues-broker-feedback").textContent()).contains("valid and formatted");
+
+        // Submit & Register
+        page.locator("#btn-queues-submit-json").click();
+        page.waitForSelector("#queues-brokers-tbody:has-text('artemis-k8s')");
+        assertThat(page.locator("#queues-brokers-tbody").textContent()).contains("artemis-k8s");
+        assertThat(page.locator("#queues-broker-feedback").textContent()).contains("successfully registered");
 
         // Close modal
         page.locator("#btn-close-queues-brokers").click();

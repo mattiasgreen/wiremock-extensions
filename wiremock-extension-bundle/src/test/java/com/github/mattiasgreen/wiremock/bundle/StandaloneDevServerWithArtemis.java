@@ -5,7 +5,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 
-import com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint;
 import com.github.mattiasgreen.wiremock.async.amqp.AmqpMessageBroker;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
@@ -14,7 +13,6 @@ import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessag
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
 import com.github.mattiasgreen.wiremock.async.destination.DestinationProvider;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
-import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.io.File;
 import java.nio.file.Files;
@@ -91,11 +89,13 @@ public class StandaloneDevServerWithArtemis {
         AsyncDestinationService.getInstance().registerProvider(artemisProvider);
 
         // Configure Upstream broker in AsyncEngine to bridge to Artemis
-        AmqpMessageBroker upstreamBroker = new AmqpMessageBroker("artemis-upstream", "amqp://127.0.0.1:" + ARTEMIS_AMQP_PORT);
+        AmqpMessageBroker upstreamBroker =
+                new AmqpMessageBroker("artemis-upstream", "amqp://127.0.0.1:" + ARTEMIS_AMQP_PORT);
         AsyncEngine.getInstance().setBrokers(AsyncEngine.getInstance().getTestBroker(), upstreamBroker);
 
         // Seed initial sample messages with nested polyglot payloads
-        String xmlInvoice = """
+        String xmlInvoice =
+                """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <invoice id="INV-ARTEMIS-9001">
                   <header>
@@ -113,7 +113,8 @@ public class StandaloneDevServerWithArtemis {
                 </invoice>
                 """;
 
-        String jsonOrder = """
+        String jsonOrder =
+                """
                 {
                   "orderId": "ORD-ARTEMIS-9001",
                   "customer": "Global Logistics Inc",
@@ -122,7 +123,8 @@ public class StandaloneDevServerWithArtemis {
                   "totalAmount": 3450.00,
                   "embeddedXmlInvoice": "%s"
                 }
-                """.formatted(xmlInvoice.replace("\"", "\\\"").replace("\n", "\\n"));
+                """
+                        .formatted(xmlInvoice.replace("\"", "\\\"").replace("\n", "\\n"));
 
         artemisProvider.seedMessage(
                 "orders.inbound",
@@ -143,7 +145,8 @@ public class StandaloneDevServerWithArtemis {
                         null,
                         null));
 
-        String jsonPayment = """
+        String jsonPayment =
+                """
                 {
                   "paymentId": "PAY-EUR-7721",
                   "orderId": "ORD-ARTEMIS-9001",
@@ -177,20 +180,25 @@ public class StandaloneDevServerWithArtemis {
                 .willReturn(aResponse()
                         .withStatus(202)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("""
+                        .withBody(
+                                """
                                 {
                                   "status": "ACCEPTED",
                                   "targetQueue": "orders.inbound",
                                   "broker": "artemis-amqp",
                                   "receivedAt": "%s"
                                 }
-                                """.formatted(Instant.now().toString()))));
+                                """
+                                        .formatted(Instant.now().toString()))));
 
-        wireMockServer.stubFor(post(urlEqualTo("/api/v1/payments/publish"))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
+        wireMockServer.stubFor(
+                post(urlEqualTo("/api/v1/payments/publish"))
+                        .willReturn(
+                                aResponse()
+                                        .withStatus(200)
+                                        .withHeader("Content-Type", "application/json")
+                                        .withBody(
+                                                """
                                 {
                                   "paymentStatus": "PROCESSED",
                                   "transactionId": "TX-ARTEMIS-9921",
@@ -202,7 +210,8 @@ public class StandaloneDevServerWithArtemis {
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("""
+                        .withBody(
+                                """
                                 {
                                   "broker": "ActiveMQ Artemis",
                                   "protocol": "AMQP 1.0",
@@ -210,7 +219,8 @@ public class StandaloneDevServerWithArtemis {
                                   "status": "ONLINE",
                                   "queues": ["orders.inbound", "payments.requests", "notifications.shipping"]
                                 }
-                                """.formatted(ARTEMIS_AMQP_PORT))));
+                                """
+                                        .formatted(ARTEMIS_AMQP_PORT))));
 
         System.out.println("=================================================================");
         System.out.println("🚀 WireMock Console UI: http://localhost:" + wireMockServer.port() + "/__admin/ui");
@@ -246,7 +256,9 @@ public class StandaloneDevServerWithArtemis {
         }
 
         void seedMessage(String queue, AsyncDestinationMessage msg) {
-            messagesByQueue.computeIfAbsent(queue, k -> new CopyOnWriteArrayList<>()).add(msg);
+            messagesByQueue
+                    .computeIfAbsent(queue, k -> new CopyOnWriteArrayList<>())
+                    .add(msg);
         }
 
         @Override
@@ -259,7 +271,8 @@ public class StandaloneDevServerWithArtemis {
             List<AsyncDestination> list = new ArrayList<>();
             List<String> queues = List.of("orders.inbound", "payments.requests", "notifications.shipping");
             for (String q : queues) {
-                int count = messagesByQueue.getOrDefault(q, Collections.emptyList()).size();
+                int count =
+                        messagesByQueue.getOrDefault(q, Collections.emptyList()).size();
                 list.add(new AsyncDestination(
                         "artemis:" + q,
                         "amqp",
@@ -303,7 +316,8 @@ public class StandaloneDevServerWithArtemis {
 
         @Override
         public boolean publishMessage(String destination, AsyncDestinationMessage message) {
-            List<AsyncDestinationMessage> msgs = messagesByQueue.computeIfAbsent(destination, k -> new CopyOnWriteArrayList<>());
+            List<AsyncDestinationMessage> msgs =
+                    messagesByQueue.computeIfAbsent(destination, k -> new CopyOnWriteArrayList<>());
             int existingIdx = -1;
             for (int i = 0; i < msgs.size(); i++) {
                 if (msgs.get(i).id().equals(message.id())) {

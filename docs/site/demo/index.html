@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: explore_async_queues_ui | Commit: a44ff97">v1.14.0 (explore_async_queues_ui@a44ff97)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: explore_async_queues_ui | Commit: 4a53d61">v1.14.0 (explore_async_queues_ui@4a53d61)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -1720,19 +1720,19 @@
     </div>
   </div>
 
-  <!-- Modal: Broker Connections & GitOps Configuration -->
+  <!-- Modal: Broker Connections -->
   <div id="modal-queues-brokers" class="modal-backdrop hidden" data-testid="modal-queues-brokers" style="z-index: 1000;">
-    <div class="modal modal-dialog" style="max-width: 840px; margin: auto; max-height: 88vh; display: flex; flex-direction: column;">
+    <div class="modal modal-dialog" style="max-width: 860px; margin: auto; max-height: 90vh; display: flex; flex-direction: column;">
       <div class="modal-header">
         <div class="modal-title-group">
           <span class="modal-icon">🔌</span>
-          <h3>Broker Connections &amp; Cluster Coordinates</h3>
+          <h3>Broker Connections</h3>
         </div>
         <button id="btn-close-queues-brokers" class="btn btn-tiny modal-close-btn" title="Close modal">&times;</button>
       </div>
       <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
         <p class="modal-description" style="margin-bottom: 14px; font-size: 0.85rem; color: var(--text-muted);">
-          Inspect registered messaging brokers (Kafka, AMQP 1.0, Casual XATMI), configure cluster coordinates in-process, or export declarative GitOps configuration for CI/CD environments.
+          Inspect registered messaging brokers (Kafka, AMQP 1.0, Casual XATMI), register connections via JSON templates, or import/export broker configuration.
         </p>
 
         <!-- Section: Active Registered Brokers -->
@@ -1761,51 +1761,46 @@
           </div>
         </div>
 
-        <!-- Section: Register New Broker -->
-        <details style="margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px 14px; background: rgba(255,255,255,0.01);">
-          <summary style="font-weight: 600; font-size: 0.85rem; cursor: pointer; color: var(--text-color);">➕ Register In-Memory Broker Connection</summary>
-          <form id="form-queues-add-broker" style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <div class="form-group">
-                <label for="queues-new-broker-id" style="font-size: 0.8rem; font-weight: 600;">Connection ID *</label>
-                <input type="text" id="queues-new-broker-id" class="form-control" placeholder="e.g. corp-artemis or kafka-prod" required>
-              </div>
-              <div class="form-group">
-                <label for="queues-new-broker-proto" style="font-size: 0.8rem; font-weight: 600;">Protocol *</label>
-                <select id="queues-new-broker-proto" class="form-control">
-                  <option value="amqp">AMQP 1.0</option>
-                  <option value="kafka">Kafka Wire Protocol</option>
-                  <option value="casual">Casual XATMI</option>
-                </select>
-              </div>
+        <!-- Section: Register / Import Broker Connection -->
+        <div style="margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 4px; padding: 12px 14px; background: rgba(255,255,255,0.01);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Register / Import Broker Connection</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <select id="queues-broker-template-select" class="form-control" style="font-size: 0.8rem; padding: 3px 8px; max-width: 280px;">
+                <option value="">-- Load Protocol Template... --</option>
+                <option value="amqp-local">AMQP 1.0 (Local / Artemis)</option>
+                <option value="amqp-k8s">AMQP 1.0 (K8s Secret / Env Var Auth)</option>
+                <option value="kafka-local">Kafka (Local PLAINTEXT)</option>
+                <option value="kafka-sasl">Kafka (SASL SCRAM + K8s Secret)</option>
+                <option value="casual-gateway">Casual XATMI (TCP Gateway)</option>
+              </select>
+              <button type="button" id="btn-queues-prettify-json" class="btn btn-tiny btn-secondary" title="Format and validate JSON">✨ Prettify</button>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <div class="form-group">
-                <label for="queues-new-broker-name" style="font-size: 0.8rem; font-weight: 600;">Display Name</label>
-                <input type="text" id="queues-new-broker-name" class="form-control" placeholder="e.g. ActiveMQ Artemis Cluster">
-              </div>
-              <div class="form-group">
-                <label for="queues-new-broker-endpoint" style="font-size: 0.8rem; font-weight: 600;">Endpoint Coordinate *</label>
-                <input type="text" id="queues-new-broker-endpoint" class="form-control" placeholder="e.g. 127.0.0.1:61616 or localhost:9092" required>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="queues-new-broker-props" style="font-size: 0.8rem; font-weight: 600;">Properties (KEY=VALUE per line)</label>
-              <textarea id="queues-new-broker-props" class="form-control" rows="2" style="font-family: monospace; font-size: 0.8rem;" placeholder="client.id=wm-client&#10;amqp.idleTimeout=30000"></textarea>
-            </div>
-            <div style="display: flex; justify-content: flex-end; gap: 8px;">
-              <button type="submit" id="btn-queues-save-broker" class="btn btn-small btn-primary">➕ Register Connection</button>
-            </div>
-          </form>
-        </details>
+          </div>
+          <textarea id="queues-broker-json-editor" class="form-control" rows="8" spellcheck="false" style="font-family: monospace; font-size: 0.82rem; background: rgba(0,0,0,0.3); width: 100%; box-sizing: border-box;" placeholder='{
+  "id": "my-broker",
+  "protocol": "amqp",
+  "name": "My Broker Cluster",
+  "endpoint": "127.0.0.1:5672",
+  "properties": {}
+}'></textarea>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <small class="muted-text text-small">Supports single connection object or <code>{ "connections": [...] }</code>. Tokens like <code>${VAR_NAME}</code> resolve on the backend.</small>
+            <button type="button" id="btn-queues-submit-json" class="btn btn-small btn-primary">➕ Register / Import</button>
+          </div>
+          <div id="queues-broker-feedback" class="text-small hidden" style="margin-top: 6px;"></div>
+        </div>
 
-        <!-- Section: GitOps Declarative JSON Export -->
+        <!-- Section: Export Configuration -->
         <div>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Declarative GitOps Configuration</span>
-            <button type="button" id="btn-queues-copy-gitops" class="btn btn-tiny btn-secondary" title="Copy configuration as JSON">📋 Copy JSON</button>
+            <span style="font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Export Configuration</span>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-queues-copy-json" class="btn btn-tiny btn-secondary" title="Copy configuration to clipboard">📋 Copy JSON</button>
+              <button type="button" id="btn-queues-download-json" class="btn btn-tiny btn-secondary" title="Download configuration as JSON file">💾 Download JSON</button>
+            </div>
           </div>
-          <pre id="queues-brokers-gitops-json" class="code-block" style="margin: 0; max-height: 160px; overflow-y: auto; font-size: 0.78rem; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 10px;"></pre>
+          <pre id="queues-brokers-export-json" class="code-block" style="margin: 0; max-height: 160px; overflow-y: auto; font-size: 0.78rem; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 10px;"></pre>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-color); padding: 12px 20px;">

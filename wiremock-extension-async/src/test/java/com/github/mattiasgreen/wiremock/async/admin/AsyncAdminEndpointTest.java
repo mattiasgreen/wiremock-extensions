@@ -193,6 +193,45 @@ class AsyncAdminEndpointTest {
     }
 
     @Test
+    @DisplayName("POST /__admin/async/connections should support batch array and preserve ${VAR_NAME} tokens")
+    void shouldSupportBatchConnectionsAndPreserveEnvTokens() throws Exception {
+        String batchPayload =
+                """
+        {
+          "connections": [
+            {
+              "id": "batch-amqp",
+              "protocol": "amqp",
+              "name": "Artemis Prod",
+              "endpoint": "${ARTEMIS_HOST}:5672",
+              "properties": {
+                "password": "${AMQP_PASSWORD}",
+                "client.id": "k8s-pod"
+              }
+            }
+          ]
+        }
+        """;
+
+        HttpRequest postReq = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/connections"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(batchPayload))
+                .build();
+
+        HttpResponse<String> postResp = httpClient.send(postReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(postResp.statusCode()).isEqualTo(201);
+
+        JsonNode postJson = MAPPER.readTree(postResp.body());
+        assertThat(postJson.get("count").asInt()).isEqualTo(1);
+        JsonNode c = postJson.get("connections").get(0);
+        assertThat(c.get("id").asText()).isEqualTo("batch-amqp");
+        assertThat(c.get("endpoint").asText()).isEqualTo("${ARTEMIS_HOST}:5672");
+        assertThat(c.get("properties").get("password").asText()).isEqualTo("${AMQP_PASSWORD}");
+        assertThat(c.get("properties").get("client.id").asText()).isEqualTo("k8s-pod");
+    }
+
+    @Test
     @DisplayName("Should list destinations, publish, peek messages, delete single message, and purge via Admin API")
     void shouldManageDestinationsViaAdminApi() throws Exception {
         String postMsg =

@@ -3,7 +3,6 @@ package com.github.mattiasgreen.wiremock.async.admin;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
-import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
@@ -14,7 +13,9 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -261,37 +262,29 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
             try {
                 String reqBody = serveEvent.getRequest().getBodyAsString();
                 JsonNode node = MAPPER.readTree(reqBody);
-                String id = node.hasNonNull("id") ? node.get("id").asText().trim() : "";
-                if (id.isEmpty()) {
+                List<com.github.mattiasgreen.wiremock.async.connection.BrokerConnection> registered =
+                        brokerRegistry.registerFromJson(node);
+                if (registered.isEmpty()) {
                     return ResponseDefinitionBuilder.responseDefinition()
                             .withStatus(400)
                             .withHeader("Content-Type", "application/json")
-                            .withBody("{\"error\":\"id is required\"}")
+                            .withBody("{\"error\":\"No valid connection objects found (id is required)\"}")
                             .build();
                 }
 
-                String protocol = node.hasNonNull("protocol")
-                        ? node.get("protocol").asText().toLowerCase(java.util.Locale.ROOT)
-                        : "kafka";
-                String name = node.hasNonNull("name") ? node.get("name").asText() : id;
-                String endpoint =
-                        node.hasNonNull("endpoint") ? node.get("endpoint").asText() : "";
-
-                Map<String, String> properties = new HashMap<>();
-                if (node.hasNonNull("properties") && node.get("properties").isObject()) {
-                    node.get("properties")
-                            .fields()
-                            .forEachRemaining(entry -> properties.put(
-                                    entry.getKey(), entry.getValue().asText()));
+                List<Map<String, Object>> sanitizedList = new ArrayList<>();
+                for (var c : registered) {
+                    sanitizedList.add(brokerRegistry.exportSanitized(c.id()));
                 }
 
-                BrokerConnection connection = new BrokerConnection(id, protocol, name, endpoint, properties);
-                brokerRegistry.register(connection);
+                Map<String, Object> resp = new LinkedHashMap<>();
+                resp.put("count", sanitizedList.size());
+                resp.put("connections", sanitizedList);
 
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(201)
                         .withHeader("Content-Type", "application/json")
-                        .withBody(MAPPER.writeValueAsString(brokerRegistry.exportSanitized(id)))
+                        .withBody(MAPPER.writeValueAsString(resp))
                         .build();
             } catch (java.io.IOException | IllegalArgumentException e) {
                 return ResponseDefinitionBuilder.responseDefinition()

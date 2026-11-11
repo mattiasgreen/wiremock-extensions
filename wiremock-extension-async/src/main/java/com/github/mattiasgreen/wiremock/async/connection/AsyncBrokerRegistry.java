@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -19,8 +18,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Thread-safe centralized registry for asynchronous broker connections.
- * Follows GitOps principles: declarative configuration is loaded as read-only from disk,
- * mutations are kept strictly in-process, and secrets are sanitized during API export.
+ * Ingests single connection descriptors or batch JSON arrays with upsert semantics,
+ * and masks plaintext secrets while preserving declarative ${VAR_NAME} tokens on export.
  */
 public class AsyncBrokerRegistry {
 
@@ -77,6 +76,51 @@ public class AsyncBrokerRegistry {
     }
 
     /**
+     * Parses a single connection node or a collection of nodes and registers them with upsert semantics.
+     *
+     * @param root JSON node containing a single connection or an array/envelope
+     * @return list of registered/updated connections
+     */
+    public List<BrokerConnection> registerFromJson(JsonNode root) {
+        if (root == null || root.isNull()) {
+            return Collections.emptyList();
+        }
+
+        List<JsonNode> nodesToProcess = new ArrayList<>();
+        if (root.isArray()) {
+            root.forEach(nodesToProcess::add);
+        } else if (root.hasNonNull("connections") && root.get("connections").isArray()) {
+            root.get("connections").forEach(nodesToProcess::add);
+        } else if (root.isObject() && root.hasNonNull("id")) {
+            nodesToProcess.add(root);
+        }
+
+        List<BrokerConnection> registered = new ArrayList<>();
+        for (JsonNode node : nodesToProcess) {
+            String id = node.hasNonNull("id") ? node.get("id").asText().trim() : "";
+            if (id.isEmpty()) continue;
+
+            String protocol =
+                    node.hasNonNull("protocol") ? node.get("protocol").asText().toLowerCase(Locale.ROOT) : "kafka";
+            String name = node.hasNonNull("name") ? node.get("name").asText() : id;
+            String endpoint = node.hasNonNull("endpoint") ? node.get("endpoint").asText() : "";
+
+            Map<String, String> properties = new LinkedHashMap<>();
+            if (node.hasNonNull("properties") && node.get("properties").isObject()) {
+                node.get("properties")
+                        .fields()
+                        .forEachRemaining(entry ->
+                                properties.put(entry.getKey(), entry.getValue().asText()));
+            }
+
+            BrokerConnection connection = new BrokerConnection(id, protocol, name, endpoint, properties);
+            register(connection);
+            registered.add(connection);
+        }
+        return Collections.unmodifiableList(registered);
+    }
+
+    /**
      * Loads declarative broker connections from a JSON input stream.
      * Operates purely in-memory with zero file writes.
      */
@@ -86,29 +130,7 @@ public class AsyncBrokerRegistry {
         }
         try {
             JsonNode root = MAPPER.readTree(inputStream);
-            JsonNode connArray = root.hasNonNull("connections") ? root.get("connections") : root;
-            if (connArray.isArray()) {
-                for (JsonNode node : connArray) {
-                    String id = node.hasNonNull("id") ? node.get("id").asText() : "";
-                    if (id.isBlank()) continue;
-
-                    String protocol =
-                            node.hasNonNull("protocol") ? node.get("protocol").asText() : "kafka";
-                    String name = node.hasNonNull("name") ? node.get("name").asText() : id;
-                    String endpoint =
-                            node.hasNonNull("endpoint") ? node.get("endpoint").asText() : "";
-
-                    Map<String, String> properties = new HashMap<>();
-                    if (node.hasNonNull("properties") && node.get("properties").isObject()) {
-                        node.get("properties")
-                                .fields()
-                                .forEachRemaining(entry -> properties.put(
-                                        entry.getKey(), entry.getValue().asText()));
-                    }
-
-                    register(new BrokerConnection(id, protocol, name, endpoint, properties));
-                }
-            }
+            registerFromJson(root);
         } catch (Exception e) {
             String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
             LOG.error("[ASYNC-REGISTRY] Failed to parse declarative connections: {}", sanitized);
@@ -118,6 +140,7 @@ public class AsyncBrokerRegistry {
 
     /**
      * Exports connection details with sensitive secrets masked for Web Console UI presentation.
+     * Declarative environment variable references (${VAR_NAME}) are preserved verbatim.
      */
     public Map<String, Object> exportSanitized(String id) {
         BrokerConnection conn = connections.get(id);
@@ -133,10 +156,13 @@ public class AsyncBrokerRegistry {
         Map<String, String> sanitizedProps = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : conn.properties().entrySet()) {
             String keyLower = entry.getKey().toLowerCase(Locale.ROOT);
-            boolean isSecret = SENSITIVE_KEYS.stream().anyMatch(keyLower::contains);
-            sanitizedProps.put(entry.getKey(), isSecret ? "******" : entry.getValue());
+            boolean isSecretKey = SENSITIVE_KEYS.stream().anyMatch(keyLower::contains);
+            String val = entry.getValue();
+            boolean isEnvToken = val != null && val.startsWith("${") && val.endsWith("}");
+            sanitizedProps.put(entry.getKey(), (isSecretKey && !isEnvToken) ? "******" : val);
         }
         map.put("properties", sanitizedProps);
+        map.put("status", "HEALTHY");
         return map;
     }
 

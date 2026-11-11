@@ -1,8 +1,9 @@
 /**
- * Async Queues & Topics Explorer Controller (ADR 0023).
+ * Async Queues & Topics Explorer Controller (ADR 0025).
  * Provides cross-protocol destination browsing, non-destructive message peeking,
  * real-time corpus-based searching across headers/bodies, Polyglot Payload Lens inspection,
- * compensating edits, broker cluster connection management, and safe destination purging.
+ * compensating edits, declarative JSON broker configuration with protocol templates,
+ * and safe destination purging.
  * Zero external dependencies.
  */
 import { state } from './state.js';
@@ -19,6 +20,64 @@ import { highlightPayload, formatPayload } from './highlighter.js';
 import { doFetch } from './api.js';
 
 let pollTimer = null;
+
+export const PROTOCOL_TEMPLATES = {
+  'amqp-local': {
+    id: 'local-artemis',
+    protocol: 'amqp',
+    name: 'ActiveMQ Artemis (Local)',
+    endpoint: '127.0.0.1:61616',
+    properties: {
+      'amqp.protocol': '1.0',
+      'client.id': 'wm-artemis-client',
+      'amqp.idleTimeout': '30000'
+    }
+  },
+  'amqp-k8s': {
+    id: 'artemis-k8s',
+    protocol: 'amqp',
+    name: 'Artemis Cluster (K8s Secret)',
+    endpoint: '${ARTEMIS_HOST}:5672',
+    properties: {
+      'amqp.protocol': '1.0',
+      'username': '${AMQP_USER}',
+      'password': '${AMQP_PASSWORD}',
+      'client.id': 'wiremock-pod'
+    }
+  },
+  'kafka-local': {
+    id: 'local-kafka',
+    protocol: 'kafka',
+    name: 'Kafka Wire Sink (Local)',
+    endpoint: 'localhost:9092',
+    properties: {
+      'client.id': 'wm-kafka-sink',
+      'acks': 'all'
+    }
+  },
+  'kafka-sasl': {
+    id: 'corp-kafka-sasl',
+    protocol: 'kafka',
+    name: 'Corporate Kafka (SASL SCRAM)',
+    endpoint: '${KAFKA_BOOTSTRAP_SERVERS}',
+    properties: {
+      'security.protocol': 'SASL_PLAINTEXT',
+      'sasl.mechanism': 'SCRAM-SHA-512',
+      'sasl.jaas.config': 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME}" password="${KAFKA_PASSWORD}";',
+      'client.id': 'wiremock-async-engine'
+    }
+  },
+  'casual-gateway': {
+    id: 'casual-domain-gateway',
+    protocol: 'casual',
+    name: 'Casual XATMI Domain Gateway',
+    endpoint: '127.0.0.1:7772',
+    properties: {
+      'domain.id': 'finance-xatmi',
+      'casual.timeout.ms': '5000'
+    }
+  }
+};
 
 /**
  * Filters destinations list by protocol filter and channel search query.
@@ -267,14 +326,14 @@ export async function fetchConnections() {
 }
 
 /**
- * Registers an in-memory broker connection.
+ * Registers one or more broker connections via JSON descriptor or envelope.
  */
-export async function registerConnection(conn) {
+export async function registerConnection(connPayload) {
   try {
     const res = await doFetch('/__admin/async/connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(conn)
+      body: JSON.stringify(connPayload)
     });
     return res.status === 201 || res.ok;
   } catch (err) {
@@ -297,11 +356,16 @@ export async function deleteConnection(id) {
 }
 
 /**
- * Opens the Broker Connections & GitOps modal.
+ * Opens the Broker Connections modal.
  */
 export async function openBrokersModal() {
   const modal = document.getElementById('modal-queues-brokers');
   if (!modal) return;
+  const feedbackEl = document.getElementById('queues-broker-feedback');
+  if (feedbackEl) {
+    feedbackEl.textContent = '';
+    feedbackEl.classList.add('hidden');
+  }
   const conns = await fetchConnections();
   state.queuesBrokerConnections = conns;
   renderBrokersModal(conns);
@@ -317,12 +381,12 @@ export function closeBrokersModal() {
 }
 
 /**
- * Renders the Broker Connections modal table and declarative GitOps JSON.
+ * Renders the Broker Connections modal table and live JSON configuration.
  */
 export function renderBrokersModal(connections) {
   const tbody = document.getElementById('queues-brokers-tbody');
   const countEl = document.getElementById('queues-brokers-count');
-  const jsonEl = document.getElementById('queues-brokers-gitops-json');
+  const jsonEl = document.getElementById('queues-brokers-export-json');
 
   if (countEl) {
     countEl.textContent = `${connections.length} registered`;
@@ -335,7 +399,7 @@ export function renderBrokersModal(connections) {
   if (!tbody) return;
 
   if (connections.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="padding: 24px; text-align: center; color: var(--text-muted);">No broker connections registered. Use form below to add one.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="padding: 24px; text-align: center; color: var(--text-muted);">No broker connections registered. Use template editor below to add one.</td></tr>`;
     return;
   }
 
@@ -586,8 +650,13 @@ export function initQueues() {
   const btnHeaderBrokers = document.getElementById('btn-queues-manage-brokers');
   const btnCloseBrokers = document.getElementById('btn-close-queues-brokers');
   const btnCloseBrokersFooter = document.getElementById('btn-close-queues-brokers-footer');
-  const formAddBroker = document.getElementById('form-queues-add-broker');
-  const btnCopyGitOps = document.getElementById('btn-queues-copy-gitops');
+  const templateSelect = document.getElementById('queues-broker-template-select');
+  const jsonEditor = document.getElementById('queues-broker-json-editor');
+  const btnPrettify = document.getElementById('btn-queues-prettify-json');
+  const btnSubmitJson = document.getElementById('btn-queues-submit-json');
+  const feedbackEl = document.getElementById('queues-broker-feedback');
+  const btnCopyJson = document.getElementById('btn-queues-copy-json');
+  const btnDownloadJson = document.getElementById('btn-queues-download-json');
 
   if (btnSidebarBrokers) {
     btnSidebarBrokers.addEventListener('click', () => openBrokersModal());
@@ -600,6 +669,112 @@ export function initQueues() {
   }
   if (btnCloseBrokersFooter) {
     btnCloseBrokersFooter.addEventListener('click', () => closeBrokersModal());
+  }
+
+  // Template select change -> load example JSON
+  if (templateSelect && jsonEditor) {
+    templateSelect.addEventListener('change', () => {
+      const key = templateSelect.value;
+      if (key && PROTOCOL_TEMPLATES[key]) {
+        jsonEditor.value = JSON.stringify(PROTOCOL_TEMPLATES[key], null, 2);
+        if (feedbackEl) feedbackEl.classList.add('hidden');
+      }
+    });
+  }
+
+  // Prettify JSON button
+  if (btnPrettify && jsonEditor) {
+    btnPrettify.addEventListener('click', () => {
+      try {
+        const val = jsonEditor.value.trim();
+        if (!val) return;
+        const parsed = JSON.parse(val);
+        jsonEditor.value = JSON.stringify(parsed, null, 2);
+        if (feedbackEl) {
+          feedbackEl.textContent = '✓ JSON is valid and formatted';
+          feedbackEl.className = 'text-small text-success';
+          feedbackEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        if (feedbackEl) {
+          feedbackEl.textContent = `❌ Invalid JSON: ${err.message}`;
+          feedbackEl.className = 'text-small text-danger';
+          feedbackEl.classList.remove('hidden');
+        }
+      }
+    });
+  }
+
+  // Submit / Register JSON button
+  if (btnSubmitJson && jsonEditor) {
+    btnSubmitJson.addEventListener('click', async () => {
+      try {
+        const val = jsonEditor.value.trim();
+        if (!val) {
+          if (feedbackEl) {
+            feedbackEl.textContent = '❌ Please enter or load JSON connection configuration';
+            feedbackEl.className = 'text-small text-danger';
+            feedbackEl.classList.remove('hidden');
+          }
+          return;
+        }
+        const parsed = JSON.parse(val);
+        const ok = await registerConnection(parsed);
+        if (ok) {
+          const conns = await fetchConnections();
+          state.queuesBrokerConnections = conns;
+          renderBrokersModal(conns);
+          if (feedbackEl) {
+            feedbackEl.textContent = '✓ Connection(s) successfully registered!';
+            feedbackEl.className = 'text-small text-success';
+            feedbackEl.classList.remove('hidden');
+          }
+          await refreshQueues();
+        } else {
+          if (feedbackEl) {
+            feedbackEl.textContent = '❌ Registration failed (check required field: id)';
+            feedbackEl.className = 'text-small text-danger';
+            feedbackEl.classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        if (feedbackEl) {
+          feedbackEl.textContent = `❌ JSON parse error: ${err.message}`;
+          feedbackEl.className = 'text-small text-danger';
+          feedbackEl.classList.remove('hidden');
+        }
+      }
+    });
+  }
+
+  // Copy JSON export
+  if (btnCopyJson) {
+    btnCopyJson.addEventListener('click', () => {
+      const jsonEl = document.getElementById('queues-brokers-export-json');
+      if (jsonEl && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(jsonEl.textContent).then(() => {
+          btnCopyJson.textContent = '✓ Copied';
+          setTimeout(() => { btnCopyJson.textContent = '📋 Copy JSON'; }, 1500);
+        }).catch(() => {});
+      }
+    });
+  }
+
+  // Download JSON export
+  if (btnDownloadJson) {
+    btnDownloadJson.addEventListener('click', () => {
+      const jsonEl = document.getElementById('queues-brokers-export-json');
+      if (!jsonEl) return;
+      const blob = new Blob([jsonEl.textContent], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'wiremock-broker-connections.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
   }
 
   // Delete broker from modal table
@@ -620,55 +795,6 @@ export function initQueues() {
     });
   }
 
-  // Submit register new broker form
-  if (formAddBroker) {
-    formAddBroker.addEventListener('submit', async e => {
-      e.preventDefault();
-      const idEl = document.getElementById('queues-new-broker-id');
-      const protoEl = document.getElementById('queues-new-broker-proto');
-      const nameEl = document.getElementById('queues-new-broker-name');
-      const endpointEl = document.getElementById('queues-new-broker-endpoint');
-      const propsEl = document.getElementById('queues-new-broker-props');
-
-      const id = idEl ? idEl.value.trim() : '';
-      const protocol = protoEl ? protoEl.value : 'amqp';
-      const name = nameEl && nameEl.value.trim() ? nameEl.value.trim() : id;
-      const endpoint = endpointEl ? endpointEl.value.trim() : '';
-
-      const properties = {};
-      if (propsEl && propsEl.value.trim()) {
-        const lines = propsEl.value.split(/\r?\n/);
-        for (const line of lines) {
-          const idx = line.indexOf('=');
-          if (idx > 0) {
-            properties[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
-          }
-        }
-      }
-
-      const connObj = { id, protocol, name, endpoint, properties };
-      await registerConnection(connObj);
-      formAddBroker.reset();
-      const conns = await fetchConnections();
-      state.queuesBrokerConnections = conns;
-      renderBrokersModal(conns);
-      await refreshQueues();
-    });
-  }
-
-  // Copy GitOps JSON
-  if (btnCopyGitOps) {
-    btnCopyGitOps.addEventListener('click', () => {
-      const jsonEl = document.getElementById('queues-brokers-gitops-json');
-      if (jsonEl && navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(jsonEl.textContent).then(() => {
-          btnCopyGitOps.textContent = '✓ Copied';
-          setTimeout(() => { btnCopyGitOps.textContent = '📋 Copy JSON'; }, 1500);
-        }).catch(() => {});
-      }
-    });
-  }
-
   // Messages Table Click Delegation (Expand / Lens / Delete / Edit)
   const tbody = document.getElementById('queues-messages-tbody');
   if (tbody) {
@@ -685,7 +811,7 @@ export function initQueues() {
             msg.payload,
             null,
             async (newPayload) => {
-              // Compensating Edit / In-Place Update (ADR 0023)
+              // Compensating Edit / In-Place Update (ADR 0025)
               const updatedMsg = { ...msg, payload: newPayload };
               await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
               await refreshQueues();

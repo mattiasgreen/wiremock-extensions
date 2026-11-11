@@ -1955,7 +1955,7 @@ class InMemoryDemoBackend {
       return responseText(204, '');
     }
 
-    // Async Connections (ADR 0023)
+    // Async Connections (ADR 0025)
     if (pathname === '/__admin/async/connections') {
       if (method === 'GET') {
         return responseJson(200, {
@@ -1964,18 +1964,34 @@ class InMemoryDemoBackend {
         });
       }
       if (method === 'POST') {
-        const body = requestBody ? JSON.parse(requestBody) : {};
-        if (!body.id) {
-          return responseJson(400, { error: 'Connection ID must not be blank' });
+        const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+        const incoming = Array.isArray(body)
+          ? body
+          : (Array.isArray(body.connections) ? body.connections : [body]);
+
+        const registered = [];
+        for (const item of incoming) {
+          if (!item || !item.id) continue;
+          const conn = {
+            id: String(item.id).trim(),
+            protocol: (item.protocol || 'kafka').toLowerCase(),
+            name: item.name || item.id,
+            endpoint: item.endpoint || '',
+            status: 'HEALTHY',
+            properties: item.properties || {}
+          };
+          this.asyncConnections = this.asyncConnections.filter(c => c.id !== conn.id);
+          this.asyncConnections.push(conn);
+          registered.push(conn);
         }
-        body.protocol = (body.protocol || 'kafka').toLowerCase();
-        body.name = body.name || body.id;
-        body.endpoint = body.endpoint || '';
-        body.status = 'HEALTHY';
-        body.properties = body.properties || {};
-        this.asyncConnections = this.asyncConnections.filter(c => c.id !== body.id);
-        this.asyncConnections.push(body);
-        return responseJson(201, body);
+
+        if (registered.length === 0) {
+          return responseJson(400, { error: 'No valid connection objects found (id is required)' });
+        }
+        return responseJson(201, {
+          count: registered.length,
+          connections: registered
+        });
       }
     }
 
@@ -2114,7 +2130,7 @@ class InMemoryDemoBackend {
       return responseJson(200, {
         version: '1.14.0',
         branch: 'explore_async_queues_ui',
-        commit: 'a44ff97'
+        commit: '4a53d61'
       });
     }
 
