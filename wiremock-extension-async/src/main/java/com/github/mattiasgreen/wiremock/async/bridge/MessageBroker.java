@@ -1,6 +1,8 @@
 package com.github.mattiasgreen.wiremock.async.bridge;
 
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Common abstraction representing an asynchronous message broker or virtual host destination store.
@@ -32,4 +34,37 @@ public interface MessageBroker {
      * @return current queue size
      */
     int size(String channel);
+
+    /**
+     * Returns the list of active channel names managed by this broker.
+     */
+    default List<String> listChannels() {
+        return Collections.emptyList();
+    }
+
+    /**
+     * Returns a non-destructive read-only view of unconsumed messages in the channel.
+     */
+    default List<AsyncMessage> peek(String channel) {
+        return Collections.emptyList();
+    }
+
+    /**
+     * Removes an unconsumed message by ID from the specified channel.
+     */
+    default boolean delete(String channel, String messageId) {
+        return false;
+    }
+
+    /**
+     * Clears all unconsumed messages from the specified channel.
+     */
+    default void purge(String channel) {}
+
+    /**
+     * Updates an unconsumed message in-place by ID.
+     */
+    default boolean update(String channel, String messageId, AsyncMessage updated) {
+        return false;
+    }
 }

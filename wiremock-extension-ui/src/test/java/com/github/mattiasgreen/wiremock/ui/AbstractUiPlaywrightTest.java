@@ -84,7 +84,8 @@ public abstract class AbstractUiPlaywrightTest {
                         new StatefulAdminEndpoint(stateEngine),
                         new StatefulResponseTransformer(stateEngine),
                         new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint(),
-                        new com.github.mattiasgreen.wiremock.casual.CasualAdminEndpoint()));
+                        new com.github.mattiasgreen.wiremock.casual.CasualAdminEndpoint(),
+                        new com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint()));
         wireMockServer.start();
         resetDefaultStubs();
 

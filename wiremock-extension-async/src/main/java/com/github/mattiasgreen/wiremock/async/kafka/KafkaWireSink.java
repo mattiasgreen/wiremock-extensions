@@ -9,6 +9,8 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -41,6 +43,22 @@ public class KafkaWireSink implements AutoCloseable {
             for (KafkaWireCodec codec : activeCodecs) {
                 codec.stageRecord(record);
             }
+        }
+    }
+
+    public List<KafkaProduceRecord> getStagedRecords() {
+        return Collections.unmodifiableList(new ArrayList<>(preStagedRecords));
+    }
+
+    public boolean deleteStagedRecord(String topic, String keyOrId) {
+        if (topic == null) return false;
+        return preStagedRecords.removeIf(r ->
+                r.topic().equals(topic) && (keyOrId == null || keyOrId.equals(r.key()) || keyOrId.equals(r.value())));
+    }
+
+    public void purgeTopic(String topic) {
+        if (topic != null) {
+            preStagedRecords.removeIf(r -> r.topic().equals(topic));
         }
     }
 

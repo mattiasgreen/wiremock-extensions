@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: feat/unified-protocol-tester | Commit: a44ff97">v1.14.0 (feat/unified-protocol-tester@a44ff97)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: explore_async_queues_ui | Commit: a44ff97">v1.14.0 (explore_async_queues_ui@a44ff97)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -59,6 +59,9 @@
         </button>
         <button class="tab nav-tab" data-tab="tab-netem" role="tab" id="nav-tab-netem" data-testid="nav-tab-netem">
           <span class="tab-icon">📶</span> TCP NetEm <span id="stat-netem-toxics" class="nav-badge">0</span>
+        </button>
+        <button class="tab nav-tab" data-tab="tab-queues" role="tab" id="nav-tab-queues" data-testid="nav-tab-queues">
+          <span class="tab-icon">📬</span> Queues &amp; Topics <span id="stat-queues" class="nav-badge">0</span>
         </button>
       </nav>
       <div class="nav-actions">
@@ -930,6 +933,72 @@
           </table>
         </div>
       </div>
+
+      <!-- Tab 6: Async Queues & Topics Explorer (Split View: Sidebar + Main Content) -->
+      <div id="tab-queues" class="tab-content" data-testid="tab-queues">
+        <div class="queues-workspace">
+          <!-- Queues Sidebar -->
+          <aside class="queues-sidebar" id="sidebar-queues" data-testid="sidebar-queues">
+            <div class="queues-sidebar-header">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px 4px;">
+                <span style="font-weight: 600; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Channels</span>
+                <button type="button" id="btn-queues-brokers" data-testid="btn-queues-brokers" class="btn btn-tiny btn-secondary" title="View & configure registered broker connections">🔌 Brokers</button>
+              </div>
+              <div class="search-bar">
+                <input type="text" id="queues-channel-search" data-testid="queues-channel-search" placeholder="Filter channels (Kafka, AMQP, Casual)..." autocomplete="off">
+              </div>
+              <div class="filter-pills queues-filter-pills">
+                <button type="button" class="btn btn-tiny queues-filter-pill active" data-filter="all" id="btn-filter-proto-all">All</button>
+                <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="kafka" id="btn-filter-proto-kafka">Kafka</button>
+                <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="amqp" id="btn-filter-proto-amqp">AMQP</button>
+                <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="casual" id="btn-filter-proto-casual">Casual</button>
+                <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="in-memory" id="btn-filter-proto-inmem">In-Memory</button>
+              </div>
+            </div>
+            <div id="queues-destination-list" class="queues-destination-list" data-testid="queues-destination-list">
+              <!-- Rendered by renderDestinations() -->
+            </div>
+          </aside>
+
+          <!-- Queues Main Content Area -->
+          <div class="queues-content-area">
+            <div class="journal-header-bar queues-header-bar">
+              <div class="journal-title-group" style="display: flex; align-items: center; gap: 8px;">
+                <span class="journal-title" id="queues-selected-dest-title">Select a Queue or Topic</span>
+                <span class="muted-text text-small" id="queues-selected-dest-count"></span>
+                <span class="badge hidden" id="queues-selected-dest-broker" style="font-size: 0.72rem; padding: 2px 7px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); color: var(--accent-color);"></span>
+              </div>
+              <div class="journal-controls-group">
+                <input type="text" id="queues-message-search" data-testid="queues-message-search" placeholder="Search messages (bodies, headers, keys)..." autocomplete="off" style="width: 280px;">
+                <button id="btn-queues-refresh" data-testid="btn-queues-refresh" class="btn btn-small btn-secondary" title="Refresh messages">🔄 Refresh</button>
+                <button id="btn-queues-auto-poll" data-testid="btn-queues-auto-poll" class="btn btn-small btn-secondary" title="Auto-poll messages every 3s">⏱️ Auto (3s)</button>
+                <button id="btn-queues-manage-brokers" data-testid="btn-queues-manage-brokers" class="btn btn-small btn-secondary" title="Configure and inspect broker connections">🔌 Brokers</button>
+                <button id="btn-queues-purge" data-testid="btn-queues-purge" class="btn btn-small btn-danger" title="Purge all messages in selected destination">🗑️ Purge All</button>
+              </div>
+            </div>
+
+            <div class="table-container queues-table-container">
+              <table class="data-table queues-table" id="queues-table" data-testid="queues-table">
+                <thead>
+                  <tr>
+                    <th style="width: 24px;"></th>
+                    <th style="width: 90px;">Time</th>
+                    <th style="width: 80px;">Protocol</th>
+                    <th style="width: 140px;">Key / Partition</th>
+                    <th style="width: 140px;">Correlation ID</th>
+                    <th style="width: 80px;">Size</th>
+                    <th>Payload Preview</th>
+                    <th style="width: 120px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="queues-messages-tbody" data-testid="queues-messages-tbody">
+                  <!-- Rendered by renderMessages() -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div> <!-- end .workspace-area -->
   </main>
 
@@ -1647,6 +1716,122 @@
         <button id="btn-unsaved-cancel" class="btn btn-secondary" data-testid="btn-unsaved-cancel">Cancel</button>
         <button id="btn-unsaved-discard" class="btn btn-danger" data-testid="btn-unsaved-discard">Discard Changes</button>
         <button id="btn-unsaved-save" class="btn btn-primary" data-testid="btn-unsaved-save">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Broker Connections & GitOps Configuration -->
+  <div id="modal-queues-brokers" class="modal-backdrop hidden" data-testid="modal-queues-brokers" style="z-index: 1000;">
+    <div class="modal modal-dialog" style="max-width: 840px; margin: auto; max-height: 88vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🔌</span>
+          <h3>Broker Connections &amp; Cluster Coordinates</h3>
+        </div>
+        <button id="btn-close-queues-brokers" class="btn btn-tiny modal-close-btn" title="Close modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+        <p class="modal-description" style="margin-bottom: 14px; font-size: 0.85rem; color: var(--text-muted);">
+          Inspect registered messaging brokers (Kafka, AMQP 1.0, Casual XATMI), configure cluster coordinates in-process, or export declarative GitOps configuration for CI/CD environments.
+        </p>
+
+        <!-- Section: Active Registered Brokers -->
+        <div style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Active Broker Connections</span>
+            <span id="queues-brokers-count" class="muted-text text-small"></span>
+          </div>
+          <div style="border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; background: rgba(0,0,0,0.2);">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 0;">
+              <thead>
+                <tr style="background: var(--bg-tertiary); text-align: left; color: var(--text-muted);">
+                  <th style="padding: 6px 10px;">ID</th>
+                  <th style="padding: 6px 10px;">Protocol</th>
+                  <th style="padding: 6px 10px;">Label</th>
+                  <th style="padding: 6px 10px;">Endpoint</th>
+                  <th style="padding: 6px 10px;">Status</th>
+                  <th style="padding: 6px 10px;">Properties</th>
+                  <th style="padding: 6px 10px; text-align: center;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="queues-brokers-tbody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section: Register New Broker -->
+        <details style="margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px 14px; background: rgba(255,255,255,0.01);">
+          <summary style="font-weight: 600; font-size: 0.85rem; cursor: pointer; color: var(--text-color);">➕ Register In-Memory Broker Connection</summary>
+          <form id="form-queues-add-broker" style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label for="queues-new-broker-id" style="font-size: 0.8rem; font-weight: 600;">Connection ID *</label>
+                <input type="text" id="queues-new-broker-id" class="form-control" placeholder="e.g. corp-artemis or kafka-prod" required>
+              </div>
+              <div class="form-group">
+                <label for="queues-new-broker-proto" style="font-size: 0.8rem; font-weight: 600;">Protocol *</label>
+                <select id="queues-new-broker-proto" class="form-control">
+                  <option value="amqp">AMQP 1.0</option>
+                  <option value="kafka">Kafka Wire Protocol</option>
+                  <option value="casual">Casual XATMI</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label for="queues-new-broker-name" style="font-size: 0.8rem; font-weight: 600;">Display Name</label>
+                <input type="text" id="queues-new-broker-name" class="form-control" placeholder="e.g. ActiveMQ Artemis Cluster">
+              </div>
+              <div class="form-group">
+                <label for="queues-new-broker-endpoint" style="font-size: 0.8rem; font-weight: 600;">Endpoint Coordinate *</label>
+                <input type="text" id="queues-new-broker-endpoint" class="form-control" placeholder="e.g. 127.0.0.1:61616 or localhost:9092" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="queues-new-broker-props" style="font-size: 0.8rem; font-weight: 600;">Properties (KEY=VALUE per line)</label>
+              <textarea id="queues-new-broker-props" class="form-control" rows="2" style="font-family: monospace; font-size: 0.8rem;" placeholder="client.id=wm-client&#10;amqp.idleTimeout=30000"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="submit" id="btn-queues-save-broker" class="btn btn-small btn-primary">➕ Register Connection</button>
+            </div>
+          </form>
+        </details>
+
+        <!-- Section: GitOps Declarative JSON Export -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Declarative GitOps Configuration</span>
+            <button type="button" id="btn-queues-copy-gitops" class="btn btn-tiny btn-secondary" title="Copy configuration as JSON">📋 Copy JSON</button>
+          </div>
+          <pre id="queues-brokers-gitops-json" class="code-block" style="margin: 0; max-height: 160px; overflow-y: auto; font-size: 0.78rem; font-family: monospace; background: rgba(0,0,0,0.3); border-radius: 4px; padding: 10px;"></pre>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-color); padding: 12px 20px;">
+        <button id="btn-close-queues-brokers-footer" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Purge Queue Confirmation -->
+  <div id="modal-queues-purge" class="modal-backdrop hidden" data-testid="modal-queues-purge" style="z-index: 1000;">
+    <div class="modal modal-dialog-confirm" style="max-width: 440px; margin: auto;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">⚠️</span>
+          <h3>Purge Destination</h3>
+        </div>
+        <button id="btn-cancel-queues-purge" class="btn btn-tiny modal-close-btn" title="Cancel">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px;">
+        <p style="margin: 0; font-size: 0.9rem; color: var(--text-color);">
+          Are you sure you want to purge all messages from <strong id="queues-purge-target-name"></strong>? This action cannot be undone.
+        </p>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btn-cancel-queues-purge" class="btn btn-secondary" data-testid="btn-cancel-queues-purge">Cancel</button>
+        <button id="btn-confirm-queues-purge" class="btn btn-danger" data-testid="btn-confirm-queues-purge">Purge All Messages</button>
       </div>
     </div>
   </div>

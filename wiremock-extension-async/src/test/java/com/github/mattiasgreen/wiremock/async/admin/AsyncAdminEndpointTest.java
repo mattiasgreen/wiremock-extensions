@@ -132,4 +132,125 @@ class AsyncAdminEndpointTest {
         assertThat(json.has("stubs")).isTrue();
         assertThat(json.has("count")).isTrue();
     }
+
+    @Test
+    @DisplayName("POST /__admin/async/connections should register connection and GET should return sanitized list")
+    void shouldManageConnectionsViaAdminApi() throws Exception {
+        String payload =
+                """
+        {
+          "id": "qa-kafka",
+          "protocol": "kafka",
+          "name": "QA Kafka Cluster",
+          "endpoint": "kafka.qa:9092",
+          "properties": {
+            "password": "super-secret-password",
+            "client.id": "wiremock-client"
+          }
+        }
+        """;
+
+        HttpRequest postReq = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/connections"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload))
+                .build();
+
+        HttpResponse<String> postResp = httpClient.send(postReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(postResp.statusCode()).isEqualTo(201);
+
+        HttpRequest getReq = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/connections"))
+                .GET()
+                .build();
+
+        HttpResponse<String> getResp = httpClient.send(getReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(getResp.statusCode()).isEqualTo(200);
+
+        JsonNode json = MAPPER.readTree(getResp.body());
+        assertThat(json.has("connections")).isTrue();
+        assertThat(json.get("count").asInt()).isGreaterThanOrEqualTo(1);
+
+        JsonNode conn = null;
+        for (JsonNode c : json.get("connections")) {
+            if ("qa-kafka".equals(c.get("id").asText())) {
+                conn = c;
+                break;
+            }
+        }
+        assertThat(conn).isNotNull();
+        assertThat(conn.get("properties").get("password").asText()).isEqualTo("******");
+        assertThat(conn.get("properties").get("client.id").asText()).isEqualTo("wiremock-client");
+
+        // DELETE connection
+        HttpRequest deleteReq = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/connections/qa-kafka"))
+                .DELETE()
+                .build();
+
+        HttpResponse<String> deleteResp = httpClient.send(deleteReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(deleteResp.statusCode()).isEqualTo(204);
+    }
+
+    @Test
+    @DisplayName("Should list destinations, publish, peek messages, delete single message, and purge via Admin API")
+    void shouldManageDestinationsViaAdminApi() throws Exception {
+        String postMsg =
+                """
+        {
+          "id": "dest-msg-1",
+          "key": "order-101",
+          "payload": "{\\"status\\":\\"PENDING\\"}"
+        }
+        """;
+
+        // POST message
+        HttpRequest postReq = HttpRequest.newBuilder()
+                .uri(URI.create(
+                        wireMockServer.baseUrl() + "/__admin/async/destinations/in-memory/test.orders/messages"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(postMsg))
+                .build();
+
+        HttpResponse<String> postResp = httpClient.send(postReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(postResp.statusCode()).isEqualTo(201);
+
+        // GET destinations
+        HttpRequest getDests = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/destinations"))
+                .GET()
+                .build();
+
+        HttpResponse<String> destsResp = httpClient.send(getDests, HttpResponse.BodyHandlers.ofString());
+        assertThat(destsResp.statusCode()).isEqualTo(200);
+        JsonNode destsJson = MAPPER.readTree(destsResp.body());
+        assertThat(destsJson.get("count").asInt()).isGreaterThanOrEqualTo(1);
+
+        // GET peek messages
+        HttpRequest getMsgs = HttpRequest.newBuilder()
+                .uri(URI.create(
+                        wireMockServer.baseUrl() + "/__admin/async/destinations/in-memory/test.orders/messages"))
+                .GET()
+                .build();
+
+        HttpResponse<String> msgsResp = httpClient.send(getMsgs, HttpResponse.BodyHandlers.ofString());
+        assertThat(msgsResp.statusCode()).isEqualTo(200);
+        JsonNode msgsJson = MAPPER.readTree(msgsResp.body());
+        assertThat(msgsJson.get("count").asInt()).isEqualTo(1);
+        assertThat(msgsJson.get("messages").get(0).get("id").asText()).isEqualTo("dest-msg-1");
+
+        // DELETE single message
+        HttpRequest deleteMsg = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl()
+                        + "/__admin/async/destinations/in-memory/test.orders/messages/dest-msg-1"))
+                .DELETE()
+                .build();
+
+        HttpResponse<String> delResp = httpClient.send(deleteMsg, HttpResponse.BodyHandlers.ofString());
+        assertThat(delResp.statusCode()).isEqualTo(204);
+
+        // Verify empty
+        HttpResponse<String> afterDelResp = httpClient.send(getMsgs, HttpResponse.BodyHandlers.ofString());
+        assertThat(MAPPER.readTree(afterDelResp.body()).get("count").asInt()).isEqualTo(0);
+    }
 }

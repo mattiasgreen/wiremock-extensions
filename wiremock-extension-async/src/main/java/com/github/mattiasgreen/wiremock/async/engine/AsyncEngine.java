@@ -136,6 +136,10 @@ public class AsyncEngine implements AutoCloseable {
         return kafkaSink != null ? kafkaSink.getPort() : -1;
     }
 
+    public synchronized KafkaWireSink getKafkaSink() {
+        return kafkaSink;
+    }
+
     public synchronized void stageKafkaFeed(KafkaProduceRecord record) {
         if (kafkaSink != null && record != null) {
             kafkaSink.stageRecord(record);
@@ -181,6 +185,10 @@ public class AsyncEngine implements AutoCloseable {
 
     public synchronized int getAmqpServerPort() {
         return amqpServer != null ? amqpServer.getPort() : -1;
+    }
+
+    public synchronized AmqpServer getAmqpServer() {
+        return amqpServer;
     }
 
     public synchronized void stageAmqpFeed(String queue, AsyncMessage message) {

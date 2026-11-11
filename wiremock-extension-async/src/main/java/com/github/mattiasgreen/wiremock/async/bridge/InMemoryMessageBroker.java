@@ -2,7 +2,10 @@ package com.github.mattiasgreen.wiremock.async.bridge;
 
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,5 +46,55 @@ public class InMemoryMessageBroker implements MessageBroker {
         if (channel == null) return 0;
         Deque<AsyncMessage> queue = queues.get(channel);
         return queue != null ? queue.size() : 0;
+    }
+
+    @Override
+    public synchronized List<String> listChannels() {
+        return Collections.unmodifiableList(new ArrayList<>(queues.keySet()));
+    }
+
+    @Override
+    public synchronized List<AsyncMessage> peek(String channel) {
+        if (channel == null) return Collections.emptyList();
+        Deque<AsyncMessage> queue = queues.get(channel);
+        return queue != null ? Collections.unmodifiableList(new ArrayList<>(queue)) : Collections.emptyList();
+    }
+
+    @Override
+    public synchronized boolean delete(String channel, String messageId) {
+        if (channel == null || messageId == null) return false;
+        Deque<AsyncMessage> queue = queues.get(channel);
+        if (queue == null) return false;
+        return queue.removeIf(m -> messageId.equals(m.id()));
+    }
+
+    @Override
+    public synchronized void purge(String channel) {
+        if (channel == null) return;
+        Deque<AsyncMessage> queue = queues.get(channel);
+        if (queue != null) {
+            queue.clear();
+        }
+    }
+
+    @Override
+    public synchronized boolean update(String channel, String messageId, AsyncMessage updated) {
+        if (channel == null || messageId == null || updated == null) return false;
+        Deque<AsyncMessage> queue = queues.get(channel);
+        if (queue == null) return false;
+        List<AsyncMessage> list = new ArrayList<>(queue);
+        boolean found = false;
+        for (int i = 0; i < list.size(); i++) {
+            if (messageId.equals(list.get(i).id())) {
+                list.set(i, updated);
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            queue.clear();
+            queue.addAll(list);
+        }
+        return found;
     }
 }

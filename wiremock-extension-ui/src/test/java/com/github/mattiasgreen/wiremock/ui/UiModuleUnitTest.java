@@ -2552,4 +2552,105 @@ public class UiModuleUnitTest {
         assertThat(((Number) result.get("casualFilteredRows")).intValue()).isGreaterThanOrEqualTo(1);
         assertThat(result.get("restoredRows")).isEqualTo(result.get("totalRows"));
     }
+
+    @Test
+    @DisplayName("Queues: filterDestinations filters correctly by protocol and free-text")
+    void testQueuesFilterDestinations() {
+        String script =
+                """
+            async () => {
+                const { filterDestinations } = await import('./modules/queues.js');
+
+                const sampleDestinations = [
+                    { id: '1', name: 'orders.events', protocol: 'kafka', brokerId: 'cluster-a' },
+                    { id: '2', name: 'payments.requests', protocol: 'amqp', brokerId: 'broker-b' },
+                    { id: '3', name: 'billing.forward', protocol: 'casual', brokerId: 'casual-gw' },
+                    { id: '4', name: 'internal.audit', protocol: 'in-memory', brokerId: 'local' }
+                ];
+
+                return {
+                    allCount: filterDestinations(sampleDestinations, { protocolFilter: 'all', searchQuery: '' }).length,
+                    kafkaCount: filterDestinations(sampleDestinations, { protocolFilter: 'kafka' }).length,
+                    amqpCount: filterDestinations(sampleDestinations, { protocolFilter: 'amqp' }).length,
+                    casualCount: filterDestinations(sampleDestinations, { protocolFilter: 'casual' }).length,
+                    inMemoryCount: filterDestinations(sampleDestinations, { protocolFilter: 'in-memory' }).length,
+                    searchPayment: filterDestinations(sampleDestinations, { searchQuery: 'payment' }).length,
+                    searchClusterA: filterDestinations(sampleDestinations, { searchQuery: 'cluster-a' }).length,
+                    combinedFilterMatch: filterDestinations(sampleDestinations, { protocolFilter: 'kafka', searchQuery: 'orders' }).length,
+                    combinedFilterMiss: filterDestinations(sampleDestinations, { protocolFilter: 'kafka', searchQuery: 'payments' }).length
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("allCount")).intValue()).isEqualTo(4);
+        assertThat(((Number) result.get("kafkaCount")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("amqpCount")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("casualCount")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("inMemoryCount")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("searchPayment")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("searchClusterA")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("combinedFilterMatch")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("combinedFilterMiss")).intValue()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("Queues: filterMessages evaluates boolean queries across keys, headers, and body payload")
+    void testQueuesFilterMessages() {
+        String script =
+                """
+            async () => {
+                const { filterMessages } = await import('./modules/queues.js');
+
+                const sampleMessages = [
+                    {
+                        id: 'msg-1',
+                        key: 'ORD-8821',
+                        correlationId: 'corr-ord-8821',
+                        headers: { 'x-tenant-id': 'emea-retail' },
+                        payload: '{"orderId":"ORD-8821","customer":"Acme Corp","total":1250}'
+                    },
+                    {
+                        id: 'msg-2',
+                        key: 'ORD-8822',
+                        correlationId: 'corr-ord-8822',
+                        headers: { 'x-tenant-id': 'apac-shipping' },
+                        payload: '{"orderId":"ORD-8822","customer":"Global Logistics","total":450}'
+                    },
+                    {
+                        id: 'msg-3',
+                        key: 'PAY-9921',
+                        correlationId: 'corr-pay-9921',
+                        headers: { 'content-type': 'application/json' },
+                        payload: '{"paymentId":"PAY-9921","method":"CARD"}'
+                    }
+                ];
+
+                return {
+                    emptyQuery: filterMessages(sampleMessages, "").length,
+                    keySearch: filterMessages(sampleMessages, "ORD-8821").length,
+                    corrSearch: filterMessages(sampleMessages, "corr-pay-9921").length,
+                    headerSearch: filterMessages(sampleMessages, "apac-shipping").length,
+                    bodySearch: filterMessages(sampleMessages, "Global Logistics").length,
+                    andQueryMatch: filterMessages(sampleMessages, "Acme AND 1250").length,
+                    andQueryMiss: filterMessages(sampleMessages, "Acme AND apac").length,
+                    orQueryMatch: filterMessages(sampleMessages, "Acme OR CARD").length
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("emptyQuery")).intValue()).isEqualTo(3);
+        assertThat(((Number) result.get("keySearch")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("corrSearch")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("headerSearch")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("bodySearch")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("andQueryMatch")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("andQueryMiss")).intValue()).isEqualTo(0);
+        assertThat(((Number) result.get("orQueryMatch")).intValue()).isEqualTo(2);
+    }
 }
