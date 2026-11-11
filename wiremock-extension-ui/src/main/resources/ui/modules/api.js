@@ -9,16 +9,7 @@ import { renderJournal } from './journal.js';
 import { renderScenarios } from './scenarios.js';
 import { renderProjectSelector, updateFilterCounts } from './projects.js';
 import { updateBulkToolbar } from './bulk-actions.js';
-import {
-  parseHeadersInput,
-  getEffectiveTesterHeaders,
-  updateTesterRoute,
-  displaySentRequest,
-  displayResponseResult,
-  showSettlementBanner,
-  saveTesterHistoryItem,
-  loadTesterHistoryFromStorage
-} from './tester.js';
+import { executeTesterRequest, loadTesterHistoryFromStorage } from './tester.js';
 import { executeCasualRequest } from './casual-tester.js';
 import { applyRouteFromUrl } from './router.js';
 import { detectCapabilities } from './capabilities.js';
@@ -287,7 +278,7 @@ export function loadScenarios() {
 
       apiScenarios.forEach(sc => {
         scenarioMap.set(sc.name, {
-          id: sc.id || sc.name,
+          id: sc.name,
           name: sc.name,
           state: sc.state || 'Started',
           possibleStates: new Set(sc.possibleStates || ['Started'])
@@ -391,405 +382,35 @@ export function loadData() {
     });
 }
 
-export function executeKafkaProduce() {
-  const topic = (elements.testerKafkaTopic ? elements.testerKafkaTopic.value.trim() : '') || 'orders.events';
-  const key = elements.testerKafkaKey ? elements.testerKafkaKey.value.trim() : '';
-  const partitionVal = elements.testerKafkaPartition ? elements.testerKafkaPartition.value.trim() : '';
-  const partition = partitionVal ? parseInt(partitionVal, 10) : undefined;
-  const headersText = elements.testerKafkaHeaders ? elements.testerKafkaHeaders.value.trim() : '';
-  const headers = parseHeadersInput(headersText);
-  const bodyText = (elements.testerBody ? elements.testerBody.value.trim() : '') || '{}';
-
-  const sendBtn = elements.btnTesterSendKafka || elements.btnTesterSend;
-  if (sendBtn) {
-    sendBtn.disabled = true;
-    sendBtn.textContent = '⏳ Producing...';
-  }
-
-  const startTime = performance.now();
-  displaySentRequest('PRODUCE', topic, headersText, bodyText);
-
-  const payload = {
-    protocol: 'kafka',
-    destination: topic,
-    key: key,
-    partition: partition,
-    headers: headers,
-    payload: bodyText
-  };
-
+export function publishAsyncMessage(payload) {
   return doFetch('/__admin/async/publish', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  })
-    .then(res => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      return res.json();
-    })
-    .then(data => {
-      const elapsed = Math.round(performance.now() - startTime);
-      const partitionOut = data.partition !== undefined ? data.partition : (partition !== undefined ? partition : 0);
-      const offsetOut = data.offset !== undefined ? data.offset : 0;
-      const statusText = `ACKNOWLEDGED (Partition ${partitionOut} @ Offset ${offsetOut})`;
-      const resBody = JSON.stringify(data, null, 2);
-      const resHeaders = [`Protocol: Kafka`, `Topic: ${topic}`, `Key: ${key || '(none)'}`, `Status: Published`];
-
-      displayResponseResult(200, statusText, elapsed, resHeaders, resBody);
-      showSettlementBanner(`✅ Kafka Message Acknowledged: Partition ${partitionOut} @ Offset ${offsetOut} (Topic: "${topic}")`, 'status-settled');
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        protocol: 'kafka',
-        method: 'PRODUCE',
-        url: topic,
-        destination: topic,
-        key: key,
-        partition: partitionOut,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: 200,
-        statusText: statusText,
-        duration: elapsed,
-        size: new Blob([resBody]).size,
-        responseHeaders: resHeaders,
-        responseBody: resBody
-      });
-
-      loadJournal();
-    })
-    .catch(err => {
-      const elapsed = Math.round(performance.now() - startTime);
-      displayResponseResult('ERROR', err.message, elapsed, [], 'Publish error: ' + err.message);
-      showSettlementBanner(`❌ Kafka Error: ${err.message}`, 'status-error');
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        protocol: 'kafka',
-        method: 'PRODUCE',
-        url: topic,
-        destination: topic,
-        key: key,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: 'ERR',
-        statusText: err.message,
-        duration: elapsed,
-        size: 0,
-        responseHeaders: [],
-        responseBody: 'Publish error: ' + err.message
-      });
-    })
-    .finally(() => {
-      if (sendBtn) {
-        sendBtn.disabled = false;
-        sendBtn.textContent = '🚀 Produce Message';
-      }
-    });
+  }).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return res.json();
+  });
 }
 
-export function executeAmqpPublish() {
-  const dest = (elements.testerAmqpDest ? elements.testerAmqpDest.value.trim() : '') || 'orders.inbound';
-  const correlationId = elements.testerAmqpCorrelation ? elements.testerAmqpCorrelation.value.trim() : '';
-  const replyTo = elements.testerAmqpReplyTo ? elements.testerAmqpReplyTo.value.trim() : '';
-  const headersText = elements.testerAmqpHeaders ? elements.testerAmqpHeaders.value.trim() : '';
-  const headers = parseHeadersInput(headersText);
-  const bodyText = (elements.testerBody ? elements.testerBody.value.trim() : '') || '{}';
-
-  const sendBtn = elements.btnTesterSendAmqp || elements.btnTesterSend;
-  if (sendBtn) {
-    sendBtn.disabled = true;
-    sendBtn.textContent = '⏳ Publishing...';
-  }
-
-  const startTime = performance.now();
-  displaySentRequest('PUBLISH', dest, headersText, bodyText);
-
-  const payload = {
-    protocol: 'amqp',
-    destination: dest,
-    correlationId: correlationId,
-    replyTo: replyTo,
-    headers: headers,
-    payload: bodyText
-  };
-
-  return doFetch('/__admin/async/publish', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-    .then(res => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      return res.json();
-    })
-    .then(data => {
-      const elapsed = Math.round(performance.now() - startTime);
-      const isReqRep = data.replyReceived && data.replyPayload;
-      const statusText = isReqRep ? 'REPLY RECEIVED' : (data.settlement || 'SETTLED: ACCEPTED');
-      const resBody = isReqRep ? data.replyPayload : JSON.stringify(data, null, 2);
-      const resHeaders = [`Protocol: AMQP 1.0`, `Destination: ${dest}`, `Correlation-Id: ${data.replyCorrelationId || correlationId || '(none)'}`];
-      if (replyTo) resHeaders.push(`Reply-To: ${replyTo}`);
-
-      displayResponseResult(200, statusText, elapsed, resHeaders, resBody);
-      if (isReqRep) {
-        showSettlementBanner(`📨 Correlated Reply Received from "${data.replyQueue || replyTo}" (CorrelationId: ${data.replyCorrelationId || correlationId})`, 'status-settled');
-      } else {
-        showSettlementBanner(`✅ AMQP Message Settled: ACCEPTED (Destination: "${dest}")`, 'status-settled');
-      }
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        protocol: 'amqp',
-        method: 'PUBLISH',
-        url: dest,
-        destination: dest,
-        correlationId: correlationId,
-        replyTo: replyTo,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: 200,
-        statusText: statusText,
-        duration: elapsed,
-        size: new Blob([resBody]).size,
-        responseHeaders: resHeaders,
-        responseBody: resBody
-      });
-
-      loadJournal();
-    })
-    .catch(err => {
-      const elapsed = Math.round(performance.now() - startTime);
-      displayResponseResult('ERROR', err.message, elapsed, [], 'Publish error: ' + err.message);
-      showSettlementBanner(`❌ AMQP Error: ${err.message}`, 'status-error');
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        protocol: 'amqp',
-        method: 'PUBLISH',
-        url: dest,
-        destination: dest,
-        correlationId: correlationId,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: 'ERR',
-        statusText: err.message,
-        duration: elapsed,
-        size: 0,
-        responseHeaders: [],
-        responseBody: 'Publish error: ' + err.message
-      });
-    })
-    .finally(() => {
-      if (sendBtn) {
-        sendBtn.disabled = false;
-        sendBtn.textContent = '🚀 Publish Message';
-      }
-    });
-}
-
-export function executeTesterCasualCall() {
-  const service = (elements.testerCasualService ? elements.testerCasualService.value.trim() : '') || 'echoService';
-  const bufferType = (elements.testerCasualBuffer ? elements.testerCasualBuffer.value : '') || 'JSON';
-  const headersText = elements.testerCasualHeaders ? elements.testerCasualHeaders.value.trim() : '';
-  const headers = parseHeadersInput(headersText);
-  const bodyText = (elements.testerBody ? elements.testerBody.value.trim() : '') || '{}';
-
-  const sendBtn = elements.btnTesterSendCasual || elements.btnTesterSend;
-  if (sendBtn) {
-    sendBtn.disabled = true;
-    sendBtn.textContent = '⏳ Calling...';
-  }
-
-  const startTime = performance.now();
-  displaySentRequest('CALL', service, headersText, bodyText);
-
+export function callCasualService(payload) {
   return doFetch('/__admin/casual/call', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      service: service,
-      bufferType: bufferType,
-      payload: bodyText,
-      headers: headers
-    })
-  })
-    .then(res => res.json())
-    .then(data => {
-      const elapsed = Math.round(performance.now() - startTime);
-      const isOk = !data.errorState || data.errorState === 'OK';
-      const statusText = isOk ? 'OK (0)' : `${data.errorState} (${data.errorCode || 0})`;
-      const resBody = data.payload || '';
-      const resHeaders = [`Buffer-Type: ${data.bufferType || bufferType}`, `Error-State: ${data.errorState || 'OK'}`];
-      if (data.headers) {
-        Object.entries(data.headers).forEach(([k, v]) => resHeaders.push(`${k}: ${v}`));
-      }
-
-      displayResponseResult(isOk ? 200 : 500, statusText, elapsed, resHeaders, resBody);
-      showSettlementBanner(`✅ Casual Call Settled: ${service} -> ${statusText}`, isOk ? 'status-settled' : 'status-error');
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        protocol: 'casual',
-        method: 'CALL',
-        url: service,
-        serviceName: service,
-        bufferType: bufferType,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: isOk ? 200 : 'ERR',
-        statusText: statusText,
-        duration: elapsed,
-        size: new Blob([resBody]).size,
-        responseHeaders: resHeaders,
-        responseBody: resBody
-      });
-      loadJournal();
-    })
-    .catch(err => {
-      const elapsed = Math.round(performance.now() - startTime);
-      displayResponseResult('ERROR', err.message, elapsed, [], 'Call error: ' + err.message);
-      showSettlementBanner(`❌ Casual Call Error: ${err.message}`, 'status-error');
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        protocol: 'casual',
-        method: 'CALL',
-        url: service,
-        serviceName: service,
-        bufferType: bufferType,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: 'ERR',
-        statusText: err.message,
-        duration: elapsed,
-        size: 0,
-        responseHeaders: [],
-        responseBody: 'Call error: ' + err.message
-      });
-    })
-    .finally(() => {
-      if (sendBtn) {
-        sendBtn.disabled = false;
-        sendBtn.textContent = '🔌 Execute tpcall';
-      }
-    });
+    body: JSON.stringify(payload)
+  }).then(res => res.json());
 }
 
-export function executeTesterRequest() {
-  const proto = (state.testerProtocol || 'http').toLowerCase();
-  if (proto === 'kafka') {
-    return executeKafkaProduce();
-  }
-  if (proto === 'amqp') {
-    return executeAmqpPublish();
-  }
-  if (proto === 'casual') {
-    return executeTesterCasualCall();
-  }
+export function executeKafkaProduce() {
+  return executeTesterRequest();
+}
 
-  if (!elements.testerUrl || !elements.testerMethod) return;
-  const method = elements.testerMethod.value;
-  let url = elements.testerUrl.value.trim();
-  if (!url.startsWith('/') && !url.startsWith('http')) {
-    url = '/' + url;
-  }
-  const headersText = elements.testerHeaders ? elements.testerHeaders.value : '';
-  const { headers } = getEffectiveTesterHeaders(headersText, true);
-  const bodyText = elements.testerBody ? elements.testerBody.value.trim() : '';
+export function executeAmqpPublish() {
+  return executeTesterRequest();
+}
 
-  const sentHeadersLines = [];
-  for (const [k, v] of Object.entries(headers)) {
-    sentHeadersLines.push(`${k}: ${v}`);
-  }
-  const sentHeadersText = sentHeadersLines.join('\n');
-
-  updateTesterRoute(false);
-  displaySentRequest(method, url, sentHeadersText, bodyText);
-
-  if (elements.btnTesterSend) {
-    elements.btnTesterSend.disabled = true;
-    elements.btnTesterSend.textContent = '⏳ Sending...';
-  }
-  if (elements.testerResponseStatus) {
-    elements.testerResponseStatus.textContent = '...';
-    elements.testerResponseStatus.className = 'card-value';
-  }
-  if (elements.testerResponseTime) {
-    elements.testerResponseTime.textContent = 'measuring...';
-  }
-  if (elements.testerResponseSize) {
-    elements.testerResponseSize.textContent = '—';
-  }
-
-  const startTime = performance.now();
-  const fetchOptions = {
-    method: method,
-    headers: headers
-  };
-  if (bodyText && ['POST', 'PUT', 'PATCH', 'DELETE'].indexOf(method) !== -1) {
-    fetchOptions.body = bodyText;
-  }
-
-  let responseMeta = { status: 0, statusText: '', headerLines: [] };
-
-  doFetch(url, fetchOptions)
-    .then(res => {
-      responseMeta.status = res.status;
-      responseMeta.statusText = res.statusText || '';
-      const headerLines = [];
-      if (res.headers && res.headers.forEach) {
-        res.headers.forEach((val, key) => {
-          headerLines.push(`${key}: ${val}`);
-        });
-      }
-      responseMeta.headerLines = headerLines;
-      return res.text();
-    })
-    .then(body => {
-      const elapsed = Math.round(performance.now() - startTime);
-      displayResponseResult(responseMeta.status, responseMeta.statusText, elapsed, responseMeta.headerLines, body);
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        method: method,
-        url: url,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: responseMeta.status,
-        statusText: responseMeta.statusText,
-        duration: elapsed,
-        size: new Blob([body]).size,
-        responseHeaders: responseMeta.headerLines,
-        responseBody: body
-      });
-
-      loadJournal();
-    })
-    .catch(err => {
-      const elapsed = Math.round(performance.now() - startTime);
-      displayResponseResult('ERROR', err.message, elapsed, [], 'Fetch error: ' + err.message);
-
-      saveTesterHistoryItem({
-        timestamp: Date.now(),
-        method: method,
-        url: url,
-        headersText: headersText,
-        bodyText: bodyText,
-        status: 0,
-        statusText: err.message,
-        duration: elapsed,
-        size: 0,
-        responseHeaders: [],
-        responseBody: 'Fetch error: ' + err.message
-      });
-    })
-    .finally(() => {
-      if (elements.btnTesterSend) {
-        elements.btnTesterSend.disabled = false;
-        elements.btnTesterSend.textContent = '🚀 Send';
-      }
-    });
+export function executeTesterCasualCall() {
+  return executeTesterRequest();
 }
 
 export function inspectOpenApi(spec) {
@@ -832,4 +453,4 @@ export function setProjectMode(project, mode) {
   return apiPost(`/__admin/projects/${enc}/mode`, { mode });
 }
 
-export { detectCapabilities, demoBackend };
+export { detectCapabilities, demoBackend, executeTesterRequest };

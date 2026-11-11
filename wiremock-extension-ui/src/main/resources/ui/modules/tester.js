@@ -19,7 +19,8 @@ import {
 import { openStubEditor } from './lifecycle.js';
 import { setRoute, toBase64 } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
-import { executeTesterRequest } from './api.js';
+import { dispatchRequest } from './dispatcher.js';
+import { loadJournal } from './api.js';
 import {
   resolveMacro,
   loadLocalHeaders,
@@ -625,6 +626,176 @@ export function renderLocalHeaderChips() {
     }
     elements.testerLocalHeadersChips.appendChild(chip);
   }
+}
+
+export async function executeTesterRequest() {
+  const proto = (state.testerProtocol || 'http').toLowerCase();
+
+  let destination = '';
+  let method = 'POST';
+  let headersText = '';
+  let bodyText = (elements.testerBody ? elements.testerBody.value.trim() : '') || '';
+  let key = '';
+  let partition = undefined;
+  let correlationId = '';
+  let replyTo = '';
+  let bufferType = 'JSON';
+
+  let sendBtn = elements.btnTesterSend;
+  let sendingText = '⏳ Sending...';
+  let resetText = '🚀 Send';
+
+  if (proto === 'kafka') {
+    destination = (elements.testerKafkaTopic ? elements.testerKafkaTopic.value.trim() : '') || 'orders.events';
+    key = elements.testerKafkaKey ? elements.testerKafkaKey.value.trim() : '';
+    const partitionVal = elements.testerKafkaPartition ? elements.testerKafkaPartition.value.trim() : '';
+    partition = partitionVal ? parseInt(partitionVal, 10) : undefined;
+    headersText = elements.testerKafkaHeaders ? elements.testerKafkaHeaders.value.trim() : '';
+    if (!bodyText) bodyText = '{}';
+    method = 'PRODUCE';
+    sendBtn = elements.btnTesterSendKafka || elements.btnTesterSend;
+    sendingText = '⏳ Producing...';
+    resetText = '🚀 Produce Message';
+  } else if (proto === 'amqp') {
+    destination = (elements.testerAmqpDest ? elements.testerAmqpDest.value.trim() : '') || 'orders.inbound';
+    correlationId = elements.testerAmqpCorrelation ? elements.testerAmqpCorrelation.value.trim() : '';
+    replyTo = elements.testerAmqpReplyTo ? elements.testerAmqpReplyTo.value.trim() : '';
+    headersText = elements.testerAmqpHeaders ? elements.testerAmqpHeaders.value.trim() : '';
+    if (!bodyText) bodyText = '{}';
+    method = 'PUBLISH';
+    sendBtn = elements.btnTesterSendAmqp || elements.btnTesterSend;
+    sendingText = '⏳ Publishing...';
+    resetText = '🚀 Publish Message';
+  } else if (proto === 'casual') {
+    destination = (elements.testerCasualService ? elements.testerCasualService.value.trim() : '') || 'echoService';
+    bufferType = (elements.testerCasualBuffer ? elements.testerCasualBuffer.value : '') || 'JSON';
+    headersText = elements.testerCasualHeaders ? elements.testerCasualHeaders.value.trim() : '';
+    if (!bodyText) bodyText = '{}';
+    method = 'CALL';
+    sendBtn = elements.btnTesterSendCasual || elements.btnTesterSend;
+    sendingText = '⏳ Calling...';
+    resetText = '🔌 Execute tpcall';
+  } else {
+    // HTTP
+    if (!elements.testerUrl || !elements.testerMethod) return;
+    method = elements.testerMethod.value;
+    destination = elements.testerUrl.value.trim();
+    headersText = elements.testerHeaders ? elements.testerHeaders.value : '';
+    sendBtn = elements.btnTesterSend;
+    sendingText = '⏳ Sending...';
+    resetText = '🚀 Send';
+  }
+
+  const { headers } = (proto === 'http')
+    ? getEffectiveTesterHeaders(headersText, true)
+    : { headers: parseHeadersInput(headersText) };
+
+  const sentHeadersLines = [];
+  for (const [k, v] of Object.entries(headers)) {
+    sentHeadersLines.push(`${k}: ${v}`);
+  }
+  const sentHeadersText = sentHeadersLines.join('\n');
+
+  if (proto === 'http') {
+    updateTesterRoute(false);
+  }
+  displaySentRequest(method, destination, sentHeadersText, bodyText);
+
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.textContent = sendingText;
+  }
+  if (elements.testerResponseStatus) {
+    elements.testerResponseStatus.textContent = '...';
+    elements.testerResponseStatus.className = 'card-value';
+  }
+  if (elements.testerResponseTime) {
+    elements.testerResponseTime.textContent = 'measuring...';
+  }
+  if (elements.testerResponseSize) {
+    elements.testerResponseSize.textContent = '—';
+  }
+
+  try {
+    const result = await dispatchRequest({
+      protocol: proto,
+      destination: destination,
+      method: method,
+      headers: headers,
+      body: bodyText,
+      key: key,
+      partition: partition,
+      correlationId: correlationId,
+      replyTo: replyTo,
+      bufferType: bufferType
+    });
+
+    displayResponseResult(
+      result.status,
+      result.statusText,
+      result.elapsedMs,
+      result.responseHeaders,
+      result.responseBody
+    );
+
+    if (result.banner) {
+      showSettlementBanner(result.banner.text, result.banner.type);
+    }
+
+    const historyItem = {
+      timestamp: Date.now(),
+      protocol: proto,
+      method: method,
+      url: destination,
+      destination: destination,
+      headersText: headersText,
+      bodyText: bodyText,
+      status: result.status,
+      statusText: result.statusText,
+      duration: result.elapsedMs,
+      size: new Blob([result.responseBody]).size,
+      responseHeaders: result.responseHeaders,
+      responseBody: result.responseBody
+    };
+    if (proto === 'kafka') {
+      historyItem.key = key;
+      if (result.settlement && result.settlement.partition !== undefined) {
+        historyItem.partition = result.settlement.partition;
+      }
+    } else if (proto === 'amqp') {
+      historyItem.correlationId = correlationId;
+      if (replyTo) historyItem.replyTo = replyTo;
+    } else if (proto === 'casual') {
+      historyItem.serviceName = destination;
+      historyItem.bufferType = bufferType;
+    }
+    saveTesterHistoryItem(historyItem);
+
+    loadJournal();
+  } catch (err) {
+    displayResponseResult('ERROR', err.message, 0, [], 'Dispatch error: ' + err.message);
+    showSettlementBanner(`❌ Error: ${err.message}`, 'status-error');
+  } finally {
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.textContent = resetText;
+    }
+  }
+}
+
+export function executeKafkaProduce() {
+  state.testerProtocol = 'kafka';
+  return executeTesterRequest();
+}
+
+export function executeAmqpPublish() {
+  state.testerProtocol = 'amqp';
+  return executeTesterRequest();
+}
+
+export function executeTesterCasualCall() {
+  state.testerProtocol = 'casual';
+  return executeTesterRequest();
 }
 
 export function initTesterTab() {

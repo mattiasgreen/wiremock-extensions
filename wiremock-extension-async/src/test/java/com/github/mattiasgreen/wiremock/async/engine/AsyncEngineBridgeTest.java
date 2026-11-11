@@ -1,22 +1,29 @@
-package com.github.mattiasgreen.wiremock.async.bridge;
+package com.github.mattiasgreen.wiremock.async.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-class AsyncQueueBridgeTest {
+class AsyncEngineBridgeTest {
 
     @Test
-    @DisplayName("Should serve mock reply on test queue without leaking to upstream queue")
+    @DisplayName("Should serve mock reply on test queue, synthesize ServeEvent, and not leak to upstream queue")
     void shouldServeMockWithoutLeakingUpstream() {
         InMemoryMessageBroker testBroker = new InMemoryMessageBroker("Broker-A-Test");
         InMemoryMessageBroker upstreamBroker = new InMemoryMessageBroker("Broker-B-Upstream");
-        AsyncQueueBridge bridge = new AsyncQueueBridge(testBroker, upstreamBroker);
+        AsyncEngine engine = AsyncEngine.create(testBroker, upstreamBroker);
+
+        List<ServeEvent> capturedEvents = new ArrayList<>();
+        engine.setJournalConsumer(capturedEvents::add);
 
         // Register mock stub
-        bridge.addMockStub("TIER_STANDARD", req -> AsyncMessage.builder()
+        engine.addMockStub("TIER_STANDARD", req -> AsyncMessage.builder()
                 .correlationId(req.correlationId())
                 .destination(req.replyTo())
                 .payload("{\"status\":\"MOCK_APPROVED\"}")
@@ -32,7 +39,7 @@ class AsyncQueueBridgeTest {
         testBroker.send("orders.inbound", msg);
 
         // Process bridge inbound cycle
-        bridge.processInbound("orders.inbound");
+        engine.processInbound("orders.inbound");
 
         // System A receives mock reply on orders.responses
         AsyncMessage reply = testBroker.poll("orders.responses");
@@ -42,14 +49,24 @@ class AsyncQueueBridgeTest {
 
         // Upstream broker receives 0 messages
         assertThat(upstreamBroker.size("orders.inbound")).isEqualTo(0);
+
+        // Verify authentic ServeEvent recorded
+        assertThat(capturedEvents).isNotEmpty();
+        ServeEvent se = capturedEvents.get(0);
+        assertThat(se.getRequest().getUrl()).isEqualTo("/__async/async/orders.inbound");
+        assertThat(se.getResponse().getBodyAsString()).isEqualTo("{\"status\":\"MOCK_APPROVED\"}");
     }
 
     @Test
-    @DisplayName("Should proxy unmatched message to upstream broker, capture reply, and harvest stub for replay")
+    @DisplayName(
+            "Should proxy unmatched message to upstream broker, synthesize bridged ServeEvent, and harvest replay stub")
     void shouldProxyAndHarvestLiveExchange() {
         InMemoryMessageBroker testBroker = new InMemoryMessageBroker("Broker-A-Test");
         InMemoryMessageBroker upstreamBroker = new InMemoryMessageBroker("Broker-B-Upstream");
-        AsyncQueueBridge bridge = new AsyncQueueBridge(testBroker, upstreamBroker);
+        AsyncEngine engine = AsyncEngine.create(testBroker, upstreamBroker);
+
+        List<ServeEvent> capturedEvents = new ArrayList<>();
+        engine.setJournalConsumer(capturedEvents::add);
 
         // System A produces an enterprise message
         AsyncMessage msg = AsyncMessage.builder()
@@ -60,10 +77,16 @@ class AsyncQueueBridgeTest {
                 .build();
         testBroker.send("orders.inbound", msg);
 
-        // 1. Bridge forwards across to upstream broker
-        bridge.processInbound("orders.inbound");
+        // 1. Engine forwards across to upstream broker
+        engine.processInbound("orders.inbound");
         assertThat(testBroker.size("orders.inbound")).isEqualTo(0);
         assertThat(upstreamBroker.size("orders.inbound")).isEqualTo(1);
+
+        // Verify bridged ServeEvent synthesized
+        assertThat(capturedEvents).hasSize(1);
+        ServeEvent bridgeEvent = capturedEvents.get(0);
+        assertThat(bridgeEvent.getResponseDefinition().isProxyResponse()).isTrue();
+        assertThat(bridgeEvent.getResponseDefinition().getProxyBaseUrl()).contains("upstream/orders.inbound");
 
         // 2. Upstream consumes and replies
         AsyncMessage upstreamMsg = upstreamBroker.poll("orders.inbound");
@@ -75,15 +98,15 @@ class AsyncQueueBridgeTest {
                 .build();
         upstreamBroker.send("orders.responses", upstreamReply);
 
-        // 3. Bridge processes outbound reply -> forwards to test broker & harvests stub
-        bridge.processOutboundReply("orders.responses", "TIER_ENTERPRISE");
+        // 3. Engine processes outbound reply -> forwards to test broker & harvests stub
+        engine.processOutboundReply("orders.responses", "TIER_ENTERPRISE");
 
         AsyncMessage clientReply = testBroker.poll("orders.responses");
         assertThat(clientReply).isNotNull();
         assertThat(clientReply.payload()).isEqualTo("{\"status\":\"UPSTREAM_VIP_OK\"}");
 
-        // Verify stub was harvested into bridge catalog
-        assertThat(bridge.getHarvestedStubs()).containsKey("TIER_ENTERPRISE");
+        // Verify stub was harvested into engine catalog
+        assertThat(engine.getHarvestedStubs()).containsKey("TIER_ENTERPRISE");
 
         // 4. Offline Replay: Send second enterprise order with upstream offline
         AsyncMessage repeatMsg = AsyncMessage.builder()
@@ -93,7 +116,7 @@ class AsyncQueueBridgeTest {
                 .payload("{\"orderId\":\"1000\",\"tier\":\"TIER_ENTERPRISE\"}")
                 .build();
         testBroker.send("orders.inbound", repeatMsg);
-        bridge.processInbound("orders.inbound");
+        engine.processInbound("orders.inbound");
 
         AsyncMessage replayReply = testBroker.poll("orders.responses");
         assertThat(replayReply).isNotNull();
