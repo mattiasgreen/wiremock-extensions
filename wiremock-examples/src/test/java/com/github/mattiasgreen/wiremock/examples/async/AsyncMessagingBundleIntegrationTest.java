@@ -102,6 +102,12 @@ class AsyncMessagingBundleIntegrationTest {
             assertThat(records.get(0).value()).isEqualTo("{\"order\":\"ORD-1\"}");
             assertThat(records.get(1).value()).isEqualTo("{\"order\":\"ORD-2\"}");
             assertThat(AsyncEngine.getInstance().getMessagesConsumed()).isEqualTo(2L);
+
+            // Verify authentic ServeEvents ingested into WireMock core RequestJournal
+            List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> serveEvents = server.getAllServeEvents();
+            assertThat(serveEvents)
+                    .filteredOn(e -> e.getRequest().getUrl().equals("/__async/kafka/orders.events"))
+                    .hasSize(2);
         }
     }
 

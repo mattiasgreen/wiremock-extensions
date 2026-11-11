@@ -10,7 +10,8 @@ import java.util.Objects;
 
 /**
  * ExtensionFactory SPI discovery provider registering {@link AsyncAdminEndpoint} and
- * {@link AsyncMessagePublishingListener}.
+ * {@link AsyncMessagePublishingListener}, and connecting {@link AsyncEngine} to WireMock's
+ * core {@link com.github.tomakehurst.wiremock.store.RequestJournalStore}.
  *
  * <p><b>Note:</b> This is Beta functionality subject to evolution.
  */
@@ -28,6 +29,11 @@ public class AsyncExtensionFactory implements ExtensionFactory {
 
     @Override
     public List<Extension> create(WireMockServices wireMockServices) {
+        if (wireMockServices != null
+                && wireMockServices.getStores() != null
+                && wireMockServices.getStores().getRequestJournalStore() != null) {
+            engine.setJournalConsumer(wireMockServices.getStores().getRequestJournalStore()::add);
+        }
         return List.of(new AsyncAdminEndpoint(engine), new AsyncMessagePublishingListener(engine::publish));
     }
 }

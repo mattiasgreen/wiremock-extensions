@@ -114,17 +114,23 @@ export function getRequestVerdict(req) {
   const rawName = (req.stubMapping && req.stubMapping.name)
     || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name']);
   if (isProxyMode) {
+    const isAsync = (req.request && req.request.url && req.request.url.startsWith('/__async/'))
+      || Boolean(getHeader(resHeaders, 'x-wiremock-async-protocol'))
+      || Boolean(req.request && req.request.headers && getHeader(req.request.headers, 'x-wiremock-async-protocol'));
+    const isBridged = isAsync;
     const detail = proxyUrl
-      ? (rawName ? `${rawName} (Proxied to ${proxyUrl})` : `Proxied to ${proxyUrl}`)
-      : (rawName ? `${rawName} (Proxied)` : 'Proxied');
+      ? (rawName ? `${rawName} (${isBridged ? 'Bridged' : 'Proxied'} to ${proxyUrl})` : `${isBridged ? 'Bridged' : 'Proxied'} to ${proxyUrl}`)
+      : (rawName ? `${rawName} (${isBridged ? 'Bridged' : 'Proxied'})` : (isBridged ? 'Bridged' : 'Proxied'));
     return {
       key: 'proxied',
       type: 'proxied',
-      label: '🌐 PROXIED',
-      cssClass: 'pill-matched pill-proxied',
+      label: isBridged ? '🔀 BRIDGED' : '🌐 PROXIED',
+      cssClass: isBridged ? 'pill-matched pill-proxied pill-bridged' : 'pill-matched pill-proxied',
       proxyUrl: proxyUrl || 'upstream',
       stubDetail: detail,
-      tooltip: `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Snapshot into an offline stub`
+      tooltip: isBridged
+        ? `Forwarded across queue bridge to (${proxyUrl || 'upstream broker'}) — ready to Snapshot into an offline stub`
+        : `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Snapshot into an offline stub`
     };
   }
   const transformers = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.transformers)

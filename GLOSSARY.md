@@ -243,3 +243,11 @@ _Avoid_: response viewer, ack inspector, result box
 **Protocol Segmented Control**:
 The top-level interactive selector (`[HTTP] [Kafka] [AMQP] [Casual]`) within the Tester workbench that controls protocol-specific input morphing, quick templates filtering, and dispatch seam delegation.
 _Avoid_: protocol pills, tab picker, protocol tabs
+
+**Protocol Dispatcher Seam**:
+A deep, zero-DOM client module (`dispatcher.js`) standardizing multi-protocol execution (HTTP, Kafka, AMQP, Casual XATMI) behind a single unified interface returning an immutable `SettlementResult` without coupling to browser DOM elements or UI controllers.
+_Avoid_: request handler, protocol executor, test runner helper
+
+**Bridged Message Verdict**:
+The domain classification and visual badge (`🔀 BRIDGED`) applied to asynchronous Kafka or AMQP messages forwarded across a queue bridge to an upstream broker, participating seamlessly in WireMock's `proxied` lifecycle category and 1-click offline stub snapshotting.
+_Avoid_: proxied queue, routed message, forwarded event

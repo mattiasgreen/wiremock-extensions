@@ -775,6 +775,14 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"status\":\"COMMITTED\",\"orderId\":\"ORD-KAFKA-1\"}")));
 
+        // Setup 5: Bridged async route
+        wireMockServer.stubFor(post(urlEqualTo("/__async/kafka/payments.bridged"))
+                .willReturn(aResponse()
+                        .proxiedFrom("http://upstream-broker:9092")
+                        .withHeader("X-WireMock-Async-Protocol", "kafka")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":\"BRIDGED_OK\"}")));
+
         // Trigger HTTP calls
         HttpClient client = HttpClient.newHttpClient();
         client.send(
@@ -805,6 +813,14 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .header("X-Async-Protocol", "kafka")
                         .POST(HttpRequest.BodyPublishers.ofString(
                                 "{\"orderId\":\"ORD-KAFKA-1\",\"action\":\"CREATE\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__async/kafka/payments.bridged"))
+                        .header("X-WireMock-Async-Protocol", "kafka")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"payment\":\"P-100\"}"))
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
 
@@ -870,6 +886,11 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .anyMatch(s -> "/__async/kafka/orders.events"
                                 .equals(s.getRequest().getUrl())))
                 .isTrue();
+
+        // Verify Bridged async row and badge
+        Locator bridgedRow = page.locator("#journal-list tr.journal-row:has-text('/__async/kafka/payments.bridged')")
+                .first();
+        assertThat(bridgedRow.locator(".pill-bridged").textContent()).contains("BRIDGED");
     }
 
     @Test
