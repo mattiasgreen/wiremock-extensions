@@ -4,7 +4,8 @@
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { bulkStubs, loadData } from './api.js';
+import { bulkStubs } from './api.js';
+import { loadData } from './app-loader.js';
 import { exportStubs } from './import-export.js';
 import { renderStubList, getVisibleCatalogStubs } from './stubs.js';
 

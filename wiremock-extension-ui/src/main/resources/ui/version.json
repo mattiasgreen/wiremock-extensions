@@ -1,5 +1,5 @@
 {
   "version": "1.14.0",
-  "commit": "c477cd0",
-  "branch": "feat/async-ibmmq-support"
+  "commit": "1994cf0",
+  "branch": "feat/kafka-testcontainers"
 }

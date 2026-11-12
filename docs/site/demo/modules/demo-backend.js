@@ -2139,11 +2139,21 @@ class InMemoryDemoBackend {
       };
       this.requests.unshift(entry);
 
+      const isOk = replyStatus >= 200 && replyStatus < 300;
       return responseJson(200, {
-        status: replyStatus >= 200 && replyStatus < 300 ? 0 : -1,
+        status: isOk ? 0 : -1,
+        errorState: isOk ? 'OK' : 'TPESVCFAIL',
+        errorCode: isOk ? 0 : 11,
+        userCode: 0,
+        durationMs: 12,
+        execution: entry.id,
         service,
         bufferType,
         payload: replyPayload,
+        isBinary: false,
+        sizeBytes: replyPayload ? new Blob([replyPayload]).size : 0,
+        headers: replyHeaders,
+        requestHeaders: entry.request.headers,
         executionTimeMs: 12
       });
     }
@@ -2168,8 +2178,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'explore_async_queues_ui',
-        commit: '4a53d61'
+        branch: 'feat/async-ibmmq-support',
+        commit: 'c477cd0'
       });
     }
 

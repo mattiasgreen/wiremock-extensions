@@ -5,7 +5,8 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { createStatefulModel, loadData } from './api.js';
+import { createStatefulModel } from './api.js';
+import { loadData } from './app-loader.js';
 import { mountCodeInputEditor } from './payload-lens.js';
 
 export const DYNAMIC_TEMPLATES = {

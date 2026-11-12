@@ -58,7 +58,11 @@ class AsyncPriorityBridgeTest {
 
         // Upstream broker must receive ZERO messages (100% isolation)
         assertThat(upstreamBroker.size("orders.inbound")).isZero();
-        assertThat(engine.getJournal()).contains("MOCK_MATCH:" + msg.payload());
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getRequest().getBodyAsString()).isEqualTo(msg.payload());
+            assertThat(se.getResponseDefinition().getStatus()).isEqualTo(200);
+            assertThat(se.getResponseDefinition().isProxyResponse()).isFalse();
+        });
     }
 
     @Test
@@ -84,7 +88,11 @@ class AsyncPriorityBridgeTest {
         assertThat(forwarded.destination()).isEqualTo("upstream-orders-germany");
         assertThat(forwarded.payload()).isEqualTo("{\"item\":\"Widget\",\"qty\":5}");
 
-        assertThat(engine.getJournal()).contains("PROXY_FORWARD:upstream-orders-germany:" + msg.payload());
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
+            assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("upstream-orders-germany");
+            assertThat(se.getRequest().getBodyAsString()).isEqualTo(msg.payload());
+        });
     }
 
     @Test
@@ -104,9 +112,11 @@ class AsyncPriorityBridgeTest {
 
         // Verify proxy errors incremented
         assertThat(engine.getProxyErrors()).isEqualTo(1);
-        // Verify 502 troubleshooting journal entry
-        assertThat(engine.getJournal())
-                .anyMatch(j -> j.startsWith("ASYNC_PROXY_ERROR:502:broken.test:MISSING.QUEUE.TARGET"));
+        // Verify 502 troubleshooting ServeEvent
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getResponseDefinition().getStatus()).isEqualTo(502);
+            assertThat(se.getResponseDefinition().getBody()).contains("MISSING.QUEUE.TARGET");
+        });
     }
 
     @Test

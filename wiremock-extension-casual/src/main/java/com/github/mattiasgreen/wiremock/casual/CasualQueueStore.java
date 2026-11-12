@@ -398,6 +398,15 @@ public class CasualQueueStore {
         inFlightDequeues.clear();
     }
 
+    public synchronized UUID enqueueDirect(
+            String queueName, UUID messageId, String correlationInformation, String replyQueue, ServiceBuffer payload) {
+        UUID id = messageId != null ? messageId : UUID.randomUUID();
+        getOrCreateConfig(queueName);
+        Deque<StoredMessage> q = queues.computeIfAbsent(queueName, k -> new ArrayDeque<>());
+        q.addLast(new StoredMessage(id, correlationInformation, replyQueue, payload, Instant.now()));
+        return id;
+    }
+
     private boolean isTransactional(Xid xid) {
         return xid != null && !XID.NULL_XID.equals(xid);
     }

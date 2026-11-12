@@ -94,4 +94,46 @@ class AsyncBrokerRegistryTest {
         assertThatThrownBy(() -> new BrokerConnection("", "kafka", "Invalid", "localhost:9092", Map.of()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("Should pool MessageBroker instances per connection and close on upsert or removal")
+    void shouldPoolBrokersAndCloseOnUpsertOrRemoval() {
+        java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger closed = new java.util.concurrent.atomic.AtomicInteger();
+
+        registry.registerBrokerFactory("custom", conn -> new CloseableTestBroker(created.incrementAndGet(), closed));
+
+        registry.register(new BrokerConnection("b1", "custom", "Broker 1", "localhost:9000", Map.of()));
+        var first = registry.getOrCreateBroker("b1").orElseThrow();
+        var second = registry.getOrCreateBroker("b1").orElseThrow();
+        assertThat(first).isSameAs(second);
+        assertThat(created.get()).isEqualTo(1);
+        assertThat(closed.get()).isEqualTo(0);
+
+        // Upsert closes previous pooled adapter
+        registry.register(new BrokerConnection("b1", "custom", "Broker 1 Updated", "localhost:9001", Map.of()));
+        assertThat(closed.get()).isEqualTo(1);
+        var third = registry.getOrCreateBroker("b1").orElseThrow();
+        assertThat(third).isNotSameAs(first);
+        assertThat(created.get()).isEqualTo(2);
+
+        // Removal closes active pooled adapter
+        assertThat(registry.remove("b1")).isTrue();
+        assertThat(closed.get()).isEqualTo(2);
+    }
+
+    private static final class CloseableTestBroker
+            extends com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker implements AutoCloseable {
+        private final java.util.concurrent.atomic.AtomicInteger closedCounter;
+
+        CloseableTestBroker(int index, java.util.concurrent.atomic.AtomicInteger closedCounter) {
+            super("test-" + index);
+            this.closedCounter = closedCounter;
+        }
+
+        @Override
+        public void close() {
+            closedCounter.incrementAndGet();
+        }
+    }
 }

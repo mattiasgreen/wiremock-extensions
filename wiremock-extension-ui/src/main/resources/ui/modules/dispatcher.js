@@ -195,26 +195,33 @@ async function dispatchCasual(options, startTime) {
   const bufferType = options.bufferType || 'JSON';
   const bodyText = options.body || '{}';
   const headers = options.headers || {};
+  const payloadObj = {
+    service: service,
+    bufferType: bufferType,
+    payload: bodyText,
+    headers: headers
+  };
+  if (options.host) payloadObj.host = options.host;
+  if (options.port) payloadObj.port = options.port;
+  if (options.payloadEncoding) payloadObj.payloadEncoding = options.payloadEncoding;
+  if (options.timeoutSeconds) payloadObj.timeoutSeconds = options.timeoutSeconds;
 
   try {
     const res = await doFetch('/__admin/casual/call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service: service,
-        bufferType: bufferType,
-        payload: bodyText,
-        headers: headers
-      })
+      body: JSON.stringify(payloadObj)
     });
     const data = await res.json();
     const elapsed = Math.round(performance.now() - startTime);
-    const isOk = !data.errorState || data.errorState === 'OK';
-    const statusText = isOk ? 'OK (0)' : `${data.errorState} (${data.errorCode || 0})`;
+    const errorState = data.errorState || (data.status !== undefined && data.status !== 0 ? 'TPESVCFAIL' : 'OK');
+    const isOk = errorState === 'OK';
+    const errorCode = data.errorCode !== undefined ? data.errorCode : (isOk ? 0 : -1);
+    const statusText = isOk ? 'OK (0)' : `${errorState} (${errorCode})`;
     const resBody = data.payload || '';
     const resHeaders = [
       `Buffer-Type: ${data.bufferType || bufferType}`,
-      `Error-State: ${data.errorState || 'OK'}`
+      `Error-State: ${errorState}`
     ];
     if (data.headers) {
       Object.entries(data.headers).forEach(([k, v]) => resHeaders.push(`${k}: ${v}`));
@@ -224,7 +231,7 @@ async function dispatchCasual(options, startTime) {
       ok: isOk,
       status: isOk ? 200 : 500,
       statusText: statusText,
-      elapsedMs: elapsed,
+      elapsedMs: data.durationMs || elapsed,
       responseHeaders: resHeaders,
       responseBody: resBody,
       protocol: 'casual',
@@ -232,8 +239,16 @@ async function dispatchCasual(options, startTime) {
       destination: service,
       settlement: {
         bufferType: data.bufferType || bufferType,
-        errorState: data.errorState || 'OK',
-        errorCode: data.errorCode || 0
+        errorState: errorState,
+        errorCode: errorCode,
+        userCode: data.userCode || 0,
+        durationMs: data.durationMs || elapsed,
+        execution: data.execution || '',
+        isBinary: Boolean(data.isBinary),
+        sizeBytes: data.sizeBytes,
+        payloadHex: data.payloadHex || '',
+        headers: data.headers || null,
+        requestHeaders: data.requestHeaders || headers
       },
       banner: {
         text: `${isOk ? '✅' : '❌'} Casual Call Settled: ${service} -> ${statusText}`,

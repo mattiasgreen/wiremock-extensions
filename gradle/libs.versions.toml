@@ -63,6 +63,7 @@ artemis-amqp-protocol = { module = "org.apache.activemq:artemis-amqp-protocol", 
 ibm-mq-allclient = { module = "com.ibm.mq:com.ibm.mq.allclient", version.ref = "ibm-mq" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-kafka = { module = "org.testcontainers:kafka", version.ref = "testcontainers" }
 findsecbugs-plugin = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version.ref = "findsecbugs" }
 
 [plugins]

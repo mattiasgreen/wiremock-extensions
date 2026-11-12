@@ -534,3 +534,18 @@ In addition to AMQP 1.0 channels on IBM MQ 9.3+, `wiremock-extension-async` prov
   ./gradlew :wiremock-extension-async:ibmMqIntegrationTest
   ```
   Boots `icr.io/ibm-messaging/mq:latest` (`QM1`) to verify live PCF queue discovery, non-destructive `QueueBrowser` peek, header normalization (`x-tenant-id` → `x_tenant_id`), selective deletion, and queue purging.
+
+---
+
+## 9. Real Kafka Integration Verification (Testcontainers)
+
+To verify multi-partition `KafkaMessageBroker` peeking, `AdminClient` topic catalog discovery via `AsyncBrokerRegistry`, and synchronous `AsyncEngine` priority bridge forwarding against a live KRaft broker:
+
+```bash
+./gradlew :wiremock-extension-async:kafkaIntegrationTest
+```
+
+Boots `apache/kafka-native:3.8.0` via `org.testcontainers.kafka.KafkaContainer`, asserting:
+- Multi-partition detached browse (`peekDestinationMessages`) across all partitions with zero committed consumer group offsets.
+- Live topic discovery, compensating publish, and `deleteRecords` purge via `AsyncDestinationService`.
+- Unmatched inbound traffic forwarded synchronously through regex bridge rules onto upstream Kafka topics.

@@ -20,7 +20,7 @@ import { openStubEditor } from './lifecycle.js';
 import { setRoute, toBase64 } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
 import { dispatchRequest } from './dispatcher.js';
-import { loadJournal } from './api.js';
+import { loadJournal } from './app-loader.js';
 import {
   resolveMacro,
   loadLocalHeaders,

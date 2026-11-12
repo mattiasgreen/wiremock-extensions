@@ -2,7 +2,12 @@ package com.github.mattiasgreen.wiremock.async.connection;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.async.amqp.AmqpMessageBroker;
+import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
+import com.github.mattiasgreen.wiremock.async.kafka.KafkaMessageBroker;
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -13,6 +18,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,8 +37,19 @@ public class AsyncBrokerRegistry {
     private static final AsyncBrokerRegistry INSTANCE = new AsyncBrokerRegistry();
 
     private final Map<String, BrokerConnection> connections = new ConcurrentHashMap<>();
+    private final Map<String, MessageBroker> pooledBrokers = new ConcurrentHashMap<>();
+    private final Map<String, Function<BrokerConnection, MessageBroker>> brokerFactories = new ConcurrentHashMap<>();
 
-    private AsyncBrokerRegistry() {}
+    private AsyncBrokerRegistry() {
+        registerBrokerFactory("kafka", conn -> {
+            BrokerConnection resolved = conn.resolveWithEnv();
+            return new KafkaMessageBroker(resolved.id(), resolved.endpoint(), resolved.properties());
+        });
+        registerBrokerFactory("amqp", conn -> {
+            BrokerConnection resolved = conn.resolveWithEnv();
+            return new AmqpMessageBroker(resolved.id(), buildAmqpUri(resolved));
+        });
+    }
 
     public static AsyncBrokerRegistry getInstance() {
         return INSTANCE;
@@ -42,12 +59,20 @@ public class AsyncBrokerRegistry {
         return new AsyncBrokerRegistry();
     }
 
+    public void registerBrokerFactory(String protocol, Function<BrokerConnection, MessageBroker> factory) {
+        Objects.requireNonNull(protocol, "protocol must not be null");
+        Objects.requireNonNull(factory, "factory must not be null");
+        brokerFactories.put(protocol.toLowerCase(Locale.ROOT), factory);
+    }
+
     public void reset() {
+        clearPools();
         connections.clear();
     }
 
     public void register(BrokerConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
+        evictAndCloseBroker(connection.id());
         connections.put(connection.id(), connection);
         String safeId = connection.id().replaceAll("[\r\n]", "");
         LOG.info("[ASYNC-REGISTRY] Registered broker connection [{}] ({})", safeId, connection.protocol());
@@ -60,6 +85,36 @@ public class AsyncBrokerRegistry {
         return Optional.ofNullable(connections.get(id));
     }
 
+    public Optional<MessageBroker> getOrCreateBroker(String connectionId) {
+        if (connectionId == null) {
+            return Optional.empty();
+        }
+        BrokerConnection conn = connections.get(connectionId);
+        if (conn == null || conn.endpoint().isBlank()) {
+            return Optional.empty();
+        }
+        Function<BrokerConnection, MessageBroker> factory =
+                brokerFactories.get(conn.protocol().toLowerCase(Locale.ROOT));
+        if (factory == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pooledBrokers.computeIfAbsent(connectionId, id -> factory.apply(conn)));
+    }
+
+    public Map<BrokerConnection, MessageBroker> getOrCreateBrokersByProtocol(String protocol) {
+        if (protocol == null) {
+            return Collections.emptyMap();
+        }
+        String target = protocol.toLowerCase(Locale.ROOT);
+        Map<BrokerConnection, MessageBroker> result = new LinkedHashMap<>();
+        for (BrokerConnection conn : connections.values()) {
+            if (target.equals(conn.protocol().toLowerCase(Locale.ROOT))) {
+                getOrCreateBroker(conn.id()).ifPresent(broker -> result.put(conn.resolveWithEnv(), broker));
+            }
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
     public List<BrokerConnection> listConnections() {
         return Collections.unmodifiableList(new ArrayList<>(connections.values()));
     }
@@ -68,11 +123,53 @@ public class AsyncBrokerRegistry {
         if (id == null) {
             return false;
         }
+        evictAndCloseBroker(id);
         return connections.remove(id) != null;
     }
 
     public void clear() {
+        clearPools();
         connections.clear();
+    }
+
+    private void clearPools() {
+        for (String id : new ArrayList<>(pooledBrokers.keySet())) {
+            evictAndCloseBroker(id);
+        }
+    }
+
+    private void evictAndCloseBroker(String id) {
+        MessageBroker removed = pooledBrokers.remove(id);
+        if (removed instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                LOG.debug(
+                        "[ASYNC-REGISTRY] Error closing pooled broker [{}]: {}",
+                        id.replaceAll("[\r\n]", ""),
+                        e.getMessage());
+            }
+        }
+    }
+
+    private static String buildAmqpUri(BrokerConnection conn) {
+        String endpoint = conn.endpoint().trim();
+        if (endpoint.isEmpty()) {
+            return "";
+        }
+        if (endpoint.contains("://")) {
+            return endpoint;
+        }
+        String user = conn.properties().get("username");
+        String pass = conn.properties().get("password");
+        if (user != null && !user.isBlank()) {
+            String encUser = URLEncoder.encode(user, StandardCharsets.UTF_8);
+            String auth = (pass != null && !pass.isEmpty())
+                    ? encUser + ":" + URLEncoder.encode(pass, StandardCharsets.UTF_8)
+                    : encUser;
+            return "amqp://" + auth + "@" + endpoint;
+        }
+        return "amqp://" + endpoint;
     }
 
     /**

@@ -1,8 +1,14 @@
 package com.github.mattiasgreen.wiremock.async.bridge;
 
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Common abstraction representing an asynchronous message broker or virtual host destination store.
@@ -47,6 +53,33 @@ public interface MessageBroker {
      */
     default List<AsyncMessage> peek(String channel) {
         return Collections.emptyList();
+    }
+
+    /**
+     * Returns a bounded, non-destructive view of messages formatted for the Async Destination Explorer.
+     */
+    default List<AsyncDestinationMessage> peekDestinationMessages(String channel, String protocol, int limit) {
+        List<AsyncMessage> raw = peek(channel);
+        List<AsyncDestinationMessage> result = new ArrayList<>();
+        int max = limit > 0 ? Math.min(limit, raw.size()) : raw.size();
+        for (int i = 0; i < max; i++) {
+            AsyncMessage m = raw.get(i);
+            String payload = Objects.requireNonNullElse(m.payload(), "");
+            result.add(new AsyncDestinationMessage(
+                    m.id() != null ? m.id() : UUID.randomUUID().toString(),
+                    protocol,
+                    channel,
+                    m.key(),
+                    m.correlationId(),
+                    m.replyTo(),
+                    m.timestamp() != null ? m.timestamp() : Instant.now(),
+                    payload.getBytes(StandardCharsets.UTF_8).length,
+                    m.headers(),
+                    payload,
+                    null,
+                    null));
+        }
+        return Collections.unmodifiableList(result);
     }
 
     /**

@@ -4,7 +4,8 @@
  */
 
 import { elements } from './dom.js';
-import { doFetch, loadData, inspectOpenApi } from './api.js';
+import { doFetch, inspectOpenApi } from './api.js';
+import { loadData } from './app-loader.js';
 import { mountCodeInputEditor } from './payload-lens.js';
 
 export function setupOpenApiModal() {
