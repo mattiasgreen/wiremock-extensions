@@ -518,3 +518,19 @@ curl -X POST http://localhost:8080/__admin/async/publish \
   - `wiremock_requests_total{rpc_system="kafka", rpc_service="orders.events"}`
   - `wiremock_async_messages_consumed_total{protocol="amqp", channel="payments.requests"}`
   - `wiremock_async_messages_produced_total{protocol="kafka", destination="notifications.broadcast"}`
+
+---
+
+## 8. Native IBM MQ Support (Optional Runtime / Two-Task Packaging)
+
+In addition to AMQP 1.0 channels on IBM MQ 9.3+, `wiremock-extension-async` provides native IBM MQ (`SVRCONN` / port `1414`) connectivity via `com.ibm.mq:com.ibm.mq.allclient` using JMS 2.0 (`QueueBrowser`, `JMSContext`) and **PCF** (`MQCMD_INQUIRE_Q`, `MQCMD_CLEAR_Q`).
+
+- **Optional Zero-Bloat Library**: `com.ibm.mq.allclient` is declared `compileOnly` in `wiremock-extension-async`. `AsyncDestinationService` auto-registers `IbmMqDestinationProvider` (`protocol = "ibmmq"`) via reflection when `com.ibm.mq.jms.MQConnectionFactory` is present on the classpath.
+- **Two Standalone Fat-JAR Tasks** (`wiremock-extension-bundle`):
+  - **Lean (default)**: `./gradlew fatJar` builds `-standalone.jar` without IBM MQ libraries.
+  - **With IBM MQ**: `./gradlew fatJarIbmMq` builds `-standalone-ibmmq.jar` bundling `com.ibm.mq.allclient` for standalone execution.
+- **Integration Verification (Testcontainers)**:
+  ```bash
+  ./gradlew :wiremock-extension-async:ibmMqIntegrationTest
+  ```
+  Boots `icr.io/ibm-messaging/mq:latest` (`QM1`) to verify live PCF queue discovery, non-destructive `QueueBrowser` peek, header normalization (`x-tenant-id` → `x_tenant_id`), selective deletion, and queue purging.

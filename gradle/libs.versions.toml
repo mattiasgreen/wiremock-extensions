@@ -21,6 +21,8 @@ kafka = "3.9.0"
 protonj2 = "1.4.0"
 zstd = "1.5.6-9"
 artemis = "2.39.0"
+ibm-mq = "9.4.5.1"
+testcontainers = "1.21.4"
 
 [libraries]
 zstd-jni = { module = "com.github.luben:zstd-jni", version.ref = "zstd" }
@@ -58,6 +60,9 @@ kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafk
 protonj2-client = { module = "org.apache.qpid:protonj2-client", version.ref = "protonj2" }
 artemis-server = { module = "org.apache.activemq:artemis-server", version.ref = "artemis" }
 artemis-amqp-protocol = { module = "org.apache.activemq:artemis-amqp-protocol", version.ref = "artemis" }
+ibm-mq-allclient = { module = "com.ibm.mq:com.ibm.mq.allclient", version.ref = "ibm-mq" }
+testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 findsecbugs-plugin = { module = "com.h3xstream.findsecbugs:findsecbugs-plugin", version.ref = "findsecbugs" }
 
 [plugins]

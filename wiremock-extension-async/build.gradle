@@ -4,4 +4,31 @@ dependencies {
     implementation libs.jackson.datatype.jsr310
     implementation libs.kafka.clients
     implementation libs.protonj2.client
+
+    compileOnly libs.ibm.mq.allclient
+
+    testImplementation libs.ibm.mq.allclient
+    testImplementation libs.testcontainers
+    testImplementation libs.testcontainers.junit.jupiter
+}
+
+tasks.withType(JavaCompile).configureEach {
+    // com.ibm.mq.allclient embeds optional Swagger @ApiModelProperty annotations without transitive dependency
+    options.compilerArgs += ['-Xlint:-classfile']
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'recording', 'pitch-deck', 'ui-snapshot', 'benchmark', 'ibmmq-integration'
+    }
+}
+
+tasks.register('ibmMqIntegrationTest', Test) {
+    description = 'Runs real IBM MQ integration tests using Testcontainers (icr.io/ibm-messaging/mq).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'ibmmq-integration'
+    }
 }

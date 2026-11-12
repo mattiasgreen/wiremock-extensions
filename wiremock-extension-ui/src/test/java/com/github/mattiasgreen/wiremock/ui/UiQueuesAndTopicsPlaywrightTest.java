@@ -57,6 +57,13 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(casualItems.first().textContent()).contains("billing.forward");
         assertThat(casualItems.first().textContent()).contains("CASUAL");
 
+        // Click IBM MQ filter
+        page.locator("#btn-filter-proto-ibmmq").click();
+        Locator ibmMqItems = page.locator(".queues-dest-item");
+        assertThat(ibmMqItems.count()).isEqualTo(1);
+        assertThat(ibmMqItems.first().textContent()).contains("DEV.QUEUE.1");
+        assertThat(ibmMqItems.first().textContent()).contains("IBMMQ");
+
         // Reset to All
         page.locator("#btn-filter-proto-all").click();
         assertThat(page.locator(".queues-dest-item").count()).isGreaterThanOrEqualTo(4);
@@ -204,9 +211,15 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#queues-brokers-tbody").textContent()).contains("ActiveMQ Artemis (Embedded)");
         assertThat(page.locator("#queues-brokers-export-json").textContent()).contains("embedded-artemis");
 
-        // Load Protocol Template
-        page.selectOption("#queues-broker-template-select", "amqp-k8s");
         Locator jsonEditor = page.locator("#queues-broker-json-editor");
+
+        // Load IBM MQ Protocol Template too
+        page.selectOption("#queues-broker-template-select", "ibmmq-k8s");
+        assertThat(jsonEditor.inputValue()).contains("corp-ibmmq-k8s");
+        assertThat(jsonEditor.inputValue()).contains("${IBM_MQ_PASSWORD}");
+
+        // Load AMQP Protocol Template
+        page.selectOption("#queues-broker-template-select", "amqp-k8s");
         assertThat(jsonEditor.inputValue()).contains("artemis-k8s");
         assertThat(jsonEditor.inputValue()).contains("${AMQP_PASSWORD}");
 

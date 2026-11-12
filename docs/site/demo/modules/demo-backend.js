@@ -1274,12 +1274,27 @@ const SEED_ASYNC_CONNECTIONS = [
     properties: {
       'domain.id': 'finance-xatmi'
     }
+  },
+  {
+    id: 'corp-ibmmq',
+    protocol: 'ibmmq',
+    name: 'IBM MQ Queue Manager (QM1)',
+    endpoint: '127.0.0.1:1414',
+    status: 'HEALTHY',
+    properties: {
+      queueManager: 'QM1',
+      channel: 'DEV.APP.SVRCONN',
+      ccsid: '1208',
+      username: 'app',
+      password: '${IBM_MQ_PASSWORD}'
+    }
   }
 ];
 
 const SEED_ASYNC_DESTINATIONS = [
   { id: 'dest-kafka-orders', name: 'orders.events', protocol: 'kafka', type: 'topic', brokerId: 'prod-cluster-kafka', messageCount: 3 },
   { id: 'dest-amqp-payments', name: 'payments.requests', protocol: 'amqp', type: 'queue', brokerId: 'enterprise-broker', messageCount: 2 },
+  { id: 'dest-ibmmq-dev', name: 'DEV.QUEUE.1', protocol: 'ibmmq', type: 'queue', brokerId: 'corp-ibmmq', messageCount: 1 },
   { id: 'dest-casual-billing', name: 'billing.forward', protocol: 'casual', type: 'queue', brokerId: 'mainframe-casual', messageCount: 2 },
   { id: 'dest-inmem-audit', name: 'internal.audit', protocol: 'in-memory', type: 'queue', brokerId: 'local', messageCount: 1 }
 ];
@@ -1438,6 +1453,30 @@ const SEED_ASYNC_MESSAGES = {
         status: 'PROCESSED'
       }, null, 2),
       size: 90
+    }
+  ],
+  'ibmmq/DEV.QUEUE.1': [
+    {
+      id: 'ID:414d5120514d3120202020202020202081b45a6701004020',
+      protocol: 'ibmmq',
+      destination: 'DEV.QUEUE.1',
+      key: 'MQ-TX-401',
+      partition: null,
+      offset: 0,
+      timestamp: Date.now() - 45000,
+      correlationId: 'corr-ibmmq-401',
+      replyTo: 'DEV.QUEUE.2',
+      headers: {
+        JMS_IBM_Format: 'MQSTR   ',
+        x_tenant_id: 'nordic-clearing'
+      },
+      payload: JSON.stringify({
+        settlementId: 'SET-2026-401',
+        queueManager: 'QM1',
+        currency: 'SEK',
+        amount: 12500.0
+      }, null, 2),
+      size: 112
     }
   ],
   'in-memory/internal.audit': [

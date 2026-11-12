@@ -226,6 +226,12 @@ tasks.register('launchServer', JavaExec) {
 
 tasks.register('fatJar') {
     group = 'build'
-    description = 'Builds the standalone executable fat-jar containing WireMock and all extensions'
+    description = 'Builds the lean standalone executable fat-jar containing WireMock and all open extensions'
     dependsOn ':wiremock-extension-bundle:shadowJar'
+}
+
+tasks.register('fatJarIbmMq') {
+    group = 'build'
+    description = 'Builds the opt-in standalone executable fat-jar bundled with IBM MQ client libraries'
+    dependsOn ':wiremock-extension-bundle:shadowJarIbmMq'
 }
