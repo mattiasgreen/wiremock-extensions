@@ -945,12 +945,13 @@
                 <button type="button" id="btn-queues-brokers" data-testid="btn-queues-brokers" class="btn btn-tiny btn-secondary" title="View & configure registered broker connections">🔌 Brokers</button>
               </div>
               <div class="search-bar">
-                <input type="text" id="queues-channel-search" data-testid="queues-channel-search" placeholder="Filter channels (Kafka, AMQP, Casual)..." autocomplete="off">
+                <input type="text" id="queues-channel-search" data-testid="queues-channel-search" placeholder="Filter channels (Kafka, AMQP, IBM MQ, Casual)..." autocomplete="off">
               </div>
               <div class="filter-pills queues-filter-pills">
                 <button type="button" class="btn btn-tiny queues-filter-pill active" data-filter="all" id="btn-filter-proto-all">All</button>
                 <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="kafka" id="btn-filter-proto-kafka">Kafka</button>
                 <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="amqp" id="btn-filter-proto-amqp">AMQP</button>
+                <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="ibmmq" id="btn-filter-proto-ibmmq">IBM MQ</button>
                 <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="casual" id="btn-filter-proto-casual">Casual</button>
                 <button type="button" class="btn btn-tiny queues-filter-pill" data-filter="in-memory" id="btn-filter-proto-inmem">In-Memory</button>
               </div>
@@ -1772,6 +1773,8 @@
                 <option value="amqp-k8s">AMQP 1.0 (K8s Secret / Env Var Auth)</option>
                 <option value="kafka-local">Kafka (Local PLAINTEXT)</option>
                 <option value="kafka-sasl">Kafka (SASL SCRAM + K8s Secret)</option>
+                <option value="ibmmq-local">IBM MQ (Local Dev Container)</option>
+                <option value="ibmmq-k8s">IBM MQ (Enterprise / K8s Secret)</option>
                 <option value="casual-gateway">Casual XATMI (TCP Gateway)</option>
               </select>
               <button type="button" id="btn-queues-prettify-json" class="btn btn-tiny btn-secondary" title="Format and validate JSON">✨ Prettify</button>

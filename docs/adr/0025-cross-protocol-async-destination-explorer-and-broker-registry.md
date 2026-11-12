@@ -29,8 +29,8 @@ As asynchronous messaging expands across Kafka, AMQP 1.0, Casual XATMI Queues, a
    - **Remote Streams & Immutable Logs**: Formalize editing as a **Compensating Queue Edit** ("Modify & Re-Publish"), where the modified payload is published as a successor record (with optional original message cancellation or tombstoning).
    - Multi-layered nested unnesting (JSON, XML SOAP strings, Base64, fielded buffers) automatically re-serializes and cascades edits up to the root document.
 
-7. **Isolated Remote Casual Inspection Seam**:
-   Confine the interim remote Casual queue inspection mechanism (transactional `dequeue` followed by `rollback`) to an isolated adapter seam (`CasualRemoteQueueInspector`). This prevents protocol-specific workarounds from leaking into the Admin API or Web Console while establishing a clear transition point for upstream Casual non-destructive browse frames (`CASUAL_QUEUE_BROWSE`).
+7. **Isolated Remote Casual Inspection Seam & Optional Native IBM MQ Provider**:
+   Confine the interim remote Casual queue inspection mechanism (transactional `dequeue` followed by `rollback`) to an isolated adapter seam (`CasualRemoteQueueInspector`). For enterprise **IBM MQ** (`SVRCONN` on port `1414`), `IbmMqDestinationProvider` uses reflection-guarded discovery (`com.ibm.mq:com.ibm.mq.allclient` as `compileOnly`) with PCF live catalog queries (`MQCMD_INQUIRE_Q`) and non-destructive JMS `QueueBrowser` reads, accompanied by an opt-in standalone bundle task (`fatJarIbmMq`) alongside the lean default fat-JAR (`fatJar`).
 
 ## Status
 Accepted

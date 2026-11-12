@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
  * Domain service aggregating queue and topic operations across asynchronous protocols.
  * Decoupled via {@link DestinationProvider} adapters for in-memory, Kafka, AMQP, and Casual.
  */
-public class AsyncDestinationService {
+public final class AsyncDestinationService {
 
     private static final Logger LOG = LoggerFactory.getLogger(AsyncDestinationService.class);
     private static final AsyncDestinationService INSTANCE = new AsyncDestinationService();
@@ -47,6 +47,18 @@ public class AsyncDestinationService {
             LOG.info("[DESTINATION-SERVICE] Auto-registered Casual destination provider via reflection");
         } catch (ClassNotFoundException ignored) {
             // Casual extension not in classpath
+        }
+
+        try {
+            Class.forName("com.ibm.mq.jms.MQConnectionFactory");
+            Class<?> ibmMqProviderCls =
+                    Class.forName("com.github.mattiasgreen.wiremock.async.ibmmq.IbmMqDestinationProvider");
+            DestinationProvider ibmMq = (DestinationProvider)
+                    ibmMqProviderCls.getDeclaredConstructor().newInstance();
+            providers.put(ibmMq.getProtocol().toLowerCase(Locale.ROOT), ibmMq);
+            LOG.info("[DESTINATION-SERVICE] Auto-registered IBM MQ destination provider via reflection");
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            // Optional IBM MQ client library not in classpath
         }
     }
 

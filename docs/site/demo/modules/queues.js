@@ -67,6 +67,34 @@ export const PROTOCOL_TEMPLATES = {
       'client.id': 'wiremock-async-engine'
     }
   },
+  'ibmmq-local': {
+    id: 'local-ibmmq',
+    protocol: 'ibmmq',
+    name: 'IBM MQ Developer (Local)',
+    endpoint: '127.0.0.1:1414',
+    properties: {
+      queueManager: 'QM1',
+      channel: 'DEV.APP.SVRCONN',
+      ccsid: '1208',
+      username: 'app',
+      password: '${IBM_MQ_PASSWORD}',
+      queues: 'DEV.QUEUE.1,DEV.QUEUE.2'
+    }
+  },
+  'ibmmq-k8s': {
+    id: 'corp-ibmmq-k8s',
+    protocol: 'ibmmq',
+    name: 'Corporate IBM MQ (K8s Secret)',
+    endpoint: '${IBM_MQ_HOST}:1414',
+    properties: {
+      queueManager: '${IBM_MQ_QMGR}',
+      channel: 'APP.SVRCONN',
+      ccsid: '1208',
+      username: '${IBM_MQ_USER}',
+      password: '${IBM_MQ_PASSWORD}',
+      sslCipherSuite: 'TLS_RSA_WITH_AES_256_CBC_SHA256'
+    }
+  },
   'casual-gateway': {
     id: 'casual-domain-gateway',
     protocol: 'casual',
