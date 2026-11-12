@@ -152,8 +152,11 @@ class EmbeddedArtemisAmqpIntegrationTest {
             receiver.close();
         }
 
-        // Verify Journal audit recorded the proxy forward
-        assertThat(engine.getJournal()).anyMatch(j -> j.contains("PROXY_FORWARD:upstream.orders.456"));
+        // Verify ServeEvent audit recorded the proxy forward
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
+            assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("upstream.orders.456");
+        });
     }
 
     @Test
@@ -198,8 +201,11 @@ class EmbeddedArtemisAmqpIntegrationTest {
             receiver.close();
         }
 
-        // Verify Journal audit recorded the polyglot forward
-        assertThat(engine.getJournal()).anyMatch(j -> j.contains("PROXY_FORWARD:upstream.polyglot.789"));
+        // Verify ServeEvent audit recorded the polyglot forward
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
+            assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("upstream.polyglot.789");
+        });
     }
 
     @Test
