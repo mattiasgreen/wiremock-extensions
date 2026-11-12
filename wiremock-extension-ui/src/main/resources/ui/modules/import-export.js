@@ -4,7 +4,8 @@
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { importMappings, loadData } from './api.js';
+import { importMappings } from './api.js';
+import { loadData } from './app-loader.js';
 import { getStubProject } from './projects.js';
 import { mountCodeInputEditor } from './payload-lens.js';
 

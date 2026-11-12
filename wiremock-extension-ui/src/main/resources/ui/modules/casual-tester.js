@@ -19,6 +19,7 @@ import {
 } from './payload-lens.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { doFetch } from './api.js';
+import { dispatchRequest } from './dispatcher.js';
 import { saveTesterHistoryItem } from './tester.js';
 
 const CASUAL_HISTORY_KEY = 'wiremock_ui_casual_history';
@@ -818,40 +819,60 @@ export function executeCasualRequest() {
     elements.btnCasualSend.textContent = '⏳ Executing...';
   }
 
-  const callBody = JSON.stringify({
-    service: service,
+  dispatchRequest({
+    protocol: 'casual',
+    destination: service,
+    bufferType: bufferType,
+    body: payload,
+    headers: customHeaders,
     host: host,
     port: port,
-    bufferType: bufferType,
-    payload: payload,
     payloadEncoding: encoding,
-    headers: customHeaders,
     timeoutSeconds: 4
-  });
-
-  const startTime = performance.now();
-
-  doFetch('/__admin/casual/call', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: callBody
   })
-    .then(res => res.json())
-    .then(data => {
-      const elapsed = Math.round(performance.now() - startTime);
-      lastCasualResponseData = data;
+    .then(result => {
+      if (result.status === 'ERR') {
+        throw new Error(result.statusText || 'Connection failed');
+      }
+      const s = result.settlement || {};
+      const errorState = s.errorState || 'OK';
+      const errorCode = s.errorCode !== undefined ? s.errorCode : 0;
+      const userCode = s.userCode || 0;
+      const durationMs = result.elapsedMs || s.durationMs || 0;
+      const execution = s.execution || '';
+      const resPayload = result.responseBody || '';
+      const isBinary = Boolean(s.isBinary);
+      const sizeBytes = s.sizeBytes;
+      const payloadHex = s.payloadHex || '';
+      const resHeadersMap = s.headers || null;
+      const reqHeadersMap = s.requestHeaders || customHeaders;
+
+      lastCasualResponseData = {
+        errorState,
+        errorCode,
+        userCode,
+        durationMs,
+        execution,
+        payload: resPayload,
+        isBinary,
+        sizeBytes,
+        payloadHex,
+        headers: resHeadersMap,
+        requestHeaders: reqHeadersMap
+      };
+
       displayCasualResponseResult(
-        data.errorState || 'OK',
-        data.errorCode !== undefined ? data.errorCode : 0,
-        data.userCode || 0,
-        data.durationMs || elapsed,
-        data.execution || '',
-        data.payload || '',
-        data.isBinary || false,
-        data.sizeBytes,
-        data.payloadHex || '',
-        data.headers || null,
-        data.requestHeaders || null,
+        errorState,
+        errorCode,
+        userCode,
+        durationMs,
+        execution,
+        resPayload,
+        isBinary,
+        sizeBytes,
+        payloadHex,
+        resHeadersMap,
+        reqHeadersMap,
         payload,
         service
       );
@@ -863,17 +884,17 @@ export function executeCasualRequest() {
         port: port,
         bufferType: bufferType,
         requestPayload: payload,
-        requestHeaders: data.requestHeaders || customHeaders,
-        headers: data.headers || null,
-        errorState: data.errorState || 'OK',
-        errorCode: data.errorCode !== undefined ? data.errorCode : 0,
-        userCode: data.userCode || 0,
-        durationMs: data.durationMs || elapsed,
-        execution: data.execution || '',
-        responsePayload: data.payload || '',
-        isBinary: data.isBinary || false,
-        sizeBytes: data.sizeBytes,
-        payloadHex: data.payloadHex || ''
+        requestHeaders: reqHeadersMap,
+        headers: resHeadersMap,
+        errorState: errorState,
+        errorCode: errorCode,
+        userCode: userCode,
+        durationMs: durationMs,
+        execution: execution,
+        responsePayload: resPayload,
+        isBinary: isBinary,
+        sizeBytes: sizeBytes,
+        payloadHex: payloadHex
       });
 
       saveTesterHistoryItem({
@@ -883,19 +904,19 @@ export function executeCasualRequest() {
         url: service,
         serviceName: service,
         bufferType: bufferType,
-        headersText: customHeaders ? Object.entries(customHeaders).map(([k,v]) => `${k}: ${v}`).join('\n') : '',
+        headersText: customHeaders ? Object.entries(customHeaders).map(([k, v]) => `${k}: ${v}`).join('\n') : '',
         bodyText: payload,
-        status: (data.errorState === 'OK' || !data.errorState) ? 'OK' : data.errorState,
-        statusText: data.errorState || 'OK',
-        duration: data.durationMs || elapsed,
-        size: data.sizeBytes !== undefined ? data.sizeBytes : (data.payload ? new Blob([data.payload]).size : 0),
-        responseHeaders: data.headers ? Object.entries(data.headers).map(([k,v]) => `${k}: ${v}`) : [],
-        responseBody: data.payload || ''
+        status: errorState === 'OK' ? 'OK' : errorState,
+        statusText: errorState,
+        duration: durationMs,
+        size: sizeBytes !== undefined ? sizeBytes : (resPayload ? new Blob([resPayload]).size : 0),
+        responseHeaders: result.responseHeaders || [],
+        responseBody: resPayload
       });
       updateCasualRoute(true);
     })
     .catch(err => {
-      const elapsed = Math.round(performance.now() - startTime);
+      const elapsed = 0;
       lastCasualResponseData = null;
       displayCasualResponseResult('ERROR', -1, -1, elapsed, '', 'Error connecting to Admin API: ' + err.message, false, undefined, '', null, customHeaders, payload, service);
 
@@ -923,7 +944,7 @@ export function executeCasualRequest() {
         url: service,
         serviceName: service,
         bufferType: bufferType,
-        headersText: customHeaders ? Object.entries(customHeaders).map(([k,v]) => `${k}: ${v}`).join('\n') : '',
+        headersText: customHeaders ? Object.entries(customHeaders).map(([k, v]) => `${k}: ${v}`).join('\n') : '',
         bodyText: payload,
         status: 'ERR',
         statusText: err.message,

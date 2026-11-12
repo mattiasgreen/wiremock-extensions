@@ -1,20 +1,23 @@
 /**
- * WireMock Admin API client and asynchronous data loader.
- * Endpoints: /__admin/mappings, /__admin/requests, /__admin/scenarios, /__admin/stubs/*
+ * Pure WireMock Admin API client.
+ * Zero DOM dependencies and zero circular UI imports.
  */
 import { state } from './state.js';
-import { elements } from './dom.js';
-import { renderStubList } from './stubs.js';
-import { renderJournal } from './journal.js';
-import { renderScenarios } from './scenarios.js';
-import { renderProjectSelector, updateFilterCounts } from './projects.js';
-import { updateBulkToolbar } from './bulk-actions.js';
-import { executeTesterRequest, loadTesterHistoryFromStorage } from './tester.js';
-import { executeCasualRequest } from './casual-tester.js';
-import { applyRouteFromUrl } from './router.js';
 import { detectCapabilities } from './capabilities.js';
 import { demoBackend } from './demo-backend.js';
-import { updateTargetHostDisplay } from './settings.js';
+
+let onDemoFallbackHandler = null;
+
+export function registerDemoFallbackHandler(fn) {
+  onDemoFallbackHandler = typeof fn === 'function' ? fn : null;
+}
+
+function activateDemoFallback() {
+  demoBackend.setDemoMode(true);
+  if (onDemoFallbackHandler) {
+    onDemoFallbackHandler();
+  }
+}
 
 export function apiUrl(endpoint) {
   if (!endpoint) return '';
@@ -48,16 +51,14 @@ export function doFetch(url, options = {}) {
     return fetch(targetUrl, fetchOptions)
       .then(res => {
         if (!isTargetingRemote && !state.targetConfig && res.status === 404 && url === '/__admin/mappings') {
-          demoBackend.setDemoMode(true);
-          updateTargetHostDisplay();
+          activateDemoFallback();
           return demoBackend.handleRequest(url, options);
         }
         return res;
       })
       .catch(err => {
         if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
-          demoBackend.setDemoMode(true);
-          updateTargetHostDisplay();
+          activateDemoFallback();
           return demoBackend.handleRequest(url, options);
         }
         throw err;
@@ -72,8 +73,7 @@ export function doFetch(url, options = {}) {
       }
       xhr.onload = () => {
         if (!isTargetingRemote && !state.targetConfig && xhr.status === 404 && url === '/__admin/mappings') {
-          demoBackend.setDemoMode(true);
-          updateTargetHostDisplay();
+          activateDemoFallback();
           return resolve(demoBackend.handleRequest(url, options));
         }
         const respHeaders = {
@@ -96,8 +96,7 @@ export function doFetch(url, options = {}) {
       };
       xhr.onerror = () => {
         if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
-          demoBackend.setDemoMode(true);
-          updateTargetHostDisplay();
+          activateDemoFallback();
           return resolve(demoBackend.handleRequest(url, options));
         }
         reject(new Error('Network error from ' + targetUrl));
@@ -105,8 +104,7 @@ export function doFetch(url, options = {}) {
       xhr.send(fetchOptions.body || null);
     } catch (err) {
       if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
-        demoBackend.setDemoMode(true);
-        updateTargetHostDisplay();
+        activateDemoFallback();
         return resolve(demoBackend.handleRequest(url, options));
       }
       reject(err);
@@ -115,45 +113,32 @@ export function doFetch(url, options = {}) {
 }
 
 export function apiGet(endpoint) {
-  return doFetch(endpoint, { method: 'GET' }).then(res => {
+  return doFetch(endpoint).then(res => {
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
     return res.json();
   });
 }
 
-export function apiPost(endpoint, body = {}) {
-  return doFetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: typeof body === 'string' ? body : JSON.stringify(body)
-  }).then(res => {
+export function apiPost(endpoint, payload = null) {
+  const opts = { method: 'POST' };
+  if (payload !== null) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  }
+  return doFetch(endpoint, opts).then(res => {
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
-    return res.text().then(text => {
-      if (!text || !text.trim()) return {};
-      try {
-        return JSON.parse(text);
-      } catch {
-        return {};
-      }
-    });
+    return res.status === 204 ? {} : res.json().catch(() => ({}));
   });
 }
 
-export function apiPut(endpoint, body = {}) {
+export function apiPut(endpoint, payload) {
   return doFetch(endpoint, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: typeof body === 'string' ? body : JSON.stringify(body)
+    body: typeof payload === 'string' ? payload : JSON.stringify(payload)
   }).then(res => {
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
-    return res.text().then(text => {
-      if (!text || !text.trim()) return {};
-      try {
-        return JSON.parse(text);
-      } catch {
-        return {};
-      }
-    });
+    return res.json().catch(() => ({}));
   });
 }
 
@@ -164,46 +149,18 @@ export function apiDelete(endpoint) {
   });
 }
 
-export function loadMappings() {
-  return apiGet('/__admin/mappings')
-    .then(data => {
-      state.currentStubs = data.mappings || [];
-    })
-    .catch(err => {
-      if (elements.stubList) {
-        elements.stubList.innerHTML = `<div class="empty-state text-error">Failed to load stubs: ${err.message}</div>`;
-      }
-    });
-}
-
-export function loadDisabledStubs() {
-  return apiGet('/__admin/stubs/disabled')
-    .then(data => {
-      state.disabledStubs = data.mappings || [];
-    })
-    .catch(err => {
-      // In case endpoint is not available or empty
-      state.disabledStubs = [];
-    });
-}
-
 export function toggleStubState(stubId) {
   return apiPost(`/__admin/stubs/${stubId}/toggle`);
 }
 
 export function deleteStubMapping(stubId) {
-  // Try /__admin/stubs/${stubId} first (cleans up active and disabled), fallback to mappings
   return apiDelete(`/__admin/stubs/${stubId}`)
     .catch(() => apiDelete(`/__admin/mappings/${stubId}`).catch(() => bulkStubs('delete', [stubId])));
 }
 
 export function saveStubMapping(stubId, stubData) {
-  // Use /__admin/stubs/${stubId} which supports both active and disabled stubs safely
   return apiPut(`/__admin/stubs/${stubId}`, stubData)
-    .catch(err => {
-      // Fallback to core /__admin/mappings/${stubId} if stubs endpoint unavailable
-      return apiPut(`/__admin/mappings/${stubId}`, stubData);
-    });
+    .catch(() => apiPut(`/__admin/mappings/${stubId}`, stubData));
 }
 
 export function createStubMapping(stubData) {
@@ -218,114 +175,6 @@ export function importMappings(payload) {
   return apiPost('/__admin/mappings/import', payload);
 }
 
-export function loadJournal() {
-  const limit = state.journalLimit || 100;
-  const unmatchedOnly = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
-  const q = (elements.journalSearch ? elements.journalSearch.value : '').trim();
-  const verdict = state.journalVerdictFilter || 'all';
-
-  const params = new URLSearchParams();
-  params.set('limit', limit);
-  if (q) params.set('q', q);
-  if (verdict && verdict !== 'all') params.set('verdict', verdict);
-  if (unmatchedOnly) params.set('unmatched', 'true');
-  if (state.journalSince) params.set('since', state.journalSince);
-  if (state.journalUntil) params.set('until', state.journalUntil);
-
-  const serverEndpoint = `/__admin/ui/api/requests?${params.toString()}`;
-
-  return apiGet(serverEndpoint)
-    .then(data => {
-      state.currentRequests = data.requests || [];
-      state.journalMeta = data.meta || null;
-      state.journalServerFiltered = true;
-      if (elements.statRequests) {
-        elements.statRequests.textContent = (data.meta && data.meta.total !== undefined)
-          ? data.meta.total
-          : state.currentRequests.length;
-      }
-      if (elements.journalCount) {
-        elements.journalCount.textContent = (data.meta && data.meta.filtered !== undefined)
-          ? data.meta.filtered
-          : state.currentRequests.length;
-      }
-      renderJournal();
-    })
-    .catch(() => {
-      // Fallback for vanilla WireMock instances without /ui/api/requests
-      const fallbackEndpoint = unmatchedOnly
-        ? `/__admin/requests?limit=${limit}&unmatched=true`
-        : `/__admin/requests?limit=${limit}`;
-      return apiGet(fallbackEndpoint).then(data => {
-        state.currentRequests = data.requests || [];
-        state.journalMeta = null;
-        state.journalServerFiltered = false;
-        if (elements.statRequests) elements.statRequests.textContent = state.currentRequests.length;
-        if (elements.journalCount) elements.journalCount.textContent = state.currentRequests.length;
-        renderJournal();
-      });
-    })
-    .catch(err => {
-      console.warn('Could not load journal', err);
-    });
-}
-
-export function loadScenarios() {
-  return apiGet('/__admin/scenarios')
-    .then(data => {
-      const apiScenarios = data.scenarios || [];
-      const scenarioMap = new Map();
-
-      apiScenarios.forEach(sc => {
-        scenarioMap.set(sc.name, {
-          id: sc.name,
-          name: sc.name,
-          state: sc.state || 'Started',
-          possibleStates: new Set(sc.possibleStates || ['Started'])
-        });
-      });
-
-      const allStubs = [...state.currentStubs, ...state.disabledStubs];
-      allStubs.forEach(stub => {
-        if (stub.scenarioName) {
-          if (!scenarioMap.has(stub.scenarioName)) {
-            scenarioMap.set(stub.scenarioName, {
-              id: stub.scenarioName,
-              name: stub.scenarioName,
-              state: 'Started',
-              possibleStates: new Set(['Started'])
-            });
-          }
-          const entry = scenarioMap.get(stub.scenarioName);
-          if (stub.requiredScenarioState) entry.possibleStates.add(stub.requiredScenarioState);
-          if (stub.newScenarioState) entry.possibleStates.add(stub.newScenarioState);
-        }
-      });
-
-      const allScenarios = Array.from(scenarioMap.values()).map(sc => ({
-        ...sc,
-        possibleStates: Array.from(sc.possibleStates)
-      }));
-
-      state.allScenarios = allScenarios;
-      if (elements.statScenarios) elements.statScenarios.textContent = allScenarios.length;
-      renderScenarios(allScenarios);
-    })
-    .catch(err => {
-      console.warn('Could not load scenarios', err);
-    });
-}
-
-export function loadStatefulModels() {
-  return apiGet('/__admin/stateful/models')
-    .then(data => {
-      state.statefulModels = Array.isArray(data) ? data : [];
-    })
-    .catch(() => {
-      state.statefulModels = [];
-    });
-}
-
 export function createStatefulModel(modelData) {
   return apiPost('/__admin/stateful/rules', modelData);
 }
@@ -334,63 +183,68 @@ export function deleteStatefulSession(correlationId) {
   return apiDelete(`/__admin/stateful/sessions/${encodeURIComponent(correlationId)}`);
 }
 
-export function loadData() {
-  loadTesterHistoryFromStorage();
-  return detectCapabilities(doFetch)
-    .then(caps => {
-      const promises = [loadMappings(), loadJournal()];
-      if (caps.lifecycle) {
-        promises.push(loadDisabledStubs());
-      } else {
-        state.disabledStubs = [];
-      }
-      if (caps.stateful) {
-        promises.push(loadStatefulModels());
-      } else {
-        state.statefulModels = [];
-      }
-      return Promise.all(promises);
-    })
-    .then(() => {
-      renderStubList();
-      renderProjectSelector();
-      updateFilterCounts();
-      updateBulkToolbar();
-      const dynamicCount = (state.statefulModels || []).reduce((acc, m) => acc + ((m.rules && m.rules.length) || 0), 0);
-      const totalStubs = state.currentStubs.length + state.disabledStubs.length + dynamicCount;
-      if (elements.statStubs) elements.statStubs.textContent = totalStubs;
-      if (elements.stubsCountLabel) {
-        if (!state.capabilities.lifecycle && !state.capabilities.stateful) {
-          elements.stubsCountLabel.textContent = `${state.currentStubs.length} active`;
-        } else if (!state.capabilities.lifecycle) {
-          elements.stubsCountLabel.textContent = dynamicCount > 0
-            ? `${state.currentStubs.length} active · ${dynamicCount} dynamic`
-            : `${state.currentStubs.length} active`;
-        } else {
-          elements.stubsCountLabel.textContent = dynamicCount > 0
-            ? `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled · ${dynamicCount} dynamic`
-            : `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
-        }
-      }
-      return loadScenarios();
-    })
-    .then(() => {
-      applyRouteFromUrl();
-    })
-    .catch(err => {
-      console.error('Error refreshing data', err);
-    });
+export function publishAsyncMessage(payload) {
+  return apiPost('/__admin/async/publish', payload);
 }
 
-export function publishAsyncMessage(payload) {
-  return doFetch('/__admin/async/publish', {
+export function fetchAsyncDestinations() {
+  return apiGet('/__admin/async/destinations')
+    .then(data => data.destinations || [])
+    .catch(() => []);
+}
+
+export function fetchAsyncMessages(protocol, destination) {
+  return apiGet(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}/messages`)
+    .then(data => data.messages || [])
+    .catch(() => []);
+}
+
+export function deleteAsyncMessage(protocol, destination, messageId) {
+  return doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE'
+  })
+    .then(res => res.status === 204 || res.ok)
+    .catch(() => false);
+}
+
+export function purgeAsyncDestination(protocol, destination) {
+  return doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}`, {
+    method: 'DELETE'
+  })
+    .then(res => res.status === 204 || res.ok)
+    .catch(() => false);
+}
+
+export function publishAsyncDestinationMessage(protocol, destination, messageObj) {
+  return doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    return res.json();
-  });
+    body: JSON.stringify(messageObj)
+  })
+    .then(res => res.status === 201 || res.ok)
+    .catch(() => false);
+}
+
+export function fetchAsyncConnections() {
+  return apiGet('/__admin/async/connections')
+    .then(data => data.connections || [])
+    .catch(() => []);
+}
+
+export function registerAsyncConnection(connPayload) {
+  return doFetch('/__admin/async/connections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(connPayload)
+  })
+    .then(res => res.status === 201 || res.ok)
+    .catch(() => false);
+}
+
+export function deleteAsyncConnection(id) {
+  return apiDelete(`/__admin/async/connections/${encodeURIComponent(id)}`)
+    .then(() => true)
+    .catch(() => false);
 }
 
 export function callCasualService(payload) {
@@ -401,24 +255,8 @@ export function callCasualService(payload) {
   }).then(res => res.json());
 }
 
-export function executeKafkaProduce() {
-  return executeTesterRequest();
-}
-
-export function executeAmqpPublish() {
-  return executeTesterRequest();
-}
-
-export function executeTesterCasualCall() {
-  return executeTesterRequest();
-}
-
 export function inspectOpenApi(spec) {
-  return doFetch('/__admin/openapi/inspect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ spec })
-  }).then(res => res.json());
+  return apiPost('/__admin/openapi/inspect', { spec });
 }
 
 export function snapshotProjectRecordings(project, excludedJsonPaths = null, useEqualToJson = false) {
@@ -453,4 +291,4 @@ export function setProjectMode(project, mode) {
   return apiPost(`/__admin/projects/${enc}/mode`, { mode });
 }
 
-export { detectCapabilities, demoBackend, executeTesterRequest };
+export { detectCapabilities, demoBackend };

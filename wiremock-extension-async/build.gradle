@@ -10,6 +10,7 @@ dependencies {
     testImplementation libs.ibm.mq.allclient
     testImplementation libs.testcontainers
     testImplementation libs.testcontainers.junit.jupiter
+    testImplementation libs.testcontainers.kafka
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -19,7 +20,7 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test') {
     useJUnitPlatform {
-        excludeTags 'recording', 'pitch-deck', 'ui-snapshot', 'benchmark', 'ibmmq-integration'
+        excludeTags 'recording', 'pitch-deck', 'ui-snapshot', 'benchmark', 'ibmmq-integration', 'kafka-integration'
     }
 }
 
@@ -30,5 +31,15 @@ tasks.register('ibmMqIntegrationTest', Test) {
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {
         includeTags 'ibmmq-integration'
+    }
+}
+
+tasks.register('kafkaIntegrationTest', Test) {
+    description = 'Runs real Kafka integration tests using Testcontainers (apache/kafka-native).'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'kafka-integration'
     }
 }

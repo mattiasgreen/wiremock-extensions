@@ -18,9 +18,9 @@ import {
   toggleStubState,
   deleteStubMapping,
   saveStubMapping,
-  createStubMapping,
-  loadData
+  createStubMapping
 } from './api.js';
+import { loadData } from './app-loader.js';
 import { selectStub, renderStubList, findCatalogStubById } from './stubs.js';
 import { renderProjectSelector } from './projects.js';
 import { executeBulkAction } from './bulk-actions.js';

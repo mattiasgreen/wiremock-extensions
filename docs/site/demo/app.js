@@ -56,6 +56,7 @@ import {
   renderLocalHeaderChips,
   switchTesterProtocol,
   applyQuickTemplate,
+  executeTesterRequest,
   initTesterTab
 } from './modules/tester.js';
 import {
@@ -122,15 +123,17 @@ import {
 import {
   doFetch,
   apiGet,
+  registerDemoFallbackHandler,
+  snapshotFilteredRecordings,
+  demoBackend
+} from './modules/api.js';
+import {
   loadMappings,
   loadDisabledStubs,
   loadJournal,
   loadScenarios,
-  loadData,
-  executeTesterRequest,
-  snapshotFilteredRecordings,
-  demoBackend
-} from './modules/api.js';
+  loadData
+} from './modules/app-loader.js';
 import {
   setupDynamicStubModal,
   normalizeStatefulModelsToStubs
@@ -229,6 +232,7 @@ if (window.location.pathname && !window.location.pathname.endsWith('/')) {
 }
 
 // Wire inter-module callbacks and feature modules
+registerDemoFallbackHandler(updateTargetHostDisplay);
 registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
 setupOpenApiModal();

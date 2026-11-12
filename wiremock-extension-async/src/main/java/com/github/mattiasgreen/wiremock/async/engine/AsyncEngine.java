@@ -44,7 +44,6 @@ public class AsyncEngine implements AutoCloseable {
     private final Map<String, Function<AsyncMessage, AsyncMessage>> mockStubs = new ConcurrentHashMap<>();
     private final Map<String, AsyncMessage> harvestedStubs = new ConcurrentHashMap<>();
     private final List<AsyncBridgeRule> bridgeRules = new CopyOnWriteArrayList<>();
-    private final List<String> journal = Collections.synchronizedList(new ArrayList<>());
     private final List<ServeEvent> recordedServeEvents = new CopyOnWriteArrayList<>();
     private final List<Thread> activeSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean running = new AtomicBoolean(true);
@@ -78,10 +77,7 @@ public class AsyncEngine implements AutoCloseable {
         return journalConsumer;
     }
 
-    private void recordServeEvent(ServeEvent event, String legacyLog) {
-        if (legacyLog != null) {
-            journal.add(legacyLog);
-        }
+    private void recordServeEvent(ServeEvent event) {
         if (event != null) {
             recordedServeEvents.add(event);
             if (journalConsumer != null) {
@@ -113,7 +109,7 @@ public class AsyncEngine implements AutoCloseable {
                     "{\"status\":\"ACKNOWLEDGED\",\"protocol\":\"kafka\",\"topic\":\"" + record.topic() + "\"}",
                     null,
                     null);
-            recordServeEvent(se, "KAFKA_PRODUCE:" + record.topic() + ":" + record.value());
+            recordServeEvent(se);
             if (recordConsumer != null) {
                 recordConsumer.accept(record);
             }
@@ -163,7 +159,7 @@ public class AsyncEngine implements AutoCloseable {
                     "{\"status\":\"SETTLED\",\"protocol\":\"amqp\",\"destination\":\"" + msg.destination() + "\"}",
                     null,
                     null);
-            recordServeEvent(se, "AMQP_PUBLISH:" + msg.destination() + ":" + msg.payload());
+            recordServeEvent(se);
             testBroker.send(msg.destination(), msg);
             if (messageConsumer != null) {
                 messageConsumer.accept(msg);
@@ -210,7 +206,7 @@ public class AsyncEngine implements AutoCloseable {
         messagesProduced.incrementAndGet();
         ServeEvent se = AsyncServeEventMediation.fromAsyncMessage(
                 message, 200, "{\"status\":\"PUBLISHED\",\"destination\":\"" + destination + "\"}", null, null);
-        recordServeEvent(se, "PUBLISH:" + destination + ":" + message.payload());
+        recordServeEvent(se);
 
         BiConsumer<String, AsyncMessage> pub = destinationPublishers.get(destination);
         if (pub != null) {
@@ -262,7 +258,17 @@ public class AsyncEngine implements AutoCloseable {
     }
 
     public List<String> getJournal() {
-        return Collections.unmodifiableList(new ArrayList<>(journal));
+        List<String> summary = new ArrayList<>(recordedServeEvents.size());
+        for (ServeEvent se : recordedServeEvents) {
+            String method =
+                    se.getRequest() != null ? se.getRequest().getMethod().getName() : "ASYNC";
+            String url = se.getRequest() != null ? se.getRequest().getUrl() : "";
+            int status = se.getResponseDefinition() != null
+                    ? se.getResponseDefinition().getStatus()
+                    : 200;
+            summary.add(method + ":" + status + ":" + url);
+        }
+        return Collections.unmodifiableList(summary);
     }
 
     public List<ServeEvent> getServeEvents() {
@@ -284,7 +290,7 @@ public class AsyncEngine implements AutoCloseable {
                     messagesConsumed.incrementAndGet();
                     ServeEvent se = AsyncServeEventMediation.fromAsyncMessage(
                             msg, 200, "{\"status\":\"CONSUMED\",\"destination\":\"" + channel + "\"}", null, null);
-                    recordServeEvent(se, "CONSUME_SUBSCRIBE:" + channel + ":" + msg.payload());
+                    recordServeEvent(se);
                     try {
                         consumer.accept(msg);
                     } catch (Exception e) {
@@ -335,7 +341,7 @@ public class AsyncEngine implements AutoCloseable {
                         reply != null ? reply.payload() : "",
                         null,
                         null);
-                recordServeEvent(se, "MOCK_MATCH:" + msg.payload());
+                recordServeEvent(se);
                 if (reply != null && msg.replyTo() != null && !msg.replyTo().isBlank()) {
                     messagesProduced.incrementAndGet();
                     testBroker.send(msg.replyTo(), reply);
@@ -366,7 +372,7 @@ public class AsyncEngine implements AutoCloseable {
                         reply.payload(),
                         null,
                         null);
-                recordServeEvent(se, "HARVESTED_REPLAY:" + msg.payload());
+                recordServeEvent(se);
                 if (msg.replyTo() != null && !msg.replyTo().isBlank()) {
                     messagesProduced.incrementAndGet();
                     testBroker.send(msg.replyTo(), reply);
@@ -382,37 +388,6 @@ public class AsyncEngine implements AutoCloseable {
                 String targetChannel =
                         rule.proxyChannel().isEmpty() ? channel : matcher.replaceAll(rule.proxyChannel());
                 String targetBroker = rule.proxyBroker();
-
-                // Check for intentional simulated missing queue or unreachable broker
-                if (targetChannel.contains("MISSING") || targetBroker.contains("unreachable")) {
-                    proxyErrors.incrementAndGet();
-                    String errorBody = "{\"error\":\"ASYNC_PROXY_ERROR\",\"status\":502,\"targetChannel\":\""
-                            + targetChannel + "\",\"targetBroker\":\"" + targetBroker + "\"}";
-                    ServeEvent se = AsyncServeEventMediation.buildServeEvent(
-                            msg.protocol(),
-                            channel,
-                            msg.key(),
-                            msg.correlationId(),
-                            msg.replyTo(),
-                            msg.headers(),
-                            msg.payload(),
-                            502,
-                            errorBody,
-                            (targetBroker.isEmpty() ? "upstream" : targetBroker) + "/" + targetChannel,
-                            null);
-                    recordServeEvent(
-                            se,
-                            "ASYNC_PROXY_ERROR:502:" + channel + ":" + targetChannel + ":"
-                                    + (targetBroker.isEmpty() ? "upstream" : targetBroker));
-                    LOG.error(
-                            "[ASYNC-PROXY-ERROR] Bridge [{}] failed: Target queue [{}] not found on broker [{}]",
-                            rule.name(),
-                            targetChannel,
-                            targetBroker);
-                    return true;
-                }
-
-                messagesProxied.incrementAndGet();
                 AsyncMessage forwarded = msg.destination().equals(targetChannel)
                         ? msg
                         : AsyncMessage.builder()
@@ -426,42 +401,86 @@ public class AsyncEngine implements AutoCloseable {
                                 .headers(msg.headers())
                                 .timestamp(msg.timestamp())
                                 .build();
-                upstreamBroker.send(targetChannel, forwarded);
-                String proxiedTarget = (targetBroker.isEmpty() ? "upstream" : targetBroker) + "/" + targetChannel;
-                ServeEvent se = AsyncServeEventMediation.buildServeEvent(
-                        msg.protocol(),
-                        channel,
-                        msg.key(),
-                        msg.correlationId(),
-                        msg.replyTo(),
-                        msg.headers(),
-                        msg.payload(),
-                        200,
-                        "{\"status\":\"BRIDGED\",\"destination\":\"" + targetChannel + "\"}",
-                        proxiedTarget,
-                        null);
-                recordServeEvent(se, "PROXY_FORWARD:" + targetChannel + ":" + msg.payload());
+                forwardUpstreamOrRecord502(rule.name(), channel, targetBroker, targetChannel, forwarded);
                 return true;
             }
         }
 
         // 4. Default Fallback Proxy Mode: Forward to upstream broker
-        messagesProxied.incrementAndGet();
-        upstreamBroker.send(channel, msg);
+        forwardUpstreamOrRecord502("default", channel, "", channel, msg);
+        return true;
+    }
+
+    private void forwardUpstreamOrRecord502(
+            String ruleName, String sourceChannel, String targetBroker, String targetChannel, AsyncMessage forwarded) {
+        String brokerLabel = (targetBroker == null || targetBroker.isEmpty()) ? "upstream" : targetBroker;
+        String proxiedTarget = brokerLabel + "/" + targetChannel;
+
+        if (targetChannel.contains("MISSING") || brokerLabel.contains("unreachable")) {
+            recordUpstream502(
+                    ruleName,
+                    sourceChannel,
+                    brokerLabel,
+                    targetChannel,
+                    proxiedTarget,
+                    forwarded,
+                    "Target queue not found or broker unreachable");
+            return;
+        }
+
+        try {
+            upstreamBroker.send(targetChannel, forwarded);
+            messagesProxied.incrementAndGet();
+            ServeEvent se = AsyncServeEventMediation.buildServeEvent(
+                    forwarded.protocol(),
+                    sourceChannel,
+                    forwarded.key(),
+                    forwarded.correlationId(),
+                    forwarded.replyTo(),
+                    forwarded.headers(),
+                    forwarded.payload(),
+                    200,
+                    "{\"status\":\"BRIDGED\",\"destination\":\"" + targetChannel + "\"}",
+                    proxiedTarget,
+                    null);
+            recordServeEvent(se);
+        } catch (RuntimeException e) {
+            String safeErr = Objects.toString(e.getMessage(), e.getClass().getSimpleName())
+                    .replaceAll("[\r\n\"]", "");
+            recordUpstream502(ruleName, sourceChannel, brokerLabel, targetChannel, proxiedTarget, forwarded, safeErr);
+        }
+    }
+
+    private void recordUpstream502(
+            String ruleName,
+            String sourceChannel,
+            String brokerLabel,
+            String targetChannel,
+            String proxiedTarget,
+            AsyncMessage msg,
+            String errorDetail) {
+        proxyErrors.incrementAndGet();
+        String errorBody = "{\"error\":\"ASYNC_PROXY_ERROR\",\"status\":502,\"targetChannel\":\"" + targetChannel
+                + "\",\"targetBroker\":\"" + brokerLabel + "\",\"detail\":\"" + errorDetail + "\"}";
         ServeEvent se = AsyncServeEventMediation.buildServeEvent(
                 msg.protocol(),
-                channel,
+                sourceChannel,
                 msg.key(),
                 msg.correlationId(),
                 msg.replyTo(),
                 msg.headers(),
                 msg.payload(),
-                200,
-                "{\"status\":\"BRIDGED\",\"destination\":\"" + channel + "\"}",
-                "upstream/" + channel,
+                502,
+                errorBody,
+                proxiedTarget,
                 null);
-        recordServeEvent(se, "PROXY_FORWARD:" + channel + ":" + msg.payload());
-        return true;
+        recordServeEvent(se);
+        LOG.error(
+                "[ASYNC-PROXY-ERROR] Bridge [{}] failed forwarding [{}] to [{}]: {}",
+                ruleName,
+                targetChannel,
+                brokerLabel,
+                errorDetail);
     }
 
     public boolean processOutboundReply(String replyChannel, String originalMatchKeyword) {
@@ -477,7 +496,7 @@ public class AsyncEngine implements AutoCloseable {
         messagesConsumed.incrementAndGet();
         ServeEvent se = AsyncServeEventMediation.fromAsyncMessage(
                 reply, 200, "{\"status\":\"REPLY_FORWARDED\",\"destination\":\"" + replyChannel + "\"}", null, null);
-        recordServeEvent(se, "PROXY_REPLY_HARVESTED:" + reply.payload());
+        recordServeEvent(se);
         testBroker.send(replyChannel, reply);
         return true;
     }
@@ -526,7 +545,6 @@ public class AsyncEngine implements AutoCloseable {
         mockStubs.clear();
         harvestedStubs.clear();
         bridgeRules.clear();
-        journal.clear();
         recordedServeEvents.clear();
         testBroker = new InMemoryMessageBroker("default-test-broker");
         upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");

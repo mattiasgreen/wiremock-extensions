@@ -29,10 +29,9 @@ import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
   getSnapshotStubTemplate,
   doFetch,
-  loadJournal,
-  loadData,
   snapshotFilteredRecordings
 } from './api.js';
+import { loadJournal, loadData } from './app-loader.js';
 import { loadExcludedJsonPaths } from './settings.js';
 
 let journalAutoRefreshTimer = null;

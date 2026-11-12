@@ -63,7 +63,11 @@ class AsyncEngineTest {
         assertThat(engine.getMessagesConsumed()).isEqualTo(1L);
         assertThat(engine.getMessagesProduced()).isEqualTo(1L);
         assertThat(engine.getMessagesProxied()).isZero();
-        assertThat(engine.getJournal()).contains("MOCK_MATCH:{\"action\":\"GET_BALANCE\",\"accountId\":\"ACC-99\"}");
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getRequest().getBodyAsString())
+                    .isEqualTo("{\"action\":\"GET_BALANCE\",\"accountId\":\"ACC-99\"}");
+            assertThat(se.getResponseDefinition().getStatus()).isEqualTo(200);
+        });
     }
 
     @Test
@@ -89,8 +93,11 @@ class AsyncEngineTest {
         // Metrics & journal
         assertThat(engine.getMessagesConsumed()).isEqualTo(1L);
         assertThat(engine.getMessagesProxied()).isEqualTo(1L);
-        assertThat(engine.getJournal())
-                .contains("PROXY_FORWARD:orders.input:{\"orderId\":\"ORD-777\",\"amount\":49.99}");
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
+            assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("orders.input");
+            assertThat(se.getRequest().getBodyAsString()).isEqualTo("{\"orderId\":\"ORD-777\",\"amount\":49.99}");
+        });
     }
 
     @Test
@@ -131,7 +138,10 @@ class AsyncEngineTest {
         assertThat(replayResp).isNotNull();
         assertThat(replayResp.correlationId()).isEqualTo("corr-404");
         assertThat(replayResp.payload()).contains("AUTH-999");
-        assertThat(engine.getJournal()).contains("HARVESTED_REPLAY:{\"ref\":\"PAY-999\"}");
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getRequest().getBodyAsString()).isEqualTo("{\"ref\":\"PAY-999\"}");
+            assertThat(se.getResponseDefinition().getBody()).contains("AUTH-999");
+        });
     }
 
     @Test
@@ -151,6 +161,9 @@ class AsyncEngineTest {
         assertThat(published).hasSize(1);
         assertThat(published.get(0).payload()).isEqualTo("{\"event\":\"USER_CREATED\"}");
         assertThat(engine.getMessagesProduced()).isEqualTo(1L);
-        assertThat(engine.getJournal()).contains("PUBLISH:events.topic:{\"event\":\"USER_CREATED\"}");
+        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+            assertThat(se.getRequest().getBodyAsString()).isEqualTo("{\"event\":\"USER_CREATED\"}");
+            assertThat(se.getResponseDefinition().getBody()).contains("PUBLISHED");
+        });
     }
 }

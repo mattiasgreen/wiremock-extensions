@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.casual;
 
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
 import com.github.tomakehurst.wiremock.extension.Extension;
 import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
@@ -14,6 +15,16 @@ public class CasualExtensionFactory implements ExtensionFactory {
     @Override
     public List<Extension> create(WireMockServices services) {
         CasualRegistry.getInstance().setWireMockServices(services);
+        registerDestinationProviderIfAsyncPresent();
         return List.of(new CasualAdminEndpoint());
+    }
+
+    private static void registerDestinationProviderIfAsyncPresent() {
+        try {
+            Class.forName("com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService");
+            AsyncDestinationService.getInstance().registerProvider(new CasualDestinationProvider());
+        } catch (ClassNotFoundException | LinkageError ignored) {
+            // wiremock-extension-async not on runtime classpath
+        }
     }
 }

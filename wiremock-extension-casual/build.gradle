@@ -20,6 +20,8 @@ dependencies {
     implementation libs.netty.all
     implementation libs.jackson.databind
     implementation 'jakarta.enterprise.concurrent:jakarta.enterprise.concurrent-api:3.0.3'
+    compileOnly project(':wiremock-extension-async')
+    testImplementation project(':wiremock-extension-async')
     testImplementation project(':wiremock-extension-tcp-netem')
 }
 

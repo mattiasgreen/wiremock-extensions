@@ -2,6 +2,8 @@ package com.github.mattiasgreen.wiremock.async.ibmmq;
 
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.ibm.mq.MQException;
 import com.ibm.mq.MQQueueManager;
@@ -16,7 +18,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.jms.JMSConsumer;
 import javax.jms.JMSContext;
@@ -38,6 +42,7 @@ import org.slf4j.LoggerFactory;
 public class IbmMqMessageBroker implements MessageBroker, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(IbmMqMessageBroker.class);
+    private static final int MAX_DRAIN_SAFETY = 10_000;
 
     private final IbmMqConnectionConfig config;
     private volatile MQConnectionFactory cachedFactory;
@@ -184,6 +189,201 @@ public class IbmMqMessageBroker implements MessageBroker, AutoCloseable {
             LOG.warn("[IBMMQ-BROKER] Failed to peek queue [{}]: {}", safeDest, safeErr);
         }
         return Collections.unmodifiableList(messages);
+    }
+
+    @Override
+    public List<AsyncDestinationMessage> peekDestinationMessages(String channel, String protocol, int limit) {
+        if (channel == null || channel.isBlank()) {
+            return Collections.emptyList();
+        }
+        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
+        List<AsyncDestinationMessage> result = new ArrayList<>();
+        try (JMSContext context = openContext()) {
+            Queue queue = context.createQueue(normalizedQueue);
+            try (QueueBrowser browser = context.createBrowser(queue)) {
+                Enumeration<?> enumeration = browser.getEnumeration();
+                int count = 0;
+                while (enumeration != null && enumeration.hasMoreElements()) {
+                    if (limit > 0 && count >= limit) {
+                        break;
+                    }
+                    Object next = enumeration.nextElement();
+                    if (next instanceof Message msg) {
+                        result.add(IbmMqMessageMapper.toDestinationMessage(normalizedQueue, msg));
+                        count++;
+                    }
+                }
+            }
+        } catch (JMSException | JMSRuntimeException e) {
+            String safeDest = normalizedQueue.replaceAll("[\r\n]", "");
+            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.warn("[IBMMQ-BROKER] Failed to browse queue [{}]: {}", safeDest, safeErr);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    @Override
+    public boolean delete(String channel, String messageId) {
+        if (channel == null || channel.isBlank() || messageId == null || messageId.isBlank()) {
+            return false;
+        }
+        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
+        String selector = "JMSMessageID = '" + IbmMqMessageMapper.escapeSelectorLiteral(messageId) + "'";
+        try (JMSContext context = openContext()) {
+            Queue queue = context.createQueue(normalizedQueue);
+            try (JMSConsumer consumer = context.createConsumer(queue, selector)) {
+                return consumer.receiveNoWait() != null;
+            }
+        } catch (JMSException | JMSRuntimeException e) {
+            String safeDest = normalizedQueue.replaceAll("[\r\n]", "");
+            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.warn("[IBMMQ-BROKER] Failed to delete message on queue [{}]: {}", safeDest, safeErr);
+            return false;
+        }
+    }
+
+    @Override
+    public void purge(String channel) {
+        if (channel == null || channel.isBlank()) {
+            return;
+        }
+        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
+        if (tryClearViaPcf(normalizedQueue)) {
+            return;
+        }
+        try (JMSContext context = openContext()) {
+            Queue queue = context.createQueue(normalizedQueue);
+            try (JMSConsumer consumer = context.createConsumer(queue)) {
+                int drained = 0;
+                while (drained < MAX_DRAIN_SAFETY && consumer.receiveNoWait() != null) {
+                    drained++;
+                }
+            }
+        } catch (JMSException | JMSRuntimeException e) {
+            String safeDest = normalizedQueue.replaceAll("[\r\n]", "");
+            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.warn("[IBMMQ-BROKER] Failed to purge queue [{}]: {}", safeDest, safeErr);
+        }
+    }
+
+    public boolean sendDestinationMessage(String channel, AsyncDestinationMessage message) {
+        if (channel == null || channel.isBlank() || message == null) {
+            return false;
+        }
+        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
+        try (JMSContext context = openContext()) {
+            Queue queue = context.createQueue(normalizedQueue);
+            TextMessage jmsMessage = IbmMqMessageMapper.toJmsTextMessage(context, message);
+            context.createProducer().send(queue, jmsMessage);
+            return true;
+        } catch (JMSException | JMSRuntimeException e) {
+            String safeDest = normalizedQueue.replaceAll("[\r\n]", "");
+            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.warn("[IBMMQ-BROKER] Failed to publish message to queue [{}]: {}", safeDest, safeErr);
+            return false;
+        }
+    }
+
+    public List<AsyncDestination> discoverDestinations() {
+        List<AsyncDestination> result = new ArrayList<>();
+        MQQueueManager qmgr = null;
+        PCFMessageAgent agent = null;
+        try {
+            qmgr = IbmMqClientFactory.openQueueManager(config);
+            agent = IbmMqClientFactory.openPcfAgent(qmgr);
+            PCFMessage request = new PCFMessage(CMQCFC.MQCMD_INQUIRE_Q);
+            request.addParameter(CMQC.MQCA_Q_NAME, "*");
+            request.addParameter(CMQC.MQIA_Q_TYPE, CMQC.MQQT_LOCAL);
+            request.addParameter(CMQCFC.MQIACF_Q_ATTRS, new int[] {CMQC.MQCA_Q_NAME, CMQC.MQIA_CURRENT_Q_DEPTH});
+
+            PCFMessage[] responses = agent.send(request);
+            if (responses != null) {
+                for (PCFMessage resp : responses) {
+                    String qName =
+                            resp.getStringParameterValue(CMQC.MQCA_Q_NAME).trim();
+                    if (!config.includeSystemQueues() && IbmMqConnectionConfig.isSystemQueue(qName)) {
+                        continue;
+                    }
+                    int depth = resp.getIntParameterValue(CMQC.MQIA_CURRENT_Q_DEPTH);
+                    result.add(toDestination(qName, depth, "PCF"));
+                }
+            }
+            return Collections.unmodifiableList(result);
+        } catch (MQException | MQDataException | IOException e) {
+            String safeConn = config.connectionId().replaceAll("[\r\n]", "");
+            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.debug("[IBMMQ-BROKER] PCF inquiry unavailable for [{}], using fallback queues: {}", safeConn, safeErr);
+            return fallbackConfiguredDestinations();
+        } finally {
+            closeQuietly(agent, qmgr);
+        }
+    }
+
+    private List<AsyncDestination> fallbackConfiguredDestinations() {
+        if (config.configuredQueues().isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<AsyncDestination> result = new ArrayList<>();
+        try (JMSContext context = openContext()) {
+            for (String qName : config.configuredQueues()) {
+                int count = countViaBrowser(context, qName);
+                result.add(toDestination(qName, count, "CONFIGURED"));
+            }
+        } catch (JMSException | JMSRuntimeException e) {
+            for (String qName : config.configuredQueues()) {
+                result.add(toDestination(qName, 0, "OFFLINE"));
+            }
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    private int countViaBrowser(JMSContext context, String queueName) {
+        try (QueueBrowser browser = context.createBrowser(context.createQueue(queueName))) {
+            Enumeration<?> enumeration = browser.getEnumeration();
+            int count = 0;
+            while (enumeration != null && enumeration.hasMoreElements()) {
+                enumeration.nextElement();
+                count++;
+            }
+            return count;
+        } catch (JMSException | JMSRuntimeException e) {
+            return 0;
+        }
+    }
+
+    private boolean tryClearViaPcf(String queueName) {
+        MQQueueManager qmgr = null;
+        PCFMessageAgent agent = null;
+        try {
+            qmgr = IbmMqClientFactory.openQueueManager(config);
+            agent = IbmMqClientFactory.openPcfAgent(qmgr);
+            PCFMessage request = new PCFMessage(CMQCFC.MQCMD_CLEAR_Q);
+            request.addParameter(CMQC.MQCA_Q_NAME, queueName);
+            agent.send(request);
+            return true;
+        } catch (MQException | MQDataException | IOException e) {
+            String safeDest = queueName.replaceAll("[\r\n]", "");
+            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.debug("[IBMMQ-BROKER] PCF CLEAR_Q fallback to JMS drain for [{}]: {}", safeDest, safeErr);
+            return false;
+        } finally {
+            closeQuietly(agent, qmgr);
+        }
+    }
+
+    private AsyncDestination toDestination(String qName, int depth, String source) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("type", "QUEUE");
+        metadata.put("queueManager", config.queueManager());
+        metadata.put("channel", config.channel());
+        metadata.put("discovery", source);
+        return new AsyncDestination(
+                "ibmmq:" + config.connectionId() + ":" + qName,
+                "ibmmq",
+                qName,
+                config.connectionId(),
+                depth,
+                Collections.unmodifiableMap(metadata));
     }
 
     @Override

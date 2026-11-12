@@ -1,18 +1,28 @@
 package com.github.mattiasgreen.wiremock.async.kafka;
 
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -21,6 +31,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
@@ -129,48 +140,260 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
 
     @Override
     public List<AsyncMessage> peek(String topic) {
-        if (topic == null || closed) {
-            return Collections.emptyList();
-        }
-
-        Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "wiremock-detached-peek-" + name);
-        props.putAll(properties);
-
-        List<AsyncMessage> result = new ArrayList<>();
-        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
-            TopicPartition tp = new TopicPartition(topic, 0);
-            consumer.assign(Collections.singletonList(tp));
-            consumer.seekToBeginning(Collections.singletonList(tp));
-            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(800));
-            for (ConsumerRecord<String, String> r : records) {
-                Map<String, String> hdrs = new HashMap<>();
-                for (Header h : r.headers()) {
-                    hdrs.put(h.key(), new String(h.value(), StandardCharsets.UTF_8));
-                }
-                result.add(AsyncMessage.builder()
-                        .destination(topic)
-                        .key(r.key())
-                        .payload(r.value())
-                        .headers(hdrs)
-                        .timestamp(Instant.ofEpochMilli(r.timestamp()))
-                        .build());
-            }
-        } catch (Exception e) {
-            String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
-            LOG.debug("[KAFKA-BROKER] Transient peek failed for topic {}: {}", topic, sanitized);
+        List<AsyncDestinationMessage> destMessages = peekDestinationMessages(topic, 0);
+        List<AsyncMessage> result = new ArrayList<>(destMessages.size());
+        for (AsyncDestinationMessage m : destMessages) {
+            result.add(AsyncMessage.builder()
+                    .id(m.id())
+                    .destination(topic)
+                    .key(m.key())
+                    .correlationId(m.correlationId())
+                    .replyTo(m.replyTo())
+                    .payload(m.payload())
+                    .headers(m.headers())
+                    .timestamp(m.timestamp())
+                    .build());
         }
         return Collections.unmodifiableList(result);
     }
 
     @Override
+    public List<AsyncDestinationMessage> peekDestinationMessages(String channel, String protocol, int limit) {
+        return peekDestinationMessages(channel, limit);
+    }
+
+    @Override
+    public void purge(String channel) {
+        purgeTopic(channel);
+    }
+
+    /**
+     * Performs a detached, non-committing multi-partition browse on the target Kafka topic,
+     * reading up to {@code limit} recent records without creating or mutating consumer group offsets.
+     */
+    public List<AsyncDestinationMessage> peekDestinationMessages(String topic, int limit) {
+        if (topic == null || topic.isBlank() || closed) {
+            return Collections.emptyList();
+        }
+
+        List<AsyncDestinationMessage> result = new ArrayList<>();
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(buildDetachedConsumerProps())) {
+            List<PartitionInfo> infos = consumer.partitionsFor(topic, Duration.ofSeconds(3));
+            if (infos == null || infos.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            List<TopicPartition> partitions = new ArrayList<>(infos.size());
+            for (PartitionInfo info : infos) {
+                partitions.add(new TopicPartition(topic, info.partition()));
+            }
+            consumer.assign(partitions);
+
+            Map<TopicPartition, Long> begins = consumer.beginningOffsets(partitions, Duration.ofSeconds(3));
+            Map<TopicPartition, Long> ends = consumer.endOffsets(partitions, Duration.ofSeconds(3));
+            Map<TopicPartition, Long> targetEnds = new LinkedHashMap<>();
+
+            for (TopicPartition tp : partitions) {
+                long begin = begins.getOrDefault(tp, 0L);
+                long end = ends.getOrDefault(tp, 0L);
+                if (end > begin) {
+                    long startOffset = limit > 0 ? Math.max(begin, end - limit) : begin;
+                    consumer.seek(tp, startOffset);
+                    targetEnds.put(tp, end);
+                }
+            }
+
+            if (targetEnds.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(4);
+            while (!targetEnds.isEmpty() && System.nanoTime() < deadlineNanos) {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(250));
+                for (ConsumerRecord<String, String> r : records) {
+                    result.add(toDestinationMessage(topic, r));
+                }
+                List<TopicPartition> completed = new ArrayList<>();
+                for (Map.Entry<TopicPartition, Long> entry : targetEnds.entrySet()) {
+                    if (consumer.position(entry.getKey()) >= entry.getValue()) {
+                        completed.add(entry.getKey());
+                    }
+                }
+                completed.forEach(targetEnds::remove);
+            }
+        } catch (RuntimeException e) {
+            String safeTopic = topic.replaceAll("[\r\n]", "");
+            String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.debug("[KAFKA-BROKER] Detached peek failed for topic [{}]: {}", safeTopic, sanitized);
+        }
+
+        result.sort(Comparator.comparing(AsyncDestinationMessage::timestamp).reversed());
+        if (limit > 0 && result.size() > limit) {
+            return Collections.unmodifiableList(new ArrayList<>(result.subList(0, limit)));
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    @Override
+    public List<String> listChannels() {
+        if (closed) {
+            return Collections.emptyList();
+        }
+        try (AdminClient admin = AdminClient.create(buildAdminProps())) {
+            Set<String> names = admin.listTopics().names().get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            List<String> topics = new ArrayList<>();
+            for (String t : names) {
+                if (!isInternalTopic(t)) {
+                    topics.add(t);
+                }
+            }
+            Collections.sort(topics);
+            return Collections.unmodifiableList(topics);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Collections.emptyList();
+        } catch (ExecutionException | TimeoutException | RuntimeException e) {
+            String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.debug("[KAFKA-BROKER] Failed to list remote Kafka topics: {}", sanitized);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
     public int size(String topic) {
-        return peek(topic).size();
+        if (topic == null || topic.isBlank() || closed) {
+            return 0;
+        }
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(buildDetachedConsumerProps())) {
+            List<PartitionInfo> infos = consumer.partitionsFor(topic, Duration.ofSeconds(3));
+            if (infos == null || infos.isEmpty()) {
+                return 0;
+            }
+            List<TopicPartition> partitions = new ArrayList<>(infos.size());
+            for (PartitionInfo info : infos) {
+                partitions.add(new TopicPartition(topic, info.partition()));
+            }
+            Map<TopicPartition, Long> begins = consumer.beginningOffsets(partitions, Duration.ofSeconds(3));
+            Map<TopicPartition, Long> ends = consumer.endOffsets(partitions, Duration.ofSeconds(3));
+            long total = 0;
+            for (TopicPartition tp : partitions) {
+                long diff = ends.getOrDefault(tp, 0L) - begins.getOrDefault(tp, 0L);
+                if (diff > 0) {
+                    total += diff;
+                }
+            }
+            return (int) Math.min(Integer.MAX_VALUE, total);
+        } catch (RuntimeException e) {
+            String safeTopic = topic.replaceAll("[\r\n]", "");
+            String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.debug("[KAFKA-BROKER] Failed to calculate size for topic [{}]: {}", safeTopic, sanitized);
+            return 0;
+        }
+    }
+
+    /**
+     * Advances low-water marks across all partitions of {@code topic} up to their current end offsets.
+     */
+    public boolean purgeTopic(String topic) {
+        if (topic == null || topic.isBlank() || closed) {
+            return false;
+        }
+        try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(buildDetachedConsumerProps());
+                AdminClient admin = AdminClient.create(buildAdminProps())) {
+            List<PartitionInfo> infos = consumer.partitionsFor(topic, Duration.ofSeconds(3));
+            if (infos == null || infos.isEmpty()) {
+                return false;
+            }
+            List<TopicPartition> partitions = new ArrayList<>(infos.size());
+            for (PartitionInfo info : infos) {
+                partitions.add(new TopicPartition(topic, info.partition()));
+            }
+            Map<TopicPartition, Long> ends = consumer.endOffsets(partitions, Duration.ofSeconds(3));
+            Map<TopicPartition, RecordsToDelete> toDelete = new LinkedHashMap<>();
+            for (Map.Entry<TopicPartition, Long> entry : ends.entrySet()) {
+                toDelete.put(entry.getKey(), RecordsToDelete.beforeOffset(entry.getValue()));
+            }
+            if (!toDelete.isEmpty()) {
+                admin.deleteRecords(toDelete).all().get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException | TimeoutException | RuntimeException e) {
+            String safeTopic = topic.replaceAll("[\r\n]", "");
+            String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
+            LOG.debug("[KAFKA-BROKER] Failed to purge remote topic [{}]: {}", safeTopic, sanitized);
+            return false;
+        }
+    }
+
+    static boolean isInternalTopic(String topic) {
+        return topic == null
+                || topic.isBlank()
+                || topic.startsWith("__consumer_offsets")
+                || topic.startsWith("__transaction_state")
+                || topic.startsWith("_schemas");
+    }
+
+    private Map<String, Object> buildDetachedConsumerProps() {
+        Map<String, Object> props = new HashMap<>(properties);
+        props.remove(ConsumerConfig.GROUP_ID_CONFIG);
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.CLIENT_ID_CONFIG, "wiremock-detached-peek-" + UUID.randomUUID());
+        props.putIfAbsent(ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 4000);
+        props.putIfAbsent(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);
+        return props;
+    }
+
+    private Map<String, Object> buildAdminProps() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(AdminClientConfig.CLIENT_ID_CONFIG, "wiremock-kafka-admin-" + name);
+        props.putIfAbsent(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);
+        props.putIfAbsent(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 4000);
+        for (Map.Entry<String, String> entry : properties.entrySet()) {
+            String k = entry.getKey();
+            if (!"acks".equals(k) && !"compression.type".equals(k)) {
+                props.put(k, entry.getValue());
+            }
+        }
+        return props;
+    }
+
+    private static AsyncDestinationMessage toDestinationMessage(String topic, ConsumerRecord<String, String> r) {
+        Map<String, String> hdrs = new LinkedHashMap<>();
+        String correlationId = "";
+        String replyTo = "";
+        for (Header h : r.headers()) {
+            String val = h.value() != null ? new String(h.value(), StandardCharsets.UTF_8) : "";
+            hdrs.put(h.key(), val);
+            if ("x-correlation-id".equalsIgnoreCase(h.key()) || "correlationId".equalsIgnoreCase(h.key())) {
+                correlationId = val;
+            } else if ("x-reply-to".equalsIgnoreCase(h.key()) || "replyTo".equalsIgnoreCase(h.key())) {
+                replyTo = val;
+            }
+        }
+        String value = Objects.requireNonNullElse(r.value(), "");
+        int sizeBytes = value.getBytes(StandardCharsets.UTF_8).length;
+        String id = topic + "-" + r.partition() + "-" + r.offset();
+        return new AsyncDestinationMessage(
+                id,
+                "kafka",
+                topic,
+                r.key() != null ? r.key() : "",
+                correlationId,
+                replyTo,
+                Instant.ofEpochMilli(r.timestamp()),
+                sizeBytes,
+                Collections.unmodifiableMap(hdrs),
+                value,
+                r.partition(),
+                r.offset());
     }
 
     @Override

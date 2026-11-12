@@ -24,7 +24,7 @@ import { matchesStub } from './filter.js';
 import { normalizeJsonPayload } from './base64.js';
 import { exportStubs } from './import-export.js';
 import { updateFilterCounts } from './projects.js';
-import { loadData } from './api.js';
+import { loadData } from './app-loader.js';
 import { renderJournal } from './journal.js';
 import { populateCasualTester } from './casual-tester.js';
 

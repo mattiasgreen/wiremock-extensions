@@ -17,7 +17,16 @@ import {
   renderFormattedWithNestedPreviews
 } from './payload-lens.js';
 import { highlightPayload, formatPayload } from './highlighter.js';
-import { doFetch } from './api.js';
+import {
+  fetchAsyncDestinations as fetchDestinations,
+  fetchAsyncMessages as fetchMessages,
+  deleteAsyncMessage as deleteMessage,
+  purgeAsyncDestination as purgeDestination,
+  publishAsyncDestinationMessage as publishMessage,
+  fetchAsyncConnections as fetchConnections,
+  registerAsyncConnection as registerConnection,
+  deleteAsyncConnection as deleteConnection
+} from './api.js';
 
 let pollTimer = null;
 
@@ -265,122 +274,6 @@ export function buildMessageDrawerHtml(msg) {
       </td>
     </tr>
   `;
-}
-
-/**
- * Fetches all destinations from the admin API.
- */
-export async function fetchDestinations() {
-  try {
-    const res = await doFetch('/__admin/async/destinations');
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.destinations || [];
-  } catch (err) {
-    return [];
-  }
-}
-
-/**
- * Fetches peeked messages for the specified destination.
- */
-export async function fetchMessages(protocol, destination) {
-  try {
-    const res = await doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}/messages`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.messages || [];
-  } catch (err) {
-    return [];
-  }
-}
-
-/**
- * Deletes single message by ID.
- */
-export async function deleteMessage(protocol, destination, messageId) {
-  try {
-    const res = await doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}/messages/${encodeURIComponent(messageId)}`, {
-      method: 'DELETE'
-    });
-    return res.status === 204 || res.ok;
-  } catch (err) {
-    return false;
-  }
-}
-
-/**
- * Purges all messages from destination.
- */
-export async function purgeDestination(protocol, destination) {
-  try {
-    const res = await doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}`, {
-      method: 'DELETE'
-    });
-    return res.status === 204 || res.ok;
-  } catch (err) {
-    return false;
-  }
-}
-
-/**
- * Publishes or executes compensating edit on destination.
- */
-export async function publishMessage(protocol, destination, messageObj) {
-  try {
-    const res = await doFetch(`/__admin/async/destinations/${encodeURIComponent(protocol)}/${encodeURIComponent(destination)}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(messageObj)
-    });
-    return res.status === 201 || res.ok;
-  } catch (err) {
-    return false;
-  }
-}
-
-/**
- * Fetches registered broker connections from the admin API.
- */
-export async function fetchConnections() {
-  try {
-    const res = await doFetch('/__admin/async/connections');
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.connections || [];
-  } catch (err) {
-    return [];
-  }
-}
-
-/**
- * Registers one or more broker connections via JSON descriptor or envelope.
- */
-export async function registerConnection(connPayload) {
-  try {
-    const res = await doFetch('/__admin/async/connections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(connPayload)
-    });
-    return res.status === 201 || res.ok;
-  } catch (err) {
-    return false;
-  }
-}
-
-/**
- * Deletes a registered broker connection by ID.
- */
-export async function deleteConnection(id) {
-  try {
-    const res = await doFetch(`/__admin/async/connections/${encodeURIComponent(id)}`, {
-      method: 'DELETE'
-    });
-    return res.status === 204 || res.ok;
-  } catch (err) {
-    return false;
-  }
 }
 
 /**

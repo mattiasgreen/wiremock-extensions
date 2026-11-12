@@ -123,4 +123,36 @@ class AsyncEngineBridgeTest {
         assertThat(replayReply.payload()).isEqualTo("{\"status\":\"UPSTREAM_VIP_OK\"}");
         assertThat(upstreamBroker.size("orders.inbound")).isEqualTo(0);
     }
+
+    @Test
+    @DisplayName("Should capture real upstream send exception as 502 synthetic ServeEvent")
+    void shouldCaptureRealUpstreamExceptionAs502ServeEvent() {
+        InMemoryMessageBroker testBroker = new InMemoryMessageBroker("Broker-A-Test");
+        InMemoryMessageBroker failingUpstream = new InMemoryMessageBroker("Broker-B-Failing") {
+            @Override
+            public void send(String channel, AsyncMessage message) {
+                throw new IllegalStateException("Connection refused to upstream broker");
+            }
+        };
+        AsyncEngine engine = AsyncEngine.create(testBroker, failingUpstream);
+
+        List<ServeEvent> capturedEvents = new ArrayList<>();
+        engine.setJournalConsumer(capturedEvents::add);
+
+        testBroker.send(
+                "orders.outbound",
+                AsyncMessage.builder()
+                        .correlationId("corr-fail-1")
+                        .destination("orders.outbound")
+                        .payload("{\"orderId\":\"FAIL-1\"}")
+                        .build());
+
+        assertThat(engine.processInbound("orders.outbound")).isTrue();
+        assertThat(engine.getProxyErrors()).isEqualTo(1);
+        assertThat(capturedEvents).hasSize(1);
+        assertThat(capturedEvents.get(0).getResponseDefinition().getStatus()).isEqualTo(502);
+        assertThat(capturedEvents.get(0).getResponseDefinition().getBody())
+                .contains("ASYNC_PROXY_ERROR")
+                .contains("Connection refused");
+    }
 }
