@@ -27,7 +27,9 @@
 | **Stub Copy Java** | `#btn-copy-java` | `"btn-copy-java"` | Copies WireMock Java `stubFor(...)` DSL snippet to system clipboard. |
 | **Stub Copy JSON** | `#btn-copy-json` | `"btn-copy-json"` | Copies raw mapping JSON to system clipboard. |
 | **Stub Editor Proxy URL** | `#editor-proxy-url` | `"editor-proxy-url"` | Optional `proxyBaseUrl` upstream target input in Stub Editor modal. |
-| **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, method, url, status, resolution/verdict. |
+| **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, caller source, protocol, operation, target/url, status, resolution/verdict, duration. |
+| **Journal Source Cell** | `td.journal-source-cell` | `"journal-source-cell"` | Displays resolved caller short hostname (or IP) with compact IP subline and clickable source filter chip (`.btn-journal-filter-source`). |
+| **Journal Source Detail** | `div.journal-source-detail` | `"journal-source-detail"` | Expanded `Source Caller` section showing resolved FQDN, effective source IP, and 1-click filter button. |
 | **Journal Verdict Pills** | `#btn-journal-verdict-all`, `-proxied`, `-stub`, `-stateful`, `-unmatched` | `"journal-verdict-filter"` | Filter pills for the 4 core verdicts (`🌐 PROXIED`, `📌 STUB`, `🧠 STATEFUL`, `⚠️ UNMATCHED`). |
 | **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (3-second interval). |
 | **Journal Limit Input** | `#journal-limit-input` | `"journal-limit-input"` | Configurable volume limit number input (positive integer, default 100). |
@@ -108,7 +110,7 @@
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
 | **Snapshot Project Traffic** | `POST` | `/__admin/projects/{project}/recordings/snapshot` | None |
 | **Toggle Project Mode** | `POST` | `/__admin/projects/{project}/mode` | `{"mode": "stubs" \| "proxy"}` |
-| **Fetch Journal** | `GET` | `/__admin/requests?limit={limit}` (or `?unmatched=true`) | None |
+| **Fetch Journal** | `GET` | `/__admin/ui/api/requests?q={query}&limit={limit}` (fallback `/__admin/requests`) | Server-side enriched journal entries with `sourceIp`, `sourceHost`, verdict, and boolean search (`src:`, `ip:`, `host:`). |
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
 | **Reset Scenarios** | `POST` | `/__admin/scenarios/reset` | None |
@@ -136,6 +138,6 @@
 | :--- | :--- | :--- |
 | **Probe Instance Capabilities** | `wm info [-s <url>]` | Probes core WireMock version and extension matrix (`tcp-netem`, `stateful`, `otel`, `ui`). |
 | **List & Search Stubs** | `wm stubs [expr] [--json]` | Displays formatted stubs catalog or JSON. Supports boolean expressions (`"GET and /cases"`, `"status=disabled"`). |
-| **Stream Request Journal** | `wm tail [-f] [-u] [-n <N>]` | Live streams incoming requests with status badges, latency, and near-miss diagnostics on 404s. |
+| **Stream Request Journal** | `wm tail [-f] [-u] [-n <N>] [-q <expr>]` | Live streams incoming requests with caller source (`IP`/`host`), status badges, latency, `src:`/`ip:`/`host:` filtering, and near-miss diagnostics on 404s. |
 | **Inspect Network Toxics** | `wm toxics [--json]` | Inspects active L4 TCP proxies and toxics; outputs clean fallback notice if `tcp-netem` is not installed. |
 | **Launch Console Proxy** | `wm proxy [target] [port]` | Launches headless console reverse proxy and web UI server at `http://localhost:19840/__admin/ui/`. |

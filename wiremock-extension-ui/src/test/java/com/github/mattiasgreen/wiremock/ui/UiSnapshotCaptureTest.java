@@ -109,6 +109,7 @@ public class UiSnapshotCaptureTest {
                 HttpRequest.newBuilder()
                         .uri(URI.create(base + "/api/v1/orders"))
                         .header("Content-Type", "application/json")
+                        .header("X-Forwarded-For", "10.24.8.15")
                         .POST(HttpRequest.BodyPublishers.ofString("{\"item\": \"Widget\", \"quantity\": 3}"))
                         .build(),
                 HttpResponse.BodyHandlers.discarding());

@@ -21,7 +21,7 @@ import {
   buildJsonPathBodyPatterns
 } from './base64.js';
 import { setRoute, activateTab } from './router.js';
-import { matchesJournalEntry } from './filter.js';
+import { matchesJournalEntry, extractRequestSource } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
 import { updateTesterRoute } from './tester.js';
 import { fetchCasualConfig, updateCasualRoute, populateCasualTester } from './casual-tester.js';
@@ -254,11 +254,21 @@ function buildRowHtml(req) {
   const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
   const dynamicRoute = getHeader(resHeaders, 'x-wiremock-stateful-route');
   const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
+  const src = extractRequestSource(req);
+  const sourceFilterToken = src.host || src.ip;
 
   let html = `
     <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${protocol.toLowerCase()}" data-testid="journal-row">
       <td><span class="journal-chevron">▶</span></td>
       <td>${time}</td>
+      <td class="journal-source-cell" data-testid="journal-source-cell">
+        ${sourceFilterToken ? `
+        <button type="button" class="journal-source-chip btn-journal-filter-source" data-source="${escapeHtml(sourceFilterToken)}" data-source-ip="${escapeHtml(src.ip)}" data-source-host="${escapeHtml(src.host)}" title="${escapeHtml(src.tooltip + ' — click to filter')}">
+          <span class="journal-source-primary">${escapeHtml(src.displayPrimary)}</span>
+          ${src.displaySecondary ? `<span class="journal-source-ip">${escapeHtml(src.displaySecondary)}</span>` : ''}
+        </button>
+        ` : '<span class="muted-text">-</span>'}
+      </td>
       <td><span class="protocol-badge http-badge protocol-${protocol.toLowerCase()} badge-${protocol}" title="${protocolTooltip}">${protocol}</span></td>
       <td><span class="http-badge badge-${operation}" title="${operationTooltip}">${operation}</span></td>
       <td title="${escapeHtml(url)}">
@@ -332,7 +342,7 @@ function buildRowHtml(req) {
 
     html += `
       <tr class="journal-detail-row" data-request-id="${req.id}" data-testid="journal-detail-row">
-        <td colspan="8">
+        <td colspan="9">
           <div class="journal-detail-content">
             ${verdict.key === 'unmatched' ? `
             <div class="journal-unmatched-diagnostic" data-testid="journal-unmatched-diagnostic">
@@ -361,11 +371,18 @@ function buildRowHtml(req) {
                 <div class="journal-card-header">
                   <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService || cleanTarget)}")` : isAsync ? `${protocol} ${operation}: ${escapeHtml(cleanTarget || url)}` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    ${sourceFilterToken ? `<button type="button" class="btn btn-small btn-journal-filter-source" data-source="${escapeHtml(sourceFilterToken)}" data-source-ip="${escapeHtml(src.ip)}" data-source-host="${escapeHtml(src.host)}" title="Filter Journal by caller: ${escapeHtml(src.tooltip)}">🖥️ ${escapeHtml(src.displayPrimary)}</button>` : ''}
                     <button class="btn btn-small btn-primary btn-journal-to-tester" data-id="${req.id}" data-testid="btn-journal-to-tester" title="Pre-fill ${isCasual ? 'Casual ' : 'HTTP '}Tester with this exact request">🚀 Replay in ${isCasual ? 'Casual ' : ''}Tester</button>
                     <button class="btn btn-small btn-journal-copy-curl" data-id="${req.id}" data-testid="btn-journal-copy-curl" title="Copy request as cURL command">📋 Copy cURL</button>
                     <button class="btn btn-small btn-copy-req" data-id="${req.id}">📋 Copy Request</button>
                   </div>
                 </div>
+                ${(src.ip || src.host) ? `
+                <div class="journal-section-title">Source Caller</div>
+                <div class="journal-source-detail" data-testid="journal-source-detail">
+                  ${src.host ? `<strong>${escapeHtml(src.host)}</strong> <span class="muted-text">(${escapeHtml(src.ip)})</span>` : `<code>${escapeHtml(src.ip)}</code>`}
+                </div>
+                ` : ''}
                 <div class="journal-section-title">Headers</div>
                 <pre class="code-block-mini code-block-headers">${reqHeadersHtml}</pre>
                 <div class="journal-section-header">
@@ -572,6 +589,29 @@ function setupEventDelegation() {
   eventsDelegated = true;
 
   elements.journalList.addEventListener('click', async (e) => {
+    const sourceBtn = e.target.closest('.btn-journal-filter-source');
+    if (sourceBtn) {
+      e.stopPropagation();
+      const sourceVal = sourceBtn.getAttribute('data-source') || '';
+      const sourceHost = sourceBtn.getAttribute('data-source-host') || '';
+      const sourceIp = sourceBtn.getAttribute('data-source-ip') || '';
+      const chipLabel = (sourceHost && sourceIp) ? `${sourceHost} (${sourceIp})` : sourceVal;
+      if (elements.journalSearch) {
+        elements.journalSearch.value = sourceVal;
+      }
+      if (elements.journalContextBanner) {
+        elements.journalContextBanner.classList.remove('hidden');
+        if (elements.journalFilterChipText) {
+          elements.journalFilterChipText.textContent = `Source: ${chipLabel}`;
+        }
+      }
+      renderJournal();
+      setRoute('journal', { q: sourceVal }, true);
+      if (loadJournalFn) loadJournalFn();
+      else loadJournal();
+      return;
+    }
+
     const toggleBodyBtn = e.target.closest('.btn-journal-toggle-body');
     if (toggleBodyBtn) {
       e.stopPropagation();
@@ -925,11 +965,11 @@ export function renderJournal(resetLimit = true) {
 
   if (total === 0) {
     if (unmatchedOnly || verdictFilter === 'unmatched') {
-      elements.journalList.innerHTML = '<tr><td colspan="8" class="text-center">No unmatched requests recorded.</td></tr>';
+      elements.journalList.innerHTML = '<tr><td colspan="9" class="text-center">No unmatched requests recorded.</td></tr>';
     } else if (filter || verdictFilter !== 'all' || protocolFilter !== 'all' || sinceMs !== null || untilMs !== null) {
-      elements.journalList.innerHTML = '<tr><td colspan="8" class="text-center">No matching requests found.</td></tr>';
+      elements.journalList.innerHTML = '<tr><td colspan="9" class="text-center">No matching requests found.</td></tr>';
     } else {
-      elements.journalList.innerHTML = '<tr><td colspan="8" class="text-center">No requests recorded yet.</td></tr>';
+      elements.journalList.innerHTML = '<tr><td colspan="9" class="text-center">No requests recorded yet.</td></tr>';
     }
     return;
   }
@@ -1179,6 +1219,7 @@ export function initJournalTab() {
       }
       renderJournal();
       setRoute('journal', {}, false);
+      loadJournal();
     });
   }
 }

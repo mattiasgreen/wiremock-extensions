@@ -192,4 +192,50 @@ class WireMockConsoleProxyTest {
         String rawUrl = proxy.getLocalUiUrl(false);
         assertThat(rawUrl).isEqualTo("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/");
     }
+
+    @Test
+    @DisplayName(
+            "Proxies /__admin/ui/api/requests upstream and preserves X-Forwarded-For while stripping routing headers")
+    void shouldProxyUiApiRequestsAndPreserveXForwardedFor() throws Exception {
+        WireMockServer uiEnabledServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(new UiAdminApiEndpoint()));
+        uiEnabledServer.start();
+        try {
+            uiEnabledServer.stubFor(get(urlEqualTo("/api/proxied")).willReturn(ok("proxied-ok")));
+
+            // 1. Send traffic through proxy routed via X-Forwarded-Host/Proto/Prefix while passing X-Forwarded-For
+            HttpResponse<String> trafficResp = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:" + proxy.getLocalPort() + "/api/proxied"))
+                            .header("X-Forwarded-For", "203.0.113.55")
+                            .header("X-Forwarded-Host", "localhost:" + uiEnabledServer.port())
+                            .header("X-Forwarded-Proto", "http")
+                            .header("X-Forwarded-Prefix", "")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(trafficResp.statusCode()).isEqualTo(200);
+            assertThat(trafficResp.body()).isEqualTo("proxied-ok");
+
+            uiEnabledServer.verify(getRequestedFor(urlEqualTo("/api/proxied"))
+                    .withHeader("X-Forwarded-For", equalTo("203.0.113.55"))
+                    .withoutHeader("X-Forwarded-Host")
+                    .withoutHeader("X-Forwarded-Proto")
+                    .withoutHeader("X-Forwarded-Prefix"));
+
+            // 2. Query /__admin/ui/api/requests via proxy (must NOT be intercepted as a static UI asset)
+            HttpResponse<String> apiResp = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:" + proxy.getLocalPort() + "/__admin/ui/api/requests"))
+                            .header("X-Forwarded-Host", "localhost:" + uiEnabledServer.port())
+                            .header("X-Forwarded-Proto", "http")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(apiResp.statusCode()).isEqualTo(200);
+            assertThat(apiResp.body()).contains("\"sourceIp\" : \"203.0.113.55\"");
+        } finally {
+            uiEnabledServer.stop();
+        }
+    }
 }

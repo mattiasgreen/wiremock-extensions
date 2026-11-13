@@ -34,7 +34,10 @@ export function loadDisabledStubs() {
     });
 }
 
+let journalFetchSeq = 0;
+
 export function loadJournal() {
+  const seq = ++journalFetchSeq;
   const limit = state.journalLimit || 100;
   const unmatchedOnly = elements.filterUnmatchedOnly && elements.filterUnmatchedOnly.checked;
   const q = (elements.journalSearch ? elements.journalSearch.value : '').trim();
@@ -52,6 +55,7 @@ export function loadJournal() {
 
   return apiGet(serverEndpoint)
     .then(data => {
+      if (seq !== journalFetchSeq) return;
       state.currentRequests = data.requests || [];
       state.journalMeta = data.meta || null;
       state.journalServerFiltered = true;
@@ -70,6 +74,7 @@ export function loadJournal() {
         ? `/__admin/requests?limit=${limit}&unmatched=true`
         : `/__admin/requests?limit=${limit}`;
       return apiGet(fallbackEndpoint).then(data => {
+        if (seq !== journalFetchSeq) return;
         state.currentRequests = data.requests || [];
         state.journalMeta = null;
         state.journalServerFiltered = false;

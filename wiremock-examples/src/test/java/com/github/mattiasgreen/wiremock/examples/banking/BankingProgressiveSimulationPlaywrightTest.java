@@ -142,7 +142,7 @@ class BankingProgressiveSimulationPlaywrightTest {
         assertThat(casualJournalRow.getAttribute("data-protocol")).isEqualTo("casual");
         assertThat(casualJournalRow.locator(".http-badge.badge-CASUAL").textContent())
                 .isEqualTo("CASUAL");
-        assertThat(casualJournalRow.locator("td").nth(5).textContent()).isEqualTo("OK");
+        assertThat(casualJournalRow.locator("td").nth(6).textContent()).isEqualTo("OK");
 
         // Expand Casual journal row to inspect payload
         casualJournalRow.click();
@@ -227,7 +227,7 @@ class BankingProgressiveSimulationPlaywrightTest {
         assertThat(stubbedCasualRow.isVisible()).isTrue();
         assertThat(stubbedCasualRow.locator(".http-badge.badge-CASUAL").textContent())
                 .isEqualTo("CASUAL");
-        assertThat(stubbedCasualRow.locator("td").nth(5).textContent()).isEqualTo("OK");
+        assertThat(stubbedCasualRow.locator("td").nth(6).textContent()).isEqualTo("OK");
         assertThat(stubbedCasualRow.locator("td.pill-stub").textContent()).contains("STUB");
 
         stubbedCasualRow.click();

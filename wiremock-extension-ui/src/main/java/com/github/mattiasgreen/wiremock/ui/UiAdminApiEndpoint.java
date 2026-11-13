@@ -1,5 +1,7 @@
 package com.github.mattiasgreen.wiremock.ui;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.Json;
@@ -11,14 +13,25 @@ import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public class UiAdminApiEndpoint implements AdminApiExtension {
 
     public static final String EXTENSION_NAME = "ui-admin-endpoint";
 
-    private final JournalFilterService journalFilterService = new JournalFilterService();
+    private final JournalFilterService journalFilterService;
+
+    public UiAdminApiEndpoint() {
+        this(new JournalFilterService());
+    }
+
+    public UiAdminApiEndpoint(JournalFilterService journalFilterService) {
+        this.journalFilterService =
+                Objects.requireNonNull(journalFilterService, "journalFilterService must not be null");
+    }
 
     @Override
     public String getName() {
@@ -88,17 +101,33 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
         Instant until = parseInstant(untilParam);
 
         List<ServeEvent> allEvents = admin.getServeEvents().getServeEvents();
-        JournalFilterService.JournalFilterResult result =
-                journalFilterService.filter(allEvents, q, verdict, unmatchedOnly, status, since, until, limit);
+        JournalFilterService.EnrichedJournalFilterResult result =
+                journalFilterService.filterEnriched(allEvents, q, verdict, unmatchedOnly, status, since, until, limit);
+
+        List<Object> enrichedRequests = new ArrayList<>(result.requests().size());
+        for (ServeEvent ev : result.requests()) {
+            JsonNode tree = Json.node(Json.write(ev));
+            if (tree instanceof ObjectNode obj) {
+                String srcIp = ClientSourceResolver.extractSourceIp(ev.getRequest());
+                String srcHost = srcIp.isEmpty() ? "" : result.resolvedHosts().getOrDefault(srcIp, "");
+                obj.put("sourceIp", srcIp);
+                obj.put("sourceHost", srcHost);
+                enrichedRequests.add(obj);
+            } else {
+                enrichedRequests.add(ev);
+            }
+        }
 
         Map<String, Object> respMap = Map.of(
-                "requests", result.requests(),
+                "requests",
+                enrichedRequests,
                 "meta",
-                        Map.of(
-                                "total", result.total(),
-                                "filtered", result.filtered(),
-                                "limit", limit),
-                "requestJournalDisabled", false);
+                Map.of(
+                        "total", result.total(),
+                        "filtered", result.filtered(),
+                        "limit", limit),
+                "requestJournalDisabled",
+                false);
 
         return ResponseDefinitionBuilder.responseDefinition()
                 .withStatus(200)

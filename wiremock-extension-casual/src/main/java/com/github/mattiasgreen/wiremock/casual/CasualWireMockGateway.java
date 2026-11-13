@@ -4,6 +4,9 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.http.ImmutableRequest;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,7 +47,10 @@ import se.laz.casual.network.protocol.messages.transaction.CasualTransactionReso
  * and {@link CasualTransactionCoordinator}.
  */
 public class CasualWireMockGateway
-        implements AutoCloseable, CasualServer.TransactionHandler, CasualServer.QueueHandler {
+        implements AutoCloseable,
+                CasualServer.ServiceHandler,
+                CasualServer.TransactionHandler,
+                CasualServer.QueueHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(CasualWireMockGateway.class);
 
@@ -171,7 +177,7 @@ public class CasualWireMockGateway
                         return handleDiscovery(request);
                     }
                 })
-                .serviceHandler(this::handleServiceCall)
+                .serviceHandler(this)
                 .transactionHandler(this)
                 .queueHandler(this)
                 .queueDiscoveryHandler((names, ver) -> queueStore.getDiscoveredQueues(names, ver))
@@ -221,9 +227,25 @@ public class CasualWireMockGateway
         LOG.info("CasualWireMockGateway stopped");
     }
 
+    @Override
+    public CasualServiceCallReplyMessage handle(CasualServiceCallRequestMessage req) {
+        return handleServiceCall(req, null);
+    }
+
+    @Override
+    public CasualServiceCallReplyMessage handle(CasualServiceCallRequestMessage req, SocketAddress remoteAddress) {
+        return handleServiceCall(req, remoteAddress);
+    }
+
     public CasualServiceCallReplyMessage handleServiceCall(CasualServiceCallRequestMessage req) {
+        return handleServiceCall(req, null);
+    }
+
+    public CasualServiceCallReplyMessage handleServiceCall(
+            CasualServiceCallRequestMessage req, SocketAddress remoteAddress) {
         String serviceName = req.getServiceName();
-        ImmutableRequest wiremockRequest = CasualHttpMediation.buildProbeRequest(storePort.getBaseUrl(), req);
+        String clientIp = extractClientIp(remoteAddress);
+        ImmutableRequest wiremockRequest = CasualHttpMediation.buildProbeRequest(storePort.getBaseUrl(), req, clientIp);
 
         Optional<StubMapping> matchedStubOpt = storePort.findMatchingStub(wiremockRequest);
 
@@ -559,5 +581,21 @@ public class CasualWireMockGateway
                 probeReq, statusCode, body != null ? body : "[]", req.getQueueName(), "dequeue");
         storePort.recordServeEvent(event);
         return reply;
+    }
+
+    static String extractClientIp(SocketAddress remoteAddress) {
+        if (!(remoteAddress instanceof InetSocketAddress inet)) {
+            return null;
+        }
+        InetAddress addr = inet.getAddress();
+        if (addr == null) {
+            return null;
+        }
+        String hostAddr = addr.getHostAddress();
+        if (hostAddr == null || hostAddr.isBlank()) {
+            return null;
+        }
+        int zoneIdx = hostAddr.indexOf('%');
+        return zoneIdx > 0 ? hostAddr.substring(0, zoneIdx) : hostAddr;
     }
 }

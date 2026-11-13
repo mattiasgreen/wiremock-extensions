@@ -60,6 +60,9 @@ public final class WireMockConsoleProxy {
             "transfer-encoding",
             "upgrade");
 
+    private static final Set<String> PROXY_ROUTING_HEADERS =
+            Set.of("x-forwarded-host", "x-forwarded-proto", "x-forwarded-prefix");
+
     private final HttpClient httpClient;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final String defaultTargetUrl;
@@ -162,8 +165,8 @@ public final class WireMockConsoleProxy {
                 return;
             }
 
-            // 2. Static Web Assets: /__admin/ui/*
-            if (path.startsWith("/__admin/ui/")) {
+            // 2. Static Web Assets: /__admin/ui/* (but proxy /__admin/ui/api/* upstream to target WireMock)
+            if (path.startsWith("/__admin/ui/") && !path.startsWith("/__admin/ui/api/")) {
                 handleStaticAsset(exchange, path.substring("/__admin/ui".length()));
                 return;
             }
@@ -237,7 +240,7 @@ public final class WireMockConsoleProxy {
         for (Map.Entry<String, List<String>> header :
                 exchange.getRequestHeaders().entrySet()) {
             String name = header.getKey().toLowerCase(Locale.ROOT);
-            if (!HOP_BY_HOP_HEADERS.contains(name) && !name.startsWith("x-forwarded-")) {
+            if (!HOP_BY_HOP_HEADERS.contains(name) && !PROXY_ROUTING_HEADERS.contains(name)) {
                 for (String val : header.getValue()) {
                     try {
                         reqBuilder.header(header.getKey(), val);

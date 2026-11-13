@@ -6,6 +6,7 @@
  * with preloaded stubs, rich request journal traffic, scenario state machines,
  * NetEm toxic configs, and Casual XATMI simulation.
  */
+import { matchesJournalEntry } from './filter.js';
 
 // Initial Seed Datasets
 const SEED_STUBS = [
@@ -1727,12 +1728,9 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/requests' || pathname === '/__admin/ui/api/requests') {
       if (method === 'GET') {
         let list = [...this.requests];
-        const q = (searchParams.get('q') || '').toLowerCase();
+        const q = (searchParams.get('q') || '').trim();
         if (q) {
-          list = list.filter(r => {
-            const str = `${r.request.method} ${r.request.url} ${JSON.stringify(r.request.body || '')}`.toLowerCase();
-            return str.includes(q);
-          });
+          list = list.filter(r => matchesJournalEntry(r, q));
         }
         if (searchParams.get('unmatched') === 'true') {
           list = list.filter(r => !r.wasMatched);
@@ -2178,8 +2176,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'feat/kafka-testcontainers',
-        commit: '1994cf0'
+        branch: 'wiremock_journal_source_ip',
+        commit: '48f8af2'
       });
     }
 

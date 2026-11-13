@@ -42,7 +42,7 @@
 #### B. Request Journal Entry (`ServeEvent`)
 - **Identity**: Globally unique UUID string (`id`).
 - **Timestamp**: High-resolution ISO-8601 or millisecond epoch of request arrival.
-- **Incoming Request**: HTTP method, complete URL path with query string, complete headers (including `X-Correlation-Id`), client IP, and captured body payload.
+- **Incoming Request**: HTTP method, complete URL path with query string, complete headers (including `X-Correlation-Id`, `X-Forwarded-For`, `X-Real-IP`), resolved caller source IP (`sourceIp`), cached async reverse-DNS hostname (`sourceHost`), and captured body payload.
 - **Traffic Verdict**: Categorized into one of four mutually exclusive execution outcomes:
   - **`PROXIED`**: `wasMatched == true` and served via a `proxyBaseUrl` route (forwarded to a live upstream service such as an ERP System, CRM System, or Billing Platform).
   - **`STUB`**: `wasMatched == true` and served locally from a static or Handlebars-templated (`response-template`) WireMock mapping with zero upstream network calls.
@@ -241,3 +241,13 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the cascading engine executes **pure surgical in-place substitution** (direct JSON string literal replacement, XML CDATA slice substitution, or Base64 re-encoding) up the payload tree to the Root Document:
   - Intermediate container envelopes act as translucent pass-throughs; all surrounding whitespace, indentation, line breaks, XML tags, and sibling fields are byte-for-byte preserved without newline or backslash explosions.
   - The Root Document maintains the single source of truth for drafts with an "Unsaved Changes" dirty indicator, disabling duplicate root editor viewports and centralizing final persistence in the root's Save/Discard action.
+
+### Story 17: Request Journal Caller Source Identification & Filtering
+
+> *As an engineer operating a centralized WireMock instance,*
+> *I want the Request Journal, API, and CLI to display and filter by each caller's effective source IP and reverse-DNS hostname,*
+> *So that I can immediately tell which microservice, gateway, or test runner sent each request without stalling on slow DNS.*
+
+- **Given** incoming HTTP requests (optionally behind proxies setting `X-Forwarded-For` or `X-Real-IP`), Casual TCP gateway calls forwarding remote TCP peer IPs, or Console Proxy traffic.
+- **When** requests are queried via `/__admin/ui/api/requests`, rendered in the Web UI Request Journal, or streamed via `wm tail`.
+- **Then** the server extracts the effective source IP (`X-Forwarded-For` first hop -> `X-Real-IP` -> socket `clientIp`), resolves reverse-DNS hostnames asynchronously on virtual threads with a bounded batch wait (~50ms) and 15-minute positive/negative TTL cache (fast-pathing loopback to `localhost`), renders a scannable `Source` column (`shortHost` + compact IP) and expandable `Source Caller` detail panel, and supports substring/boolean search (`src:`, `ip:`, `host:`) plus 1-click source chip filtering.

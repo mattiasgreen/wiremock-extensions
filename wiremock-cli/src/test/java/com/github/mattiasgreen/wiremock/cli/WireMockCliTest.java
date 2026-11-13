@@ -149,4 +149,52 @@ class WireMockCliTest {
         assertThat(fmt.methodBadge("GET")).contains("\u001B[36m");
         assertThat(fmt.methodBadge("POST")).contains("\u001B[32m");
     }
+
+    @Test
+    @DisplayName(
+            "QueryEvaluator: matches journal requests by sourceIp, sourceHost, X-Forwarded-For, and src:/ip:/host:")
+    void shouldMatchRequestSourceExpressions() {
+        Map<String, Object> enrichedReq = Map.of(
+                "id",
+                "req-1",
+                "sourceIp",
+                "10.20.30.40",
+                "sourceHost",
+                "billing-api-01.corp.internal",
+                "request",
+                Map.of(
+                        "method", "POST",
+                        "url", "/api/v1/billing",
+                        "clientIp", "127.0.0.1",
+                        "headers", Map.of("X-Forwarded-For", "10.20.30.40, 10.0.0.1")),
+                "response",
+                Map.of("status", 200));
+
+        Map<String, Object> vanillaXffReq = Map.of(
+                "id",
+                "req-2",
+                "request",
+                Map.of(
+                        "method", "GET",
+                        "url", "/api/v1/health",
+                        "clientIp", "127.0.0.1",
+                        "headers", Map.of("X-Forwarded-For", "203.0.113.50:8080, 10.0.0.1")),
+                "response",
+                Map.of("status", 200));
+
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("host:billing-api-01", enrichedReq))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("ip=10.20.30.40", enrichedReq))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("src:corp.internal", enrichedReq))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("billing-api-01", enrichedReq))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("ip:203.0.113.50", vanillaXffReq))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("src:203.0.113.50 AND method=GET", vanillaXffReq))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesRequest("host:unknown-service", enrichedReq))
+                .isFalse();
+    }
 }
