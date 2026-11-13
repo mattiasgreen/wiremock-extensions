@@ -212,20 +212,24 @@ public final class ClientSourceResolver {
     }
 
     private CompletableFuture<String> getOrStartLookup(String token) {
-        return inFlight.computeIfAbsent(token, key -> CompletableFuture.supplyAsync(
-                        () -> {
-                            try {
-                                return sanitizeHostResult(reverseDnsLookup.apply(key));
-                            } catch (RuntimeException e) {
-                                return "";
-                            }
-                        },
-                        VIRTUAL_THREAD_EXECUTOR)
-                .whenComplete((host, err) -> {
-                    String safeHost = err == null ? sanitizeHostResult(host) : "";
-                    putInCache(key, safeHost);
-                    inFlight.remove(key);
-                }));
+        CompletableFuture<String> created = new CompletableFuture<>();
+        CompletableFuture<String> existing = inFlight.putIfAbsent(token, created);
+        if (existing != null) {
+            return existing;
+        }
+        VIRTUAL_THREAD_EXECUTOR.execute(() -> {
+            String safeHost = "";
+            try {
+                safeHost = sanitizeHostResult(reverseDnsLookup.apply(token));
+            } catch (RuntimeException ignored) {
+                // Treat lookup exceptions as unresolved
+            } finally {
+                putInCache(token, safeHost);
+                inFlight.remove(token, created);
+                created.complete(safeHost);
+            }
+        });
+        return created;
     }
 
     private void putInCache(String token, String host) {

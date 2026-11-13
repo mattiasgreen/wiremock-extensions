@@ -130,6 +130,22 @@ class ClientSourceResolverTest {
         assertThat(calls.get()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("Resolves many instant lookups without ConcurrentHashMap recursive update errors")
+    void shouldResolveManyInstantLookupsWithoutRecursiveMapUpdate() {
+        ClientSourceResolver resolver = new ClientSourceResolver(
+                ip -> "host-" + ip.replace('.', '-') + ".internal", 2000, Duration.ofMinutes(15));
+        List<String> ips = java.util.stream.IntStream.range(1, 65)
+                .mapToObj(i -> "10.50.0." + i)
+                .toList();
+
+        Map<String, String> resolved = resolver.resolveHosts(ips);
+
+        for (String ip : ips) {
+            assertThat(resolved).containsEntry(ip, "host-" + ip.replace('.', '-') + ".internal");
+        }
+    }
+
     private static Request stubRequest(String clientIp, Map<String, String> headerMap) {
         List<HttpHeader> httpHeaders = headerMap.entrySet().stream()
                 .map(entry -> HttpHeader.httpHeader(entry.getKey(), entry.getValue()))
