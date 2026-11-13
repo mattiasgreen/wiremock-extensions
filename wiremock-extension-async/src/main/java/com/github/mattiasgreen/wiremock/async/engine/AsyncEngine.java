@@ -3,16 +3,24 @@ package com.github.mattiasgreen.wiremock.async.engine;
 import com.github.mattiasgreen.wiremock.async.amqp.AmqpServer;
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
+import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
+import com.github.mattiasgreen.wiremock.async.destination.DestinationProvider;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaProduceRecord;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaWireSink;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,12 +43,15 @@ public class AsyncEngine implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(AsyncEngine.class);
     private static final AsyncEngine INSTANCE = new AsyncEngine();
 
+    private static final List<String> BUILT_IN_PROTOCOLS = List.of("in-memory", "kafka", "amqp", "ibmmq");
+
     private final AtomicLong messagesConsumed = new AtomicLong(0);
     private final AtomicLong messagesProduced = new AtomicLong(0);
     private final AtomicLong messagesProxied = new AtomicLong(0);
     private final AtomicLong proxyErrors = new AtomicLong(0);
 
     private final Map<String, BiConsumer<String, AsyncMessage>> destinationPublishers = new ConcurrentHashMap<>();
+    private final Map<String, DestinationProvider> destinationProviders = new ConcurrentHashMap<>();
     private final Map<String, Function<AsyncMessage, AsyncMessage>> mockStubs = new ConcurrentHashMap<>();
     private final Map<String, AsyncMessage> harvestedStubs = new ConcurrentHashMap<>();
     private final List<AsyncBridgeRule> bridgeRules = new CopyOnWriteArrayList<>();
@@ -51,12 +62,14 @@ public class AsyncEngine implements AutoCloseable {
     private volatile Consumer<ServeEvent> journalConsumer;
     private volatile MessageBroker testBroker;
     private volatile MessageBroker upstreamBroker;
+    private volatile AsyncBrokerRegistry brokerRegistry;
     private KafkaWireSink kafkaSink;
     private AmqpServer amqpServer;
 
     private AsyncEngine() {
         this.testBroker = new InMemoryMessageBroker("default-test-broker");
         this.upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");
+        this.brokerRegistry = AsyncBrokerRegistry.getInstance();
     }
 
     public static AsyncEngine getInstance() {
@@ -64,9 +77,23 @@ public class AsyncEngine implements AutoCloseable {
     }
 
     public static AsyncEngine create(MessageBroker testBroker, MessageBroker upstreamBroker) {
+        return create(testBroker, upstreamBroker, AsyncBrokerRegistry.getInstance());
+    }
+
+    public static AsyncEngine create(
+            MessageBroker testBroker, MessageBroker upstreamBroker, AsyncBrokerRegistry brokerRegistry) {
         AsyncEngine engine = new AsyncEngine();
         engine.setBrokers(testBroker, upstreamBroker);
+        engine.setBrokerRegistry(brokerRegistry);
         return engine;
+    }
+
+    public void setBrokerRegistry(AsyncBrokerRegistry brokerRegistry) {
+        this.brokerRegistry = Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
+    }
+
+    public AsyncBrokerRegistry getBrokerRegistry() {
+        return brokerRegistry;
     }
 
     public void setJournalConsumer(Consumer<ServeEvent> consumer) {
@@ -132,10 +159,6 @@ public class AsyncEngine implements AutoCloseable {
         return kafkaSink != null ? kafkaSink.getPort() : -1;
     }
 
-    public synchronized KafkaWireSink getKafkaSink() {
-        return kafkaSink;
-    }
-
     public synchronized void stageKafkaFeed(KafkaProduceRecord record) {
         if (kafkaSink != null && record != null) {
             kafkaSink.stageRecord(record);
@@ -183,14 +206,308 @@ public class AsyncEngine implements AutoCloseable {
         return amqpServer != null ? amqpServer.getPort() : -1;
     }
 
-    public synchronized AmqpServer getAmqpServer() {
-        return amqpServer;
-    }
-
     public synchronized void stageAmqpFeed(String queue, AsyncMessage message) {
         if (amqpServer != null && queue != null && message != null) {
             amqpServer.stageFeedMessage(queue, message);
         }
+    }
+
+    public void registerDestinationProvider(DestinationProvider provider) {
+        Objects.requireNonNull(provider, "provider must not be null");
+        String proto = provider.getProtocol().toLowerCase(Locale.ROOT);
+        destinationProviders.put(proto, provider);
+        LOG.info("[ASYNC-ENGINE] Registered destination provider for protocol [{}]", proto);
+    }
+
+    public Optional<DestinationProvider> getDestinationProvider(String protocol) {
+        if (protocol == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(destinationProviders.get(protocol.toLowerCase(Locale.ROOT)));
+    }
+
+    public synchronized List<AsyncDestination> listAllDestinations() {
+        List<AsyncDestination> result = new ArrayList<>();
+        for (String proto : BUILT_IN_PROTOCOLS) {
+            if (!destinationProviders.containsKey(proto)) {
+                result.addAll(listBuiltInDestinations(proto));
+            }
+        }
+        for (DestinationProvider provider : destinationProviders.values()) {
+            result.addAll(provider.listDestinations());
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    private List<AsyncDestination> listBuiltInDestinations(String proto) {
+        List<AsyncDestination> list = new ArrayList<>();
+        switch (proto) {
+            case "in-memory" -> list.addAll(testBroker.discoverDestinations());
+            case "kafka" -> {
+                if (kafkaSink != null) {
+                    Map<String, Integer> topicCounts = new HashMap<>();
+                    for (KafkaProduceRecord r : kafkaSink.getStagedRecords()) {
+                        topicCounts.put(r.topic(), topicCounts.getOrDefault(r.topic(), 0) + 1);
+                    }
+                    for (Map.Entry<String, Integer> entry : topicCounts.entrySet()) {
+                        list.add(new AsyncDestination(
+                                "kafka:" + entry.getKey(),
+                                "kafka",
+                                entry.getKey(),
+                                "local-kafka-sink",
+                                entry.getValue(),
+                                Map.of("partitions", 1, "type", "TOPIC")));
+                    }
+                }
+                list.addAll(brokerRegistry.discoverDestinations("kafka"));
+            }
+            case "amqp" -> {
+                if (amqpServer != null) {
+                    for (String q : amqpServer.listQueues()) {
+                        int size = amqpServer.peekQueue(q).size();
+                        list.add(new AsyncDestination(
+                                "amqp:" + q, "amqp", q, "local-amqp-server", size, Map.of("type", "QUEUE")));
+                    }
+                }
+                list.addAll(brokerRegistry.discoverDestinations("amqp"));
+            }
+            case "ibmmq" -> list.addAll(brokerRegistry.discoverDestinations("ibmmq"));
+            default -> {}
+        }
+        return list;
+    }
+
+    public synchronized List<AsyncMessage> peekMessages(String protocol, String destination, int limit) {
+        if (protocol == null || destination == null || destination.isBlank()) {
+            return Collections.emptyList();
+        }
+        String proto = protocol.toLowerCase(Locale.ROOT);
+        DestinationProvider custom = destinationProviders.get(proto);
+        if (custom != null) {
+            return custom.peekMessages(destination, limit);
+        }
+
+        List<AsyncMessage> result = new ArrayList<>();
+        switch (proto) {
+            case "in-memory" -> {
+                for (AsyncMessage m : testBroker.peek(destination, limit)) {
+                    result.add(
+                            "in-memory".equals(m.protocol())
+                                    ? m
+                                    : AsyncMessage.builder()
+                                            .id(m.id())
+                                            .protocol("in-memory")
+                                            .destination(destination)
+                                            .key(m.key())
+                                            .correlationId(m.correlationId())
+                                            .replyTo(m.replyTo())
+                                            .timestamp(m.timestamp())
+                                            .headers(m.headers())
+                                            .payload(m.payload())
+                                            .build());
+                }
+            }
+            case "kafka" -> {
+                if (kafkaSink != null) {
+                    int count = 0;
+                    for (KafkaProduceRecord r : kafkaSink.getStagedRecords()) {
+                        if (r.topic().equals(destination)) {
+                            result.add(AsyncMessage.builder()
+                                    .id(UUID.randomUUID().toString())
+                                    .protocol("kafka")
+                                    .destination(destination)
+                                    .key(r.key())
+                                    .payload(r.value())
+                                    .headers(r.headers())
+                                    .timestamp(Instant.now())
+                                    .partition(0)
+                                    .offset((long) count)
+                                    .build());
+                            count++;
+                            if (limit > 0 && count >= limit) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("kafka", destination)) {
+                    int remaining = limit > 0 ? Math.max(0, limit - result.size()) : 0;
+                    if (limit > 0 && remaining == 0) {
+                        break;
+                    }
+                    result.addAll(broker.peek(destination, remaining));
+                }
+            }
+            case "amqp" -> {
+                if (amqpServer != null) {
+                    List<AsyncMessage> staged = amqpServer.peekQueue(destination);
+                    int max = limit > 0 ? Math.min(limit, staged.size()) : staged.size();
+                    for (int i = 0; i < max; i++) {
+                        AsyncMessage m = staged.get(i);
+                        result.add(AsyncMessage.builder()
+                                .id(m.id())
+                                .protocol("amqp")
+                                .destination(destination)
+                                .key(m.key())
+                                .correlationId(m.correlationId())
+                                .replyTo(m.replyTo())
+                                .timestamp(m.timestamp())
+                                .headers(m.headers())
+                                .payload(m.payload())
+                                .build());
+                    }
+                }
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("amqp", destination)) {
+                    int remaining = limit > 0 ? Math.max(0, limit - result.size()) : 0;
+                    if (limit > 0 && remaining == 0) {
+                        break;
+                    }
+                    result.addAll(broker.peek(destination, remaining));
+                }
+            }
+            case "ibmmq" -> {
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("ibmmq", destination)) {
+                    int remaining = limit > 0 ? Math.max(0, limit - result.size()) : 0;
+                    if (limit > 0 && remaining == 0) {
+                        break;
+                    }
+                    result.addAll(broker.peek(destination, remaining));
+                }
+            }
+            default -> {}
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    public synchronized boolean deleteMessage(String protocol, String destination, String messageId) {
+        if (protocol == null
+                || destination == null
+                || destination.isBlank()
+                || messageId == null
+                || messageId.isBlank()) {
+            return false;
+        }
+        String proto = protocol.toLowerCase(Locale.ROOT);
+        DestinationProvider custom = destinationProviders.get(proto);
+        if (custom != null) {
+            return custom.deleteMessage(destination, messageId);
+        }
+        return switch (proto) {
+            case "in-memory" -> testBroker.delete(destination, messageId);
+            case "kafka" -> kafkaSink != null && kafkaSink.deleteStagedRecord(destination, messageId);
+            case "amqp" -> amqpServer != null && amqpServer.deleteMessage(destination, messageId);
+            case "ibmmq" -> {
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("ibmmq", destination)) {
+                    if (broker.delete(destination, messageId)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            default -> false;
+        };
+    }
+
+    public synchronized void purgeDestination(String protocol, String destination) {
+        if (protocol == null || destination == null || destination.isBlank()) {
+            return;
+        }
+        String proto = protocol.toLowerCase(Locale.ROOT);
+        DestinationProvider custom = destinationProviders.get(proto);
+        if (custom != null) {
+            custom.purgeDestination(destination);
+            return;
+        }
+        switch (proto) {
+            case "in-memory" -> testBroker.purge(destination);
+            case "kafka" -> {
+                if (kafkaSink != null) {
+                    kafkaSink.purgeTopic(destination);
+                }
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("kafka", destination)) {
+                    broker.purge(destination);
+                }
+            }
+            case "amqp" -> {
+                if (amqpServer != null) {
+                    amqpServer.purgeQueue(destination);
+                }
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("amqp", destination)) {
+                    broker.purge(destination);
+                }
+            }
+            case "ibmmq" -> {
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("ibmmq", destination)) {
+                    broker.purge(destination);
+                }
+            }
+            default -> {}
+        }
+    }
+
+    public synchronized boolean publishMessage(String protocol, String destination, AsyncMessage msg) {
+        if (protocol == null || destination == null || destination.isBlank() || msg == null) {
+            return false;
+        }
+        String proto = protocol.toLowerCase(Locale.ROOT);
+        DestinationProvider custom = destinationProviders.get(proto);
+        if (custom != null) {
+            return custom.publishMessage(destination, msg);
+        }
+        boolean published = false;
+        switch (proto) {
+            case "in-memory" -> {
+                publish(destination, msg);
+                published = true;
+            }
+            case "kafka" -> {
+                if (kafkaSink != null) {
+                    stageKafkaFeed(KafkaProduceRecord.of(destination, msg.key(), msg.payload()));
+                    published = true;
+                }
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("kafka", destination)) {
+                    Map<String, String> headers = new HashMap<>(msg.headers());
+                    if (msg.correlationId() != null && !msg.correlationId().isBlank()) {
+                        headers.putIfAbsent("x-correlation-id", msg.correlationId());
+                    }
+                    AsyncMessage outbound = AsyncMessage.builder()
+                            .id(msg.id())
+                            .protocol("kafka")
+                            .key(msg.key())
+                            .destination(destination)
+                            .correlationId(msg.correlationId())
+                            .replyTo(msg.replyTo())
+                            .payload(msg.payload())
+                            .headers(headers)
+                            .timestamp(msg.timestamp())
+                            .build();
+                    broker.send(destination, outbound);
+                    published = true;
+                }
+            }
+            case "amqp" -> {
+                if (amqpServer != null) {
+                    stageAmqpFeed(destination, msg);
+                    published = true;
+                }
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("amqp", destination)) {
+                    broker.send(destination, msg);
+                    published = true;
+                }
+            }
+            case "ibmmq" -> {
+                for (MessageBroker broker : brokerRegistry.resolveTargetBrokers("ibmmq", destination)) {
+                    try {
+                        broker.send(destination, msg);
+                        published = true;
+                    } catch (RuntimeException e) {
+                        LOG.warn("[ASYNC-ENGINE] Failed publishing to IBM MQ destination [{}]", destination);
+                    }
+                }
+            }
+            default -> {}
+        }
+        return published;
     }
 
     public void registerPublisher(String destination, BiConsumer<String, AsyncMessage> publisher) {

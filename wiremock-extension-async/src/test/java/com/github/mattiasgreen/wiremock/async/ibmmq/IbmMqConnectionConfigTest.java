@@ -3,9 +3,9 @@ package com.github.mattiasgreen.wiremock.async.ibmmq;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -87,12 +87,17 @@ class IbmMqConnectionConfigTest {
     }
 
     @Test
-    void shouldAutoRegisterIbmMqProviderWhenClientIsOnClasspath() {
-        AsyncDestinationService service = AsyncDestinationService.createForTest(AsyncEngine.getInstance());
-        assertThat(service.getProvider("ibmmq")).isPresent();
+    void shouldAutoRegisterIbmMqBrokerFactoryWhenClientIsOnClasspath() {
+        AsyncBrokerRegistry registry = AsyncBrokerRegistry.createForTest();
+        registry.register(
+                new BrokerConnection("mq-1", "ibmmq", "Local MQ", "localhost:1414", Map.of("queueManager", "QM1")));
+        assertThat(registry.getOrCreateBroker("mq-1")).isPresent().containsInstanceOf(IbmMqMessageBroker.class);
 
-        IbmMqDestinationProvider provider = new IbmMqDestinationProvider(AsyncBrokerRegistry.createForTest());
-        assertThat(provider.listDestinations()).isEmpty();
-        assertThat(provider.peekMessages("DEV.QUEUE.1", 10)).isEmpty();
+        AsyncEngine engine = AsyncEngine.create(
+                new InMemoryMessageBroker("test"),
+                new InMemoryMessageBroker("upstream"),
+                AsyncBrokerRegistry.createForTest());
+        assertThat(engine.listAllDestinations()).isEmpty();
+        assertThat(engine.peekMessages("ibmmq", "DEV.QUEUE.1", 10)).isEmpty();
     }
 }

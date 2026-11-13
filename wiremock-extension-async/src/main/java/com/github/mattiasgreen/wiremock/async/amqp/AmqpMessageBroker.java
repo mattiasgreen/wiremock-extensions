@@ -1,13 +1,19 @@
 package com.github.mattiasgreen.wiremock.async.amqp;
 
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.apache.qpid.protonj2.client.Client;
@@ -32,18 +38,36 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
 
     private final String name;
     private final String brokerUri;
+    private final List<String> configuredQueues;
     private final Map<String, Deque<AsyncMessage>> localQueues = new ConcurrentHashMap<>();
 
     private volatile Client protonClient;
     private volatile Connection outboundConnection;
 
     public AmqpMessageBroker(String name) {
-        this(name, null);
+        this(name, null, Collections.emptyMap());
     }
 
     public AmqpMessageBroker(String name, String brokerUri) {
+        this(name, brokerUri, Collections.emptyMap());
+    }
+
+    public AmqpMessageBroker(String name, String brokerUri, Map<String, String> properties) {
         this.name = Objects.requireNonNullElse(name, "amqp-broker");
         this.brokerUri = brokerUri;
+        List<String> parsed = new ArrayList<>();
+        if (properties != null) {
+            String raw = properties.getOrDefault("queues", "");
+            if (!raw.isBlank()) {
+                for (String token : raw.split(",")) {
+                    String q = token.trim();
+                    if (!q.isEmpty()) {
+                        parsed.add(q);
+                    }
+                }
+            }
+        }
+        this.configuredQueues = Collections.unmodifiableList(parsed);
     }
 
     public String getName() {
@@ -102,13 +126,14 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
                                     ? message.payload().getBytes(StandardCharsets.UTF_8)
                                     : new byte[0]);
 
-                    if (message.id() != null) {
+                    if (message.id() != null && !message.id().isBlank()) {
                         protonMsg.messageId(message.id());
                     }
-                    if (message.correlationId() != null) {
+                    if (message.correlationId() != null
+                            && !message.correlationId().isBlank()) {
                         protonMsg.correlationId(message.correlationId());
                     }
-                    if (message.replyTo() != null) {
+                    if (message.replyTo() != null && !message.replyTo().isBlank()) {
                         protonMsg.replyTo(message.replyTo());
                     }
                     protonMsg.to(channel);
@@ -194,6 +219,60 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
         }
         Deque<AsyncMessage> queue = localQueues.get(channel);
         return queue != null ? queue.size() : 0;
+    }
+
+    @Override
+    public List<String> listChannels() {
+        Set<String> all = new LinkedHashSet<>(localQueues.keySet());
+        all.addAll(configuredQueues);
+        return Collections.unmodifiableList(new ArrayList<>(all));
+    }
+
+    @Override
+    public List<AsyncDestination> discoverDestinations() {
+        List<AsyncDestination> list = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String q : localQueues.keySet()) {
+            seen.add(q);
+            list.add(new AsyncDestination("amqp:" + name + ":" + q, "amqp", q, name, size(q), Map.of("type", "QUEUE")));
+        }
+        for (String q : configuredQueues) {
+            if (seen.add(q)) {
+                list.add(new AsyncDestination(
+                        "amqp:" + name + ":" + q,
+                        "amqp",
+                        q,
+                        name,
+                        0,
+                        Map.of("type", "QUEUE", "discovery", "CONFIGURED")));
+            }
+        }
+        return Collections.unmodifiableList(list);
+    }
+
+    @Override
+    public boolean ownsDestination(String destination) {
+        return destination != null && (configuredQueues.contains(destination) || localQueues.containsKey(destination));
+    }
+
+    @Override
+    public List<AsyncMessage> peek(String channel) {
+        if (channel == null) {
+            return Collections.emptyList();
+        }
+        Deque<AsyncMessage> queue = localQueues.get(channel);
+        return queue != null ? Collections.unmodifiableList(new ArrayList<>(queue)) : Collections.emptyList();
+    }
+
+    @Override
+    public void purge(String channel) {
+        if (channel == null) {
+            return;
+        }
+        Deque<AsyncMessage> queue = localQueues.get(channel);
+        if (queue != null) {
+            queue.clear();
+        }
     }
 
     @Override

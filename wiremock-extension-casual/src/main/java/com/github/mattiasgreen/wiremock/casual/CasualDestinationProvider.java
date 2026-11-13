@@ -3,10 +3,9 @@ package com.github.mattiasgreen.wiremock.casual;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.destination.DestinationProvider;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -80,11 +79,11 @@ public class CasualDestinationProvider implements DestinationProvider {
     }
 
     @Override
-    public List<AsyncDestinationMessage> peekMessages(String destination, int limit) {
+    public List<AsyncMessage> peekMessages(String destination, int limit) {
         if (destination == null || destination.isBlank()) {
             return Collections.emptyList();
         }
-        List<AsyncDestinationMessage> result = new ArrayList<>();
+        List<AsyncMessage> result = new ArrayList<>();
         localStoreSupplier.get().ifPresent(store -> {
             List<CasualQueueStore.StoredMessage> messages = store.peekMessages(destination);
             int max = limit > 0 ? Math.min(limit, messages.size()) : messages.size();
@@ -92,19 +91,16 @@ public class CasualDestinationProvider implements DestinationProvider {
                 CasualQueueStore.StoredMessage sm = messages.get(i);
                 String payload = sm.getPayload() != null ? CasualBufferUtils.extractPayload(sm.getPayload()) : "";
                 String bufType = sm.getPayload() != null ? sm.getPayload().getType() : "JSON";
-                result.add(new AsyncDestinationMessage(
-                        sm.getId().toString(),
-                        "casual",
-                        destination,
-                        null,
-                        sm.getCorrelationInformation(),
-                        sm.getReplyQueue(),
-                        sm.getTimestamp() != null ? sm.getTimestamp() : Instant.now(),
-                        payload.getBytes(StandardCharsets.UTF_8).length,
-                        Map.of("X-Casual-Buffer-Type", bufType),
-                        payload,
-                        null,
-                        null));
+                result.add(AsyncMessage.builder()
+                        .id(sm.getId().toString())
+                        .protocol("casual")
+                        .destination(destination)
+                        .correlationId(sm.getCorrelationInformation())
+                        .replyTo(sm.getReplyQueue())
+                        .timestamp(sm.getTimestamp() != null ? sm.getTimestamp() : Instant.now())
+                        .headers(Map.of("X-Casual-Buffer-Type", bufType))
+                        .payload(payload)
+                        .build());
             }
         });
 
@@ -121,21 +117,20 @@ public class CasualDestinationProvider implements DestinationProvider {
                 CasualRemoteQueueInspector inspector = new CasualRemoteQueueInspector(client);
                 for (CasualRemoteMessage rm : inspector.peekMessages(destination, maxRemote)) {
                     String payload = Objects.requireNonNullElse(rm.payload(), "");
-                    result.add(new AsyncDestinationMessage(
-                            rm.id() != null
-                                    ? rm.id().toString()
-                                    : UUID.randomUUID().toString(),
-                            "casual",
-                            destination,
-                            null,
-                            rm.correlationInformation(),
-                            rm.replyQueue(),
-                            rm.timestamp() != null ? rm.timestamp() : Instant.now(),
-                            payload.getBytes(StandardCharsets.UTF_8).length,
-                            Map.of("X-Casual-Buffer-Type", Objects.requireNonNullElse(rm.bufferType(), "JSON")),
-                            payload,
-                            null,
-                            null));
+                    result.add(AsyncMessage.builder()
+                            .id(
+                                    rm.id() != null
+                                            ? rm.id().toString()
+                                            : UUID.randomUUID().toString())
+                            .protocol("casual")
+                            .destination(destination)
+                            .correlationId(rm.correlationInformation())
+                            .replyTo(rm.replyQueue())
+                            .timestamp(rm.timestamp() != null ? rm.timestamp() : Instant.now())
+                            .headers(
+                                    Map.of("X-Casual-Buffer-Type", Objects.requireNonNullElse(rm.bufferType(), "JSON")))
+                            .payload(payload)
+                            .build());
                     if (limit > 0 && result.size() >= limit) {
                         break;
                     }
@@ -182,7 +177,7 @@ public class CasualDestinationProvider implements DestinationProvider {
     }
 
     @Override
-    public boolean publishMessage(String destination, AsyncDestinationMessage message) {
+    public boolean publishMessage(String destination, AsyncMessage message) {
         if (destination == null || destination.isBlank() || message == null) {
             return false;
         }

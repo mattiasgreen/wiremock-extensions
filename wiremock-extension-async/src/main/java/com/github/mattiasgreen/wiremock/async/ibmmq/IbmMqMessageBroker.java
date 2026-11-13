@@ -3,7 +3,6 @@ package com.github.mattiasgreen.wiremock.async.ibmmq;
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.ibm.mq.MQException;
 import com.ibm.mq.MQQueueManager;
@@ -167,37 +166,16 @@ public class IbmMqMessageBroker implements MessageBroker, AutoCloseable {
 
     @Override
     public List<AsyncMessage> peek(String channel) {
-        if (channel == null || channel.isBlank()) {
-            return Collections.emptyList();
-        }
-        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
-        List<AsyncMessage> messages = new ArrayList<>();
-        try (JMSContext context = openContext()) {
-            Queue destination = context.createQueue(normalizedQueue);
-            try (QueueBrowser browser = context.createBrowser(destination)) {
-                Enumeration<?> enumeration = browser.getEnumeration();
-                while (enumeration != null && enumeration.hasMoreElements()) {
-                    Object next = enumeration.nextElement();
-                    if (next instanceof Message jmsMsg) {
-                        messages.add(IbmMqMessageMapper.toAsyncMessage(normalizedQueue, jmsMsg));
-                    }
-                }
-            }
-        } catch (JMSException | JMSRuntimeException e) {
-            String safeDest = normalizedQueue.replaceAll("[\r\n]", "");
-            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
-            LOG.warn("[IBMMQ-BROKER] Failed to peek queue [{}]: {}", safeDest, safeErr);
-        }
-        return Collections.unmodifiableList(messages);
+        return peek(channel, 0);
     }
 
     @Override
-    public List<AsyncDestinationMessage> peekDestinationMessages(String channel, String protocol, int limit) {
+    public List<AsyncMessage> peek(String channel, int limit) {
         if (channel == null || channel.isBlank()) {
             return Collections.emptyList();
         }
         String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
-        List<AsyncDestinationMessage> result = new ArrayList<>();
+        List<AsyncMessage> result = new ArrayList<>();
         try (JMSContext context = openContext()) {
             Queue queue = context.createQueue(normalizedQueue);
             try (QueueBrowser browser = context.createBrowser(queue)) {
@@ -209,7 +187,7 @@ public class IbmMqMessageBroker implements MessageBroker, AutoCloseable {
                     }
                     Object next = enumeration.nextElement();
                     if (next instanceof Message msg) {
-                        result.add(IbmMqMessageMapper.toDestinationMessage(normalizedQueue, msg));
+                        result.add(IbmMqMessageMapper.toAsyncMessage(normalizedQueue, msg));
                         count++;
                     }
                 }
@@ -266,24 +244,16 @@ public class IbmMqMessageBroker implements MessageBroker, AutoCloseable {
         }
     }
 
-    public boolean sendDestinationMessage(String channel, AsyncDestinationMessage message) {
-        if (channel == null || channel.isBlank() || message == null) {
+    @Override
+    public boolean ownsDestination(String destination) {
+        if (destination == null || destination.isBlank()) {
             return false;
         }
-        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(channel);
-        try (JMSContext context = openContext()) {
-            Queue queue = context.createQueue(normalizedQueue);
-            TextMessage jmsMessage = IbmMqMessageMapper.toJmsTextMessage(context, message);
-            context.createProducer().send(queue, jmsMessage);
-            return true;
-        } catch (JMSException | JMSRuntimeException e) {
-            String safeDest = normalizedQueue.replaceAll("[\r\n]", "");
-            String safeErr = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
-            LOG.warn("[IBMMQ-BROKER] Failed to publish message to queue [{}]: {}", safeDest, safeErr);
-            return false;
-        }
+        String normalizedQueue = IbmMqMessageMapper.normalizeQueueName(destination);
+        return config.configuredQueues().contains(normalizedQueue);
     }
 
+    @Override
     public List<AsyncDestination> discoverDestinations() {
         List<AsyncDestination> result = new ArrayList<>();
         MQQueueManager qmgr = null;

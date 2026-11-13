@@ -525,7 +525,7 @@ curl -X POST http://localhost:8080/__admin/async/publish \
 
 In addition to AMQP 1.0 channels on IBM MQ 9.3+, `wiremock-extension-async` provides native IBM MQ (`SVRCONN` / port `1414`) connectivity via `com.ibm.mq:com.ibm.mq.allclient` using JMS 2.0 (`QueueBrowser`, `JMSContext`) and **PCF** (`MQCMD_INQUIRE_Q`, `MQCMD_CLEAR_Q`).
 
-- **Optional Zero-Bloat Library**: `com.ibm.mq.allclient` is declared `compileOnly` in `wiremock-extension-async`. `AsyncDestinationService` auto-registers `IbmMqDestinationProvider` (`protocol = "ibmmq"`) via reflection when `com.ibm.mq.jms.MQConnectionFactory` is present on the classpath.
+- **Optional Zero-Bloat Library**: `com.ibm.mq.allclient` is declared `compileOnly` in `wiremock-extension-async`. `AsyncBrokerRegistry` auto-registers the `IbmMqMessageBroker` factory (`protocol = "ibmmq"`) via reflection when `com.ibm.mq.jms.MQConnectionFactory` is present on the classpath.
 - **Two Standalone Fat-JAR Tasks** (`wiremock-extension-bundle`):
   - **Lean (default)**: `./gradlew fatJar` builds `-standalone.jar` without IBM MQ libraries.
   - **With IBM MQ**: `./gradlew fatJarIbmMq` builds `-standalone-ibmmq.jar` bundling `com.ibm.mq.allclient` for standalone execution.
@@ -546,6 +546,6 @@ To verify multi-partition `KafkaMessageBroker` peeking, `AdminClient` topic cata
 ```
 
 Boots `apache/kafka-native:3.8.0` via `org.testcontainers.kafka.KafkaContainer`, asserting:
-- Multi-partition detached browse (`peekDestinationMessages`) across all partitions with zero committed consumer group offsets.
-- Live topic discovery, compensating publish, and `deleteRecords` purge via `AsyncDestinationService`.
+- Multi-partition detached browse (`peek(topic, limit)`) across all partitions with zero committed consumer group offsets.
+- Live topic discovery, compensating publish, and `deleteRecords` purge via `AsyncEngine`.
 - Unmatched inbound traffic forwarded synchronously through regex bridge rules onto upstream Kafka topics.

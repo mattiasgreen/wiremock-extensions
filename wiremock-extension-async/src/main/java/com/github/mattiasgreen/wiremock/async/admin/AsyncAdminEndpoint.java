@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.tomakehurst.wiremock.admin.Router;
@@ -34,25 +32,18 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
 
     private final AsyncEngine engine;
     private final AsyncBrokerRegistry brokerRegistry;
-    private final AsyncDestinationService destinationService;
 
     public AsyncAdminEndpoint() {
-        this(AsyncEngine.getInstance(), AsyncBrokerRegistry.getInstance(), AsyncDestinationService.getInstance());
+        this(AsyncEngine.getInstance(), AsyncBrokerRegistry.getInstance());
     }
 
     public AsyncAdminEndpoint(AsyncEngine engine) {
-        this(engine, AsyncBrokerRegistry.getInstance(), AsyncDestinationService.getInstance());
+        this(engine, AsyncBrokerRegistry.getInstance());
     }
 
     public AsyncAdminEndpoint(AsyncEngine engine, AsyncBrokerRegistry brokerRegistry) {
-        this(engine, brokerRegistry, AsyncDestinationService.getInstance());
-    }
-
-    public AsyncAdminEndpoint(
-            AsyncEngine engine, AsyncBrokerRegistry brokerRegistry, AsyncDestinationService destinationService) {
         this.engine = Objects.requireNonNull(engine, "engine must not be null");
         this.brokerRegistry = Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
-        this.destinationService = Objects.requireNonNull(destinationService, "destinationService must not be null");
     }
 
     @Override
@@ -148,44 +139,15 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
             try {
                 String reqBody = serveEvent.getRequest().getBodyAsString();
                 JsonNode json = MAPPER.readTree(reqBody);
+                AsyncMessage message = parseAsyncMessage(json, "kafka", "");
 
-                String destination =
-                        json.has("destination") ? json.get("destination").asText() : "";
-                String protocol = json.has("protocol") ? json.get("protocol").asText() : "kafka";
-                String key = json.has("key") ? json.get("key").asText() : "";
-                String payload = json.has("payload") ? json.get("payload").asText() : "";
-                String correlationId =
-                        json.has("correlationId") ? json.get("correlationId").asText() : "";
-                String replyTo = json.has("replyTo") ? json.get("replyTo").asText() : "";
-
-                Map<String, String> headers = new HashMap<>();
-                if (json.has("headers") && json.get("headers").isObject()) {
-                    json.get("headers")
-                            .fields()
-                            .forEachRemaining(entry ->
-                                    headers.put(entry.getKey(), entry.getValue().asText()));
-                }
-
-                String msgId = UUID.randomUUID().toString();
-                AsyncMessage message = AsyncMessage.builder()
-                        .id(msgId)
-                        .correlationId(correlationId)
-                        .replyTo(replyTo)
-                        .destination(destination)
-                        .protocol(protocol)
-                        .key(key)
-                        .payload(payload)
-                        .headers(headers)
-                        .timestamp(Instant.now())
-                        .build();
-
-                engine.publish(destination, message);
+                engine.publish(message.destination(), message);
 
                 Map<String, Object> resp = Map.of(
                         "published", true,
-                        "id", msgId,
-                        "destination", destination,
-                        "protocol", protocol);
+                        "id", message.id(),
+                        "destination", message.destination(),
+                        "protocol", message.protocol());
 
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
@@ -315,7 +277,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         // GET /__admin/async/destinations
         router.add(RequestMethod.GET, "/async/destinations", (admin, serveEvent, pathParams) -> {
             try {
-                List<AsyncDestination> destinations = destinationService.listAllDestinations();
+                List<AsyncDestination> destinations = engine.listAllDestinations();
                 Map<String, Object> resp = Map.of("count", destinations.size(), "destinations", destinations);
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
@@ -337,7 +299,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                     try {
                         String protocol = pathParams.get("protocol");
                         String name = pathParams.get("name");
-                        List<AsyncDestinationMessage> messages = destinationService.peekMessages(protocol, name, 50);
+                        List<AsyncMessage> messages = engine.peekMessages(protocol, name, 50);
                         Map<String, Object> resp = Map.of(
                                 "protocol", protocol,
                                 "destination", name,
@@ -363,7 +325,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                     String protocol = pathParams.get("protocol");
                     String name = pathParams.get("name");
                     String id = pathParams.get("id");
-                    boolean deleted = destinationService.deleteMessage(protocol, name, id);
+                    boolean deleted = engine.deleteMessage(protocol, name, id);
                     if (deleted) {
                         return ResponseDefinitionBuilder.responseDefinition()
                                 .withStatus(204)
@@ -381,7 +343,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         router.add(RequestMethod.DELETE, "/async/destinations/{protocol}/{name}", (admin, serveEvent, pathParams) -> {
             String protocol = pathParams.get("protocol");
             String name = pathParams.get("name");
-            destinationService.purgeDestination(protocol, name);
+            engine.purgeDestination(protocol, name);
             return ResponseDefinitionBuilder.responseDefinition()
                     .withStatus(204)
                     .build();
@@ -397,42 +359,9 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                         String name = pathParams.get("name");
                         String reqBody = serveEvent.getRequest().getBodyAsString();
                         JsonNode json = MAPPER.readTree(reqBody);
+                        AsyncMessage msg = parseAsyncMessage(json, protocol, name);
 
-                        String key = json.has("key") ? json.get("key").asText() : "";
-                        String payload =
-                                json.has("payload") ? json.get("payload").asText() : "";
-                        String correlationId = json.has("correlationId")
-                                ? json.get("correlationId").asText()
-                                : "";
-                        String replyTo =
-                                json.has("replyTo") ? json.get("replyTo").asText() : "";
-
-                        Map<String, String> headers = new HashMap<>();
-                        if (json.has("headers") && json.get("headers").isObject()) {
-                            json.get("headers")
-                                    .fields()
-                                    .forEachRemaining(entry -> headers.put(
-                                            entry.getKey(), entry.getValue().asText()));
-                        }
-
-                        String id = json.has("id")
-                                ? json.get("id").asText()
-                                : UUID.randomUUID().toString();
-                        AsyncDestinationMessage msg = new AsyncDestinationMessage(
-                                id,
-                                protocol,
-                                name,
-                                key,
-                                correlationId,
-                                replyTo,
-                                Instant.now(),
-                                payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
-                                headers,
-                                payload,
-                                null,
-                                null);
-
-                        boolean published = destinationService.publishMessage(protocol, name, msg);
+                        boolean published = engine.publishMessage(protocol, name, msg);
                         if (published) {
                             return ResponseDefinitionBuilder.responseDefinition()
                                     .withStatus(201)
@@ -455,5 +384,42 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                                 .build();
                     }
                 });
+    }
+
+    private static AsyncMessage parseAsyncMessage(JsonNode json, String defaultProtocol, String defaultDestination) {
+        String id = json.hasNonNull("id")
+                ? json.get("id").asText()
+                : UUID.randomUUID().toString();
+        String destination = json.hasNonNull("destination") && !defaultDestination.isEmpty()
+                ? defaultDestination
+                : (json.hasNonNull("destination") ? json.get("destination").asText() : defaultDestination);
+        String protocol = json.hasNonNull("protocol") && defaultDestination.isEmpty()
+                ? json.get("protocol").asText()
+                : defaultProtocol;
+        String key = json.hasNonNull("key") ? json.get("key").asText() : "";
+        String payload = json.hasNonNull("payload") ? json.get("payload").asText() : "";
+        String correlationId =
+                json.hasNonNull("correlationId") ? json.get("correlationId").asText() : "";
+        String replyTo = json.hasNonNull("replyTo") ? json.get("replyTo").asText() : "";
+
+        Map<String, String> headers = new HashMap<>();
+        if (json.has("headers") && json.get("headers").isObject()) {
+            json.get("headers")
+                    .fields()
+                    .forEachRemaining(entry ->
+                            headers.put(entry.getKey(), entry.getValue().asText()));
+        }
+
+        return AsyncMessage.builder()
+                .id(id)
+                .protocol(protocol)
+                .destination(destination)
+                .key(key)
+                .correlationId(correlationId)
+                .replyTo(replyTo)
+                .payload(payload)
+                .headers(headers)
+                .timestamp(Instant.now())
+                .build();
     }
 }

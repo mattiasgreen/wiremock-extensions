@@ -1,6 +1,5 @@
 package com.github.mattiasgreen.wiremock.async.ibmmq;
 
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -39,6 +38,7 @@ final class IbmMqMessageMapper {
 
         return AsyncMessage.builder()
                 .id(msgId)
+                .protocol("ibmmq")
                 .destination(destination)
                 .correlationId(correlationId)
                 .replyTo(replyTo)
@@ -46,25 +46,6 @@ final class IbmMqMessageMapper {
                 .headers(headers)
                 .timestamp(ts)
                 .build();
-    }
-
-    static AsyncDestinationMessage toDestinationMessage(String destination, Message jmsMessage) throws JMSException {
-        AsyncMessage base = toAsyncMessage(destination, jmsMessage);
-        String payload = Objects.requireNonNullElse(base.payload(), "");
-        int sizeBytes = payload.getBytes(StandardCharsets.UTF_8).length;
-        return new AsyncDestinationMessage(
-                base.id(),
-                "ibmmq",
-                destination,
-                base.key(),
-                base.correlationId(),
-                base.replyTo(),
-                base.timestamp(),
-                sizeBytes,
-                base.headers(),
-                payload,
-                null,
-                null);
     }
 
     static TextMessage toJmsTextMessage(JMSContext context, AsyncMessage asyncMessage) throws JMSException {
@@ -91,20 +72,6 @@ final class IbmMqMessageMapper {
             }
         }
         return jmsMessage;
-    }
-
-    static TextMessage toJmsTextMessage(JMSContext context, AsyncDestinationMessage msg) throws JMSException {
-        AsyncMessage asyncMsg = AsyncMessage.builder()
-                .id(msg.id())
-                .destination(msg.destination())
-                .key(msg.key())
-                .correlationId(msg.correlationId())
-                .replyTo(msg.replyTo())
-                .payload(msg.payload())
-                .headers(msg.headers())
-                .timestamp(msg.timestamp() != null ? msg.timestamp() : Instant.now())
-                .build();
-        return toJmsTextMessage(context, asyncMsg);
     }
 
     static String normalizeQueueName(String queueName) {

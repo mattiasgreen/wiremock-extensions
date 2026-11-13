@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -22,19 +22,16 @@ class CasualDestinationProviderTest {
         assertThat(provider.getProtocol()).isEqualTo("casual");
         assertThat(provider.listDestinations()).isEmpty();
 
-        AsyncDestinationMessage msg = new AsyncDestinationMessage(
-                "msg-1",
-                "casual",
-                "billing.q",
-                null,
-                "corr-casual-10",
-                "billing.reply",
-                Instant.now(),
-                22,
-                Map.of("X-Casual-Buffer-Type", "JSON"),
-                "{\"invoiceId\":\"INV-10\"}",
-                null,
-                null);
+        AsyncMessage msg = AsyncMessage.builder()
+                .id("msg-1")
+                .protocol("casual")
+                .destination("billing.q")
+                .correlationId("corr-casual-10")
+                .replyTo("billing.reply")
+                .timestamp(Instant.now())
+                .headers(Map.of("X-Casual-Buffer-Type", "JSON"))
+                .payload("{\"invoiceId\":\"INV-10\"}")
+                .build();
 
         assertThat(provider.publishMessage("billing.q", msg)).isTrue();
 
@@ -48,7 +45,7 @@ class CasualDestinationProviderTest {
                 .orElseThrow();
         assertThat(primary.messageCount()).isEqualTo(1);
 
-        List<AsyncDestinationMessage> peeked = provider.peekMessages("billing.q", 10);
+        List<AsyncMessage> peeked = provider.peekMessages("billing.q", 10);
         assertThat(peeked).hasSize(1);
         assertThat(peeked.get(0).correlationId()).isEqualTo("corr-casual-10");
         assertThat(peeked.get(0).replyTo()).isEqualTo("billing.reply");
