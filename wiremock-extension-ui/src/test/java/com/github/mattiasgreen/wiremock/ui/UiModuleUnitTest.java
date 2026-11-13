@@ -327,6 +327,92 @@ public class UiModuleUnitTest {
     }
 
     @Test
+    @DisplayName("extractRequestSource & matchesJournalEntry: Source IP/host extraction and src:/ip:/host: filtering")
+    void testJournalSourceExtractionAndFiltering() {
+        String script =
+                """
+            async () => {
+                const { extractRequestSource, matchesJournalEntry } = await import('./modules/filter.js');
+
+                const enrichedEntry = {
+                    id: "req-enriched",
+                    sourceIp: "10.20.30.40",
+                    sourceHost: "billing-api-01.corp.internal",
+                    request: {
+                        method: "POST",
+                        url: "/api/billing",
+                        clientIp: "127.0.0.1",
+                        headers: {
+                            "X-Forwarded-For": "10.20.30.40, 10.0.0.1"
+                        }
+                    },
+                    response: { status: 200 }
+                };
+
+                const vanillaXffEntry = {
+                    id: "req-vanilla-xff",
+                    request: {
+                        method: "GET",
+                        url: "/api/health",
+                        clientIp: "127.0.0.1",
+                        headers: {
+                            "X-Forwarded-For": "203.0.113.50:8080, 10.0.0.1",
+                            "X-Real-IP": "198.51.100.2"
+                        }
+                    },
+                    response: { status: 200 }
+                };
+
+                const loopbackEntry = {
+                    id: "req-loopback",
+                    request: {
+                        method: "GET",
+                        url: "/api/local",
+                        clientIp: "::1",
+                        headers: {}
+                    },
+                    response: { status: 200 }
+                };
+
+                const enrichedSource = extractRequestSource(enrichedEntry);
+                const vanillaSource = extractRequestSource(vanillaXffEntry);
+                const loopbackSource = extractRequestSource(loopbackEntry);
+
+                return {
+                    enrichedIp: enrichedSource.ip,
+                    enrichedHost: enrichedSource.host,
+                    enrichedShort: enrichedSource.shortHost,
+                    vanillaIp: vanillaSource.ip,
+                    loopbackIp: loopbackSource.ip,
+                    loopbackHost: loopbackSource.host,
+                    matchHostPrefix: matchesJournalEntry(enrichedEntry, "host:billing-api-01"),
+                    matchIpPrefix: matchesJournalEntry(enrichedEntry, "ip:10.20.30.40"),
+                    matchSrcPrefix: matchesJournalEntry(vanillaXffEntry, "src:203.0.113.50"),
+                    matchBareHost: matchesJournalEntry(enrichedEntry, "corp.internal"),
+                    matchLoopbackLocalhost: matchesJournalEntry(loopbackEntry, "host:localhost"),
+                    missOtherHost: matchesJournalEntry(enrichedEntry, "host:checkout-web")
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("enrichedIp")).isEqualTo("10.20.30.40");
+        assertThat(result.get("enrichedHost")).isEqualTo("billing-api-01.corp.internal");
+        assertThat(result.get("enrichedShort")).isEqualTo("billing-api-01");
+        assertThat(result.get("vanillaIp")).isEqualTo("203.0.113.50");
+        assertThat(result.get("loopbackIp")).isEqualTo("::1");
+        assertThat(result.get("loopbackHost")).isEqualTo("localhost");
+        assertThat(result.get("matchHostPrefix")).isEqualTo(true);
+        assertThat(result.get("matchIpPrefix")).isEqualTo(true);
+        assertThat(result.get("matchSrcPrefix")).isEqualTo(true);
+        assertThat(result.get("matchBareHost")).isEqualTo(true);
+        assertThat(result.get("matchLoopbackLocalhost")).isEqualTo(true);
+        assertThat(result.get("missOtherHost")).isEqualTo(false);
+    }
+
+    @Test
     @DisplayName("generateCreateStubCurl: Multi-line JSON stub creation cURL command with EOF heredoc")
     void testGenerateCreateStubCurl() {
         String script =

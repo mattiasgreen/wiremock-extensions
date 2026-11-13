@@ -65,6 +65,11 @@ public class CasualServer implements AutoCloseable {
     @FunctionalInterface
     public interface ServiceHandler {
         CasualServiceCallReplyMessage handle(CasualServiceCallRequestMessage request);
+
+        default CasualServiceCallReplyMessage handle(
+                CasualServiceCallRequestMessage request, java.net.SocketAddress remoteAddress) {
+            return handle(request);
+        }
     }
 
     @FunctionalInterface
@@ -510,7 +515,8 @@ public class CasualServer implements AutoCloseable {
         private void handleServiceCall(
                 ChannelHandlerContext ctx, CasualNWMessage<CasualServiceCallRequestMessage> msg) {
             CasualServiceCallRequestMessage req = msg.getMessage();
-            CasualServiceCallReplyMessage reply = serviceHandler.handle(req);
+            CasualServiceCallReplyMessage reply =
+                    serviceHandler.handle(req, ctx.channel().remoteAddress());
             if (CasualProtocolConfig.safeXatmiFlags(req).isSet(AtmiFlags.TPNOREPLY)) {
                 // TPNOREPLY is fire-and-forget on the wire: never send a SERVICE_CALL_REPLY back.
                 return;

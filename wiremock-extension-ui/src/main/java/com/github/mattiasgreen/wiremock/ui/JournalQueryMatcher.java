@@ -36,6 +36,22 @@ public final class JournalQueryMatcher {
      * @return {@code true} if matching, or if query is null/blank
      */
     public static boolean matches(ServeEvent event, String query, String verdict) {
+        String sourceIp = event != null ? ClientSourceResolver.extractSourceIp(event.getRequest()) : "";
+        return matches(event, query, verdict, sourceIp, "");
+    }
+
+    /**
+     * Evaluates whether a {@link ServeEvent} satisfies the specified boolean query, including
+     * resolved caller source IP and hostname.
+     *
+     * @param event serve event to inspect
+     * @param query raw filter string with optional AND / OR operators
+     * @param verdict resolution verdict key
+     * @param sourceIp extracted caller source IP
+     * @param sourceHost resolved caller hostname (may be empty)
+     * @return {@code true} if matching, or if query is null/blank
+     */
+    public static boolean matches(ServeEvent event, String query, String verdict, String sourceIp, String sourceHost) {
         if (query == null || query.isBlank()) {
             return true;
         }
@@ -43,7 +59,7 @@ public final class JournalQueryMatcher {
         // Lazy deep text representation for multi-token queries
         String[] deepCache = new String[1];
 
-        return evaluateExpression(query, token -> matchesToken(event, token, verdict, deepCache));
+        return evaluateExpression(query, token -> matchesToken(event, token, verdict, sourceIp, sourceHost, deepCache));
     }
 
     /**
@@ -91,12 +107,33 @@ public final class JournalQueryMatcher {
         return false;
     }
 
-    private static boolean matchesToken(ServeEvent event, String token, String verdict, String[] deepCache) {
+    private static boolean matchesToken(
+            ServeEvent event, String token, String verdict, String sourceIp, String sourceHost, String[] deepCache) {
         if (event == null || event.getRequest() == null) {
             return false;
         }
 
-        // 1. Fast shallow check: method, url, status
+        String safeIp = sourceIp != null ? sourceIp.toLowerCase(Locale.ROOT) : "";
+        String safeHost = sourceHost != null ? sourceHost.toLowerCase(Locale.ROOT) : "";
+
+        // 0. Key-prefixed source filters: src:, src=, source:, source=, ip:, ip=, host:, host=
+        String prefixedVal = extractPrefixedValue(token, "src:", "src=", "source:", "source=");
+        if (prefixedVal != null) {
+            return !prefixedVal.isEmpty() && (safeIp.contains(prefixedVal) || safeHost.contains(prefixedVal));
+        }
+        String ipVal = extractPrefixedValue(token, "ip:", "ip=");
+        if (ipVal != null) {
+            return !ipVal.isEmpty() && safeIp.contains(ipVal);
+        }
+        String hostVal = extractPrefixedValue(token, "host:", "host=");
+        if (hostVal != null) {
+            return !hostVal.isEmpty() && safeHost.contains(hostVal);
+        }
+
+        // 1. Fast shallow check: source IP/host, method, url, status
+        if (!safeIp.isEmpty() && safeIp.contains(token)) return true;
+        if (!safeHost.isEmpty() && safeHost.contains(token)) return true;
+
         String method = event.getRequest().getMethod().getName().toLowerCase(Locale.ROOT);
         if (method.contains(token)) return true;
 
@@ -206,5 +243,14 @@ public final class JournalQueryMatcher {
             }
         }
         return sb.toString();
+    }
+
+    private static String extractPrefixedValue(String token, String... prefixes) {
+        for (String prefix : prefixes) {
+            if (token.startsWith(prefix)) {
+                return token.substring(prefix.length()).trim();
+            }
+        }
+        return null;
     }
 }

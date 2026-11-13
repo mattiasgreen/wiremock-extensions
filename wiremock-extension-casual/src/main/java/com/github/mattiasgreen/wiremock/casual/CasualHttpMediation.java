@@ -44,6 +44,15 @@ public final class CasualHttpMediation {
      * Constructs an in-memory HTTP probe request for WireMock stub matching.
      */
     public static ImmutableRequest buildProbeRequest(String baseUrl, CasualServiceCallRequestMessage req) {
+        return buildProbeRequest(baseUrl, req, null);
+    }
+
+    /**
+     * Constructs an in-memory HTTP probe request for WireMock stub matching, attaching remote client IP metadata
+     * when available.
+     */
+    public static ImmutableRequest buildProbeRequest(
+            String baseUrl, CasualServiceCallRequestMessage req, String clientIp) {
         String serviceName = req.getServiceName();
         ServiceBuffer requestBuffer = req.getServiceBuffer();
         String bufferType = (requestBuffer != null && !requestBuffer.isEmpty()) ? requestBuffer.getType() : "JSON";
@@ -68,6 +77,9 @@ public final class CasualHttpMediation {
                 .withHeader("X-Casual-Service", serviceName)
                 .withHeader("X-Casual-Buffer-Type", bufferType)
                 .withHeader("X-Casual-Execution", executionId);
+        if (clientIp != null && !clientIp.isBlank()) {
+            requestBuilder.withClientIp(clientIp).withHeader("X-Forwarded-For", clientIp);
+        }
         if (!StandardCharsets.UTF_8.equals(requestCharset)) {
             requestBuilder.withHeader("X-Casual-Charset", requestCharset.name());
         }

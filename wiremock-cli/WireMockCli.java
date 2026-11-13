@@ -261,6 +261,7 @@ public final class WireMockCli {
         String filterExpr = extractFilterExpression(args, "tail", "traffic", "journal");
 
         Set<String> seenIds = new HashSet<>();
+        boolean useUiEndpoint = true;
 
         if (follow) {
             out.println(fmt.bold("Streaming traffic from: ") + serverUrl + fmt.dim(" (Ctrl+C to stop)"));
@@ -274,7 +275,13 @@ public final class WireMockCli {
         }
 
         do {
-            HttpResponse<String> resp = sendGet(client, serverUrl, "/__admin/requests?limit=" + limit);
+            String endpoint =
+                    useUiEndpoint ? "/__admin/ui/api/requests?limit=" + limit : "/__admin/requests?limit=" + limit;
+            HttpResponse<String> resp = sendGet(client, serverUrl, endpoint);
+            if (useUiEndpoint && resp.statusCode() == 404) {
+                useUiEndpoint = false;
+                resp = sendGet(client, serverUrl, "/__admin/requests?limit=" + limit);
+            }
             if (resp.statusCode() != 200) {
                 err.println(fmt.red("Failed to fetch journal: HTTP " + resp.statusCode()));
                 if (!follow) return 1;
@@ -351,9 +358,17 @@ public final class WireMockCli {
 
         String matchBadge = wasMatched ? "" : "  " + fmt.red(fmt.bold("⚠️ UNMATCHED"));
 
+        String[] src = extractRequestSource(entry);
+        String srcIp = src[0];
+        String srcHost = src[1];
+        String shortHost = !srcHost.isEmpty() ? srcHost.split("\\.", 2)[0] : "";
+        String sourceLabel = !shortHost.isEmpty() ? shortHost : (!srcIp.isEmpty() ? srcIp : "-");
+        String sourceCol = String.format("%-18s", truncate(sourceLabel, 18));
+
         out.printf(
-                "[%s] %s %-6s %6s  %-35s%s%n",
+                "[%s] %s %s %-6s %6s  %-35s%s%n",
                 fmt.dim(timestamp),
+                fmt.cyan(sourceCol),
                 fmt.methodBadge(method),
                 fmt.statusBadge(status),
                 fmt.dim(latency),
@@ -363,6 +378,88 @@ public final class WireMockCli {
         if (!wasMatched && showDiff) {
             out.println(fmt.dim("       └─ Nearest stub match candidate / diff available in Web UI"));
         }
+    }
+
+    static String[] extractRequestSource(Map<String, Object> entry) {
+        if (entry == null) {
+            return new String[] {"", ""};
+        }
+        String srcIp = entry.get("sourceIp") != null
+                ? normalizeSourceIp(entry.get("sourceIp").toString())
+                : "";
+        String srcHost = entry.get("sourceHost") != null
+                ? entry.get("sourceHost").toString().trim()
+                : "";
+
+        Object reqObj = entry.get("request");
+        if (reqObj instanceof Map<?, ?> reqMap) {
+            Object headersObj = reqMap.get("headers");
+            if (srcIp.isEmpty() && headersObj instanceof Map<?, ?> headersMap) {
+                String xff = extractHeaderFirstValue(headersMap, "x-forwarded-for");
+                if (!xff.isEmpty()) {
+                    srcIp = normalizeSourceIp(xff.split(",", 2)[0]);
+                }
+                if (srcIp.isEmpty()) {
+                    srcIp = normalizeSourceIp(extractHeaderFirstValue(headersMap, "x-real-ip"));
+                }
+            }
+            if (srcIp.isEmpty() && reqMap.get("clientIp") != null) {
+                srcIp = normalizeSourceIp(reqMap.get("clientIp").toString());
+            }
+        }
+
+        if (srcHost.isEmpty() && isLoopbackIp(srcIp)) {
+            srcHost = "localhost";
+        }
+        return new String[] {srcIp, srcHost};
+    }
+
+    private static String extractHeaderFirstValue(Map<?, ?> headers, String targetLower) {
+        for (Map.Entry<?, ?> e : headers.entrySet()) {
+            if (e.getKey() != null
+                    && e.getKey().toString().toLowerCase(Locale.ROOT).equals(targetLower)) {
+                Object val = e.getValue();
+                if (val instanceof List<?> list && !list.isEmpty() && list.get(0) != null) {
+                    return list.get(0).toString();
+                }
+                return val != null ? val.toString() : "";
+            }
+        }
+        return "";
+    }
+
+    private static String normalizeSourceIp(String raw) {
+        if (raw == null) return "";
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty() || "unknown".equalsIgnoreCase(trimmed)) return "";
+        if (trimmed.startsWith("[")) {
+            int closeIdx = trimmed.indexOf(']');
+            if (closeIdx > 1) {
+                trimmed = trimmed.substring(1, closeIdx);
+            } else {
+                return "";
+            }
+        } else if (trimmed.indexOf('.') >= 0) {
+            int firstColon = trimmed.indexOf(':');
+            if (firstColon > 0 && trimmed.indexOf(':', firstColon + 1) < 0) {
+                trimmed = trimmed.substring(0, firstColon);
+            }
+        }
+        int zoneIdx = trimmed.indexOf('%');
+        if (zoneIdx > 0) {
+            trimmed = trimmed.substring(0, zoneIdx);
+        }
+        if ("0:0:0:0:0:0:0:1".equals(trimmed)) {
+            trimmed = "::1";
+        }
+        return trimmed;
+    }
+
+    private static boolean isLoopbackIp(String ip) {
+        return "127.0.0.1".equals(ip)
+                || "::1".equals(ip)
+                || "0:0:0:0:0:0:0:1".equals(ip)
+                || "localhost".equalsIgnoreCase(ip);
     }
 
     // =========================================================================
@@ -546,17 +643,24 @@ public final class WireMockCli {
             String status =
                     res != null && res.get("status") != null ? res.get("status").toString() : "200";
 
-            return evaluateExpression(query, method, url, "", status, false);
+            String[] src = extractRequestSource(reqEntry);
+            String sourceText = (src[0] + " " + src[1]).trim();
+            return evaluateExpression(query, method, url, "", status, false, sourceText);
         }
 
         static boolean evaluateExpression(
                 String expr, String method, String url, String name, String status, boolean isDisabled) {
+            return evaluateExpression(expr, method, url, name, status, isDisabled, "");
+        }
+
+        static boolean evaluateExpression(
+                String expr, String method, String url, String name, String status, boolean isDisabled, String source) {
             String clean = expr.trim();
             // Handle OR expressions
             String[] orParts = clean.split("(?i)\\s+(or|\\|\\|)\\s+");
             if (orParts.length > 1) {
                 for (String part : orParts) {
-                    if (evaluateExpression(part, method, url, name, status, isDisabled)) {
+                    if (evaluateExpression(part, method, url, name, status, isDisabled, source)) {
                         return true;
                     }
                 }
@@ -566,7 +670,7 @@ public final class WireMockCli {
             // Handle AND expressions (explicit 'and', '&&', or space-delimited terms)
             String[] andParts = clean.split("(?i)\\s+(and|&&)\\s+");
             for (String part : andParts) {
-                if (!evaluateSingleTerm(part.trim(), method, url, name, status, isDisabled)) {
+                if (!evaluateSingleTerm(part.trim(), method, url, name, status, isDisabled, source)) {
                     return false;
                 }
             }
@@ -574,18 +678,18 @@ public final class WireMockCli {
         }
 
         private static boolean evaluateSingleTerm(
-                String term, String method, String url, String name, String status, boolean isDisabled) {
+                String term, String method, String url, String name, String status, boolean isDisabled, String source) {
             if (term.isEmpty()) return true;
 
             // Handle NOT
             if (term.toLowerCase(Locale.ROOT).startsWith("not ")) {
-                return !evaluateSingleTerm(term.substring(4).trim(), method, url, name, status, isDisabled);
+                return !evaluateSingleTerm(term.substring(4).trim(), method, url, name, status, isDisabled, source);
             }
             if (term.startsWith("!")) {
-                return !evaluateSingleTerm(term.substring(1).trim(), method, url, name, status, isDisabled);
+                return !evaluateSingleTerm(term.substring(1).trim(), method, url, name, status, isDisabled, source);
             }
 
-            // Key-value matcher (method=GET, status=200, status=disabled, path=/api)
+            // Key-value matcher (method=GET, status=200, status=disabled, path=/api, src=10.0.0.1)
             if (term.contains("=") || term.contains(":")) {
                 String[] kv = term.split("[=:]", 2);
                 String key = kv[0].trim().toLowerCase(Locale.ROOT);
@@ -600,6 +704,8 @@ public final class WireMockCli {
                     }
                     case "path", "url" -> url.toLowerCase(Locale.ROOT).contains(val.toLowerCase(Locale.ROOT));
                     case "name" -> name.toLowerCase(Locale.ROOT).contains(val.toLowerCase(Locale.ROOT));
+                    case "src", "source", "ip", "host", "clientip" -> !val.isEmpty()
+                            && source.toLowerCase(Locale.ROOT).contains(val.toLowerCase(Locale.ROOT));
                     default -> false;
                 };
             }
@@ -630,11 +736,12 @@ public final class WireMockCli {
                 return status.equals(term);
             }
 
-            // Default: case-insensitive substring search on url, name, or method
+            // Default: case-insensitive substring search on url, name, method, or source
             String lower = term.toLowerCase(Locale.ROOT);
             return url.toLowerCase(Locale.ROOT).contains(lower)
                     || name.toLowerCase(Locale.ROOT).contains(lower)
-                    || method.toLowerCase(Locale.ROOT).contains(lower);
+                    || method.toLowerCase(Locale.ROOT).contains(lower)
+                    || source.toLowerCase(Locale.ROOT).contains(lower);
         }
     }
 

@@ -146,33 +146,39 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(detailRow.isVisible()).isTrue();
 
         page.locator("#journal-search").fill("users");
-        page.locator("#journal-search").press("Enter");
-        page.waitForTimeout(100);
+        page.waitForResponse(r -> r.url().contains("/__admin/ui/api/requests"), () -> page.locator("#journal-search")
+                .press("Enter"));
+        page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length >= 1");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         page.locator("#journal-search").fill("nonexistent-endpoint-xyz");
-        page.locator("#journal-search").press("Enter");
-        page.waitForTimeout(100);
+        page.waitForResponse(r -> r.url().contains("/__admin/ui/api/requests"), () -> page.locator("#journal-search")
+                .press("Enter"));
+        page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 0");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(0);
 
         page.locator("#journal-search").fill("users AND 200");
-        page.locator("#journal-search").press("Enter");
-        page.waitForTimeout(100);
+        page.waitForResponse(r -> r.url().contains("/__admin/ui/api/requests"), () -> page.locator("#journal-search")
+                .press("Enter"));
+        page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length >= 1");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         page.locator("#journal-search").fill("users AND 500");
-        page.locator("#journal-search").press("Enter");
-        page.waitForTimeout(100);
+        page.waitForResponse(r -> r.url().contains("/__admin/ui/api/requests"), () -> page.locator("#journal-search")
+                .press("Enter"));
+        page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 0");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isEqualTo(0);
 
         page.locator("#journal-search").fill("users OR nonexistent");
-        page.locator("#journal-search").press("Enter");
-        page.waitForTimeout(100);
+        page.waitForResponse(r -> r.url().contains("/__admin/ui/api/requests"), () -> page.locator("#journal-search")
+                .press("Enter"));
+        page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length >= 1");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         page.locator("#journal-search").fill("");
-        page.locator("#journal-search").press("Enter");
-        page.waitForTimeout(100);
+        page.waitForResponse(r -> r.url().contains("/__admin/ui/api/requests"), () -> page.locator("#journal-search")
+                .press("Enter"));
+        page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length >= 1");
         assertThat(page.locator("#journal-list tr.journal-row").count()).isGreaterThanOrEqualTo(1);
 
         assertThat(pageErrors).isEmpty();
@@ -965,5 +971,67 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#btn-tester-hist-all").getAttribute("class")).contains("active");
 
         assertThat(pageErrors).isEmpty();
+    }
+
+    @Test
+    @DisplayName(
+            "Request Journal displays caller Source column, expanded detail section, and supports click & query filtering")
+    void testJournalSourceColumnDetailAndFiltering() throws Exception {
+        wireMockServer.stubFor(get("/api/v1/source-alpha").willReturn(ok("alpha")));
+        wireMockServer.stubFor(get("/api/v1/source-beta").willReturn(ok("beta")));
+
+        HttpClient client = HttpClient.newHttpClient();
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/source-alpha"))
+                        .header("X-Forwarded-For", "198.51.100.42, 10.0.0.1")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/source-beta"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+        page.waitForSelector("#tab-journal.active");
+        page.waitForSelector("[data-testid='journal-source-cell']");
+
+        Locator sourceCells = page.locator("[data-testid='journal-source-cell']");
+        assertThat(sourceCells.count()).isGreaterThanOrEqualTo(2);
+
+        Locator alphaRow =
+                page.locator("tr.journal-row:has-text('/api/v1/source-alpha')").first();
+        Locator betaRow =
+                page.locator("tr.journal-row:has-text('/api/v1/source-beta')").first();
+        assertThat(alphaRow.locator("[data-testid='journal-source-cell']").textContent())
+                .contains("198.51.100.42");
+        assertThat(betaRow.locator("[data-testid='journal-source-cell']").textContent())
+                .contains("localhost");
+
+        // Expand row and inspect Source Caller detail section
+        alphaRow.click();
+        Locator sourceDetail =
+                page.locator("[data-testid='journal-source-detail']").first();
+        sourceDetail.waitFor();
+        assertThat(sourceDetail.textContent()).contains("198.51.100.42");
+
+        // 1-click filter via Source chip activates context banner and filters journal rows
+        alphaRow.locator(".btn-journal-filter-source").click();
+        page.waitForSelector("#journal-context-banner:not(.hidden)");
+        assertThat(page.locator("#journal-search").inputValue()).contains("198.51.100.42");
+        page.waitForFunction("() => document.querySelectorAll('tr.journal-row').length === 1");
+        assertThat(page.locator("tr.journal-row").first().textContent()).contains("/api/v1/source-alpha");
+
+        // Clear source filter and search via host:localhost
+        page.locator("#btn-journal-clear-stub-filter").click();
+        page.locator("#journal-search").fill("host:localhost");
+        page.waitForFunction(
+                "() => Array.from(document.querySelectorAll('tr.journal-row')).some(r => r.textContent.includes('/api/v1/source-beta'))");
+        assertThat(page.locator("tr.journal-row:has-text('/api/v1/source-alpha')")
+                        .count())
+                .isZero();
     }
 }

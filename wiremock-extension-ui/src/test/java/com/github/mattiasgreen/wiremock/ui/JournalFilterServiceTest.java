@@ -180,4 +180,95 @@ class JournalFilterServiceTest {
         JsonNode isoRes = queryJournal("since=" + t0.toString() + "&until=" + t2.toString());
         assertThat(isoRes.path("meta").path("filtered").asInt()).isEqualTo(2);
     }
+
+    @Test
+    @DisplayName("Enriches sourceIp/sourceHost and filters by ip:, host:, src:, and boolean operators")
+    void shouldEnrichAndFilterBySourceIpAndHostname() throws Exception {
+        ClientSourceResolver mockResolver = new ClientSourceResolver(
+                ip -> switch (ip) {
+                    case "10.20.30.40" -> "billing-api-01.corp.internal";
+                    case "10.20.30.41" -> "checkout-web-02.corp.internal";
+                    default -> "";
+                },
+                200,
+                java.time.Duration.ofMinutes(5));
+        WireMockServer customServer = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(new UiAdminApiEndpoint(new JournalFilterService(mockResolver))));
+        customServer.start();
+        try {
+            customServer.stubFor(get("/api/ping").willReturn(ok("pong")));
+            String base = customServer.baseUrl();
+
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(base + "/api/ping?client=billing"))
+                            .header("X-Forwarded-For", "10.20.30.40, 10.0.0.1")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.discarding());
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(base + "/api/ping?client=checkout"))
+                            .header("X-Forwarded-For", "10.20.30.41")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.discarding());
+
+            // Verify enrichment fields on unfiltered request list
+            HttpResponse<String> allResp = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(base + "/__admin/ui/api/requests"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(allResp.statusCode()).isEqualTo(200);
+            JsonNode allJson = objectMapper.readTree(allResp.body());
+            assertThat(allJson.path("requests")).hasSize(2);
+            assertThat(allJson.path("requests").get(0).path("sourceIp").asText())
+                    .isEqualTo("10.20.30.41");
+            assertThat(allJson.path("requests").get(0).path("sourceHost").asText())
+                    .isEqualTo("checkout-web-02.corp.internal");
+            assertThat(allJson.path("requests").get(1).path("sourceIp").asText())
+                    .isEqualTo("10.20.30.40");
+            assertThat(allJson.path("requests").get(1).path("sourceHost").asText())
+                    .isEqualTo("billing-api-01.corp.internal");
+
+            // Filter by host:, ip:, src:, and boolean AND/OR
+            JsonNode hostRes = queryCustomServer(customServer, "q=" + encode("host:billing-api-01"));
+            assertThat(hostRes.path("meta").path("filtered").asInt()).isEqualTo(1);
+            assertThat(hostRes.path("requests").get(0).path("sourceIp").asText())
+                    .isEqualTo("10.20.30.40");
+
+            JsonNode ipRes = queryCustomServer(customServer, "q=" + encode("ip:10.20.30.41"));
+            assertThat(ipRes.path("meta").path("filtered").asInt()).isEqualTo(1);
+            assertThat(ipRes.path("requests").get(0).path("sourceHost").asText())
+                    .isEqualTo("checkout-web-02.corp.internal");
+
+            JsonNode srcOrRes =
+                    queryCustomServer(customServer, "q=" + encode("src:10.20.30.40 OR src:checkout-web-02"));
+            assertThat(srcOrRes.path("meta").path("filtered").asInt()).isEqualTo(2);
+
+            JsonNode andMissRes =
+                    queryCustomServer(customServer, "q=" + encode("host:billing-api-01 AND ip:10.20.30.41"));
+            assertThat(andMissRes.path("meta").path("filtered").asInt()).isZero();
+        } finally {
+            customServer.stop();
+        }
+    }
+
+    private JsonNode queryCustomServer(WireMockServer target, String queryParams) throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(target.baseUrl() + "/__admin/ui/api/requests?" + queryParams))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readTree(response.body());
+    }
+
+    private static String encode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
+    }
 }

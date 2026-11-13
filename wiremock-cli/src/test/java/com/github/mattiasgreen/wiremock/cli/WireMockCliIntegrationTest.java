@@ -192,4 +192,39 @@ class WireMockCliIntegrationTest {
         assertThat(errOutput).contains("WIREMOCK_URL");
         assertThat(errOutput).doesNotContain("Unknown error");
     }
+
+    @Test
+    @DisplayName("wm tail: displays caller source column and filters by ip: and host:")
+    void shouldDisplayAndFilterCallerSourceInTail() throws Exception {
+        HttpClient client = HttpClient.newHttpClient();
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/cases?src=forwarded"))
+                        .header("X-Forwarded-For", "10.24.8.15, 10.0.0.1")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/cases?src=local"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        int allCode = WireMockCli.run(
+                new String[] {"tail", "-n", "10", "-s", wireMockServer.baseUrl(), "--no-color"}, out, err);
+        assertThat(allCode).isEqualTo(0);
+        String allOutput = outCapture.toString(StandardCharsets.UTF_8);
+        assertThat(allOutput).contains("10.24.8.15", "localhost");
+
+        outCapture.reset();
+        int filteredCode = WireMockCli.run(
+                new String[] {"tail", "-n", "10", "-q", "ip:10.24.8.15", "-s", wireMockServer.baseUrl(), "--no-color"},
+                out,
+                err);
+        assertThat(filteredCode).isEqualTo(0);
+        String filteredOutput = outCapture.toString(StandardCharsets.UTF_8);
+        assertThat(filteredOutput).contains("10.24.8.15").contains("src=forwarded");
+        assertThat(filteredOutput).doesNotContain("src=local");
+    }
 }

@@ -2657,4 +2657,18 @@ class CasualWireMockGatewayTest {
             wireMockA.stop();
         }
     }
+
+    @Test
+    @DisplayName("Should forward remote TCP peer IP as X-Forwarded-For to WireMock Journal")
+    void shouldForwardRemoteClientIpHeaderToWireMockJournal() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/ipCheckService"))
+                .willReturn(aResponse().withStatus(200).withBody("{\"ok\":true}")));
+
+        CasualServiceCallReplyMessage reply = client.tpcall("ipCheckService", "{\"ping\":1}");
+
+        assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+        assertThat(wireMockServer.getAllServeEvents()).isNotEmpty().anySatisfy(ev -> assertThat(
+                        ev.getRequest().getHeader("X-Forwarded-For"))
+                .isEqualTo("127.0.0.1"));
+    }
 }
