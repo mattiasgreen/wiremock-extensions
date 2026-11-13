@@ -5,6 +5,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.15.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.14.0...v1.15.0) (2026-11-13)
+
+
+### Features
+
+* **async,casual,ui:** add Kafka Testcontainers suite and deepen architecture seams ([#108](https://github.com/mattiasgreen/wiremock-extensions/issues/108)) ([75e725a](https://github.com/mattiasgreen/wiremock-extensions/commit/75e725a69f3ea334af50f2c0b73ce5d02df4b3bb))
+* **async,casual:** in-process AMQP 1.0 server, Kafka consumer coordinator, and Casual queue gateway ([#98](https://github.com/mattiasgreen/wiremock-extensions/issues/98)) ([3e1c8d4](https://github.com/mattiasgreen/wiremock-extensions/commit/3e1c8d4ab5052d81d8aa9becb1c804946d544748))
+* **async,docs:** clarify async harvested endpoint and expand official docs and gh pages ([#102](https://github.com/mattiasgreen/wiremock-extensions/issues/102)) ([d719a40](https://github.com/mattiasgreen/wiremock-extensions/commit/d719a40845d3dbdcbd6d6320d9d1e47e62c8363a))
+* **async,ui:** add optional IBM MQ support with two-task fat-JAR packaging and Testcontainers suite ([#107](https://github.com/mattiasgreen/wiremock-extensions/issues/107)) ([1994cf0](https://github.com/mattiasgreen/wiremock-extensions/commit/1994cf0370240263cd2b26418c2ad1e57ddbe066))
+* **async,ui:** cross-protocol async destination explorer and broker registry ([#106](https://github.com/mattiasgreen/wiremock-extensions/issues/106)) ([c477cd0](https://github.com/mattiasgreen/wiremock-extensions/commit/c477cd044a307a06a550e8ac05d16d03fe8360a6))
+* **async:** implement asynchronous messaging and queue mocking extension (Beta) ([#95](https://github.com/mattiasgreen/wiremock-extensions/issues/95)) ([e5a6c61](https://github.com/mattiasgreen/wiremock-extensions/commit/e5a6c61c168adc1d79ee6a5992fe8c28eea73ef6))
+* **journal:** add adaptive zstandard journal compression extension (beta) ([#83](https://github.com/mattiasgreen/wiremock-extensions/issues/83)) ([225f38c](https://github.com/mattiasgreen/wiremock-extensions/commit/225f38cafa4e3010685c7ac12d16751748a88954))
+* **logging:** add runtime Logback log level Admin API and LOG_LEVEL env support ([#109](https://github.com/mattiasgreen/wiremock-extensions/issues/109)) ([d306cca](https://github.com/mattiasgreen/wiremock-extensions/commit/d306cca9a5aad1c2c70b998d44cc21668d6b1880))
+* **synergy:** align async messaging, otel, zstd journal, and ui console ([#97](https://github.com/mattiasgreen/wiremock-extensions/issues/97)) ([9121fc9](https://github.com/mattiasgreen/wiremock-extensions/commit/9121fc9e0851c76da8c3250b344b06a04352cb9e))
+* **ui,async:** add protocol column and refine SUT operation semantics in journal ([#103](https://github.com/mattiasgreen/wiremock-extensions/issues/103)) ([a44ff97](https://github.com/mattiasgreen/wiremock-extensions/commit/a44ff97bf0842e68928f5425fa33c35e1ccaaf7b))
+* **ui,async:** add unified multi-protocol tester workbench with protocol picker ([#104](https://github.com/mattiasgreen/wiremock-extensions/issues/104)) ([d685e92](https://github.com/mattiasgreen/wiremock-extensions/commit/d685e920a152749d1a2e36e0cd667f2fbc324191))
+* **ui,casual,cli:** add caller source IP and reverse-DNS hostname to request journal ([#112](https://github.com/mattiasgreen/wiremock-extensions/issues/112)) ([6c38068](https://github.com/mattiasgreen/wiremock-extensions/commit/6c38068a2bda07d0297ab76bf2fd98aec678753e))
+* **ui:** add async messaging showcase to in-browser demo mode ([#101](https://github.com/mattiasgreen/wiremock-extensions/issues/101)) ([4e326b5](https://github.com/mattiasgreen/wiremock-extensions/commit/4e326b587a70aafd0465559aec6a783419679905))
+* **ui:** in-line nested payload editor, surgical cascade, and viewport hardening ([#84](https://github.com/mattiasgreen/wiremock-extensions/issues/84)) ([a355e1f](https://github.com/mattiasgreen/wiremock-extensions/commit/a355e1fec1df9054beb1fb98f3b4d76e0e883615))
+* **ui:** update version and git hash in UI assets during build ([#80](https://github.com/mattiasgreen/wiremock-extensions/issues/80)) ([b8184c7](https://github.com/mattiasgreen/wiremock-extensions/commit/b8184c7d9a692eca7610eb57621b3040d6155e9e))
+
+
+### Bug Fixes
+
+* **bundle:** enable file-backed working directory mappings in StandaloneDevServer ([#82](https://github.com/mattiasgreen/wiremock-extensions/issues/82)) ([f49f67e](https://github.com/mattiasgreen/wiremock-extensions/commit/f49f67e39294489a9f08cb86af5328ad02e1fc7c))
+* **casual:** upgrade casual-java to 3.7.3 and fix proxy loops, TPNOREPLY, and event-loop deadlock ([#111](https://github.com/mattiasgreen/wiremock-extensions/issues/111)) ([48f8af2](https://github.com/mattiasgreen/wiremock-extensions/commit/48f8af2de3fed51fd41208e55318431a8108ce93))
+
 ## [1.14.0](https://github.com/mattiasgreen/wiremock-extensions/compare/v1.13.0...v1.14.0) (2026-11-03)
 
 
