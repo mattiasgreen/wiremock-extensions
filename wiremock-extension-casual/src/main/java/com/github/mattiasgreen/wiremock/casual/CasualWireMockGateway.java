@@ -17,12 +17,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.laz.casual.api.flags.AtmiFlags;
 import se.laz.casual.api.flags.ErrorState;
-import se.laz.casual.config.ConfigurationOptions;
-import se.laz.casual.config.ConfigurationService;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.messages.domain.TransactionType;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
+import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryRequestMessage;
 import se.laz.casual.network.protocol.messages.domain.Service;
 import se.laz.casual.network.protocol.messages.queue.CasualDequeueReplyMessage;
 import se.laz.casual.network.protocol.messages.queue.CasualDequeueRequestMessage;
@@ -49,17 +49,19 @@ public class CasualWireMockGateway
     private static final Logger LOG = LoggerFactory.getLogger(CasualWireMockGateway.class);
 
     static {
-        ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_OUTBOUND_UNMANAGED, true);
-        ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_UNMANAGED, true);
+        CasualProtocolConfig.ensureInitialized();
     }
 
     private final int port;
     private final CasualStorePort storePort;
     private final int upstreamTimeoutSeconds;
+    private final int workerThreads;
     private final UUID domainId;
     private final String domainName;
 
     private final ConcurrentHashMap<String, CasualClient> upstreamClients = new ConcurrentHashMap<>();
+    private final Set<UUID> inFlightDiscoveryExecutions = ConcurrentHashMap.newKeySet();
+    private final Set<String> inFlightProxyCalls = ConcurrentHashMap.newKeySet();
     private final CasualTransactionCoordinator transactionCoordinator = new CasualTransactionCoordinator();
     private final CasualQueueStore queueStore = new CasualQueueStore();
 
@@ -83,9 +85,14 @@ public class CasualWireMockGateway
     }
 
     public CasualWireMockGateway(int port, CasualStorePort storePort, int upstreamTimeoutSeconds) {
+        this(port, storePort, upstreamTimeoutSeconds, 0);
+    }
+
+    public CasualWireMockGateway(int port, CasualStorePort storePort, int upstreamTimeoutSeconds, int workerThreads) {
         this.port = port;
         this.storePort = storePort != null ? storePort : new WireMockStoreAdapter(null, null, "http://localhost:8080");
         this.upstreamTimeoutSeconds = upstreamTimeoutSeconds > 0 ? upstreamTimeoutSeconds : resolveDefaultTimeout();
+        this.workerThreads = Math.max(0, workerThreads);
         this.domainId = UUID.randomUUID();
         this.domainName = "wiremock-casual-domain";
     }
@@ -104,6 +111,7 @@ public class CasualWireMockGateway
         private WireMockServer wireMockServer;
         private CasualStorePort storePort;
         private int upstreamTimeoutSeconds = 0;
+        private int workerThreads = 0;
 
         public Builder port(int port) {
             this.port = port;
@@ -133,12 +141,17 @@ public class CasualWireMockGateway
             return this;
         }
 
+        public Builder workerThreads(int workerThreads) {
+            this.workerThreads = Math.max(0, workerThreads);
+            return this;
+        }
+
         public CasualWireMockGateway build() {
             CasualStorePort resolvedStore = storePort;
             if (resolvedStore == null) {
                 resolvedStore = new WireMockStoreAdapter(wireMockServer, null, wireMockBaseUrl);
             }
-            return new CasualWireMockGateway(port, resolvedStore, upstreamTimeoutSeconds);
+            return new CasualWireMockGateway(port, resolvedStore, upstreamTimeoutSeconds, workerThreads);
         }
     }
 
@@ -147,11 +160,22 @@ public class CasualWireMockGateway
                 .port(port)
                 .domainId(domainId)
                 .domainName(domainName)
-                .discoveryHandler(this::handleDiscovery)
+                .discoveryHandler(new CasualServer.DiscoveryHandler() {
+                    @Override
+                    public List<Service> discover(List<String> serviceNames) {
+                        return handleDiscovery(serviceNames);
+                    }
+
+                    @Override
+                    public List<Service> discover(CasualDomainDiscoveryRequestMessage request) {
+                        return handleDiscovery(request);
+                    }
+                })
                 .serviceHandler(this::handleServiceCall)
                 .transactionHandler(this)
                 .queueHandler(this)
                 .queueDiscoveryHandler((names, ver) -> queueStore.getDiscoveredQueues(names, ver))
+                .workerThreads(workerThreads)
                 .build();
         server.start();
         LOG.info("CasualWireMockGateway listening on TCP port {}", server.getPort());
@@ -209,11 +233,18 @@ public class CasualWireMockGateway
             // Branch A: Matched a Casual Proxy Stub (targetBaseUrl = "casual://host:port")
             if (isCasualProxyStub(stub)) {
                 String targetUrl = extractCasualTargetUrl(stub);
-                LOG.debug(
-                        "[CASUAL-GATEWAY-PROXY] Service [{}] matched proxy stub [{}] -> pure TCP forwarding to {}",
-                        serviceName,
-                        stub.getId(),
-                        targetUrl);
+                if (LOG.isDebugEnabled()) {
+                    boolean transactional =
+                            !isNoReply(req) && !isNoTran(req) && transactionCoordinator.isTransactional(req.getXid());
+                    LOG.debug(
+                            "[CASUAL-GATEWAY-PROXY] Service [{}] matched proxy stub [{}] -> pure TCP forwarding to {} (flags={}, transactional={}, timeoutNs={})",
+                            sanitizeLog(serviceName),
+                            stub.getId(),
+                            sanitizeLog(targetUrl),
+                            CasualProtocolConfig.safeXatmiFlags(req),
+                            transactional,
+                            req.getTimeout());
+                }
                 return executePureCasualProxy(req, stub, wiremockRequest, targetUrl);
             }
 
@@ -221,8 +252,10 @@ public class CasualWireMockGateway
             LOG.debug("[CASUAL-GATEWAY-MOCK] Service [{}] matched offline mock stub [{}]", serviceName, stub.getId());
             CasualHttpMediation.ExecutionResult result =
                     CasualHttpMediation.translateOfflineStub(req, stub, wiremockRequest, storePort);
-            transactionCoordinator.recordLocalCall(
-                    req.getXid(), result.prepareVote(), result.commitVote(), result.rollbackVote());
+            if (!isNoReply(req) && !isNoTran(req)) {
+                transactionCoordinator.recordLocalCall(
+                        req.getXid(), result.prepareVote(), result.commitVote(), result.rollbackVote());
+            }
             storePort.recordServeEvent(result.serveEvent());
             return result.reply();
         }
@@ -253,11 +286,22 @@ public class CasualWireMockGateway
 
     private CasualServiceCallReplyMessage executePureCasualProxy(
             CasualServiceCallRequestMessage req, StubMapping stub, ImmutableRequest wiremockRequest, String targetUrl) {
+        String serviceName = req.getServiceName() != null ? req.getServiceName() : "";
+        String cycleKey = (req.getExecution() != null ? req.getExecution().toString() : "no-exec") + ":" + serviceName;
+        if (!inFlightProxyCalls.add(cycleKey)) {
+            LOG.warn(
+                    "[CASUAL-GATEWAY-LOOP] Detected proxy routing cycle for service [{}] (execution={}) -> failing fast with TPENOENT",
+                    sanitizeLog(serviceName),
+                    req.getExecution());
+            ServeEvent loopEvent = CasualHttpMediation.buildUnmatchedServeEvent(wiremockRequest, ErrorState.TPENOENT);
+            storePort.recordServeEvent(loopEvent);
+            return CasualHttpMediation.buildErrorReply(req, ErrorState.TPENOENT);
+        }
         try {
             URI uri = URI.create(targetUrl);
             CasualClient client = getOrCreateUpstreamClient(uri.getHost(), uri.getPort());
 
-            if (transactionCoordinator.isTransactional(req.getXid())) {
+            if (!isNoReply(req) && !isNoTran(req) && transactionCoordinator.isTransactional(req.getXid())) {
                 transactionCoordinator.enlistUpstreamClient(req.getXid(), client);
             }
 
@@ -271,86 +315,157 @@ public class CasualWireMockGateway
         } catch (Exception e) {
             LOG.error(
                     "[CASUAL-GATEWAY-UPSTREAM-FAIL] Failed to proxy Casual call [{}] to {}: {}",
-                    req.getServiceName(),
-                    targetUrl,
-                    e.getMessage(),
+                    sanitizeLog(serviceName),
+                    sanitizeLog(targetUrl),
+                    sanitizeLog(e.getMessage()),
                     e);
             return CasualHttpMediation.buildErrorReply(req, ErrorState.TPESVCERR);
+        } finally {
+            inFlightProxyCalls.remove(cycleKey);
         }
     }
 
     private List<Service> handleDiscovery(List<String> requestedNames) {
-        Map<String, Service> aggregated = new LinkedHashMap<>();
+        return discoverServices(null, null, requestedNames);
+    }
 
-        Set<String> upstreamTargets = new LinkedHashSet<>();
-        Set<String> localStubNames = new LinkedHashSet<>();
-
-        for (StubMapping stub : storePort.getActiveStubMappings()) {
-            if (isCasualProxyStub(stub)) {
-                String target = extractCasualTargetUrl(stub);
-                if (target != null && target.startsWith("casual://")) {
-                    upstreamTargets.add(target);
-                }
-            } else {
-                extractLocalStubServiceName(stub).ifPresent(localStubNames::add);
-            }
+    private List<Service> handleDiscovery(CasualDomainDiscoveryRequestMessage req) {
+        if (req == null) {
+            return Collections.emptyList();
         }
+        return discoverServices(req.getExecution(), req.getDomainId(), req.getServiceNames());
+    }
 
-        for (String targetUrl : upstreamTargets) {
-            try {
-                URI uri = URI.create(targetUrl);
-                CasualClient client = getOrCreateUpstreamClient(uri.getHost(), uri.getPort());
-                List<String> namesToQuery = requestedNames != null ? requestedNames : Collections.emptyList();
-                CasualDomainDiscoveryReplyMessage upstreamReply = client.discover(namesToQuery);
-                if (upstreamReply != null && upstreamReply.getServices() != null) {
-                    for (Service s : upstreamReply.getServices()) {
-                        aggregated.put(s.getName(), s);
+    private List<Service> discoverServices(UUID execution, UUID requesterDomainId, List<String> requestedNames) {
+        if (execution != null && !inFlightDiscoveryExecutions.add(execution)) {
+            LOG.debug("[CASUAL-GATEWAY-DISCOVERY] Suppressing cyclic discovery probe (execution={})", execution);
+            return Collections.emptyList();
+        }
+        try {
+            Map<String, Service> aggregated = new LinkedHashMap<>();
+
+            Set<String> upstreamTargets = new LinkedHashSet<>();
+            Set<String> localStubNames = new LinkedHashSet<>();
+            List<StubMapping> nonProxyStubs = new ArrayList<>();
+
+            for (StubMapping stub : storePort.getActiveStubMappings()) {
+                if (isCasualProxyStub(stub)) {
+                    String target = extractCasualTargetUrl(stub);
+                    if (target != null && target.startsWith("casual://")) {
+                        upstreamTargets.add(target);
+                    }
+                } else {
+                    nonProxyStubs.add(stub);
+                    extractLocalStubServiceName(stub).ifPresent(localStubNames::add);
+                }
+            }
+
+            List<String> namesToQuery = requestedNames != null ? requestedNames : Collections.emptyList();
+            for (String targetUrl : upstreamTargets) {
+                try {
+                    URI uri = URI.create(targetUrl);
+                    CasualClient client = getOrCreateUpstreamClient(uri.getHost(), uri.getPort());
+                    UUID remoteDomainId = client.getRemoteDomainId();
+                    if (requesterDomainId != null && requesterDomainId.equals(remoteDomainId)) {
+                        LOG.debug(
+                                "[CASUAL-GATEWAY-DISCOVERY] Skipping split-horizon upstream discovery to [{}] (domainId={})",
+                                sanitizeLog(targetUrl),
+                                remoteDomainId);
+                        continue;
+                    }
+                    CasualDomainDiscoveryReplyMessage upstreamReply = execution != null
+                            ? client.discover(execution, namesToQuery)
+                            : client.discover(namesToQuery);
+                    if (upstreamReply != null && upstreamReply.getServices() != null) {
+                        for (Service s : upstreamReply.getServices()) {
+                            aggregated.put(s.getName(), s);
+                        }
+                    }
+                } catch (Exception e) {
+                    LOG.warn(
+                            "[CASUAL-GATEWAY-DISCOVERY] Failed to query upstream [{}] for domain discovery: {}",
+                            sanitizeLog(targetUrl),
+                            sanitizeLog(e.getMessage()));
+                }
+            }
+
+            for (String stubName : localStubNames) {
+                if (!aggregated.containsKey(stubName)) {
+                    aggregated.put(stubName, Service.of(stubName, "wiremock-stub", TransactionType.AUTOMATIC));
+                }
+            }
+
+            if (!namesToQuery.isEmpty()) {
+                for (String name : namesToQuery) {
+                    if (name == null || aggregated.containsKey(name)) {
+                        continue;
+                    }
+                    String serviceUrl = "/__casual/services/" + name;
+                    boolean matchesLocalStub = nonProxyStubs.stream()
+                            .anyMatch(stub -> stub.getRequest() != null
+                                    && stub.getRequest().getUrlMatcher() != null
+                                    && stub.getRequest()
+                                            .getUrlMatcher()
+                                            .match(serviceUrl)
+                                            .isExactMatch());
+                    if (matchesLocalStub) {
+                        aggregated.put(name, Service.of(name, "wiremock-stub", TransactionType.AUTOMATIC));
                     }
                 }
-            } catch (Exception e) {
-                LOG.warn(
-                        "[CASUAL-GATEWAY-DISCOVERY] Failed to query upstream [{}] for domain discovery: {}",
-                        targetUrl,
-                        e.getMessage());
+            }
+
+            return new ArrayList<>(aggregated.values());
+        } finally {
+            if (execution != null) {
+                inFlightDiscoveryExecutions.remove(execution);
             }
         }
-
-        for (String stubName : localStubNames) {
-            if (!aggregated.containsKey(stubName)) {
-                aggregated.put(stubName, Service.of(stubName, "wiremock-stub", TransactionType.AUTOMATIC));
-            }
-        }
-
-        if (requestedNames != null && !requestedNames.isEmpty()) {
-            for (String name : requestedNames) {
-                if (!aggregated.containsKey(name)) {
-                    aggregated.put(name, Service.of(name, "wiremock-category", TransactionType.AUTOMATIC));
-                }
-            }
-        }
-
-        return new ArrayList<>(aggregated.values());
     }
 
     private Optional<String> extractLocalStubServiceName(StubMapping stub) {
         if (stub == null || stub.getRequest() == null) {
             return Optional.empty();
         }
-        String url = stub.getRequest().getUrl();
-        if (url == null) {
-            url = stub.getRequest().getUrlPath();
-        }
-        if (url == null) {
-            url = stub.getRequest().getUrlPattern();
-        }
         String prefix = "/__casual/services/";
-        if (url != null && url.startsWith(prefix)) {
-            String candidate = url.substring(prefix.length());
-            if (!candidate.isBlank() && !candidate.contains("*") && !candidate.contains(".")) {
+        String exactUrl = stub.getRequest().getUrl();
+        if (exactUrl == null) {
+            exactUrl = stub.getRequest().getUrlPath();
+        }
+        if (exactUrl != null && exactUrl.startsWith(prefix)) {
+            String candidate = exactUrl.substring(prefix.length());
+            int queryIdx = candidate.indexOf('?');
+            if (queryIdx >= 0) {
+                candidate = candidate.substring(0, queryIdx);
+            }
+            if (!candidate.isBlank()) {
+                return Optional.of(candidate);
+            }
+        }
+        String patternUrl = stub.getRequest().getUrlPattern();
+        if (patternUrl == null) {
+            patternUrl = stub.getRequest().getUrlPathPattern();
+        }
+        if (patternUrl != null && patternUrl.startsWith(prefix)) {
+            String candidate = patternUrl.substring(prefix.length());
+            if (!candidate.isBlank() && !containsRegexMeta(candidate)) {
                 return Optional.of(candidate);
             }
         }
         return Optional.empty();
+    }
+
+    private static boolean containsRegexMeta(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '*' || c == '.' || c == '(' || c == '[' || c == '+' || c == '?' || c == '^' || c == '$') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String sanitizeLog(String value) {
+        return value != null ? value.replaceAll("[\r\n]", "") : "";
     }
 
     private boolean isCasualProxyStub(StubMapping stub) {
@@ -389,6 +504,14 @@ public class CasualWireMockGateway
             upstreamClients.put(key, client);
         }
         return client;
+    }
+
+    private static boolean isNoReply(CasualServiceCallRequestMessage req) {
+        return CasualProtocolConfig.safeXatmiFlags(req).isSet(AtmiFlags.TPNOREPLY);
+    }
+
+    private static boolean isNoTran(CasualServiceCallRequestMessage req) {
+        return CasualProtocolConfig.safeXatmiFlags(req).isSet(AtmiFlags.TPNOTRAN);
     }
 
     @Override

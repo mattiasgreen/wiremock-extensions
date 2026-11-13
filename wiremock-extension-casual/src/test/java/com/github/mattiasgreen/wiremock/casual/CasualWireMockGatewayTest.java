@@ -12,12 +12,24 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.transaction.xa.Xid;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +37,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.slf4j.LoggerFactory;
+import se.laz.casual.api.buffer.CasualHeaders;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.AtmiFlags;
@@ -35,6 +49,9 @@ import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.queue.QueueErrorCode;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
+import se.laz.casual.config.ConfigurationOptions;
+import se.laz.casual.config.ConfigurationService;
+import se.laz.casual.jca.SpanId;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
 import se.laz.casual.network.protocol.messages.domain.Queue;
@@ -88,15 +105,22 @@ class CasualWireMockGatewayTest {
     }
 
     @Test
-    @DisplayName("Should successfully perform domain discovery for requested services")
+    @DisplayName("Should successfully perform domain discovery only for stubbed and pattern-matched services")
     void shouldDiscoverServices() throws Exception {
-        CasualDomainDiscoveryReplyMessage reply = client.discoverServices(List.of("orderService", "paymentService"));
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/order.service"))
+                .willReturn(aResponse().withStatus(200).withBody("{}")));
+        wireMockServer.stubFor(post(urlMatching("/__casual/services/payment\\..*"))
+                .willReturn(aResponse().withStatus(200).withBody("{}")));
+
+        CasualDomainDiscoveryReplyMessage reply =
+                client.discoverServices(List.of("order.service", "payment.card", "unmockedService"));
 
         assertThat(reply).isNotNull();
         assertThat(reply.getDomainName()).isEqualTo("wiremock-casual-domain");
         assertThat(reply.getServices())
                 .extracting(Service::getName)
-                .containsExactlyInAnyOrder("orderService", "paymentService");
+                .containsExactlyInAnyOrder("order.service", "payment.card")
+                .doesNotContain("unmockedService");
     }
 
     @Test
@@ -1484,8 +1508,8 @@ class CasualWireMockGatewayTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"status\":\"SUCCESS\"}")));
 
-        // Client connects and negotiates VERSION_1_4
-        assertThat(client.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_4);
+        // Client connects and negotiates VERSION_1_5
+        assertThat(client.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_5);
 
         // Make service call with xid, simulating WildFly/JBoss Narayana XA client
         Xid xid = XID.of(
@@ -1496,7 +1520,7 @@ class CasualWireMockGatewayTest {
 
         assertThat(reply).isNotNull();
         assertThat(reply.getError()).isEqualTo(ErrorState.OK);
-        assertThat(reply.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3);
+        assertThat(reply.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5);
     }
 
     @Test
@@ -2077,5 +2101,560 @@ class CasualWireMockGatewayTest {
         assertThat(dequeueEvent.getRequest().getUrl()).isEqualTo("/__casual/queues/" + queueName + "/dequeue");
         assertThat(dequeueEvent.getRequest().getHeader("X-Casual-Queue")).isEqualTo(queueName);
         assertThat(dequeueEvent.getRequest().getHeader("X-Casual-Operation")).isEqualTo("dequeue");
+    }
+
+    @Test
+    @DisplayName("Should not log exception stack trace at TRACE level when proxying Protocol 1.2 request")
+    void shouldNotLogExceptionStackTraceAtTraceLevelWhenProxyingProtocol12Request() throws Exception {
+        Logger casualLogger = (Logger) LoggerFactory.getLogger("com.github.mattiasgreen.wiremock.casual");
+        Level previousLevel = casualLogger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        casualLogger.addAppender(appender);
+        casualLogger.setLevel(Level.TRACE);
+
+        WireMockServer upstreamWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        upstreamWireMock.start();
+        CasualWireMockGateway upstreamGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(upstreamWireMock)
+                .build();
+        upstreamGateway.start();
+
+        try {
+            upstreamWireMock.stubFor(post(urlEqualTo("/__casual/services/legacyTraceService"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"status\":\"OK\"}")));
+
+            wireMockServer.stubFor(post(urlEqualTo("/__casual/services/legacyTraceService"))
+                    .withMetadata(
+                            Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamGateway.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(wireMockServer)
+                    .build();
+            proxyGateway.start();
+
+            try (java.net.Socket socket = new java.net.Socket("127.0.0.1", proxyGateway.getPort())) {
+                socket.setSoTimeout(5000);
+                java.io.OutputStream out = socket.getOutputStream();
+                java.io.InputStream in = socket.getInputStream();
+
+                se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage connectReq =
+                        se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage.createBuilder()
+                                .withExecution(UUID.randomUUID())
+                                .withDomainId(UUID.randomUUID())
+                                .withDomainName("wildfly-trace-domain")
+                                .withProtocols(List.of(1000L, 1001L, 1002L))
+                                .build();
+                se.laz.casual.api.network.protocol.messages.CasualNWMessage<
+                                se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage>
+                        connectEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                UUID.randomUUID(), connectReq);
+                for (byte[] b : connectEnvelope.toNetworkBytes()) {
+                    out.write(b);
+                }
+                out.flush();
+
+                byte[] connectReplyHeader = in.readNBytes(32);
+                long replyPayloadSize =
+                        java.nio.ByteBuffer.wrap(connectReplyHeader, 24, 8).getLong();
+                in.readNBytes((int) replyPayloadSize);
+
+                Xid xid = XID.of(
+                        "gtrid-trace".getBytes(StandardCharsets.UTF_8),
+                        "bqual-trace".getBytes(StandardCharsets.UTF_8),
+                        131077);
+                CasualServiceCallRequestMessage callMsg = CasualServiceCallRequestMessage.createBuilder()
+                        .setProtocolVersion(ProtocolVersion.VERSION_1_2)
+                        .setExecution(UUID.randomUUID())
+                        .setServiceName("legacyTraceService")
+                        .setTimeout(5000L)
+                        .setParentName("wildfly-trace-domain")
+                        .setXid(xid)
+                        .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                        .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}")))
+                        .build();
+
+                se.laz.casual.api.network.protocol.messages.CasualNWMessage<CasualServiceCallRequestMessage>
+                        callEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                UUID.randomUUID(), callMsg);
+                for (byte[] b : callEnvelope.toNetworkBytes()) {
+                    out.write(b);
+                }
+                out.flush();
+
+                byte[] replyHeaderBytes = in.readNBytes(32);
+                long replyMessageType =
+                        java.nio.ByteBuffer.wrap(replyHeaderBytes, 0, 8).getLong();
+                long serviceReplyPayloadSize =
+                        java.nio.ByteBuffer.wrap(replyHeaderBytes, 24, 8).getLong();
+                in.readNBytes((int) serviceReplyPayloadSize);
+
+                assertThat(replyMessageType).isEqualTo((long) CasualNWMessageType.SERVICE_CALL_REPLY.getMessageId());
+                assertThat(serviceReplyPayloadSize).isGreaterThan(0);
+                upstreamWireMock.verify(1, postRequestedFor(urlEqualTo("/__casual/services/legacyTraceService")));
+                assertThat(appender.list).noneMatch(event -> event.getThrowableProxy() != null);
+            } finally {
+                proxyGateway.close();
+            }
+        } finally {
+            casualLogger.setLevel(previousLevel);
+            casualLogger.detachAppender(appender);
+            upstreamGateway.close();
+            upstreamWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "Should normalize reply to V1_3 for Protocol 1.4 client and preserve CasualHeaders for Protocol 1.5 proxy")
+    void shouldNormalizeReplyToV13ForProtocol14ClientAndPreserveHeadersForProtocol15Proxy() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__casual/services/proto14Service"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"ok\":true}")));
+
+        try (java.net.Socket socket = new java.net.Socket("127.0.0.1", gateway.getPort())) {
+            socket.setSoTimeout(5000);
+            java.io.OutputStream out = socket.getOutputStream();
+            java.io.InputStream in = socket.getInputStream();
+
+            se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage connectReq =
+                    se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage.createBuilder()
+                            .withExecution(UUID.randomUUID())
+                            .withDomainId(UUID.randomUUID())
+                            .withDomainName("client-v14-domain")
+                            .withProtocols(List.of(1000L, 1001L, 1002L, 1003L, 1004L))
+                            .build();
+            se.laz.casual.api.network.protocol.messages.CasualNWMessage<
+                            se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage>
+                    connectEnvelope = se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                            UUID.randomUUID(), connectReq);
+            for (byte[] b : connectEnvelope.toNetworkBytes()) {
+                out.write(b);
+            }
+            out.flush();
+
+            byte[] connectReplyHeader = in.readNBytes(32);
+            long replyPayloadSize =
+                    java.nio.ByteBuffer.wrap(connectReplyHeader, 24, 8).getLong();
+            byte[] connectReplyPayload = in.readNBytes((int) replyPayloadSize);
+            long negotiatedVersion = java.nio.ByteBuffer.wrap(connectReplyPayload, connectReplyPayload.length - 8, 8)
+                    .getLong();
+            assertThat(negotiatedVersion).isEqualTo(1004L);
+
+            CasualServiceCallRequestMessage callMsg = CasualServiceCallRequestMessage.createBuilder()
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_4)
+                    .setExecution(UUID.randomUUID())
+                    .setServiceName("proto14Service")
+                    .setTimeout(5000L)
+                    .setParentName("client-v14-domain")
+                    .setParentSpan(SpanId.of())
+                    .setXid(XID.NULL_XID)
+                    .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                    .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}")))
+                    .build();
+
+            se.laz.casual.api.network.protocol.messages.CasualNWMessage<CasualServiceCallRequestMessage> callEnvelope =
+                    se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(UUID.randomUUID(), callMsg);
+            for (byte[] b : callEnvelope.toNetworkBytes()) {
+                out.write(b);
+            }
+            out.flush();
+
+            byte[] replyHeaderBytes = in.readNBytes(32);
+            long replyMessageType =
+                    java.nio.ByteBuffer.wrap(replyHeaderBytes, 0, 8).getLong();
+            long serviceReplyPayloadSize =
+                    java.nio.ByteBuffer.wrap(replyHeaderBytes, 24, 8).getLong();
+            in.readNBytes((int) serviceReplyPayloadSize);
+
+            assertThat(replyMessageType).isEqualTo((long) CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3.getMessageId());
+        }
+
+        CasualServer echoServer = CasualServer.builder()
+                .port(0)
+                .domainName("echo-v15-domain")
+                .serviceHandler(req -> CasualServiceCallReplyMessage.createBuilder()
+                        .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                        .setExecution(req.getExecution())
+                        .setError(ErrorState.OK)
+                        .setTransactionState(TransactionState.TX_ACTIVE)
+                        .setServiceBuffer(req.getServiceBuffer())
+                        .build())
+                .build();
+        echoServer.start();
+
+        try (CasualClient forwardClient =
+                CasualClient.create("127.0.0.1", echoServer.getPort()).connect()) {
+            assertThat(forwardClient.getProtocolVersion()).isEqualTo(ProtocolVersion.VERSION_1_5);
+
+            CasualHeaders requestHeaders = CasualHeaders.newBuilder()
+                    .add("x-Correlation-Test", "corr-15")
+                    .build();
+            CasualServiceCallRequestMessage req15 = CasualServiceCallRequestMessage.createBuilder()
+                    .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                    .setExecution(UUID.randomUUID())
+                    .setServiceName("echoHeadersService")
+                    .setTimeout(5000L)
+                    .setParentName("proxy-v15-domain")
+                    .setParentSpan(SpanId.of())
+                    .setXid(XID.NULL_XID)
+                    .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                    .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}", requestHeaders)))
+                    .build();
+
+            CasualServiceCallReplyMessage echoReply = forwardClient.forwardServiceCall(req15);
+            assertThat(echoReply.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5);
+            assertThat(echoReply.getServiceBuffer().getHeaders().get("x-Correlation-Test"))
+                    .containsExactly("corr-15");
+        } finally {
+            echoServer.close();
+        }
+    }
+
+    @Test
+    @DisplayName("Should configure non-strict validation by default and honor system property override")
+    void shouldConfigureNonStrictValidationByDefaultAndHonorSystemPropertyOverride() {
+        CasualProtocolConfig.ensureInitialized();
+        assertThat(ConfigurationService.getConfiguration(
+                        ConfigurationOptions.CASUAL_NETWORK_PROTOCOL_STRICT_VALIDATION))
+                .isFalse();
+
+        String previous = System.getProperty(CasualProtocolConfig.STRICT_VALIDATION_KEY);
+        try {
+            System.setProperty(CasualProtocolConfig.STRICT_VALIDATION_KEY, "true");
+            CasualProtocolConfig.configureStrictValidationDefault();
+            assertThat(ConfigurationService.getConfiguration(
+                            ConfigurationOptions.CASUAL_NETWORK_PROTOCOL_STRICT_VALIDATION))
+                    .isTrue();
+        } finally {
+            if (previous == null) {
+                System.clearProperty(CasualProtocolConfig.STRICT_VALIDATION_KEY);
+            } else {
+                System.setProperty(CasualProtocolConfig.STRICT_VALIDATION_KEY, previous);
+            }
+            CasualProtocolConfig.configureStrictValidationDefault();
+        }
+    }
+
+    @Test
+    @DisplayName("Should proxy TPNOREPLY fire-and-forget calls without waiting for reply or sending unsolicited error")
+    void shouldProxyTpNoReplyFireAndForgetWithoutTimeoutOrUnsolicitedReply() throws Exception {
+        UUID upstreamDomainId = UUID.randomUUID();
+        CountDownLatch upstreamReceivedLatch = new CountDownLatch(1);
+        AtomicInteger upstreamServiceCallsReceived = new AtomicInteger();
+
+        try (ServerSocket rawUpstream = new ServerSocket(0)) {
+            Thread upstreamAcceptor = new Thread(
+                    () -> {
+                        try {
+                            while (!rawUpstream.isClosed()) {
+                                Socket accepted = rawUpstream.accept();
+                                Thread handlerThread = new Thread(
+                                        () -> {
+                                            try (Socket s = accepted) {
+                                                InputStream uIn = s.getInputStream();
+                                                OutputStream uOut = s.getOutputStream();
+                                                while (!s.isClosed()) {
+                                                    byte[] headerBytes = uIn.readNBytes(32);
+                                                    if (headerBytes.length < 32) {
+                                                        break;
+                                                    }
+                                                    se.laz.casual.network.protocol.messages.CasualNWMessageHeader hdr =
+                                                            se.laz.casual.network.protocol.decoding.decoders
+                                                                    .CasualNWMessageHeaderDecoder.fromNetworkBytes(
+                                                                    headerBytes);
+                                                    byte[] payload = uIn.readNBytes((int) hdr.getPayloadSize());
+                                                    if (hdr.getType() == CasualNWMessageType.DOMAIN_CONNECT_REQUEST) {
+                                                        long msb = ByteBuffer.wrap(payload, 0, 8)
+                                                                .getLong();
+                                                        long lsb = ByteBuffer.wrap(payload, 8, 8)
+                                                                .getLong();
+                                                        UUID exec = new UUID(msb, lsb);
+                                                        se.laz.casual.network.protocol.messages.domain
+                                                                        .CasualDomainConnectReplyMessage
+                                                                connectReply = se.laz.casual.network.protocol.messages
+                                                                        .domain.CasualDomainConnectReplyMessage
+                                                                        .createBuilder()
+                                                                        .withExecution(exec)
+                                                                        .withDomainId(upstreamDomainId)
+                                                                        .withDomainName("raw-tpnoreply-upstream")
+                                                                        .withProtocolVersion(
+                                                                                ProtocolVersion.VERSION_1_5
+                                                                                        .getVersion())
+                                                                        .build();
+                                                        for (byte[] b : se.laz.casual.network.protocol.messages
+                                                                .CasualNWMessageImpl.of(
+                                                                        hdr.getCorrelationId(), connectReply)
+                                                                .toNetworkBytes()) {
+                                                            uOut.write(b);
+                                                        }
+                                                        uOut.flush();
+                                                    } else if (hdr.getType() == CasualNWMessageType.SERVICE_CALL_REQUEST
+                                                            || hdr.getType()
+                                                                    == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3
+                                                            || hdr.getType()
+                                                                    == CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_5) {
+                                                        upstreamServiceCallsReceived.incrementAndGet();
+                                                        upstreamReceivedLatch.countDown();
+                                                        // Intentionally send NO reply frame (fire-and-forget upstream)
+                                                    }
+                                                }
+                                            } catch (Exception ignored) {
+                                            }
+                                        },
+                                        "raw-upstream-conn");
+                                handlerThread.setDaemon(true);
+                                handlerThread.start();
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    },
+                    "raw-upstream-acceptor");
+            upstreamAcceptor.setDaemon(true);
+            upstreamAcceptor.start();
+
+            WireMockServer proxyWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+            proxyWireMock.start();
+            CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(proxyWireMock)
+                    .upstreamTimeoutSeconds(2)
+                    .build();
+            proxyGateway.start();
+
+            try {
+                proxyWireMock.stubFor(post(urlEqualTo("/__casual/services/fire.and.forget"))
+                        .withMetadata(Map.of(
+                                "mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + rawUpstream.getLocalPort()))
+                        .willReturn(aResponse().withStatus(200)));
+                proxyWireMock.stubFor(post(urlEqualTo("/__casual/services/healthCheck"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("{\"ok\":true}")));
+
+                try (Socket clientSocket = new Socket("127.0.0.1", proxyGateway.getPort())) {
+                    clientSocket.setSoTimeout(1000);
+                    OutputStream out = clientSocket.getOutputStream();
+                    InputStream in = clientSocket.getInputStream();
+
+                    // Handshake
+                    se.laz.casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage connectReq = se.laz
+                            .casual.network.protocol.messages.domain.CasualDomainConnectRequestMessage.createBuilder()
+                            .withExecution(UUID.randomUUID())
+                            .withDomainId(UUID.randomUUID())
+                            .withDomainName("downstream-tpnoreply-client")
+                            .withProtocols(List.of(1000L, 1001L, 1002L, 1003L, 1004L, 1005L))
+                            .build();
+                    for (byte[] b : se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                    UUID.randomUUID(), connectReq)
+                            .toNetworkBytes()) {
+                        out.write(b);
+                    }
+                    out.flush();
+                    byte[] connectReplyHdr = in.readNBytes(32);
+                    long connectPayloadSize =
+                            ByteBuffer.wrap(connectReplyHdr, 24, 8).getLong();
+                    in.readNBytes((int) connectPayloadSize);
+
+                    // 1. Send proxied TPNOREPLY fire-and-forget service call (must return immediately, never reply)
+                    UUID noReplyCorrId = UUID.randomUUID();
+                    CasualServiceCallRequestMessage fireAndForget = CasualServiceCallRequestMessage.createBuilder()
+                            .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                            .setExecution(UUID.randomUUID())
+                            .setServiceName("fire.and.forget")
+                            .setTimeout(5000L)
+                            .setParentName("downstream-tpnoreply-client")
+                            .setParentSpan(SpanId.of())
+                            .setXid(XID.NULL_XID)
+                            .setXatmiFlags(Flag.of(AtmiFlags.TPNOREPLY))
+                            .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{\"event\":\"ping\"}")))
+                            .build();
+                    for (byte[] b : se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                    noReplyCorrId, fireAndForget)
+                            .toNetworkBytes()) {
+                        out.write(b);
+                    }
+
+                    // 2. Immediately send a synchronous call on the SAME socket; the very next frame received
+                    // must be healthCheck's reply (with healthCorrId) in < 1000ms (< 2s upstream timeout).
+                    UUID healthCorrId = UUID.randomUUID();
+                    CasualServiceCallRequestMessage healthReq = CasualServiceCallRequestMessage.createBuilder()
+                            .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                            .setExecution(UUID.randomUUID())
+                            .setServiceName("healthCheck")
+                            .setTimeout(5000L)
+                            .setParentName("downstream-tpnoreply-client")
+                            .setParentSpan(SpanId.of())
+                            .setXid(XID.NULL_XID)
+                            .setXatmiFlags(Flag.of(AtmiFlags.NOFLAG))
+                            .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{}")))
+                            .build();
+                    for (byte[] b : se.laz.casual.network.protocol.messages.CasualNWMessageImpl.of(
+                                    healthCorrId, healthReq)
+                            .toNetworkBytes()) {
+                        out.write(b);
+                    }
+                    out.flush();
+
+                    assertThat(upstreamReceivedLatch.await(1000, TimeUnit.MILLISECONDS))
+                            .isTrue();
+
+                    byte[] replyHdrBytes = in.readNBytes(32);
+                    assertThat(replyHdrBytes).hasSize(32);
+                    se.laz.casual.network.protocol.messages.CasualNWMessageHeader replyHdr = se.laz.casual.network
+                            .protocol.decoding.decoders.CasualNWMessageHeaderDecoder.fromNetworkBytes(replyHdrBytes);
+                    in.readNBytes((int) replyHdr.getPayloadSize());
+
+                    assertThat(replyHdr.getCorrelationId()).isEqualTo(healthCorrId);
+                    assertThat(replyHdr.getType()).isEqualTo(CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5);
+                    assertThat(upstreamServiceCallsReceived.get()).isEqualTo(1);
+                }
+            } finally {
+                proxyGateway.close();
+                proxyWireMock.stop();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Should not deadlock single-EventLoop worker when proxied upstream call invokes callback stub")
+    void shouldNotDeadlockWhenUpstreamProxiedCallInvokesCallbackStubOnSameGateway() throws Exception {
+        WireMockServer proxyWireMock = new WireMockServer(wireMockConfig().dynamicPort());
+        proxyWireMock.start();
+
+        CasualWireMockGateway proxyGateway = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(proxyWireMock)
+                .upstreamTimeoutSeconds(2)
+                .workerThreads(1)
+                .build();
+        proxyGateway.start();
+
+        CasualServer upstreamCallbackServer = CasualServer.builder()
+                .port(0)
+                .domainName("callback-upstream")
+                .discoveryHandler(names -> List.of(se.laz.casual.network.protocol.messages.domain.Service.of(
+                        "outer.service", "test", se.laz.casual.network.messages.domain.TransactionType.AUTOMATIC)))
+                .serviceHandler(req -> {
+                    try (CasualClient callbackClient = CasualClient.create("127.0.0.1", proxyGateway.getPort(), 2)
+                            .connect()) {
+                        CasualServiceCallReplyMessage cbReply = callbackClient.tpcall("callback.service", "{}");
+                        String cbBody = CasualBufferUtils.extractPayload(cbReply.getServiceBuffer());
+                        return CasualServiceCallReplyMessage.createBuilder()
+                                .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                                .setExecution(req.getExecution())
+                                .setError(cbReply.getError())
+                                .setUserSuppliedError(0)
+                                .setTransactionState(TransactionState.TX_ACTIVE)
+                                .setServiceBuffer(ServiceBuffer.of(JsonBuffer.of("{\"outer\":" + cbBody + "}")))
+                                .build();
+                    } catch (Exception e) {
+                        return CasualServiceCallReplyMessage.createBuilder()
+                                .setProtocolVersion(ProtocolVersion.VERSION_1_5)
+                                .setExecution(req.getExecution())
+                                .setError(ErrorState.TPESVCERR)
+                                .setUserSuppliedError(0)
+                                .setTransactionState(TransactionState.ROLLBACK_ONLY)
+                                .setServiceBuffer(ServiceBuffer.empty())
+                                .build();
+                    }
+                })
+                .build();
+        upstreamCallbackServer.start();
+
+        try {
+            proxyWireMock.stubFor(post(urlEqualTo("/__casual/services/outer.service"))
+                    .withMetadata(Map.of(
+                            "mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + upstreamCallbackServer.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+            proxyWireMock.stubFor(post(urlEqualTo("/__casual/services/callback.service"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"callback\":\"ok\"}")));
+
+            try (CasualClient testClient =
+                    CasualClient.create("127.0.0.1", proxyGateway.getPort(), 5).connect()) {
+                CasualServiceCallReplyMessage reply = testClient.tpcall("outer.service", "{}");
+                assertThat(reply.getError()).isEqualTo(ErrorState.OK);
+                assertThat(CasualBufferUtils.extractPayload(reply.getServiceBuffer()))
+                        .isEqualTo("{\"outer\":{\"callback\":\"ok\"}}");
+            }
+        } finally {
+            upstreamCallbackServer.close();
+            proxyGateway.close();
+            proxyWireMock.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Should not synthesize false discovery or loop in bidirectional gateway peering")
+    void shouldNotSynthesizeFalseDiscoveryOrLoopInBidirectionalGatewayPeering() throws Exception {
+        WireMockServer wireMockA = new WireMockServer(wireMockConfig().dynamicPort());
+        WireMockServer wireMockB = new WireMockServer(wireMockConfig().dynamicPort());
+        wireMockA.start();
+        wireMockB.start();
+
+        CasualWireMockGateway gatewayA = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(wireMockA)
+                .upstreamTimeoutSeconds(2)
+                .build();
+        CasualWireMockGateway gatewayB = CasualWireMockGateway.builder()
+                .port(0)
+                .wireMockServer(wireMockB)
+                .upstreamTimeoutSeconds(2)
+                .build();
+        gatewayA.start();
+        gatewayB.start();
+
+        try {
+            wireMockB.stubFor(post(urlEqualTo("/__casual/services/real.peer.service"))
+                    .atPriority(1)
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"peer\":\"ok\"}")));
+
+            wireMockA.stubFor(post(urlMatching("/__casual/services/.*"))
+                    .atPriority(10)
+                    .withMetadata(Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + gatewayB.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            wireMockB.stubFor(post(urlMatching("/__casual/services/.*"))
+                    .atPriority(10)
+                    .withMetadata(Map.of("mode", "proxy", "targetBaseUrl", "casual://127.0.0.1:" + gatewayA.getPort()))
+                    .willReturn(aResponse().withStatus(200)));
+
+            try (CasualClient client =
+                    CasualClient.create("127.0.0.1", gatewayA.getPort(), 2).connect()) {
+                CasualDomainDiscoveryReplyMessage discovery =
+                        client.discoverServices(List.of("real.peer.service", "missing.service"));
+                assertThat(discovery.getServices())
+                        .extracting(Service::getName)
+                        .contains("real.peer.service")
+                        .doesNotContain("missing.service");
+
+                long startNanos = System.nanoTime();
+                CasualServiceCallReplyMessage missingReply = client.tpcall("missing.service", "{}");
+                long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+                assertThat(elapsedMs).isLessThan(1500L);
+                assertThat(missingReply.getError()).isEqualTo(ErrorState.TPENOENT);
+            }
+        } finally {
+            gatewayB.close();
+            gatewayA.close();
+            wireMockB.stop();
+            wireMockA.stop();
+        }
     }
 }
