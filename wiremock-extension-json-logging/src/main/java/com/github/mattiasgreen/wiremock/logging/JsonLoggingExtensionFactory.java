@@ -10,6 +10,6 @@ public class JsonLoggingExtensionFactory implements ExtensionFactory {
 
     @Override
     public List<Extension> create(WireMockServices services) {
-        return List.of(new MdcRequestFilter(), new JsonLoggingListener());
+        return List.of(new MdcRequestFilter(), new JsonLoggingListener(), new LoggingAdminEndpoint());
     }
 }

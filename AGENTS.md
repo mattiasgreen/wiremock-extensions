@@ -10,7 +10,7 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
 
 | Subproject | Responsibility | Primary Extension Points | Scoped Guide |
 | :--- | :--- | :--- | :--- |
-| **`wiremock-extension-json-logging`** | Single-line JSON traffic logging with corporate header MDC propagation (`x-correlation-id`, `x-tenant-id`). | `RequestFilterV2` (`MdcRequestFilter`), `ServeEventListener` (`JsonLoggingListener`) | Root rules |
+| **`wiremock-extension-json-logging`** | Single-line JSON traffic logging with corporate header MDC propagation (`x-correlation-id`, `x-tenant-id`) and runtime Logback level control (`/__admin/logging/levels`, `LOG_LEVEL`). | `RequestFilterV2` (`MdcRequestFilter`), `ServeEventListener` (`JsonLoggingListener`), `AdminApiExtension` (`LoggingAdminEndpoint`) | Root rules |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics & W3C trace spans + Prometheus scrape route (`/__admin/metrics/prometheus`). | `ServeEventListener` (`OtelMetricsListener`), `AdminApiExtension` (`PrometheusAdminEndpoint`) | Root rules |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0/3.1 YAML/JSON ingestion, request/response example synthesis, and live proxy route generation. | `AdminApiExtension` (`OpenApiAdminEndpoint`) | [`openapi/AGENTS.md`](wiremock-extension-openapi/AGENTS.md) |
 | **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with AST evaluation and multi-tenant isolation. | `AdminApiExtension` (`StatefulAdminEndpoint`), `ResponseTransformerV2` | [`stateful/AGENTS.md`](wiremock-extension-stateful/AGENTS.md) |

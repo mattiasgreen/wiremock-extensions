@@ -1,4 +1,5 @@
 dependencies {
+    implementation libs.logback.classic
     implementation libs.logstash.logback.encoder
     implementation libs.jackson.databind
     implementation libs.jackson.datatype.jsr310
