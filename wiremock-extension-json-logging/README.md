@@ -23,6 +23,8 @@ The extension listens to request completion events via WireMock's `RequestFilter
 - **Standard vs. Verbose Mode**:
   - *Standard mode* (default): Emits request method, URL, headers, status code, duration, and match status.
   - *Verbose mode* (`--verbose` flag or `-Dwiremock.verbose.json=true`): Includes full request and response bodies directly in the JSON object.
+- **Runtime Logback Level Control (`/__admin/logging/levels` & `LOG_LEVEL`)**:
+  - Dynamically inspect, update, and reset Logback logger levels at runtime via the WireMock Admin API or configure initial package levels on startup via the `LOG_LEVEL` environment variable (or `-Dlog.level` / `-Dwiremock.log.level`).
 - **Zero Thread Leakage**: MDC entries are guaranteed to be cleared on completion.
 
 ## Sample Log Event
@@ -99,6 +101,29 @@ wm.start();
 ```
 
 If the JAR is present on the classpath, Java SPI will register the extension automatically without explicit configuration.
+
+### Runtime Logback Log Levels (`/__admin/logging/levels` & `LOG_LEVEL`)
+
+You can configure Logback package/logger levels at startup via environment variable or Java system property (`-Dlog.level` -> `-Dwiremock.log.level` -> `LOG_LEVEL`), and dynamically mutate them at runtime via the Admin API using a comma-separated `logger=LEVEL` format:
+
+```bash
+# Startup environment variable override
+export LOG_LEVEL="com.github.mattiasgreen=TRACE,se.laz.casual=TRACE"
+
+# Inspect currently configured logger levels (returns plain text e.g. ROOT=INFO,wiremock.traffic=INFO,...)
+curl http://localhost:8080/__admin/logging/levels
+
+# Update logger levels at runtime (merges with existing loggers; atomic validation)
+curl -X PUT http://localhost:8080/__admin/logging/levels \
+  -d "com.github.mattiasgreen=TRACE,se.laz.casual=TRACE"
+
+# Unset an explicit logger override so it inherits from its parent again
+curl -X PUT http://localhost:8080/__admin/logging/levels \
+  -d "se.laz.casual=INHERITED"
+
+# Reset all runtime changes back to the initial startup state (logback.xml + LOG_LEVEL)
+curl -X POST http://localhost:8080/__admin/logging/reset
+```
 
 ## Build
 

@@ -64,5 +64,35 @@ public class BundleIntegrationTest {
         HttpResponse<String> uiResp = httpClient.send(uiReq, HttpResponse.BodyHandlers.ofString());
         assertThat(uiResp.statusCode()).isEqualTo(200);
         assertThat(uiResp.body()).contains("WireMock Console");
+
+        // 4. Test Runtime Logback Levels route (GET, PUT, and reset via SPI auto-discovery)
+        HttpRequest logLevelsReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/logging/levels"))
+                .GET()
+                .build();
+        HttpResponse<String> logLevelsResp = httpClient.send(logLevelsReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(logLevelsResp.statusCode()).isEqualTo(200);
+        assertThat(logLevelsResp.body()).startsWith("ROOT=");
+
+        HttpRequest updateLevelsReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/logging/levels"))
+                .header("Content-Type", "text/plain")
+                .PUT(HttpRequest.BodyPublishers.ofString("com.github.mattiasgreen=TRACE,se.laz.casual=TRACE"))
+                .build();
+        HttpResponse<String> updateLevelsResp = httpClient.send(updateLevelsReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(updateLevelsResp.statusCode()).isEqualTo(200);
+        assertThat(updateLevelsResp.body())
+                .contains("com.github.mattiasgreen=TRACE")
+                .contains("se.laz.casual=TRACE");
+
+        HttpRequest resetLevelsReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/logging/reset"))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> resetLevelsResp = httpClient.send(resetLevelsReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(resetLevelsResp.statusCode()).isEqualTo(200);
+        assertThat(resetLevelsResp.body())
+                .doesNotContain("com.github.mattiasgreen=TRACE")
+                .doesNotContain("se.laz.casual=TRACE");
     }
 }

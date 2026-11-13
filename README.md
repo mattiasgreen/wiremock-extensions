@@ -24,7 +24,7 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 
 | Module | Description | Documentation |
 | :--- | :--- | :--- |
-| **`wiremock-extension-json-logging`** | Single-line structured JSON logging for standard/verbose mode with automatic MDC header extraction (`x_correlation_id`, `x_tenant_id`). | [Module README](wiremock-extension-json-logging/README.md) |
+| **`wiremock-extension-json-logging`** | Single-line structured JSON logging for standard/verbose mode with automatic MDC header extraction (`x_correlation_id`, `x_tenant_id`) and runtime Logback log level Admin API (`/__admin/logging/levels`, `LOG_LEVEL`). | [Module README](wiremock-extension-json-logging/README.md) |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
 | **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with type-safe Java DSL, 100% RCE-safe AST evaluation, and multi-tenant `X-Correlation-Id` isolation to prevent parallel test collision. | [Module README](wiremock-extension-stateful/README.md) |

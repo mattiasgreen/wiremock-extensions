@@ -46,6 +46,7 @@ public class StandaloneDevServer {
         }
         System.out.println("👉 NetEm Journal:       http://localhost:" + server.port() + "/__admin/tcp-netem/journal");
         System.out.println("👉 Prometheus Metrics:  http://localhost:" + server.port() + "/__admin/metrics/prometheus");
+        System.out.println("👉 Log Levels API:      http://localhost:" + server.port() + "/__admin/logging/levels");
         System.out.println("👉 Tracing & Logging:   W3C Context Propagation & MDC Active");
         System.out.println("👉 Admin API:           http://localhost:" + server.port() + "/__admin/mappings");
         System.out.println("=================================================================");
