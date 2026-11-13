@@ -17,14 +17,14 @@ import org.slf4j.LoggerFactory;
 import se.laz.casual.api.buffer.type.JsonBuffer;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.AtmiFlags;
+import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.Flag;
+import se.laz.casual.api.flags.TransactionState;
 import se.laz.casual.api.flags.XAFlags;
 import se.laz.casual.api.network.protocol.messages.CasualNWMessage;
-import se.laz.casual.api.network.protocol.messages.exception.CasualProtocolException;
+import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.queue.QueueMessage;
 import se.laz.casual.api.xa.XID;
-import se.laz.casual.config.ConfigurationOptions;
-import se.laz.casual.config.ConfigurationService;
 import se.laz.casual.internal.network.NetworkConnection;
 import se.laz.casual.jca.SpanId;
 import se.laz.casual.network.ProtocolVersion;
@@ -58,8 +58,7 @@ public class CasualClient implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(CasualClient.class);
 
     static {
-        ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_OUTBOUND_UNMANAGED, true);
-        ConfigurationService.setConfiguration(ConfigurationOptions.CASUAL_UNMANAGED, true);
+        CasualProtocolConfig.ensureInitialized();
     }
 
     public static final String DEFAULT_HOST = "127.0.0.1";
@@ -143,6 +142,12 @@ public class CasualClient implements AutoCloseable {
 
     public synchronized ProtocolVersion getProtocolVersion() {
         return networkConnection != null ? networkConnection.getProtocolVersion() : ProtocolVersion.VERSION_1_0;
+    }
+
+    public synchronized UUID getRemoteDomainId() {
+        return networkConnection != null && networkConnection.getDomainId() != null
+                ? networkConnection.getDomainId().getId()
+                : null;
     }
 
     public String getHost() {
@@ -261,6 +266,7 @@ public class CasualClient implements AutoCloseable {
         connect();
         ProtocolVersion version = getProtocolVersion();
         CasualServiceCallRequestMessage adapted = req;
+        Flag<AtmiFlags> requestFlags = CasualProtocolConfig.safeXatmiFlags(req);
         if (version != null) {
             CasualServiceCallRequestMessage.Builder b = CasualServiceCallRequestMessage.createBuilder()
                     .setProtocolVersion(version)
@@ -269,26 +275,32 @@ public class CasualClient implements AutoCloseable {
                     .setTimeout(req.getTimeout())
                     .setParentName(req.getParentName())
                     .setXid(req.getXid())
-                    .setXatmiFlags(req.getXatmiFlags())
+                    .setXatmiFlags(requestFlags)
                     .setServiceBuffer(req.getServiceBuffer());
-            try {
-                SpanId span = req.getParentSpan();
-                if (span != null) {
-                    b.setParentSpan(span);
-                } else if (version.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
-                    b.setParentSpan(SpanId.of());
-                }
-            } catch (CasualProtocolException expected) {
-                LOG.trace("SpanId not supported for protocol version", expected);
-                if (version.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
-                    b.setParentSpan(SpanId.of());
-                }
+            if (version.isGreaterThanOrEqualTo(ProtocolVersion.VERSION_1_3)) {
+                SpanId span = (req.getType() != CasualNWMessageType.SERVICE_CALL_REQUEST) ? req.getParentSpan() : null;
+                b.setParentSpan(span != null ? span : SpanId.of());
             }
             adapted = b.build();
         }
 
         UUID correlationId = UUID.randomUUID();
         CasualNWMessage<CasualServiceCallRequestMessage> nwMsg = CasualNWMessageImpl.of(correlationId, adapted);
+        if (requestFlags.isSet(AtmiFlags.TPNOREPLY)) {
+            getActiveConnection().requestNoReply(nwMsg);
+            ProtocolVersion replyVersion = version != null ? version : ProtocolVersion.VERSION_1_0;
+            CasualServiceCallReplyMessage.Builder replyBuilder = CasualServiceCallReplyMessage.createBuilder()
+                    .setProtocolVersion(replyVersion)
+                    .setExecution(req.getExecution())
+                    .setError(ErrorState.OK)
+                    .setUserSuppliedError(0)
+                    .setTransactionState(TransactionState.TX_ACTIVE)
+                    .setServiceBuffer(ServiceBuffer.empty());
+            if (replyVersion.isLessThan(ProtocolVersion.VERSION_1_3)) {
+                replyBuilder.setXid(req.getXid() != null ? req.getXid() : XID.NULL_XID);
+            }
+            return replyBuilder.build();
+        }
         CompletableFuture<CasualNWMessage<CasualServiceCallReplyMessage>> future =
                 getActiveConnection().request(nwMsg);
         try {
@@ -309,15 +321,24 @@ public class CasualClient implements AutoCloseable {
         return discoverServices(serviceNames, timeoutSeconds, TimeUnit.SECONDS);
     }
 
+    public CasualDomainDiscoveryReplyMessage discover(UUID execution, List<String> serviceNames) throws Exception {
+        return discoverServices(execution, serviceNames, timeoutSeconds, TimeUnit.SECONDS);
+    }
+
     public CasualDomainDiscoveryReplyMessage discoverServices(List<String> serviceNames) throws Exception {
         return discoverServices(serviceNames, timeoutSeconds, TimeUnit.SECONDS);
     }
 
     public CasualDomainDiscoveryReplyMessage discoverServices(List<String> serviceNames, long timeout, TimeUnit unit)
             throws Exception {
+        return discoverServices(UUID.randomUUID(), serviceNames, timeout, unit);
+    }
+
+    public CasualDomainDiscoveryReplyMessage discoverServices(
+            UUID execution, List<String> serviceNames, long timeout, TimeUnit unit) throws Exception {
         CasualDomainDiscoveryRequestMessage.CasualDomainDiscoveryRequestMessageBuilder builder =
                 CasualDomainDiscoveryRequestMessage.createBuilder();
-        builder.setExecution(UUID.randomUUID());
+        builder.setExecution(execution != null ? execution : UUID.randomUUID());
         builder.setDomainId(domainId);
         builder.setDomainName(domainName);
         builder.setServiceNames(serviceNames != null ? serviceNames : Collections.emptyList());

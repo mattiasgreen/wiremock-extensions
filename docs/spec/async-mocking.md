@@ -226,7 +226,7 @@ For protocols with clean wire framing, WireMock hosts in-process Netty TCP endpo
   - `Produce (0)`: Ingests `RecordBatch v2` with Castagnoli CRC32C validation.
 
 ### 6.4. Casual Queue (`wiremock-extension-casual`)
-- **Engine**: Upstream `casualcore/casual-java` 3.4.0 integration.
+- **Engine**: Upstream `casualcore/casual-java` 3.7.3 integration.
 - **Features**: Direct handling of `ENQUEUE_REQUEST (6100)` and `DEQUEUE_REQUEST (6200)` with full XA 2PC transaction coordinator enlistment.
 
 ### 6.5. IBM MQ Connectivity Strategy

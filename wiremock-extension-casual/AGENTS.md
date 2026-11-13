@@ -27,7 +27,7 @@ Scoped instructions for `wiremock-extension-casual` (In-process Netty XATMI / Ca
 
 ## 2. Package Architecture & Upstream Reuse
 
-All extension classes live under `com.github.mattiasgreen.wiremock.casual.*` and directly reuse official `se.laz.casual:*` upstream libraries (3.4.0+):
+All extension classes live under `com.github.mattiasgreen.wiremock.casual.*` and directly reuse official `se.laz.casual:*` upstream libraries (3.7.3+):
 
 - **Deep Modules & Clear Seams**:
   - `CasualWireMockGateway`: Thin orchestrator binding the network server to mediation and coordination.
@@ -47,9 +47,14 @@ All extension classes live under `com.github.mattiasgreen.wiremock.casual.*` and
 3. **Multi-Upstream 2PC Stickiness**: 2PC frames (`prepare`, `commit`, `rollback`) lack `serviceName` and only contain `Xid`. Enlisted upstream clients are tracked per `Xid` inside `CasualTransactionCoordinator` to ensure atomic multi-upstream 2PC propagation.
 4. **Human-Readable Buffer Mediation**: Convert Fielded buffers (`.FIELDED`/`CFIELD/`) to/from structured JSON, strip null-terminators for `CSTRING/`, and preserve text in WireMock's Request Journal and offline stubs via `CasualHttpMediation`.
 5. **Bidirectional L7 Protocol Normalization Invariant**:
-   - Outbound service replies sent by `CasualServer` MUST strictly match the client's negotiated `connVersion` (`SERVICE_CALL_REPLY` / 3101 with `XID` for `< 1.3`, `SERVICE_CALL_REPLY_V_1_3` / 3103 for `>= 1.3`).
-   - Outbound proxied service requests sent by `CasualClient` to upstream domains MUST match `upstreamClient.getProtocolVersion()`.
-   - Never leak Protocol 1.3+ frames (such as `3103`) to a Protocol 1.2 client or vice versa; doing so triggers `DecoderException: Unknown message type` and permanent TCP byte-stream desynchronization.
+   - Outbound service replies sent by `CasualServer` MUST strictly match the client's negotiated `connVersion` (`SERVICE_CALL_REPLY` / 3101 with `XID` for `< 1.3`, `SERVICE_CALL_REPLY_V_1_3` / 3103 for `1.3–1.4`, `SERVICE_CALL_REPLY_V_1_5` / 3105 for `>= 1.5`).
+   - Outbound proxied service requests sent by `CasualClient` to upstream domains MUST match `upstreamClient.getProtocolVersion()` (`SERVICE_CALL_REQUEST` / 3100 for `< 1.3`, `SERVICE_CALL_REQUEST_V_1_3` / 3102 for `1.3–1.4`, `SERVICE_CALL_REQUEST_V_1_5` / 3104 for `>= 1.5`).
+   - `CasualProtocolConfig` defaults `CASUAL_NETWORK_PROTOCOL_STRICT_VALIDATION` to `false` for legacy WildFly `<= 3.4.4` 8-byte padding interoperability unless overridden via system property/env/config file.
+   - Never leak mismatched protocol frames (such as `3103` or `3105` to a Protocol 1.2 client, or `3105` to a Protocol 1.4 client); doing so triggers `DecoderException: Unknown message type`, `CasualProtocolException`, or permanent TCP byte-stream desynchronization.
+6. **Virtual-Thread Request Offload, Fire-and-Forget (`TPNOREPLY`), & Split-Horizon Loop Safety**:
+   - `CasualServer` keeps `DOMAIN_CONNECT_REQUEST` synchronous on the Netty I/O event loop (protocol negotiation) and offloads service, discovery, queue, and 2PC request handlers onto `Executors.newVirtualThreadPerTaskExecutor()`, preventing callback deadlocks when proxied calls re-enter the same gateway.
+   - `CasualClient.forwardServiceCall` and `CasualServer.handleServiceCall` honor `AtmiFlags.TPNOREPLY` via `requestNoReply(...)`, suppressing unsolicited wire replies and skipping XA enlistment/transaction recording on `TPNOREPLY`/`TPNOTRAN`.
+   - `CasualWireMockGateway` advertises only real local stub/pattern matches or upstream-discovered services (no synthetic catch-all fabrication), applies split-horizon domain filtering (`requesterDomainId == remoteDomainId`) + execution deduplication during discovery, and fails fast with `ErrorState.TPENOENT` on in-flight proxy routing cycles.
 
 ---
 
@@ -74,7 +79,7 @@ Instead of decompiling bytecode or downloading source JARs manually, work direct
      ```
    - Checkout specific version tags matching `gradle/libs.versions.toml`:
      ```bash
-     git checkout 3.4.0
+     git checkout 3.7.3
      git diff 3.4.0..3.5.0 -- casual/casual-network-protocol/
      ```
 3. **Upstream Contribution Preparation**:

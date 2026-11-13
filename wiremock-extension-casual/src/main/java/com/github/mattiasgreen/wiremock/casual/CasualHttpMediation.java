@@ -21,8 +21,10 @@ import javax.transaction.xa.Xid;
 import se.laz.casual.api.buffer.type.ServiceBuffer;
 import se.laz.casual.api.flags.ErrorState;
 import se.laz.casual.api.flags.TransactionState;
+import se.laz.casual.api.network.protocol.messages.CasualNWMessageType;
 import se.laz.casual.api.xa.XAReturnCode;
 import se.laz.casual.api.xa.XID;
+import se.laz.casual.jca.SpanId;
 import se.laz.casual.network.ProtocolVersion;
 import se.laz.casual.network.protocol.messages.queue.CasualDequeueRequestMessage;
 import se.laz.casual.network.protocol.messages.queue.CasualEnqueueRequestMessage;
@@ -78,12 +80,11 @@ public final class CasualHttpMediation {
             requestBuilder.withHeader("X-Casual-Format-Id", String.valueOf(xid.getFormatId()));
         }
 
-        try {
-            if (req.getParentSpan() != null) {
-                requestBuilder.withHeader(
-                        "X-Casual-Parent-Span", req.getParentSpan().toString());
+        if (req.getType() != CasualNWMessageType.SERVICE_CALL_REQUEST) {
+            SpanId parentSpan = req.getParentSpan();
+            if (parentSpan != null) {
+                requestBuilder.withHeader("X-Casual-Parent-Span", parentSpan.toString());
             }
-        } catch (Throwable ignored) {
         }
 
         if (requestPayload != null && requestPayload.trim().startsWith("{")) {

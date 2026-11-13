@@ -9,8 +9,8 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 ## 1. Key Capabilities
 
 * **Pure Java SE 21 + Netty Engine**: High-performance, lightweight in-process server and client utilizing upstream `se.laz.casual:casual-network`, `casual-network-protocol`, and `casual-api`. Fully dynamic protocol negotiation across versions 1.0 to 1.5 (`1000`–`1005`). Zero Jakarta EE, JCA, WildFly, or Quarkus runtime dependencies required.
-* **Transparent Domain Discovery Aggregation**: When an upstream domain is configured, dynamic service discovery queries both upstream services and local WireMock stubs (`/__casual/services/*`), merging them into a unified catalog. Empty discovery probes (`serviceNames = []`) discover the full upstream domain catalog.
-* **Fail-Fast Protocol Mechanics & Low Timeouts**: Default 4-second upstream timeouts prevent client hangs. Socket errors or unsupported message types close TCP connections immediately rather than silently hanging or dropping frames. Timeouts produce actionable error messages citing the exact configuration flag.
+* **Transparent Domain Discovery Aggregation**: When an upstream domain is configured, dynamic service discovery queries both upstream services and matching local WireMock stubs/patterns (`/__casual/services/*`), merging them into a unified catalog without fabricating unmocked services. Split-horizon filtering (`requesterDomainId == remoteDomainId`) and execution deduplication prevent peering discovery loops. Empty discovery probes (`serviceNames = []`) discover the full upstream and exact local stub catalog.
+* **Fail-Fast Protocol Mechanics, Virtual Threads & `TPNOREPLY`**: Default 4-second upstream timeouts prevent client hangs. `CasualServer` offloads inbound request dispatch to JDK 21 virtual threads so blocking proxied callbacks never deadlock the Netty event loop. `AtmiFlags.TPNOREPLY` fire-and-forget calls use `requestNoReply` without waiting for a response or emitting unsolicited replies, proxy routing cycles fail fast with `ErrorState.TPENOENT`, and socket/frame errors close TCP connections immediately.
 * **Non-JSON Binary Buffer Support (`.FIELDED`, `CFIELD/`, `X_OCTET`)**: Binary and fielded buffers pass through transparently to upstream domains, and record/replay to WireMock stubs via Base64 serialization with `X-Casual-Buffer-Type` headers. Offline unmatched binary requests fail fast with `ErrorState.TPEITYPE`.
 * **WireMock Stub Engine Integration**: Translates Casual service calls (`tpcall`) to internal WireMock request structures (`POST /__casual/services/{serviceName}`), unlocking WireMock’s full matching engine, JSON body patterns, scenario state machines, response templating, and request journal.
 * **Stub Match Discrimination**: Accurately distinguishes matched stubs (flagged with `Matched-Stub-Id`) from unmatched services, preventing accidental short-circuits.
@@ -65,7 +65,7 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 
 In enterprise topologies, clients and upstream domains often run disparate versions of the Casual protocol:
 * **Legacy Clients (e.g. WildFly 3.3.x / JBoss EAP)**: Only support Protocols `1.0` through `1.2` (`[1000, 1001, 1002]`). They require transactional `XID` fields in `SERVICE_CALL_REPLY` (`3101`) and crash with `Unknown message type: 3103` if sent Protocol 1.3+ replies.
-* **Modern Upstream Domains / Tuxedo Gateways**: Run Protocol `1.3` or `1.4` (`[1000..1004]`). They omit `XID` from `SERVICE_CALL_REPLY_V_1_3` (`3103`), require mandatory `parentSpan` in `SERVICE_CALL_REQUEST_V_1_3` (`3102`), and reject legacy `3100` frames with `Message type 3100 is not supported by protocol version VERSION_1_4`.
+* **Modern Upstream Domains / Tuxedo Gateways**: Run Protocol `1.3` through `1.5` (`[1000..1005]`). Protocol `1.3`–`1.4` omits `XID` from `SERVICE_CALL_REPLY_V_1_3` (`3103`) and requires mandatory `parentSpan` in `SERVICE_CALL_REQUEST_V_1_3` (`3102`), while Protocol `1.5` uses `3104` / `3105` to carry `CasualHeaders` alongside `ServiceBuffer` payloads.
 
 ### Architectural Choice: L7 Gateway Normalization (Decoupled Legs)
 
@@ -73,10 +73,12 @@ Rather than forcing 1:1 protocol pass-through—which would break upstream conne
 
 1. **Downstream Leg (Client -> Gateway)**: The client negotiates its preferred protocol version (`connVersion`) with `CasualServer`. All outbound service replies sent by `CasualServer` are strictly normalized to match `connVersion`:
    - If `connVersion < VERSION_1_3`: Replies are formatted as `CasualNWMessageType.SERVICE_CALL_REPLY` (`3101`), recovering the client's `XID` from the in-flight request.
-   - If `connVersion >= VERSION_1_3`: Replies are formatted as `CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3` (`3103`).
-2. **Upstream Leg (Gateway -> Upstream Domain)**: The pooled `CasualTcpClient` negotiates the highest mutually supported protocol version with the upstream server (`upstreamVersion`). All forwarded requests are normalized to match `upstreamVersion`:
-   - If `upstreamVersion >= VERSION_1_3`: Legacy requests are upgraded to `CasualNWMessageType.SERVICE_CALL_REQUEST_V_1_3` (`3102`), populating `parentSpan` with `SpanId.of()` when not present.
+   - If `VERSION_1_3 <= connVersion < VERSION_1_5`: Replies are formatted as `CasualNWMessageType.SERVICE_CALL_REPLY_V_1_3` (`3103`).
+   - If `connVersion >= VERSION_1_5`: Replies are formatted as `CasualNWMessageType.SERVICE_CALL_REPLY_V_1_5` (`3105`), preserving response `ServiceBuffer` headers.
+2. **Upstream Leg (Gateway -> Upstream Domain)**: The pooled `CasualClient` negotiates the highest mutually supported protocol version with the upstream server (`upstreamVersion`). All forwarded requests are normalized to match `upstreamVersion`:
+   - If `upstreamVersion >= VERSION_1_3`: Legacy requests are upgraded to `VERSION_1_3` (`3102`) or `VERSION_1_5` (`3104`), populating `parentSpan` with `SpanId.of()` when not present on legacy `< 1.3` frames.
    - If `upstreamVersion < VERSION_1_3`: Requests are formatted as legacy `3100` frames.
+3. **Legacy Trailing Padding Compatibility (`CasualProtocolConfig`)**: Defaults `CASUAL_NETWORK_PROTOCOL_STRICT_VALIDATION` to `false` so legacy WildFly (`casual-java <= 3.4.4`) clients sending 8-byte trailing call-descriptor padding interoperate cleanly unless explicitly overridden via system property, environment variable, or `CASUAL_CONFIG_FILE`.
 
 This ensures zero framing desynchronization, maintains clean connection pooling, and allows legacy and modern enterprise components to interoperate transparently.
 
@@ -706,5 +708,5 @@ powershell -ExecutionPolicy Bypass -File .agents/scripts/sync-upstream-casual.ps
 ```
 
 - **Commit History & Blame**: Use `git log -S <symbol>` to track when specific message decoders, validators, or protocol versions were introduced.
-- **Tag Inspection**: Checkout specific release tags (e.g. `git checkout 3.4.0`) to compare behaviors against the version specified in `gradle/libs.versions.toml`.
+- **Tag Inspection**: Checkout specific release tags (e.g. `git checkout 3.7.3`) to compare behaviors against the version specified in `gradle/libs.versions.toml`.
 - **Zero Decompilation**: Original Java source files with author comments, tests, and commit discussions are always accessible.

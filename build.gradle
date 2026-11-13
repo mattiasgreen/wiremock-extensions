@@ -63,6 +63,8 @@ subprojects {
 
     dependencies {
         spotbugsPlugins libs.findsecbugs.plugin
+        compileOnly libs.spotbugs.annotations
+        testCompileOnly libs.spotbugs.annotations
         compileOnly libs.wiremock
         testImplementation libs.wiremock
 
