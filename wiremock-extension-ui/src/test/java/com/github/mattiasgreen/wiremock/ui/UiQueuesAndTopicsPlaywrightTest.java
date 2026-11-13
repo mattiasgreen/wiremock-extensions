@@ -2,8 +2,8 @@ package com.github.mattiasgreen.wiremock.ui;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
+import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.WaitForSelectorState;
@@ -161,21 +161,18 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
     @DisplayName("Should inspect and update live destination via WireMock Async Admin API")
     void testLiveWireMockAsyncDestinationIntegration() {
         // Publish a message to in-memory broker
-        AsyncDestinationService destinationService = AsyncDestinationService.getInstance();
-        AsyncDestinationMessage liveMsg = new AsyncDestinationMessage(
-                "msg-live-1",
-                "in-memory",
-                "test.live.queue",
-                "KEY-1",
-                "corr-1",
-                null,
-                java.time.Instant.now(),
-                0,
-                Map.of("x-env", "test"),
-                "{\"alert\":\"system-healthy\",\"code\":200}",
-                null,
-                null);
-        destinationService.publishMessage("in-memory", "test.live.queue", liveMsg);
+        AsyncEngine engine = AsyncEngine.getInstance();
+        AsyncMessage liveMsg = AsyncMessage.builder()
+                .id("msg-live-1")
+                .protocol("in-memory")
+                .destination("test.live.queue")
+                .key("KEY-1")
+                .correlationId("corr-1")
+                .timestamp(java.time.Instant.now())
+                .headers(Map.of("x-env", "test"))
+                .payload("{\"alert\":\"system-healthy\",\"code\":200}")
+                .build();
+        engine.publishMessage("in-memory", "test.live.queue", liveMsg);
 
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#queues");
         page.waitForSelector("#tab-queues.active");

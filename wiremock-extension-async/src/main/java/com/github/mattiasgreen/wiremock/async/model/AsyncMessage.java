@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.async.model;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
@@ -20,6 +21,9 @@ import java.util.UUID;
  * @param payload string payload or serialized JSON/XML/text
  * @param headers wire properties and user headers
  * @param timestamp message creation or arrival timestamp
+ * @param size payload size in bytes
+ * @param partition optional Kafka partition number
+ * @param offset optional Kafka record offset
  */
 public record AsyncMessage(
         String id,
@@ -30,15 +34,35 @@ public record AsyncMessage(
         String key,
         String payload,
         Map<String, String> headers,
-        Instant timestamp) {
+        Instant timestamp,
+        long size,
+        Integer partition,
+        Long offset) {
 
     public AsyncMessage {
         id = id != null && !id.isBlank() ? id : UUID.randomUUID().toString();
+        correlationId = Objects.requireNonNullElse(correlationId, "");
+        replyTo = Objects.requireNonNullElse(replyTo, "");
         destination = Objects.requireNonNullElse(destination, "");
         protocol = Objects.requireNonNullElse(protocol, "async");
+        key = Objects.requireNonNullElse(key, "");
         payload = Objects.requireNonNullElse(payload, "");
         headers = headers != null ? Map.copyOf(headers) : Collections.emptyMap();
         timestamp = Objects.requireNonNullElseGet(timestamp, Instant::now);
+        size = size > 0 ? size : payload.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    public AsyncMessage(
+            String id,
+            String correlationId,
+            String replyTo,
+            String destination,
+            String protocol,
+            String key,
+            String payload,
+            Map<String, String> headers,
+            Instant timestamp) {
+        this(id, correlationId, replyTo, destination, protocol, key, payload, headers, timestamp, 0L, null, null);
     }
 
     public static Builder builder() {
@@ -55,6 +79,9 @@ public record AsyncMessage(
         private String payload;
         private Map<String, String> headers;
         private Instant timestamp;
+        private long size;
+        private Integer partition;
+        private Long offset;
 
         public Builder id(String id) {
             this.id = id;
@@ -101,9 +128,35 @@ public record AsyncMessage(
             return this;
         }
 
+        public Builder size(long size) {
+            this.size = size;
+            return this;
+        }
+
+        public Builder partition(Integer partition) {
+            this.partition = partition;
+            return this;
+        }
+
+        public Builder offset(Long offset) {
+            this.offset = offset;
+            return this;
+        }
+
         public AsyncMessage build() {
             return new AsyncMessage(
-                    id, correlationId, replyTo, destination, protocol, key, payload, headers, timestamp);
+                    id,
+                    correlationId,
+                    replyTo,
+                    destination,
+                    protocol,
+                    key,
+                    payload,
+                    headers,
+                    timestamp,
+                    size,
+                    partition,
+                    offset);
         }
     }
 }

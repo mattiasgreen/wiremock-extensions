@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.async.bridge;
 
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -51,6 +52,22 @@ public class InMemoryMessageBroker implements MessageBroker {
     @Override
     public synchronized List<String> listChannels() {
         return Collections.unmodifiableList(new ArrayList<>(queues.keySet()));
+    }
+
+    @Override
+    public synchronized List<AsyncDestination> discoverDestinations() {
+        List<AsyncDestination> list = new ArrayList<>(queues.size());
+        for (Map.Entry<String, Deque<AsyncMessage>> entry : queues.entrySet()) {
+            String ch = entry.getKey();
+            list.add(new AsyncDestination(
+                    "in-memory:" + ch,
+                    "in-memory",
+                    ch,
+                    "local-broker",
+                    entry.getValue().size(),
+                    Map.of("type", "FIFO")));
+        }
+        return Collections.unmodifiableList(list);
     }
 
     @Override

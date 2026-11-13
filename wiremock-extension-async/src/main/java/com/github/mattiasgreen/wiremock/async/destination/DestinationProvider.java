@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.async.destination;
 
+import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.util.List;
 
 /**
@@ -20,7 +21,7 @@ public interface DestinationProvider {
     /**
      * Peeks unconsumed messages from the specified destination without mutating queue state.
      */
-    List<AsyncDestinationMessage> peekMessages(String destination, int limit);
+    List<AsyncMessage> peekMessages(String destination, int limit);
 
     /**
      * Deletes a specific message by ID from the destination.
@@ -35,5 +36,5 @@ public interface DestinationProvider {
     /**
      * Injects or publishes a message onto the destination (e.g. compensating edit).
      */
-    boolean publishMessage(String destination, AsyncDestinationMessage message);
+    boolean publishMessage(String destination, AsyncMessage message);
 }

@@ -6,8 +6,6 @@ import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationService;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.time.Instant;
@@ -60,11 +58,11 @@ class KafkaIntegrationTest {
 
             assertThat(broker.size(topic)).isEqualTo(12);
 
-            List<AsyncDestinationMessage> peeked = broker.peekDestinationMessages(topic, 20);
+            List<AsyncMessage> peeked = broker.peek(topic, 20);
             assertThat(peeked).hasSize(12);
 
             Set<Integer> seenPartitions = new HashSet<>();
-            for (AsyncDestinationMessage msg : peeked) {
+            for (AsyncMessage msg : peeked) {
                 seenPartitions.add(msg.partition());
                 assertThat(msg.protocol()).isEqualTo("kafka");
                 assertThat(msg.offset()).isNotNull().isGreaterThanOrEqualTo(0L);
@@ -81,12 +79,12 @@ class KafkaIntegrationTest {
             }
 
             // Bounded limit returns most recent N records
-            assertThat(broker.peekDestinationMessages(topic, 3)).hasSize(3);
+            assertThat(broker.peek(topic, 3)).hasSize(3);
         }
     }
 
     @Test
-    void shouldDiscoverTopicsPeekPublishAndPurgeViaAsyncDestinationService() throws Exception {
+    void shouldDiscoverTopicsPeekPublishAndPurgeViaAsyncEngine() throws Exception {
         String topic = "payments.events";
         createTopic(topic, 2);
 
@@ -99,10 +97,9 @@ class KafkaIntegrationTest {
                 Map.of("client.id", "wm-it-client")));
 
         try (AsyncEngine engine = AsyncEngine.create(
-                new InMemoryMessageBroker("local-test"), new InMemoryMessageBroker("local-upstream"))) {
-            AsyncDestinationService service = AsyncDestinationService.createForTest(engine, registry);
+                new InMemoryMessageBroker("local-test"), new InMemoryMessageBroker("local-upstream"), registry)) {
 
-            List<AsyncDestination> discovered = service.listAllDestinations();
+            List<AsyncDestination> discovered = engine.listAllDestinations();
             assertThat(discovered).anySatisfy(dest -> {
                 assertThat(dest.name()).isEqualTo(topic);
                 assertThat(dest.protocol()).isEqualTo("kafka");
@@ -110,31 +107,28 @@ class KafkaIntegrationTest {
                 assertThat(dest.metadata()).containsEntry("discovery", "ADMIN_CLIENT");
             });
 
-            AsyncDestinationMessage compensating = new AsyncDestinationMessage(
-                    "edit-1",
-                    "kafka",
-                    topic,
-                    "PAY-8801",
-                    "corr-pay-8801",
-                    null,
-                    Instant.now(),
-                    42,
-                    Map.of("x-compensated", "true"),
-                    "{\"paymentId\":\"PAY-8801\",\"status\":\"SETTLED\"}",
-                    null,
-                    null);
+            AsyncMessage compensating = AsyncMessage.builder()
+                    .id("edit-1")
+                    .protocol("kafka")
+                    .destination(topic)
+                    .key("PAY-8801")
+                    .correlationId("corr-pay-8801")
+                    .timestamp(Instant.now())
+                    .headers(Map.of("x-compensated", "true"))
+                    .payload("{\"paymentId\":\"PAY-8801\",\"status\":\"SETTLED\"}")
+                    .build();
 
-            assertThat(service.publishMessage("kafka", topic, compensating)).isTrue();
+            assertThat(engine.publishMessage("kafka", topic, compensating)).isTrue();
 
-            List<AsyncDestinationMessage> messages = service.peekMessages("kafka", topic, 10);
+            List<AsyncMessage> messages = engine.peekMessages("kafka", topic, 10);
             assertThat(messages).hasSize(1);
             assertThat(messages.get(0).key()).isEqualTo("PAY-8801");
             assertThat(messages.get(0).correlationId()).isEqualTo("corr-pay-8801");
             assertThat(messages.get(0).headers()).containsEntry("x-compensated", "true");
             assertThat(messages.get(0).payload()).contains("SETTLED");
 
-            service.purgeDestination("kafka", topic);
-            assertThat(service.peekMessages("kafka", topic, 10)).isEmpty();
+            engine.purgeDestination("kafka", topic);
+            assertThat(engine.peekMessages("kafka", topic, 10)).isEmpty();
         }
     }
 

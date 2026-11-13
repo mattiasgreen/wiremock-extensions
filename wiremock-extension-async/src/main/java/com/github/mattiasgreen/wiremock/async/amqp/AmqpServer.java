@@ -179,13 +179,13 @@ public class AmqpServer implements AutoCloseable {
             try {
                 AdvancedMessage<byte[]> advMsg = AdvancedMessage.create();
                 Properties props = new Properties();
-                if (msg.id() != null) {
+                if (msg.id() != null && !msg.id().isBlank()) {
                     props.setMessageId(msg.id());
                 }
-                if (msg.correlationId() != null) {
+                if (msg.correlationId() != null && !msg.correlationId().isBlank()) {
                     props.setCorrelationId(msg.correlationId());
                 }
-                if (msg.replyTo() != null) {
+                if (msg.replyTo() != null && !msg.replyTo().isBlank()) {
                     props.setReplyTo(msg.replyTo());
                 }
                 props.setTo(queue);

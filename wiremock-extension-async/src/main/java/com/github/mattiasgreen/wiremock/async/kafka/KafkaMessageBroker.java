@@ -1,7 +1,7 @@
 package com.github.mattiasgreen.wiremock.async.kafka;
 
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -140,26 +140,7 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
 
     @Override
     public List<AsyncMessage> peek(String topic) {
-        List<AsyncDestinationMessage> destMessages = peekDestinationMessages(topic, 0);
-        List<AsyncMessage> result = new ArrayList<>(destMessages.size());
-        for (AsyncDestinationMessage m : destMessages) {
-            result.add(AsyncMessage.builder()
-                    .id(m.id())
-                    .destination(topic)
-                    .key(m.key())
-                    .correlationId(m.correlationId())
-                    .replyTo(m.replyTo())
-                    .payload(m.payload())
-                    .headers(m.headers())
-                    .timestamp(m.timestamp())
-                    .build());
-        }
-        return Collections.unmodifiableList(result);
-    }
-
-    @Override
-    public List<AsyncDestinationMessage> peekDestinationMessages(String channel, String protocol, int limit) {
-        return peekDestinationMessages(channel, limit);
+        return peek(topic, 0);
     }
 
     @Override
@@ -171,12 +152,13 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
      * Performs a detached, non-committing multi-partition browse on the target Kafka topic,
      * reading up to {@code limit} recent records without creating or mutating consumer group offsets.
      */
-    public List<AsyncDestinationMessage> peekDestinationMessages(String topic, int limit) {
+    @Override
+    public List<AsyncMessage> peek(String topic, int limit) {
         if (topic == null || topic.isBlank() || closed) {
             return Collections.emptyList();
         }
 
-        List<AsyncDestinationMessage> result = new ArrayList<>();
+        List<AsyncMessage> result = new ArrayList<>();
         try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(buildDetachedConsumerProps())) {
             List<PartitionInfo> infos = consumer.partitionsFor(topic, Duration.ofSeconds(3));
             if (infos == null || infos.isEmpty()) {
@@ -211,7 +193,7 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
             while (!targetEnds.isEmpty() && System.nanoTime() < deadlineNanos) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(250));
                 for (ConsumerRecord<String, String> r : records) {
-                    result.add(toDestinationMessage(topic, r));
+                    result.add(toAsyncMessage(topic, r));
                 }
                 List<TopicPartition> completed = new ArrayList<>();
                 for (Map.Entry<TopicPartition, Long> entry : targetEnds.entrySet()) {
@@ -227,11 +209,28 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
             LOG.debug("[KAFKA-BROKER] Detached peek failed for topic [{}]: {}", safeTopic, sanitized);
         }
 
-        result.sort(Comparator.comparing(AsyncDestinationMessage::timestamp).reversed());
+        result.sort(Comparator.comparing(AsyncMessage::timestamp).reversed());
         if (limit > 0 && result.size() > limit) {
             return Collections.unmodifiableList(new ArrayList<>(result.subList(0, limit)));
         }
         return Collections.unmodifiableList(result);
+    }
+
+    @Override
+    public List<AsyncDestination> discoverDestinations() {
+        List<String> topics = listChannels();
+        List<AsyncDestination> list = new ArrayList<>(topics.size());
+        for (String topic : topics) {
+            int count = size(topic);
+            list.add(new AsyncDestination(
+                    "kafka:" + name + ":" + topic,
+                    "kafka",
+                    topic,
+                    name,
+                    count,
+                    Map.of("type", "TOPIC", "discovery", "ADMIN_CLIENT")));
+        }
+        return Collections.unmodifiableList(list);
     }
 
     @Override
@@ -365,7 +364,7 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
         return props;
     }
 
-    private static AsyncDestinationMessage toDestinationMessage(String topic, ConsumerRecord<String, String> r) {
+    private static AsyncMessage toAsyncMessage(String topic, ConsumerRecord<String, String> r) {
         Map<String, String> hdrs = new LinkedHashMap<>();
         String correlationId = "";
         String replyTo = "";
@@ -379,21 +378,20 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
             }
         }
         String value = Objects.requireNonNullElse(r.value(), "");
-        int sizeBytes = value.getBytes(StandardCharsets.UTF_8).length;
         String id = topic + "-" + r.partition() + "-" + r.offset();
-        return new AsyncDestinationMessage(
-                id,
-                "kafka",
-                topic,
-                r.key() != null ? r.key() : "",
-                correlationId,
-                replyTo,
-                Instant.ofEpochMilli(r.timestamp()),
-                sizeBytes,
-                Collections.unmodifiableMap(hdrs),
-                value,
-                r.partition(),
-                r.offset());
+        return AsyncMessage.builder()
+                .id(id)
+                .protocol("kafka")
+                .destination(topic)
+                .key(r.key() != null ? r.key() : "")
+                .correlationId(correlationId)
+                .replyTo(replyTo)
+                .timestamp(Instant.ofEpochMilli(r.timestamp()))
+                .headers(hdrs)
+                .payload(value)
+                .partition(r.partition())
+                .offset(r.offset())
+                .build();
     }
 
     @Override

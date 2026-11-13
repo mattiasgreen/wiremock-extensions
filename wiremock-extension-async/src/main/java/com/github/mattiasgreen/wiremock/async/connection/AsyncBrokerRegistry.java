@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.async.amqp.AmqpMessageBroker;
 import com.github.mattiasgreen.wiremock.async.bridge.MessageBroker;
+import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaMessageBroker;
 import java.io.InputStream;
+import java.lang.reflect.Constructor;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * Ingests single connection descriptors or batch JSON arrays with upsert semantics,
  * and masks plaintext secrets while preserving declarative ${VAR_NAME} tokens on export.
  */
-public class AsyncBrokerRegistry {
+public final class AsyncBrokerRegistry {
 
     private static final Logger LOG = LoggerFactory.getLogger(AsyncBrokerRegistry.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -47,8 +50,26 @@ public class AsyncBrokerRegistry {
         });
         registerBrokerFactory("amqp", conn -> {
             BrokerConnection resolved = conn.resolveWithEnv();
-            return new AmqpMessageBroker(resolved.id(), buildAmqpUri(resolved));
+            return new AmqpMessageBroker(resolved.id(), buildAmqpUri(resolved), resolved.properties());
         });
+        registerOptionalIbmMqFactory();
+    }
+
+    private void registerOptionalIbmMqFactory() {
+        try {
+            Class.forName("com.ibm.mq.jms.MQConnectionFactory");
+            Class<?> brokerCls = Class.forName("com.github.mattiasgreen.wiremock.async.ibmmq.IbmMqMessageBroker");
+            Constructor<?> ctor = brokerCls.getDeclaredConstructor(BrokerConnection.class);
+            registerBrokerFactory("ibmmq", conn -> {
+                try {
+                    return (MessageBroker) ctor.newInstance(conn);
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException("Failed to instantiate IbmMqMessageBroker", e);
+                }
+            });
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            // Optional IBM MQ client library not in classpath
+        }
     }
 
     public static AsyncBrokerRegistry getInstance() {
@@ -113,6 +134,43 @@ public class AsyncBrokerRegistry {
             }
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    public List<AsyncDestination> discoverDestinations(String protocol) {
+        List<AsyncDestination> result = new ArrayList<>();
+        for (MessageBroker broker : getOrCreateBrokersByProtocol(protocol).values()) {
+            result.addAll(broker.discoverDestinations());
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    public List<MessageBroker> resolveTargetBrokers(String protocol, String destination) {
+        Collection<MessageBroker> brokers =
+                getOrCreateBrokersByProtocol(protocol).values();
+        if (brokers.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (destination != null && !destination.isBlank()) {
+            List<MessageBroker> owned = new ArrayList<>();
+            for (MessageBroker broker : brokers) {
+                if (broker.ownsDestination(destination)) {
+                    owned.add(broker);
+                }
+            }
+            if (!owned.isEmpty()) {
+                return Collections.unmodifiableList(owned);
+            }
+            if (brokers.size() > 1) {
+                for (MessageBroker broker : brokers) {
+                    for (AsyncDestination dest : broker.discoverDestinations()) {
+                        if (destination.equals(dest.name())) {
+                            return List.of(broker);
+                        }
+                    }
+                }
+            }
+        }
+        return Collections.unmodifiableList(new ArrayList<>(brokers));
     }
 
     public List<BrokerConnection> listConnections() {

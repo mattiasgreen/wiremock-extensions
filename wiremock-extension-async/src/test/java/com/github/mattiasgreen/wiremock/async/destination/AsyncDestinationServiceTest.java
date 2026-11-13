@@ -3,6 +3,7 @@ package com.github.mattiasgreen.wiremock.async.destination;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
+import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.time.Instant;
@@ -14,14 +15,12 @@ import org.junit.jupiter.api.Test;
 class AsyncDestinationServiceTest {
 
     private AsyncEngine engine;
-    private AsyncDestinationService service;
 
     @BeforeEach
     void setUp() {
         InMemoryMessageBroker testBroker = new InMemoryMessageBroker("test-broker");
         InMemoryMessageBroker upstreamBroker = new InMemoryMessageBroker("upstream-broker");
-        engine = AsyncEngine.create(testBroker, upstreamBroker);
-        service = AsyncDestinationService.createForTest(engine);
+        engine = AsyncEngine.create(testBroker, upstreamBroker, AsyncBrokerRegistry.createForTest());
     }
 
     @Test
@@ -44,24 +43,24 @@ class AsyncDestinationServiceTest {
         engine.publish(channel, m1);
         engine.publish(channel, m2);
 
-        List<AsyncDestination> destinations = service.listAllDestinations();
+        List<AsyncDestination> destinations = engine.listAllDestinations();
         assertThat(destinations).hasSize(1);
         assertThat(destinations.get(0).name()).isEqualTo(channel);
         assertThat(destinations.get(0).messageCount()).isEqualTo(2);
 
         // Peek
-        List<AsyncDestinationMessage> peeked = service.peekMessages("in-memory", channel, 10);
+        List<AsyncMessage> peeked = engine.peekMessages("in-memory", channel, 10);
         assertThat(peeked).hasSize(2);
         assertThat(peeked.get(0).id()).isEqualTo("msg-1");
         assertThat(peeked.get(1).id()).isEqualTo("msg-2");
 
         // Delete single message
-        boolean deleted = service.deleteMessage("in-memory", channel, "msg-1");
+        boolean deleted = engine.deleteMessage("in-memory", channel, "msg-1");
         assertThat(deleted).isTrue();
-        assertThat(service.peekMessages("in-memory", channel, 10)).hasSize(1);
+        assertThat(engine.peekMessages("in-memory", channel, 10)).hasSize(1);
 
         // Purge
-        service.purgeDestination("in-memory", channel);
-        assertThat(service.peekMessages("in-memory", channel, 10)).isEmpty();
+        engine.purgeDestination("in-memory", channel);
+        assertThat(engine.peekMessages("in-memory", channel, 10)).isEmpty();
     }
 }

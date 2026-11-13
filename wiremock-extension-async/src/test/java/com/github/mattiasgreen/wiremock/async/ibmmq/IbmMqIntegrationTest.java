@@ -2,10 +2,11 @@ package com.github.mattiasgreen.wiremock.async.ibmmq;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
-import com.github.mattiasgreen.wiremock.async.destination.AsyncDestinationMessage;
+import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import java.time.Duration;
 import java.time.Instant;
@@ -62,81 +63,75 @@ class IbmMqIntegrationTest {
                         "queues", "DEV.QUEUE.1,DEV.QUEUE.2"));
         registry.register(appConn);
 
-        IbmMqDestinationProvider provider = new IbmMqDestinationProvider(registry);
-        provider.purgeDestination("DEV.QUEUE.1");
-        provider.purgeDestination("DEV.QUEUE.2");
+        try (AsyncEngine engine = AsyncEngine.create(
+                new InMemoryMessageBroker("test"), new InMemoryMessageBroker("upstream"), registry)) {
+            engine.purgeDestination("ibmmq", "DEV.QUEUE.1");
+            engine.purgeDestination("ibmmq", "DEV.QUEUE.2");
 
-        try (IbmMqMessageBroker broker = new IbmMqMessageBroker(appConn)) {
-            AsyncMessage outbound = AsyncMessage.builder()
+            try (IbmMqMessageBroker broker = new IbmMqMessageBroker(appConn)) {
+                AsyncMessage outbound = AsyncMessage.builder()
+                        .destination("DEV.QUEUE.1")
+                        .correlationId("corr-ibmmq-9001")
+                        .replyTo("DEV.QUEUE.2")
+                        .payload("{\"orderId\":\"ORD-MQ-9001\",\"amount\":149.50}")
+                        .headers(Map.of("x-tenant-id", "nordics-bank", "x-source", "wiremock-it"))
+                        .build();
+
+                broker.send("DEV.QUEUE.1", outbound);
+
+                // Non-destructive browse via engine must see the message without consuming it
+                List<AsyncMessage> peeked = engine.peekMessages("ibmmq", "DEV.QUEUE.1", 10);
+                assertThat(peeked).hasSize(1);
+                AsyncMessage msg = peeked.get(0);
+                assertThat(msg.protocol()).isEqualTo("ibmmq");
+                assertThat(msg.payload()).contains("ORD-MQ-9001");
+                assertThat(msg.correlationId()).isEqualTo("corr-ibmmq-9001");
+                assertThat(msg.replyTo()).isEqualTo("DEV.QUEUE.2");
+                assertThat(msg.headers()).containsEntry("x_tenant_id", "nordics-bank");
+
+                // Second peek must still see 1 message
+                assertThat(engine.peekMessages("ibmmq", "DEV.QUEUE.1", 10)).hasSize(1);
+
+                // Destructive poll consumes it
+                AsyncMessage polled = broker.poll("DEV.QUEUE.1");
+                assertThat(polled).isNotNull();
+                assertThat(polled.payload()).contains("ORD-MQ-9001");
+                assertThat(broker.poll("DEV.QUEUE.1")).isNull();
+            }
+
+            // Compensating publish + selective delete + purge via engine
+            AsyncMessage staged1 = AsyncMessage.builder()
+                    .id("custom-1")
+                    .protocol("ibmmq")
                     .destination("DEV.QUEUE.1")
-                    .correlationId("corr-ibmmq-9001")
-                    .replyTo("DEV.QUEUE.2")
-                    .payload("{\"orderId\":\"ORD-MQ-9001\",\"amount\":149.50}")
-                    .headers(Map.of("x-tenant-id", "nordics-bank", "x-source", "wiremock-it"))
+                    .correlationId("corr-edit-1")
+                    .timestamp(Instant.now())
+                    .headers(Map.of("x-edit", "true"))
+                    .payload("{\"compensated\":true}")
+                    .build();
+            AsyncMessage staged2 = AsyncMessage.builder()
+                    .id("custom-2")
+                    .protocol("ibmmq")
+                    .destination("DEV.QUEUE.1")
+                    .correlationId("corr-edit-2")
+                    .timestamp(Instant.now())
+                    .payload("{\"compensated\":false}")
                     .build();
 
-            broker.send("DEV.QUEUE.1", outbound);
+            assertThat(engine.publishMessage("ibmmq", "DEV.QUEUE.1", staged1)).isTrue();
+            assertThat(engine.publishMessage("ibmmq", "DEV.QUEUE.1", staged2)).isTrue();
 
-            // Non-destructive browse via provider must see the message without consuming it
-            List<AsyncDestinationMessage> peeked = provider.peekMessages("DEV.QUEUE.1", 10);
-            assertThat(peeked).hasSize(1);
-            AsyncDestinationMessage msg = peeked.get(0);
-            assertThat(msg.protocol()).isEqualTo("ibmmq");
-            assertThat(msg.payload()).contains("ORD-MQ-9001");
-            assertThat(msg.correlationId()).isEqualTo("corr-ibmmq-9001");
-            assertThat(msg.replyTo()).isEqualTo("DEV.QUEUE.2");
-            assertThat(msg.headers()).containsEntry("x_tenant_id", "nordics-bank");
+            List<AsyncMessage> afterPublish = engine.peekMessages("ibmmq", "DEV.QUEUE.1", 10);
+            assertThat(afterPublish).hasSize(2);
 
-            // Second peek must still see 1 message
-            assertThat(provider.peekMessages("DEV.QUEUE.1", 10)).hasSize(1);
+            String targetJmsId = afterPublish.get(0).id();
+            assertThat(engine.deleteMessage("ibmmq", "DEV.QUEUE.1", targetJmsId))
+                    .isTrue();
+            assertThat(engine.peekMessages("ibmmq", "DEV.QUEUE.1", 10)).hasSize(1);
 
-            // Destructive poll consumes it
-            AsyncMessage polled = broker.poll("DEV.QUEUE.1");
-            assertThat(polled).isNotNull();
-            assertThat(polled.payload()).contains("ORD-MQ-9001");
-            assertThat(broker.poll("DEV.QUEUE.1")).isNull();
+            engine.purgeDestination("ibmmq", "DEV.QUEUE.1");
+            assertThat(engine.peekMessages("ibmmq", "DEV.QUEUE.1", 10)).isEmpty();
         }
-
-        // Compensating publish + selective delete + purge via provider
-        AsyncDestinationMessage staged1 = new AsyncDestinationMessage(
-                "custom-1",
-                "ibmmq",
-                "DEV.QUEUE.1",
-                null,
-                "corr-edit-1",
-                null,
-                Instant.now(),
-                24,
-                Map.of("x-edit", "true"),
-                "{\"compensated\":true}",
-                null,
-                null);
-        AsyncDestinationMessage staged2 = new AsyncDestinationMessage(
-                "custom-2",
-                "ibmmq",
-                "DEV.QUEUE.1",
-                null,
-                "corr-edit-2",
-                null,
-                Instant.now(),
-                25,
-                Map.of(),
-                "{\"compensated\":false}",
-                null,
-                null);
-
-        assertThat(provider.publishMessage("DEV.QUEUE.1", staged1)).isTrue();
-        assertThat(provider.publishMessage("DEV.QUEUE.1", staged2)).isTrue();
-
-        List<AsyncDestinationMessage> afterPublish = provider.peekMessages("DEV.QUEUE.1", 10);
-        assertThat(afterPublish).hasSize(2);
-
-        String targetJmsId = afterPublish.get(0).id();
-        assertThat(provider.deleteMessage("DEV.QUEUE.1", targetJmsId)).isTrue();
-        assertThat(provider.peekMessages("DEV.QUEUE.1", 10)).hasSize(1);
-
-        provider.purgeDestination("DEV.QUEUE.1");
-        assertThat(provider.peekMessages("DEV.QUEUE.1", 10)).isEmpty();
     }
 
     @Test
@@ -154,34 +149,36 @@ class IbmMqIntegrationTest {
                         "password", PASSWORD));
         registry.register(adminConn);
 
-        IbmMqDestinationProvider provider = new IbmMqDestinationProvider(registry);
-        provider.purgeDestination("DEV.QUEUE.3");
+        try (AsyncEngine engine = AsyncEngine.create(
+                new InMemoryMessageBroker("test"), new InMemoryMessageBroker("upstream"), registry)) {
+            engine.purgeDestination("ibmmq", "DEV.QUEUE.3");
 
-        try (IbmMqMessageBroker broker = new IbmMqMessageBroker(adminConn)) {
-            broker.send(
-                    "DEV.QUEUE.3",
-                    AsyncMessage.builder()
-                            .destination("DEV.QUEUE.3")
-                            .payload("<payment id=\"PCF-1\"/>")
-                            .build());
+            try (IbmMqMessageBroker broker = new IbmMqMessageBroker(adminConn)) {
+                broker.send(
+                        "DEV.QUEUE.3",
+                        AsyncMessage.builder()
+                                .destination("DEV.QUEUE.3")
+                                .payload("<payment id=\"PCF-1\"/>")
+                                .build());
 
-            List<AsyncDestination> discovered = provider.listDestinations();
-            assertThat(discovered)
-                    .extracting(AsyncDestination::name)
-                    .contains("DEV.QUEUE.1", "DEV.QUEUE.2", "DEV.QUEUE.3")
-                    .noneMatch(IbmMqConnectionConfig::isSystemQueue);
+                List<AsyncDestination> discovered = engine.listAllDestinations();
+                assertThat(discovered)
+                        .extracting(AsyncDestination::name)
+                        .contains("DEV.QUEUE.1", "DEV.QUEUE.2", "DEV.QUEUE.3")
+                        .noneMatch(IbmMqConnectionConfig::isSystemQueue);
 
-            AsyncDestination q3 = discovered.stream()
-                    .filter(d -> "DEV.QUEUE.3".equals(d.name()))
-                    .findFirst()
-                    .orElseThrow();
-            assertThat(q3.messageCount()).isEqualTo(1);
-            assertThat(q3.protocol()).isEqualTo("ibmmq");
-            assertThat(q3.brokerId()).isEqualTo("it-ibmmq-admin");
-            assertThat(q3.metadata()).containsEntry("discovery", "PCF");
+                AsyncDestination q3 = discovered.stream()
+                        .filter(d -> "DEV.QUEUE.3".equals(d.name()))
+                        .findFirst()
+                        .orElseThrow();
+                assertThat(q3.messageCount()).isEqualTo(1);
+                assertThat(q3.protocol()).isEqualTo("ibmmq");
+                assertThat(q3.brokerId()).isEqualTo("it-ibmmq-admin");
+                assertThat(q3.metadata()).containsEntry("discovery", "PCF");
 
-            provider.purgeDestination("DEV.QUEUE.3");
-            assertThat(broker.size("DEV.QUEUE.3")).isZero();
+                engine.purgeDestination("ibmmq", "DEV.QUEUE.3");
+                assertThat(broker.size("DEV.QUEUE.3")).isZero();
+            }
         }
     }
 }
