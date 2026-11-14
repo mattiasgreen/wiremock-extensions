@@ -13,7 +13,7 @@ export function exportStubs(scope = 'all') {
   let list = [];
   let filename = 'wiremock-stubs.json';
 
-  const allStubs = [...state.currentStubs, ...state.disabledStubs];
+  const allStubs = state.currentStubs || [];
 
   if (scope === 'selected') {
     list = allStubs.filter(s => state.selectedStubIds.has(s.id));

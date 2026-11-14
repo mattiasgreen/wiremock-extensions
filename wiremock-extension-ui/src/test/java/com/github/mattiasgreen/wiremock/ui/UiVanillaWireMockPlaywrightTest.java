@@ -92,16 +92,21 @@ class UiVanillaWireMockPlaywrightTest {
         stubCards.first().click();
         page.waitForSelector("#stub-detail-view:not(.hidden)");
 
-        // 2. Verify Lifecycle controls degrade gracefully with tooltips
+        // 2. Verify Priority-Tier Parking & Filtering work natively on vanilla WireMock
         Locator btnToggle = page.locator("#btn-toggle-stub");
-        assertThat(btnToggle.isDisabled()).isTrue();
-        assertThat(btnToggle.getAttribute("class")).contains("cap-disabled");
-        assertThat(btnToggle.getAttribute("title")).contains("requires wiremock-extension-ui lifecycle endpoint");
+        assertThat(btnToggle.isDisabled()).isFalse();
+        assertThat(btnToggle.getAttribute("class")).doesNotContain("cap-disabled");
 
         Locator filterDisabled = page.locator("#btn-filter-disabled");
-        assertThat(filterDisabled.isDisabled()).isTrue();
-        assertThat(filterDisabled.getAttribute("class")).contains("cap-disabled");
-        assertThat(filterDisabled.getAttribute("title")).contains("requires wiremock-extension-ui lifecycle endpoint");
+        assertThat(filterDisabled.isDisabled()).isFalse();
+        assertThat(filterDisabled.getAttribute("class")).doesNotContain("cap-disabled");
+
+        // Toggle /api/hello to parked (priority 100) and back to active (priority 5) natively
+        btnToggle.click();
+        page.waitForSelector("#detail-lifecycle-state:has-text('DISABLED')");
+        assertThat(page.locator("#detail-priority").textContent().trim()).isEqualTo("100");
+        page.locator("#btn-toggle-stub").click();
+        page.waitForSelector("#detail-lifecycle-state:has-text('ACTIVE')");
 
         // 3. Verify Stateful controls degrade gracefully
         Locator filterDynamic = page.locator("#btn-filter-dynamic");

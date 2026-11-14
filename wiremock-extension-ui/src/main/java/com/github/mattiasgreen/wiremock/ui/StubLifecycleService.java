@@ -1,20 +1,34 @@
 package com.github.mattiasgreen.wiremock.ui;
 
+import com.github.tomakehurst.wiremock.common.Json;
+import com.github.tomakehurst.wiremock.common.Metadata;
 import com.github.tomakehurst.wiremock.core.Admin;
+import com.github.tomakehurst.wiremock.matching.RequestPattern;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.util.*;
 
 /**
- * Canonical domain service managing the state lifecycle of WireMock stubs across active
- * admin mappings and parked disabled stores, as well as serve event snapshot conversions.
+ * Canonical domain service managing native priority-tier stub lifecycle operations,
+ * stateless project mode switching ({@code proxy} &lt;-&gt; {@code stubs}),
+ * and deduplicated ServeEvent snapshot conversions.
  *
- * <p>Encapsulates the {@link Admin} communication seam, atomic status transitions, project mode switching,
- * and deduplicated recording conversions behind a clean, high-leverage interface.
+ * <p>Uses WireMock's native stub priority ordering directly:
+ * <ul>
+ *   <li>{@link #PRIORITY_ACTIVE_STUB} (5): active static/mock stubs</li>
+ *   <li>{@link #PRIORITY_ACTIVE_PROXY} (10): active live service proxy catch-all rules</li>
+ *   <li>{@link #PRIORITY_OFFLINE_GUARD} (50): optional {@code ANY .*} 501 offline guard ({@code metadata.role = "offline-guard"})</li>
+ *   <li>{@link #PRIORITY_PARKED} (100+): parked (disabled) stubs that sit below active stubs/proxies</li>
+ * </ul>
  */
 public class StubLifecycleService {
 
-    public record TransitionResult(boolean found, String status, UUID id, String name) {}
+    public static final int PRIORITY_ACTIVE_STUB = 5;
+    public static final int PRIORITY_ACTIVE_PROXY = 10;
+    public static final int PRIORITY_OFFLINE_GUARD = 50;
+    public static final int PRIORITY_PARKED = 100;
+
+    private static final String META_PREVIOUS_PRIORITY = "previousPriority";
 
     public record ProjectModeResult(String project, String activeMode, int stubsEnabled, int stubsDisabled) {}
 
@@ -28,10 +42,7 @@ public class StubLifecycleService {
             RecordedStubConverter.SnapshotOptions options) {
 
         public static SnapshotCommand forProject(String targetProject, RecordedStubConverter.SnapshotOptions options) {
-            boolean all = targetProject == null
-                    || targetProject.isBlank()
-                    || "*".equals(targetProject)
-                    || "_all".equalsIgnoreCase(targetProject);
+            boolean all = isAllProjectsToken(targetProject);
             return new SnapshotCommand(
                     null,
                     targetProject != null ? targetProject : "",
@@ -60,113 +71,126 @@ public class StubLifecycleService {
     }
 
     private final Admin admin;
-    private final DisabledStubStore store;
 
     public StubLifecycleService() {
-        this(null, new DisabledStubStore());
+        this(null);
     }
 
     public StubLifecycleService(Admin admin) {
-        this(admin, new DisabledStubStore());
-    }
-
-    public StubLifecycleService(DisabledStubStore store) {
-        this(null, store);
-    }
-
-    public StubLifecycleService(Admin admin, DisabledStubStore store) {
         this.admin = admin;
-        this.store = Objects.requireNonNull(store, "store must not be null");
     }
 
     /**
      * Returns a new service instance bound to the given {@link Admin} seam.
      */
     public StubLifecycleService withAdmin(Admin admin) {
-        return new StubLifecycleService(admin, this.store);
+        return new StubLifecycleService(admin);
     }
 
-    public DisabledStubStore getStore() {
-        return store;
+    /**
+     * Returns {@code true} if the stub is parked at priority {@value #PRIORITY_PARKED} or higher.
+     */
+    public static boolean isParked(StubMapping stub) {
+        return stub != null && stub.getPriority() != null && stub.getPriority() >= PRIORITY_PARKED;
     }
 
-    public Collection<StubMapping> getAllDisabled() {
-        return store.getAll();
+    /**
+     * Returns {@code true} if the stub declares {@code metadata.role = "offline-guard"}.
+     */
+    public static boolean isOfflineGuard(StubMapping stub) {
+        if (stub == null || stub.getMetadata() == null) {
+            return false;
+        }
+        Object roleObj = stub.getMetadata().get("role");
+        return roleObj instanceof String role
+                && "offline-guard".equals(role.trim().toLowerCase(Locale.ROOT));
     }
 
-    public int disabledCount() {
-        return store.size();
+    /**
+     * Returns {@code true} if the stub forwards traffic to an upstream base URL
+     * or declares {@code metadata.mode = "proxy"} (e.g. Casual 2PC proxy rules).
+     */
+    public static boolean isProxyStub(StubMapping stub) {
+        if (stub == null) {
+            return false;
+        }
+        if (stub.getResponse() != null
+                && (stub.getResponse().isProxyResponse()
+                        || (stub.getResponse().getProxyBaseUrl() != null
+                                && !stub.getResponse().getProxyBaseUrl().isBlank()))) {
+            return true;
+        }
+        return stub.getMetadata() != null
+                && stub.getMetadata().get("mode") instanceof String mode
+                && "proxy".equals(mode.trim().toLowerCase(Locale.ROOT));
     }
 
-    public void clearParkedStubs() {
-        store.clear();
+    /**
+     * Derives the canonical project name from {@code metadata.project} or the URL base path segment.
+     */
+    public static String getStubProject(StubMapping stub) {
+        if (stub == null) {
+            return "Ungrouped";
+        }
+        if (stub.getMetadata() != null && stub.getMetadata().get("project") instanceof String p && !p.isBlank()) {
+            return p.trim();
+        }
+        String url = extractStubUrl(stub.getRequest());
+        return deriveProjectFromUrl(url);
     }
 
-    public TransitionResult disable(UUID id) {
-        return disable(requireAdmin(), id);
-    }
-
-    public TransitionResult disable(Admin targetAdmin, UUID id) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        DisabledStubStore.TransitionResult r = store.disable(targetAdmin, id);
-        return new TransitionResult(r.found(), r.status(), r.id(), r.name());
-    }
-
-    public TransitionResult enable(UUID id) {
-        return enable(requireAdmin(), id);
-    }
-
-    public TransitionResult enable(Admin targetAdmin, UUID id) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        DisabledStubStore.TransitionResult r = store.enable(targetAdmin, id);
-        return new TransitionResult(r.found(), r.status(), r.id(), r.name());
-    }
-
-    public TransitionResult toggle(UUID id) {
-        return toggle(requireAdmin(), id);
-    }
-
-    public TransitionResult toggle(Admin targetAdmin, UUID id) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        DisabledStubStore.TransitionResult r = store.toggle(targetAdmin, id);
-        return new TransitionResult(r.found(), r.status(), r.id(), r.name());
-    }
-
-    public StubMapping upsert(UUID id, StubMapping updatedStub) {
-        return upsert(requireAdmin(), id, updatedStub);
-    }
-
-    public StubMapping upsert(Admin targetAdmin, UUID id, StubMapping updatedStub) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        return store.upsert(targetAdmin, id, updatedStub);
-    }
-
-    public void delete(UUID id) {
-        delete(requireAdmin(), id);
-    }
-
-    public void delete(Admin targetAdmin, UUID id) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        store.delete(targetAdmin, id);
-    }
-
-    public int bulkApply(String action, List<UUID> ids) {
-        return bulkApply(requireAdmin(), action, ids);
-    }
-
-    public int bulkApply(Admin targetAdmin, String action, List<UUID> ids) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        return store.bulkApply(targetAdmin, action, ids);
-    }
-
+    /**
+     * Statelessly switches all non-guard stubs belonging to {@code targetProject} (or {@code _all}/{@code *})
+     * between {@code "proxy"} mode (proxies at priority 10, static stubs parked at 100) and
+     * {@code "stubs"} mode (static stubs active at priority 5 or restored custom priority, proxies parked at 100).
+     */
     public ProjectModeResult switchProjectMode(String targetProject, String requestedMode) {
         return switchProjectMode(requireAdmin(), targetProject, requestedMode);
     }
 
     public ProjectModeResult switchProjectMode(Admin targetAdmin, String targetProject, String requestedMode) {
         Objects.requireNonNull(targetAdmin, "admin must not be null");
-        DisabledStubStore.ProjectModeResult r = store.switchProjectMode(targetAdmin, targetProject, requestedMode);
-        return new ProjectModeResult(r.project(), r.activeMode(), r.stubsEnabled(), r.stubsDisabled());
+        String normalizedMode =
+                requestedMode == null ? "" : requestedMode.trim().toLowerCase(Locale.ROOT);
+        if (!"proxy".equals(normalizedMode) && !"stubs".equals(normalizedMode)) {
+            throw new IllegalArgumentException(
+                    "Invalid project mode '" + requestedMode + "'. Expected 'proxy' or 'stubs'.");
+        }
+
+        boolean allProjects = isAllProjectsToken(targetProject);
+        boolean proxyMode = "proxy".equals(normalizedMode);
+        List<StubMapping> mappings =
+                new ArrayList<>(targetAdmin.listAllStubMappings().getMappings());
+
+        int stubsEnabled = 0;
+        int stubsDisabled = 0;
+
+        for (StubMapping stub : mappings) {
+            if (stub == null || isOfflineGuard(stub)) {
+                continue;
+            }
+            if (!allProjects && !targetProject.equals(getStubProject(stub))) {
+                continue;
+            }
+
+            boolean proxyStub = isProxyStub(stub);
+            boolean currentlyParked = isParked(stub);
+            boolean shouldBeActive = proxyMode ? proxyStub : !proxyStub;
+
+            if (shouldBeActive && currentlyParked) {
+                StubMapping updated = StubMapping.buildFrom(StubMapping.buildJsonStringFor(stub));
+                unparkStub(updated, proxyStub);
+                targetAdmin.editStubMapping(updated);
+                stubsEnabled++;
+            } else if (!shouldBeActive && !currentlyParked) {
+                StubMapping updated = StubMapping.buildFrom(StubMapping.buildJsonStringFor(stub));
+                parkStub(updated, proxyStub);
+                targetAdmin.editStubMapping(updated);
+                stubsDisabled++;
+            }
+        }
+
+        return new ProjectModeResult(allProjects ? "_all" : targetProject, normalizedMode, stubsEnabled, stubsDisabled);
     }
 
     public List<StubMapping> snapshotRecordings(SnapshotCommand cmd) {
@@ -176,17 +200,60 @@ public class StubLifecycleService {
     public List<StubMapping> snapshotRecordings(Admin targetAdmin, SnapshotCommand cmd) {
         Objects.requireNonNull(targetAdmin, "admin must not be null");
         Objects.requireNonNull(cmd, "SnapshotCommand must not be null");
+
+        List<StubMapping> existingMappings = targetAdmin.listAllStubMappings().getMappings();
+        Set<String> seenSignatures = new HashSet<>();
+        for (StubMapping existing : existingMappings) {
+            if (!isProxyStub(existing)) {
+                seenSignatures.add(buildRequestSignature(existing));
+            }
+        }
+
+        RecordedStubConverter.SnapshotOptions opts =
+                cmd.options() != null ? cmd.options() : RecordedStubConverter.SnapshotOptions.defaults();
         List<ServeEvent> serveEvents = targetAdmin.getServeEvents().getServeEvents();
-        return store.snapshotServeEvents(
-                targetAdmin,
-                serveEvents,
-                cmd.requestIds(),
-                cmd.targetProject(),
-                cmd.allProjects(),
-                cmd.filterByProject(),
-                cmd.onlyProxied(),
-                cmd.activate(),
-                cmd.options() != null ? cmd.options() : RecordedStubConverter.SnapshotOptions.defaults());
+        List<StubMapping> created = new ArrayList<>();
+
+        for (ServeEvent event : serveEvents) {
+            if (event == null || !event.getWasMatched()) {
+                continue;
+            }
+            if (cmd.requestIds() != null
+                    && !cmd.requestIds().contains(event.getId().toString())) {
+                continue;
+            }
+            if (cmd.onlyProxied() && !isProxiedEvent(event)) {
+                continue;
+            }
+
+            String eventProject = deriveEventProject(event);
+            if (cmd.filterByProject()
+                    && !cmd.allProjects()
+                    && !cmd.targetProject().equals(eventProject)) {
+                continue;
+            }
+
+            String resolvedProject = (cmd.allProjects()
+                            || cmd.targetProject() == null
+                            || cmd.targetProject().isBlank())
+                    ? eventProject
+                    : cmd.targetProject();
+
+            StubMapping converted = RecordedStubConverter.convert(event, resolvedProject, opts);
+            if (converted == null) {
+                continue;
+            }
+
+            converted.setPriority(cmd.activate() ? PRIORITY_ACTIVE_STUB : PRIORITY_PARKED);
+
+            String sig = buildRequestSignature(converted);
+            if (seenSignatures.add(sig)) {
+                targetAdmin.addStubMapping(converted);
+                created.add(converted);
+            }
+        }
+
+        return created;
     }
 
     public Optional<StubMapping> generateSnapshotTemplate(
@@ -213,16 +280,14 @@ public class StubLifecycleService {
             return Optional.empty();
         }
 
-        String project = (targetProject != null
-                        && !targetProject.isBlank()
-                        && !"*".equals(targetProject)
-                        && !"_all".equalsIgnoreCase(targetProject))
-                ? targetProject
-                : "Recorded Traffic";
+        String project = !isAllProjectsToken(targetProject) ? targetProject : "Recorded Traffic";
         RecordedStubConverter.SnapshotOptions opts =
                 options != null ? options : RecordedStubConverter.SnapshotOptions.defaults();
 
         StubMapping stub = RecordedStubConverter.convert(foundEvent, project, opts);
+        if (stub != null) {
+            stub.setPriority(PRIORITY_PARKED);
+        }
         return Optional.ofNullable(stub);
     }
 
@@ -232,5 +297,113 @@ public class StubLifecycleService {
                     "StubLifecycleService was not initialized with an Admin instance. Use withAdmin(admin).");
         }
         return this.admin;
+    }
+
+    private static void parkStub(StubMapping stub, boolean proxyStub) {
+        Integer currentPriority = stub.getPriority();
+        int defaultActive = proxyStub ? PRIORITY_ACTIVE_PROXY : PRIORITY_ACTIVE_STUB;
+        if (currentPriority != null && currentPriority < PRIORITY_PARKED && currentPriority != defaultActive) {
+            Map<String, Object> nextMeta = copyMetadata(stub);
+            nextMeta.put(META_PREVIOUS_PRIORITY, currentPriority);
+            stub.setMetadata(new Metadata(nextMeta));
+        }
+        stub.setPriority(PRIORITY_PARKED);
+    }
+
+    private static void unparkStub(StubMapping stub, boolean proxyStub) {
+        int restoredPriority = proxyStub ? PRIORITY_ACTIVE_PROXY : PRIORITY_ACTIVE_STUB;
+        if (stub.getMetadata() != null && stub.getMetadata().containsKey(META_PREVIOUS_PRIORITY)) {
+            Object prevObj = stub.getMetadata().get(META_PREVIOUS_PRIORITY);
+            if (prevObj instanceof Number n && n.intValue() > 0 && n.intValue() < PRIORITY_PARKED) {
+                restoredPriority = n.intValue();
+            }
+            Map<String, Object> nextMeta = copyMetadata(stub);
+            nextMeta.remove(META_PREVIOUS_PRIORITY);
+            stub.setMetadata(new Metadata(nextMeta));
+        }
+        stub.setPriority(restoredPriority);
+    }
+
+    private static Map<String, Object> copyMetadata(StubMapping stub) {
+        return stub.getMetadata() != null ? new LinkedHashMap<>(stub.getMetadata()) : new LinkedHashMap<>();
+    }
+
+    private static boolean isAllProjectsToken(String targetProject) {
+        return targetProject == null
+                || targetProject.isBlank()
+                || "*".equals(targetProject)
+                || "_all".equalsIgnoreCase(targetProject);
+    }
+
+    private static boolean isProxiedEvent(ServeEvent event) {
+        if (event == null) {
+            return false;
+        }
+        if (event.getResponseDefinition() != null
+                && (event.getResponseDefinition().isProxyResponse()
+                        || (event.getResponseDefinition().getProxyBaseUrl() != null
+                                && !event.getResponseDefinition()
+                                        .getProxyBaseUrl()
+                                        .isBlank()))) {
+            return true;
+        }
+        return event.getStubMapping() != null && isProxyStub(event.getStubMapping());
+    }
+
+    private static String deriveEventProject(ServeEvent event) {
+        if (event.getStubMapping() != null) {
+            return getStubProject(event.getStubMapping());
+        }
+        if (event.getRequest() != null) {
+            return deriveProjectFromUrl(event.getRequest().getUrl());
+        }
+        return "Ungrouped";
+    }
+
+    private static String deriveProjectFromUrl(String url) {
+        if (url == null || url.isBlank() || "/".equals(url)) {
+            return "api-Root";
+        }
+        String clean = url.replaceFirst("^https?://[^/]+", "");
+        int qIdx = clean.indexOf('?');
+        if (qIdx >= 0) {
+            clean = clean.substring(0, qIdx);
+        }
+        String[] rawParts = clean.split("/");
+        List<String> parts = new ArrayList<>();
+        for (String p : rawParts) {
+            if (!p.isBlank()) {
+                parts.add(p);
+            }
+        }
+        if (parts.isEmpty()) {
+            return "api-Root";
+        }
+        if ("api".equalsIgnoreCase(parts.get(0)) && parts.size() > 1) {
+            if (parts.get(1).matches("(?i)^v\\d+$") && parts.size() > 2) {
+                return "api-" + parts.get(2).toLowerCase(Locale.ROOT);
+            }
+            return "api-" + parts.get(1).toLowerCase(Locale.ROOT);
+        }
+        return "api-" + parts.get(0).toLowerCase(Locale.ROOT);
+    }
+
+    private static String extractStubUrl(RequestPattern req) {
+        if (req == null) {
+            return "/";
+        }
+        if (req.getUrl() != null) return req.getUrl();
+        if (req.getUrlPath() != null) return req.getUrlPath();
+        if (req.getUrlPathTemplate() != null) return req.getUrlPathTemplate();
+        if (req.getUrlPattern() != null) return req.getUrlPattern();
+        if (req.getUrlPathPattern() != null) return req.getUrlPathPattern();
+        return "/";
+    }
+
+    private static String buildRequestSignature(StubMapping stub) {
+        if (stub == null || stub.getRequest() == null) {
+            return "";
+        }
+        return Json.write(stub.getRequest());
     }
 }

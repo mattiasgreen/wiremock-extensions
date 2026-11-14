@@ -16,10 +16,10 @@ export const CAPABILITY_METADATA = [
   },
   {
     key: 'lifecycle',
-    name: 'Stub Lifecycle & Pause',
-    desc: 'Non-destructive pause/resume and bulk disable extensions',
+    name: 'Lifecycle Snapshots & Modes',
+    desc: 'Server-side traffic snapshotting and project proxy/stubs mode switching',
     icon: '⏸️',
-    endpoint: '/__admin/stubs/disabled'
+    endpoint: '/__admin/lifecycle/status'
   },
   {
     key: 'stateful',
@@ -197,47 +197,26 @@ export function applyCapabilityVisibility() {
     }
   }
 
-  // 4. Lifecycle / Pause / Disable / Snapshot Controls
-  if (elements.btnFilterDisabled) {
-    applyControlState(
-      elements.btnFilterDisabled,
-      caps.lifecycle,
-      'Disabled stub store requires wiremock-extension-ui lifecycle endpoint (/__admin/stubs/disabled)'
-    );
-    if (!caps.lifecycle && state.statusFilter === 'disabled') {
-      state.statusFilter = 'all';
-      if (elements.btnFilterAll) {
-        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-        elements.btnFilterAll.classList.add('active');
-      }
-    }
-  }
-  if (elements.btnBulkDisable) {
-    applyControlState(
-      elements.btnBulkDisable,
-      caps.lifecycle,
-      'Bulk pause requires wiremock-extension-ui lifecycle endpoint'
-    );
-  }
-  if (elements.btnBulkEnable) {
-    applyControlState(
-      elements.btnBulkEnable,
-      caps.lifecycle,
-      'Bulk resume requires wiremock-extension-ui lifecycle endpoint'
-    );
-  }
-  if (elements.btnToggleStub) {
-    applyControlState(
-      elements.btnToggleStub,
-      caps.lifecycle,
-      'Pausing/resuming stubs requires wiremock-extension-ui lifecycle endpoint'
-    );
-  }
+  // 4. Lifecycle Snapshots & Project Mode Controls (priority parking & filter work natively on all WireMock hosts)
   if (elements.btnProjectSnapshot) {
     applyControlState(
       elements.btnProjectSnapshot,
       caps.lifecycle,
       'Traffic snapshotting requires wiremock-extension-ui lifecycle endpoint'
+    );
+  }
+  if (elements.btnProjectModeToggle) {
+    applyControlState(
+      elements.btnProjectModeToggle,
+      caps.lifecycle,
+      'Project proxy/stubs mode switching requires wiremock-extension-ui lifecycle endpoint'
+    );
+  }
+  if (elements.btnJournalSnapshotFiltered) {
+    applyControlState(
+      elements.btnJournalSnapshotFiltered,
+      caps.lifecycle,
+      'Batch snapshotting requires wiremock-extension-ui lifecycle endpoint'
     );
   }
 }

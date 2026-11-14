@@ -17,6 +17,7 @@ import {
 } from './payload-lens.js';
 import { setRoute, toBase64, activateTab } from './router.js';
 import { getStubProject } from './projects.js';
+import { isStubParked } from './stub-catalog.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
 import { handleStubCheckboxClick, updateBulkToolbar, handleSelectAllToggle } from './bulk-actions.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
@@ -170,8 +171,7 @@ import { stubCatalog } from './stub-catalog.js';
 
 export function getAllCatalogStubs() {
   stubCatalog.setRawCollections({
-    active: state.currentStubs,
-    disabled: state.disabledStubs,
+    mappings: state.currentStubs,
     statefulModels: state.statefulModels
   });
   return stubCatalog.getAll();
@@ -179,8 +179,7 @@ export function getAllCatalogStubs() {
 
 export function findCatalogStubById(id) {
   stubCatalog.setRawCollections({
-    active: state.currentStubs,
-    disabled: state.disabledStubs,
+    mappings: state.currentStubs,
     statefulModels: state.statefulModels
   });
   return stubCatalog.getById(id);
@@ -188,8 +187,7 @@ export function findCatalogStubById(id) {
 
 export function getVisibleCatalogStubs(searchQuery) {
   stubCatalog.setRawCollections({
-    active: state.currentStubs,
-    disabled: state.disabledStubs,
+    mappings: state.currentStubs,
     statefulModels: state.statefulModels
   });
   const filter = (searchQuery !== undefined ? searchQuery : (elements.searchBox && elements.searchBox.value || '')).trim();
@@ -202,8 +200,7 @@ export function getVisibleCatalogStubs(searchQuery) {
 
 export function getCatalogCounts(projectFilter = state.selectedProject) {
   stubCatalog.setRawCollections({
-    active: state.currentStubs,
-    disabled: state.disabledStubs,
+    mappings: state.currentStubs,
     statefulModels: state.statefulModels
   });
   return stubCatalog.getCounts(projectFilter);
@@ -261,7 +258,7 @@ export function renderStubList() {
   elements.stubList.innerHTML = '';
   filtered.forEach(stub => {
     const isDynamic = !!stub.isDynamic;
-    const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
+    const isDisabled = !isDynamic && isStubParked(stub);
     const isSelected = stub.id === state.selectedStubId;
     const isChecked = state.selectedStubIds.has(stub.id);
 
@@ -359,7 +356,7 @@ export function selectStub(stub, updateRoute = true) {
   }
 
   const isDynamic = !!stub.isDynamic;
-  const isDisabled = state.disabledStubs.some(d => d.id === stub.id);
+  const isDisabled = !isDynamic && isStubParked(stub);
   elements.stubDetailEmpty.classList.add('hidden');
   elements.stubDetailView.classList.remove('hidden');
 
@@ -403,9 +400,6 @@ export function selectStub(stub, updateRoute = true) {
     if (isDynamic) {
       detailState.textContent = 'STATEFUL SIMULATION';
       detailState.className = 'card-value text-dynamic';
-    } else if (!state.capabilities.lifecycle) {
-      detailState.textContent = 'ACTIVE';
-      detailState.className = 'card-value text-success';
     } else {
       detailState.textContent = isDisabled ? 'DISABLED' : 'ACTIVE';
       detailState.className = `card-value ${isDisabled ? 'text-warning' : 'text-success'}`;
@@ -417,19 +411,15 @@ export function selectStub(stub, updateRoute = true) {
   if (btnToggle) {
     if (isDynamic) {
       btnToggle.classList.add('hidden');
-    } else if (!state.capabilities.lifecycle) {
-      btnToggle.classList.remove('hidden');
-      btnToggle.setAttribute('disabled', 'true');
-      btnToggle.classList.add('cap-disabled');
-      btnToggle.textContent = '⏸️ Disable Stub';
-      btnToggle.setAttribute('title', 'Pausing/disabling stubs requires wiremock-extension-ui lifecycle endpoint');
     } else {
       btnToggle.classList.remove('hidden');
       btnToggle.removeAttribute('disabled');
       btnToggle.classList.remove('cap-disabled');
       btnToggle.textContent = isDisabled ? '🟢 Enable Stub' : '⏸️ Disable Stub';
       btnToggle.className = `btn btn-small ${isDisabled ? 'btn-success' : 'btn-warning'}`;
-      btnToggle.removeAttribute('title');
+      btnToggle.title = isDisabled
+        ? 'Restore stub priority to active tier (<= 10)'
+        : 'Park stub at priority 100 (below active stubs and proxies)';
     }
   }
 

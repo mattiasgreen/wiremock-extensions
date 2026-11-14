@@ -114,7 +114,6 @@ import {
 } from './modules/api.js';
 import {
   loadMappings,
-  loadDisabledStubs,
   loadJournal,
   loadScenarios,
   loadData
@@ -169,7 +168,6 @@ export function getAllStubs() {
 // Exported public API for test suite and external scripts
 export {
   loadMappings,
-  loadDisabledStubs,
   executeTesterRequest,
   highlightJson,
   generateCurl,

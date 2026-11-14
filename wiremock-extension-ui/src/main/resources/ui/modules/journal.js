@@ -567,7 +567,7 @@ export function buildSnapshotStubMapping(req, options = {}) {
 
   return {
     name: `[SNAPSHOT ${method} ${status}] ${url}`,
-    priority: 5,
+    priority: 100,
     request: requestMatch,
     response: {
       status: status,
@@ -745,7 +745,7 @@ function setupEventDelegation() {
       e.stopPropagation();
       const stubId = inspectStubBtn.getAttribute('data-stub-id');
       if (stubId) {
-        const found = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === stubId);
+        const found = state.currentStubs.find(s => s.id === stubId);
         activateTab('tab-stubs', false);
         if (found) {
           selectStub(found, true);
@@ -947,10 +947,15 @@ export function renderJournal(resetLimit = true) {
     elements.journalProxiedCount.textContent = proxiedFiltered.length;
   }
   if (elements.btnJournalSnapshotFiltered) {
-    elements.btnJournalSnapshotFiltered.disabled = proxiedFiltered.length === 0;
-    elements.btnJournalSnapshotFiltered.title = proxiedFiltered.length > 0
-      ? `Snapshot ${proxiedFiltered.length} proxied request(s) into disabled stubs`
-      : 'No proxied requests match the active filter';
+    if (!state.capabilities.lifecycle) {
+      elements.btnJournalSnapshotFiltered.disabled = true;
+      elements.btnJournalSnapshotFiltered.title = 'Batch snapshotting requires wiremock-extension-ui lifecycle endpoint';
+    } else {
+      elements.btnJournalSnapshotFiltered.disabled = proxiedFiltered.length === 0;
+      elements.btnJournalSnapshotFiltered.title = proxiedFiltered.length > 0
+        ? `Snapshot ${proxiedFiltered.length} proxied request(s) into disabled stubs (priority 100)`
+        : 'No proxied requests match the active filter';
+    }
   }
 
   if (resetLimit) {

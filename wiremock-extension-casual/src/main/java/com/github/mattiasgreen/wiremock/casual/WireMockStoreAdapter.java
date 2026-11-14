@@ -80,17 +80,19 @@ public class WireMockStoreAdapter implements CasualStorePort {
     public List<StubMapping> getActiveStubMappings() {
         if (wireMockServices != null) {
             try {
-                return wireMockServices.getStores().getStubStore().getAll().toList();
+                return excludeParkedStubs(
+                        wireMockServices.getStores().getStubStore().getAll());
             } catch (Exception ignored) {
             }
         }
         if (wireMockServer != null) {
-            return wireMockServer.getStubMappings();
+            return excludeParkedStubs(wireMockServer.getStubMappings().stream());
         }
         Optional<WireMockServices> servicesOpt = CasualRegistry.getInstance().getWireMockServices();
         if (servicesOpt.isPresent()) {
             try {
-                return servicesOpt.get().getStores().getStubStore().getAll().toList();
+                return excludeParkedStubs(
+                        servicesOpt.get().getStores().getStubStore().getAll());
             } catch (Exception ignored) {
             }
         }
@@ -106,7 +108,7 @@ public class WireMockStoreAdapter implements CasualStorePort {
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     ListStubMappingsResult result = Json.read(response.body(), ListStubMappingsResult.class);
                     if (result != null && result.getMappings() != null) {
-                        return result.getMappings();
+                        return excludeParkedStubs(result.getMappings().stream());
                     }
                 }
             } catch (IOException | InterruptedException | RuntimeException e) {
@@ -117,6 +119,11 @@ public class WireMockStoreAdapter implements CasualStorePort {
             }
         }
         return Collections.emptyList();
+    }
+
+    private static List<StubMapping> excludeParkedStubs(java.util.stream.Stream<StubMapping> stubs) {
+        return stubs.filter(s -> s != null && (s.getPriority() == null || s.getPriority() < 100))
+                .toList();
     }
 
     @Override

@@ -572,6 +572,7 @@ const SEED_DISABLED_STUBS = [
   {
     id: 'demo-stub-disabled-legacy',
     name: 'Legacy Payment Gateway [DEPRECATED]',
+    priority: 100,
     request: {
       method: 'POST',
       urlPattern: '/api/v0/payments'
@@ -589,6 +590,7 @@ const SEED_DISABLED_STUBS = [
   {
     id: 'demo-stub-disabled-chaos',
     name: 'Chaos Latency Spike [PAUSED]',
+    priority: 100,
     request: {
       method: 'GET',
       urlPattern: '/api/v1/health'
@@ -1504,8 +1506,7 @@ const SEED_ASYNC_MESSAGES = {
 
 class InMemoryDemoBackend {
   constructor() {
-    this.stubs = JSON.parse(JSON.stringify(SEED_STUBS));
-    this.disabledStubs = JSON.parse(JSON.stringify(SEED_DISABLED_STUBS));
+    this.stubs = JSON.parse(JSON.stringify([...SEED_STUBS, ...SEED_DISABLED_STUBS]));
     this.requests = JSON.parse(JSON.stringify(SEED_REQUESTS));
     this.scenarios = JSON.parse(JSON.stringify(SEED_SCENARIOS));
     this.statefulModels = JSON.parse(JSON.stringify(SEED_STATEFUL_MODELS));
@@ -1539,8 +1540,7 @@ class InMemoryDemoBackend {
   }
 
   reset() {
-    this.stubs = JSON.parse(JSON.stringify(SEED_STUBS));
-    this.disabledStubs = JSON.parse(JSON.stringify(SEED_DISABLED_STUBS));
+    this.stubs = JSON.parse(JSON.stringify([...SEED_STUBS, ...SEED_DISABLED_STUBS]));
     this.requests = JSON.parse(JSON.stringify(SEED_REQUESTS));
     this.scenarios = JSON.parse(JSON.stringify(SEED_SCENARIOS));
     this.statefulModels = JSON.parse(JSON.stringify(SEED_STATEFUL_MODELS));
@@ -1550,7 +1550,8 @@ class InMemoryDemoBackend {
 
   matchStub(method, path) {
     const cleanPath = path.split('?')[0];
-    for (const stub of this.stubs) {
+    const sorted = [...this.stubs].sort((a, b) => (a.priority ?? 5) - (b.priority ?? 5));
+    for (const stub of sorted) {
       const req = stub.request || {};
       if (req.method && req.method.toUpperCase() !== method.toUpperCase() && req.method !== 'ANY') {
         continue;
@@ -1652,76 +1653,9 @@ class InMemoryDemoBackend {
       }
     }
 
-    // 2. Lifecycle Disabled Stubs & Toggle
-    if (pathname === '/__admin/stubs/disabled') {
-      if (method === 'GET') {
-        return responseJson(200, {
-          mappings: this.disabledStubs,
-          meta: { total: this.disabledStubs.length }
-        });
-      }
-    }
-
-    const toggleMatch = pathname.match(/^\/__admin\/stubs\/([^/]+)\/toggle$/);
-    if (toggleMatch && method === 'POST') {
-      const stubId = toggleMatch[1];
-      const activeIdx = this.stubs.findIndex(s => s.id === stubId);
-      if (activeIdx !== -1) {
-        const stub = this.stubs.splice(activeIdx, 1)[0];
-        this.disabledStubs.unshift(stub);
-        return responseJson(200, { id: stubId, disabled: true });
-      }
-      const disabledIdx = this.disabledStubs.findIndex(s => s.id === stubId);
-      if (disabledIdx !== -1) {
-        const stub = this.disabledStubs.splice(disabledIdx, 1)[0];
-        this.stubs.unshift(stub);
-        return responseJson(200, { id: stubId, disabled: false });
-      }
-      return responseText(404, 'Stub not found');
-    }
-
-    const stubByIdMatch = pathname.match(/^\/__admin\/stubs\/([^/]+)$/);
-    if (stubByIdMatch) {
-      const stubId = stubByIdMatch[1];
-      if (method === 'PUT') {
-        const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
-        const activeIdx = this.stubs.findIndex(s => s.id === stubId);
-        if (activeIdx !== -1) {
-          this.stubs[activeIdx] = Object.assign({}, body, { id: stubId });
-          return responseJson(200, this.stubs[activeIdx]);
-        }
-        const disabledIdx = this.disabledStubs.findIndex(s => s.id === stubId);
-        if (disabledIdx !== -1) {
-          this.disabledStubs[disabledIdx] = Object.assign({}, body, { id: stubId });
-          return responseJson(200, this.disabledStubs[disabledIdx]);
-        }
-        this.stubs.unshift(Object.assign({}, body, { id: stubId }));
-        return responseJson(201, body);
-      }
-      if (method === 'DELETE') {
-        this.stubs = this.stubs.filter(s => s.id !== stubId);
-        this.disabledStubs = this.disabledStubs.filter(s => s.id !== stubId);
-        return responseText(204, '');
-      }
-    }
-
-    if (pathname === '/__admin/stubs/bulk' && method === 'POST') {
-      const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
-      const { action, ids } = body;
-      const targetIds = new Set(ids || []);
-      if (action === 'disable') {
-        const toMove = this.stubs.filter(s => targetIds.has(s.id));
-        this.stubs = this.stubs.filter(s => !targetIds.has(s.id));
-        this.disabledStubs.unshift(...toMove);
-      } else if (action === 'enable') {
-        const toMove = this.disabledStubs.filter(s => targetIds.has(s.id));
-        this.disabledStubs = this.disabledStubs.filter(s => !targetIds.has(s.id));
-        this.stubs.unshift(...toMove);
-      } else if (action === 'delete') {
-        this.stubs = this.stubs.filter(s => !targetIds.has(s.id));
-        this.disabledStubs = this.disabledStubs.filter(s => !targetIds.has(s.id));
-      }
-      return responseJson(200, { success: true, count: targetIds.size });
+    // 2. Lifecycle Status Probe (parking/enable/disable use /__admin/mappings/{id})
+    if (pathname === '/__admin/lifecycle/status' && method === 'GET') {
+      return responseJson(200, { status: 'UP' });
     }
 
     // 3. Request Journal
@@ -2177,7 +2111,7 @@ class InMemoryDemoBackend {
       return responseJson(200, {
         version: '1.14.0',
         branch: 'refactor/deepen-architecture',
-        commit: '6c38068'
+        commit: '5fa8702'
       });
     }
 
@@ -2194,8 +2128,39 @@ class InMemoryDemoBackend {
     }
 
     // 11. Project Snapshots & Mode
+    const projModeMatch = pathname.match(/^\/__admin\/projects\/([^/]+)\/mode$/);
+    if (projModeMatch && method === 'POST') {
+      const project = decodeURIComponent(projModeMatch[1]);
+      const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+      const requestedMode = String(body.mode || 'stubs').toLowerCase();
+      const allProjects = !project || project === '*' || project.toLowerCase() === '_all';
+      let stubsEnabled = 0;
+      let stubsDisabled = 0;
+      this.stubs.forEach(stub => {
+        if (stub.metadata && String(stub.metadata.role || '').toLowerCase() === 'offline-guard') return;
+        const stubProject = (stub.metadata && stub.metadata.project) || '';
+        if (!allProjects && stubProject !== project) return;
+        const isProxy = Boolean((stub.response && stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy'));
+        const isParked = typeof stub.priority === 'number' && stub.priority >= 100;
+        const shouldBeActive = requestedMode === 'proxy' ? isProxy : !isProxy;
+        if (shouldBeActive && isParked) {
+          stub.priority = isProxy ? 10 : 5;
+          stubsEnabled++;
+        } else if (!shouldBeActive && !isParked) {
+          stub.priority = 100;
+          stubsDisabled++;
+        }
+      });
+      return responseJson(200, {
+        project: allProjects ? '_all' : project,
+        activeMode: requestedMode,
+        stubsEnabled,
+        stubsDisabled
+      });
+    }
+
     if (pathname.includes('/recordings/snapshot') || pathname.includes('/snapshot-filtered')) {
-      return responseJson(200, { snapshotted: 1 });
+      return responseJson(200, { totalRecorded: 1, snapshotted: 1, status: 'disabled', mappings: [] });
     }
 
     // 12. Simulation Engine for HTTP Requests (e.g. /api/v1/...)

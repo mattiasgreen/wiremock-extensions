@@ -7,14 +7,13 @@ import { elements } from './dom.js';
 import { getCatalogCounts } from './stubs.js';
 import { setProjectMode, snapshotProjectRecordings } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
-import { stubCatalog, getStubProject, getStubApi, extractBaseSegment, getStubUrl } from './stub-catalog.js';
+import { stubCatalog, getStubProject, getStubApi, extractBaseSegment, getStubUrl, isStubParked, isProxyStub } from './stub-catalog.js';
 
 export { getStubProject, getStubApi, extractBaseSegment };
 
 export function computeProjects() {
   stubCatalog.setRawCollections({
-    active: state.currentStubs,
-    disabled: state.disabledStubs,
+    mappings: state.currentStubs,
     statefulModels: state.statefulModels
   });
   return stubCatalog.getProjects();
@@ -27,7 +26,7 @@ export function renderProjectSelector() {
   const projects = computeProjects();
   const currentVal = state.selectedProject || '';
 
-  select.innerHTML = '<option value="">📁 All Projects (' + (state.currentStubs.length + state.disabledStubs.length) + ')</option>';
+  select.innerHTML = '<option value="">📁 All Projects (' + state.currentStubs.length + ')</option>';
   projects.forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.name;
@@ -59,11 +58,11 @@ export function updateProjectLifecycleBar() {
   const bar = elements.projectLifecycleBar;
   if (!bar) return;
 
-  const allStubs = [...state.currentStubs, ...state.disabledStubs];
+  const allStubs = state.currentStubs || [];
   const projStubs = state.selectedProject
     ? allStubs.filter(s => getStubProject(s) === state.selectedProject)
     : allStubs;
-  const proxyStubs = projStubs.filter(s => (s.response && !!s.response.proxyBaseUrl) || (s.metadata && s.metadata.mode === 'proxy'));
+  const proxyStubs = projStubs.filter(s => isProxyStub(s));
 
   if (proxyStubs.length === 0) {
     bar.classList.add('hidden');
@@ -76,7 +75,7 @@ export function updateProjectLifecycleBar() {
     elements.projectActiveName.textContent = state.selectedProject || 'All Projects';
   }
 
-  const activeProxy = proxyStubs.some(s => state.currentStubs.some(c => c.id === s.id));
+  const activeProxy = proxyStubs.some(s => !isStubParked(s));
 
   if (elements.projectModeBadge) {
     if (activeProxy) {
@@ -91,8 +90,8 @@ export function updateProjectLifecycleBar() {
   if (elements.btnProjectModeToggle) {
     elements.btnProjectModeToggle.textContent = activeProxy ? '🟣 Switch to Stubs' : '🟢 Switch to Proxy';
     elements.btnProjectModeToggle.title = activeProxy
-      ? 'Disable proxy stubs and activate recorded static stubs'
-      : 'Disable static stubs and activate live proxy stubs';
+      ? 'Park proxy stubs (priority 100) and activate recorded static stubs'
+      : 'Park static stubs (priority 100) and activate live proxy stubs';
   }
 }
 
@@ -100,12 +99,12 @@ export function setupProjectLifecycleBar(loadDataFn) {
   if (elements.btnProjectModeToggle) {
     elements.btnProjectModeToggle.addEventListener('click', async () => {
       const targetProject = state.selectedProject || '_all';
-      const allStubs = [...state.currentStubs, ...state.disabledStubs];
+      const allStubs = state.currentStubs || [];
       const projStubs = state.selectedProject
         ? allStubs.filter(s => getStubProject(s) === state.selectedProject)
         : allStubs;
-      const proxyStubs = projStubs.filter(s => (s.response && !!s.response.proxyBaseUrl) || (s.metadata && s.metadata.mode === 'proxy'));
-      const activeProxy = proxyStubs.some(s => state.currentStubs.some(c => c.id === s.id));
+      const proxyStubs = projStubs.filter(s => isProxyStub(s));
+      const activeProxy = proxyStubs.some(s => !isStubParked(s));
       const targetMode = activeProxy ? 'stubs' : 'proxy';
 
       try {
