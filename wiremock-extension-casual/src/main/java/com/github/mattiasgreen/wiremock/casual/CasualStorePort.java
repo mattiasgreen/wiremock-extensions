@@ -8,7 +8,9 @@ import java.util.Optional;
 
 /**
  * Seam for WireMock stub matching, file blob retrieval, and request journal recording.
- * Backed by {@link WireMockStoreAdapter} in production and {@link InMemoryCasualStoreAdapter} in tests.
+ * Backed by {@link WireMockStoreAdapter} for in-process WireMock stores,
+ * {@link HttpCasualStoreAdapter} for remote HTTP Admin API access, and
+ * {@link InMemoryCasualStoreAdapter} in fast unit tests.
  */
 public interface CasualStorePort {
 
