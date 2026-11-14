@@ -1,3 +1,11 @@
+sourceSets {
+    main {
+        java {
+            srcDir rootProject.file('shared/traffic-support/src/main/java')
+        }
+    }
+}
+
 dependencies {
     implementation libs.opentelemetry.api
     implementation libs.opentelemetry.sdk

@@ -1,7 +1,6 @@
 package com.github.mattiasgreen.wiremock.ui;
 
-import com.github.tomakehurst.wiremock.http.HttpHeader;
-import com.github.tomakehurst.wiremock.http.HttpHeaders;
+import com.github.mattiasgreen.wiremock.support.ServeEventTrafficSupport;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -197,36 +196,6 @@ public class JournalFilterService {
      * @return verdict key
      */
     public static String classifyVerdict(ServeEvent event) {
-        if (event == null) return "unmatched";
-
-        HttpHeaders resHeaders =
-                event.getResponse() != null ? event.getResponse().getHeaders() : null;
-        if (resHeaders == null && event.getResponseDefinition() != null) {
-            resHeaders = event.getResponseDefinition().getHeaders();
-        }
-        if (resHeaders != null) {
-            HttpHeader stateful = resHeaders.getHeader("X-WireMock-Stateful");
-            if (stateful != null && stateful.isPresent() && "true".equalsIgnoreCase(stateful.firstValue())) {
-                return "stateful";
-            }
-        }
-
-        if (!event.getWasMatched()) {
-            return "unmatched";
-        }
-
-        boolean isProxy = (event.getResponseDefinition() != null
-                        && event.getResponseDefinition().isProxyResponse())
-                || (event.getResponseDefinition() != null
-                        && event.getResponseDefinition().getProxyBaseUrl() != null)
-                || (event.getStubMapping() != null
-                        && event.getStubMapping().getResponse() != null
-                        && event.getStubMapping().getResponse().isProxyResponse());
-
-        if (isProxy) {
-            return "proxied";
-        }
-
-        return "stub";
+        return ServeEventTrafficSupport.classifyJournalVerdict(event);
     }
 }

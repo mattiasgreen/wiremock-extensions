@@ -1,7 +1,6 @@
 package com.github.mattiasgreen.wiremock.ui;
 
-import com.github.tomakehurst.wiremock.http.HttpHeader;
-import com.github.tomakehurst.wiremock.http.HttpHeaders;
+import com.github.mattiasgreen.wiremock.support.ServeEventTrafficSupport;
 import com.github.tomakehurst.wiremock.http.Request;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -67,31 +66,7 @@ public final class ClientSourceResolver {
      * @return normalized caller IP/token, or {@code ""} if unavailable
      */
     public static String extractSourceIp(Request request) {
-        if (request == null) {
-            return "";
-        }
-
-        HttpHeaders headers = request.getHeaders();
-        if (headers != null) {
-            HttpHeader xff = headers.getHeader("X-Forwarded-For");
-            if (xff != null && xff.isPresent() && xff.firstValue() != null) {
-                String rawFirstHop = xff.firstValue().split(",", 2)[0];
-                String normalized = normalizeSourceToken(rawFirstHop);
-                if (!normalized.isEmpty()) {
-                    return normalized;
-                }
-            }
-
-            HttpHeader xRealIp = headers.getHeader("X-Real-IP");
-            if (xRealIp != null && xRealIp.isPresent() && xRealIp.firstValue() != null) {
-                String normalized = normalizeSourceToken(xRealIp.firstValue());
-                if (!normalized.isEmpty()) {
-                    return normalized;
-                }
-            }
-        }
-
-        return normalizeSourceToken(request.getClientIp());
+        return ServeEventTrafficSupport.extractClientIp(request);
     }
 
     /**
@@ -101,44 +76,7 @@ public final class ClientSourceResolver {
      * @return normalized token, or {@code ""} if blank/unknown/invalid
      */
     public static String normalizeSourceToken(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        String trimmed = raw.trim();
-        if (trimmed.isEmpty() || "unknown".equalsIgnoreCase(trimmed)) {
-            return "";
-        }
-
-        // Handle bracketed IPv6 e.g. [::1]:8443 or [2001:db8::1]
-        if (trimmed.startsWith("[")) {
-            int closeIdx = trimmed.indexOf(']');
-            if (closeIdx > 1) {
-                trimmed = trimmed.substring(1, closeIdx);
-            } else {
-                return "";
-            }
-        } else if (trimmed.indexOf('.') >= 0) {
-            // Strip IPv4 :port when exactly one colon is present
-            int firstColon = trimmed.indexOf(':');
-            if (firstColon > 0 && trimmed.indexOf(':', firstColon + 1) < 0) {
-                trimmed = trimmed.substring(0, firstColon);
-            }
-        }
-
-        // Strip IPv6 zone index (e.g. fe80::1%eth0)
-        int zoneIdx = trimmed.indexOf('%');
-        if (zoneIdx > 0) {
-            trimmed = trimmed.substring(0, zoneIdx);
-        }
-
-        if ("0:0:0:0:0:0:0:1".equals(trimmed)) {
-            trimmed = "::1";
-        }
-
-        if (!SAFE_SOURCE_PATTERN.matcher(trimmed).matches()) {
-            return "";
-        }
-        return trimmed;
+        return ServeEventTrafficSupport.normalizeSourceToken(raw);
     }
 
     /**

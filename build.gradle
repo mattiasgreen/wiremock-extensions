@@ -24,6 +24,13 @@ spotless {
         trimTrailingWhitespace()
         endWithNewline()
     }
+    java {
+        target 'shared/**/*.java'
+        palantirJavaFormat('2.50.0')
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
 }
 
 subprojects {
@@ -41,6 +48,7 @@ subprojects {
     spotless {
         lineEndings 'UNIX'
         java {
+            target 'src/*/java/**/*.java'
             palantirJavaFormat('2.50.0')
             removeUnusedImports()
             trimTrailingWhitespace()

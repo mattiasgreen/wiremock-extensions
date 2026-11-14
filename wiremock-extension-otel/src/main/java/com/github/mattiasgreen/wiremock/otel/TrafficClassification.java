@@ -1,13 +1,12 @@
 package com.github.mattiasgreen.wiremock.otel;
 
+import com.github.mattiasgreen.wiremock.support.ServeEventTrafficSupport;
 import com.github.tomakehurst.wiremock.http.LoggedResponse;
-import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import java.time.Instant;
 import java.util.Date;
-import java.util.Locale;
 
 /**
  * Immutable domain representation of classified traffic derived from a WireMock {@link ServeEvent}.
@@ -65,7 +64,6 @@ public record TrafficClassification(
 
         LoggedRequest request = serveEvent.getRequest();
         LoggedResponse response = serveEvent.getResponse();
-        ResponseDefinition respDef = serveEvent.getResponseDefinition();
         StubMapping stubMapping = serveEvent.getStubMapping();
         boolean matched = serveEvent.getWasMatched();
 
@@ -86,8 +84,8 @@ public record TrafficClassification(
                 urlPath = sanitizeSpanPath(request.getUrl());
                 urlQuery = extractQuery(request.getUrl());
             }
-            clientIp = request.getClientIp();
         }
+        clientIp = ServeEventTrafficSupport.extractClientIpOrRaw(request);
 
         int statusCode = 0;
         if (response != null) {
@@ -110,34 +108,12 @@ public record TrafficClassification(
             scenarioState = stubMapping.getRequiredScenarioState();
         }
 
-        String protocol = "http";
+        String protocol = ServeEventTrafficSupport.detectProtocol(request);
         String rpcSystem = null;
         String rpcService = null;
         String rpcStatus = null;
 
         if (request != null) {
-            if (request.header("X-WireMock-Protocol").isPresent()) {
-                protocol = request.header("X-WireMock-Protocol").firstValue().toLowerCase(Locale.ROOT);
-            } else if (request.header("X-Casual-Service").isPresent()
-                    || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
-                protocol = "casual";
-            } else if (request.header("X-Async-Channel").isPresent()
-                    || (request.getUrl() != null && request.getUrl().startsWith("/__async/"))) {
-                if (request.header("X-Async-Protocol").isPresent()) {
-                    protocol = request.header("X-Async-Protocol").firstValue().toLowerCase(Locale.ROOT);
-                } else if (request.getUrl() != null && request.getUrl().startsWith("/__async/")) {
-                    String sub = request.getUrl().substring("/__async/".length());
-                    int slashIdx = sub.indexOf('/');
-                    protocol = slashIdx > 0 ? sub.substring(0, slashIdx).toLowerCase(Locale.ROOT) : "async";
-                } else {
-                    protocol = "async";
-                }
-            } else if ((request.header("Content-Type").isPresent()
-                            && request.header("Content-Type").firstValue().contains("application/grpc"))
-                    || request.header("X-Grpc-Service").isPresent()) {
-                protocol = "grpc";
-            }
-
             if ("casual".equals(protocol)) {
                 rpcSystem = "casual";
                 if (request.header("X-Casual-Service").isPresent()) {
@@ -186,36 +162,9 @@ public record TrafficClassification(
             }
         }
 
-        boolean isFault =
-                (respDef != null && respDef.getFault() != null) || (response != null && response.getFault() != null);
-
-        boolean isProxied = (respDef != null && respDef.isProxyResponse())
-                || (stubMapping != null
-                        && stubMapping.getResponse() != null
-                        && stubMapping.getResponse().isProxyResponse());
-
-        String targetUpstream = null;
-        if (respDef != null
-                && respDef.getProxyBaseUrl() != null
-                && !respDef.getProxyBaseUrl().isBlank()) {
-            targetUpstream = respDef.getProxyBaseUrl();
-        } else if (stubMapping != null
-                && stubMapping.getResponse() != null
-                && stubMapping.getResponse().getProxyBaseUrl() != null
-                && !stubMapping.getResponse().getProxyBaseUrl().isBlank()) {
-            targetUpstream = stubMapping.getResponse().getProxyBaseUrl();
-        }
-
-        String trafficType;
-        if (isFault) {
-            trafficType = "fault";
-        } else if (isProxied) {
-            trafficType = "proxied";
-        } else if (matched) {
-            trafficType = "stubbed";
-        } else {
-            trafficType = "unmatched";
-        }
+        boolean isProxied = ServeEventTrafficSupport.isProxied(serveEvent);
+        String targetUpstream = ServeEventTrafficSupport.extractTargetUpstream(serveEvent);
+        String trafficType = ServeEventTrafficSupport.classifyTrafficType(serveEvent);
 
         double durationMs = 0.0;
         double upstreamDurationMs = 0.0;

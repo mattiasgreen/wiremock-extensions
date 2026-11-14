@@ -1,7 +1,6 @@
 package com.github.mattiasgreen.wiremock.ui;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.Json;
@@ -104,18 +103,12 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
         JournalFilterService.EnrichedJournalFilterResult result =
                 journalFilterService.filterEnriched(allEvents, q, verdict, unmatchedOnly, status, since, until, limit);
 
-        List<Object> enrichedRequests = new ArrayList<>(result.requests().size());
+        List<EnrichedServeEventView> enrichedRequests =
+                new ArrayList<>(result.requests().size());
         for (ServeEvent ev : result.requests()) {
-            JsonNode tree = Json.node(Json.write(ev));
-            if (tree instanceof ObjectNode obj) {
-                String srcIp = ClientSourceResolver.extractSourceIp(ev.getRequest());
-                String srcHost = srcIp.isEmpty() ? "" : result.resolvedHosts().getOrDefault(srcIp, "");
-                obj.put("sourceIp", srcIp);
-                obj.put("sourceHost", srcHost);
-                enrichedRequests.add(obj);
-            } else {
-                enrichedRequests.add(ev);
-            }
+            String srcIp = ClientSourceResolver.extractSourceIp(ev.getRequest());
+            String srcHost = srcIp.isEmpty() ? "" : result.resolvedHosts().getOrDefault(srcIp, "");
+            enrichedRequests.add(new EnrichedServeEventView(ev, srcIp, srcHost));
         }
 
         Map<String, Object> respMap = Map.of(
@@ -173,5 +166,31 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
             builder.withHeader("X-Served-From", asset.servedFrom());
         }
         return builder.build();
+    }
+
+    static final class EnrichedServeEventView {
+
+        private final ServeEvent event;
+        private final String sourceIp;
+        private final String sourceHost;
+
+        EnrichedServeEventView(ServeEvent event, String sourceIp, String sourceHost) {
+            this.event = event;
+            this.sourceIp = sourceIp;
+            this.sourceHost = sourceHost;
+        }
+
+        @JsonUnwrapped
+        public ServeEvent getEvent() {
+            return event;
+        }
+
+        public String getSourceIp() {
+            return sourceIp;
+        }
+
+        public String getSourceHost() {
+            return sourceHost;
+        }
     }
 }

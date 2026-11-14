@@ -204,4 +204,27 @@ class TrafficClassificationTest {
             upstream.stop();
         }
     }
+
+    @Test
+    @DisplayName("Extract normalized client IP from X-Forwarded-For across shared traffic support")
+    void shouldExtractNormalizedForwardedClientIp() throws Exception {
+        server.stubFor(get(urlEqualTo("/api/forwarded")).willReturn(ok("ok")));
+
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/api/forwarded"))
+                .header("X-Forwarded-For", "198.51.100.42:8443, 10.0.0.5")
+                .GET()
+                .build();
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        assertThat(resp.statusCode()).isEqualTo(200);
+
+        List<ServeEvent> events = server.getAllServeEvents();
+        assertThat(events).hasSize(1);
+
+        TrafficClassification tc = TrafficClassification.from(events.get(0));
+        assertThat(tc.clientIp()).isEqualTo("198.51.100.42");
+        assertThat(com.github.mattiasgreen.wiremock.support.ServeEventTrafficSupport.classifyJournalVerdict(
+                        events.get(0)))
+                .isEqualTo("stub");
+    }
 }

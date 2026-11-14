@@ -1,3 +1,11 @@
+sourceSets {
+    main {
+        java {
+            srcDir rootProject.file('shared/traffic-support/src/main/java')
+        }
+    }
+}
+
 dependencies {
     testImplementation project(':wiremock-extension-openapi')
     testImplementation project(':wiremock-extension-stateful')
