@@ -21,10 +21,16 @@ import {
   buildJsonPathBodyPatterns
 } from './base64.js';
 import { setRoute, activateTab } from './router.js';
-import { matchesJournalEntry, extractRequestSource } from './filter.js';
+import { extractRequestSource } from './filter.js';
+import {
+  requestJournal,
+  getRequestVerdict,
+  getRequestResolution,
+  detectRequestProtocol,
+  getHeader
+} from './request-journal.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
-import { updateTesterRoute } from './tester.js';
-import { fetchCasualConfig, updateCasualRoute, populateCasualTester } from './casual-tester.js';
+import { updateTesterRoute, populateCasualTester } from './tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
   getSnapshotStubTemplate,
@@ -53,106 +59,8 @@ export function toggleJournalDetail(reqId, updateRoute = true) {
   }
 }
 
-function getHeader(headers, name) {
-  if (!headers) return null;
-  const lower = name.toLowerCase();
-  for (const [k, v] of Object.entries(headers)) {
-    if (k.toLowerCase() === lower) return v;
-  }
-  return null;
-}
+export { getRequestVerdict, getRequestResolution, detectRequestProtocol };
 
-/**
- * Classifies a WireMock ServeEvent into one of the 4 core verdicts:
- * - 'proxied'   (🌐 PROXIED): Matched a proxyBaseUrl stub and forwarded to upstream
- * - 'stateful'  (🧠 STATEFUL): Handled by wiremock-extension-stateful AST engine
- * - 'stub'      (📌 STUB / 📌 STUB · TPL): Served offline by a static or templated stub
- * - 'unmatched' (⚠️ UNMATCHED): No stub or proxy route matched (HTTP 404)
- */
-export function getRequestVerdict(req) {
-  const resHeaders = (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
-  const status = req.response ? req.response.status : (req.responseDefinition ? req.responseDefinition.status : 0);
-  const asyncError = getHeader(resHeaders, 'x-async-error');
-  if (status === 502 || Boolean(asyncError)) {
-    const errorMsg = asyncError || 'Bad Gateway (502)';
-    return {
-      key: 'proxy_error',
-      type: 'proxy_error',
-      label: '⚠️ PROXY_ERROR',
-      cssClass: 'pill-unmatched pill-proxy-error',
-      stubDetail: `Proxy Error (502): ${errorMsg}`,
-      tooltip: `Async or proxy forwarding failure (502 Bad Gateway): ${errorMsg}`
-    };
-  }
-  const isStateful = getHeader(resHeaders, 'x-wiremock-stateful') === 'true';
-  if (isStateful) {
-    const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
-    return {
-      key: 'stateful',
-      type: 'dynamic',
-      label: '🧠 STATEFUL',
-      cssClass: 'pill-matched pill-stateful',
-      stubDetail: `Stateful: ${dynamicEntity || 'Entity'}`,
-      tooltip: 'Simulated by in-memory AST stateful engine (wiremock-extension-stateful)'
-    };
-  }
-  if (!req.wasMatched) {
-    return {
-      key: 'unmatched',
-      type: 'unmatched',
-      label: '⚠️ UNMATCHED',
-      cssClass: 'pill-unmatched',
-      stubDetail: 'Unmatched (404)',
-      tooltip: 'No stub or service proxy route matched this request'
-    };
-  }
-  const proxyUrl = (req.responseDefinition && req.responseDefinition.proxyBaseUrl)
-    || (req.stubMapping && req.stubMapping.response && req.stubMapping.response.proxyBaseUrl)
-    || (req.stubMapping && req.stubMapping.metadata && (req.stubMapping.metadata.proxyBaseUrl || (req.stubMapping.metadata.mode === 'proxy' && req.stubMapping.metadata.targetBaseUrl)));
-  const isProxyMode = Boolean(proxyUrl || (req.stubMapping && req.stubMapping.metadata && req.stubMapping.metadata.mode === 'proxy'));
-  const rawName = (req.stubMapping && req.stubMapping.name)
-    || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name']);
-  if (isProxyMode) {
-    const isAsync = (req.request && req.request.url && req.request.url.startsWith('/__async/'))
-      || Boolean(getHeader(resHeaders, 'x-wiremock-async-protocol'))
-      || Boolean(req.request && req.request.headers && getHeader(req.request.headers, 'x-wiremock-async-protocol'));
-    const isBridged = isAsync;
-    const detail = proxyUrl
-      ? (rawName ? `${rawName} (${isBridged ? 'Bridged' : 'Proxied'} to ${proxyUrl})` : `${isBridged ? 'Bridged' : 'Proxied'} to ${proxyUrl}`)
-      : (rawName ? `${rawName} (${isBridged ? 'Bridged' : 'Proxied'})` : (isBridged ? 'Bridged' : 'Proxied'));
-    return {
-      key: 'proxied',
-      type: 'proxied',
-      label: isBridged ? '🔀 BRIDGED' : '🌐 PROXIED',
-      cssClass: isBridged ? 'pill-matched pill-proxied pill-bridged' : 'pill-matched pill-proxied',
-      proxyUrl: proxyUrl || 'upstream',
-      stubDetail: detail,
-      tooltip: isBridged
-        ? `Forwarded across queue bridge to (${proxyUrl || 'upstream broker'}) — ready to Snapshot into an offline stub`
-        : `Forwarded to live upstream (${proxyUrl || 'proxy route'}) — ready to Snapshot into an offline stub`
-    };
-  }
-  const transformers = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.transformers)
-    || (req.responseDefinition && req.responseDefinition.transformers) || [];
-  const resBody = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.body) || '';
-  const isTemplated = transformers.includes('response-template') || (typeof resBody === 'string' && resBody.includes('{{'));
-  return {
-    key: 'stub',
-    type: 'stubbed',
-    label: isTemplated ? '📌 STUB · TPL' : '📌 STUB',
-    cssClass: 'pill-matched pill-stub pill-stubbed',
-    isTemplated,
-    stubDetail: rawName ? `Stub: ${rawName}` : 'Stubbed',
-    tooltip: isTemplated
-      ? 'Served offline by a parameterized Handlebars response-template stub'
-      : 'Served offline by a static WireMock stub mapping'
-  };
-}
-
-export const getRequestResolution = getRequestVerdict;
-
-let visibleCount = 50;
-let lastFilteredRequests = [];
 let scrollListenerAttached = false;
 let eventsDelegated = false;
 
@@ -480,23 +388,21 @@ function buildRowHtml(req) {
 
 function updateCountDisplay() {
   if (!elements.journalFilteredCount) return;
-  const total = lastFilteredRequests.length;
-  const shown = Math.min(visibleCount, total);
-  if (total === state.currentRequests.length) {
+  const { shown, filtered: total, total: overallTotal } = requestJournal.getVisibleStats();
+  if (total === overallTotal) {
     elements.journalFilteredCount.textContent = total > shown
       ? `Showing ${shown} of ${total}`
       : `Showing ${total} of ${total}`;
   } else {
     elements.journalFilteredCount.textContent = total > shown
-      ? `Showing ${shown} of ${total} matching (${state.currentRequests.length} total)`
-      : `Showing ${total} of ${total} matching (${state.currentRequests.length} total)`;
+      ? `Showing ${shown} of ${total} matching (${overallTotal} total)`
+      : `Showing ${total} of ${total} matching (${overallTotal} total)`;
   }
 }
 
 function appendMoreRows() {
-  if (visibleCount >= lastFilteredRequests.length) return;
-  const nextBatch = lastFilteredRequests.slice(visibleCount, visibleCount + 50);
-  visibleCount += nextBatch.length;
+  const nextBatch = requestJournal.nextVisibleBatch(50);
+  if (nextBatch.length === 0) return;
 
   const tempTbody = document.createElement('tbody');
   tempTbody.innerHTML = nextBatch.map(req => buildRowHtml(req)).join('');
@@ -568,7 +474,7 @@ export function buildSnapshotStubMapping(req, options = {}) {
 
   return {
     name: `[SNAPSHOT ${method} ${status}] ${url}`,
-    priority: 5,
+    priority: 100,
     request: requestMatch,
     response: {
       status: status,
@@ -629,7 +535,7 @@ function setupEventDelegation() {
       e.stopPropagation();
       const type = topLensBtn.getAttribute('data-type');
       const reqId = topLensBtn.getAttribute('data-id');
-      const req = state.currentRequests.find(r => r.id === reqId);
+      const req = requestJournal.findById(reqId);
       if (req) {
         const bodyRaw = type === 'req'
           ? ((req.request && (req.request.body || req.request.bodyAsBase64)) || '')
@@ -655,7 +561,7 @@ function setupEventDelegation() {
     if (toTesterBtn) {
       e.stopPropagation();
       const targetId = toTesterBtn.getAttribute('data-id') || (toTesterBtn.dataset && toTesterBtn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (req && req.request) {
         const reqHeaders = req.request.headers || {};
         const url = req.request.url || '';
@@ -698,7 +604,7 @@ function setupEventDelegation() {
     if (copyCurlBtn) {
       e.stopPropagation();
       const targetId = copyCurlBtn.getAttribute('data-id') || (copyCurlBtn.dataset && copyCurlBtn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (req && req.request) {
         const cmd = generateCurl(req.request.method || 'GET', req.request.url || '/', req.request.headers || {}, req.request.body || '');
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -714,7 +620,7 @@ function setupEventDelegation() {
     if (copyJavaBtn) {
       e.stopPropagation();
       const targetId = copyJavaBtn.getAttribute('data-id') || (copyJavaBtn.dataset && copyJavaBtn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (req && req.request) {
         const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
         const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
@@ -746,7 +652,7 @@ function setupEventDelegation() {
       e.stopPropagation();
       const stubId = inspectStubBtn.getAttribute('data-stub-id');
       if (stubId) {
-        const found = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === stubId);
+        const found = state.currentStubs.find(s => s.id === stubId);
         activateTab('tab-stubs', false);
         if (found) {
           selectStub(found, true);
@@ -759,7 +665,7 @@ function setupEventDelegation() {
     if (createStubBtn) {
       e.stopPropagation();
       const targetId = createStubBtn.getAttribute('data-id') || (createStubBtn.dataset && createStubBtn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (req && req.request) {
         openStubEditorFromRequest(req.request);
       }
@@ -770,7 +676,7 @@ function setupEventDelegation() {
     if (copyReqBtn) {
       e.stopPropagation();
       const targetId = copyReqBtn.getAttribute('data-id') || (copyReqBtn.dataset && copyReqBtn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (req) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(JSON.stringify(req.request, null, 2)).catch(() => {});
@@ -785,7 +691,7 @@ function setupEventDelegation() {
     if (copyRespBtn) {
       e.stopPropagation();
       const targetId = copyRespBtn.getAttribute('data-id') || (copyRespBtn.dataset && copyRespBtn.dataset.id);
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (req) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2)).catch(() => {});
@@ -869,7 +775,7 @@ function setupEventDelegation() {
         }
       }
 
-      const req = state.currentRequests.find(r => r.id === targetId);
+      const req = requestJournal.findById(targetId);
       if (!req) return;
 
       const stubData = buildSnapshotStubMapping(req);
@@ -889,27 +795,6 @@ function setupEventDelegation() {
   });
 }
 
-export function detectRequestProtocol(req) {
-  const reqHeaders = (req && req.request && req.request.headers) || {};
-  const url = (req && req.request && req.request.url) || '';
-  const isCasual = Boolean(
-    getHeader(reqHeaders, 'x-casual-service') ||
-    getHeader(reqHeaders, 'x-casual-queue') ||
-    url.startsWith('/__casual/')
-  );
-  if (isCasual) return 'casual';
-  const isAsync = Boolean(
-    getHeader(reqHeaders, 'x-async-channel') ||
-    url.startsWith('/__async/')
-  );
-  if (isAsync) {
-    const proto = (getHeader(reqHeaders, 'x-async-protocol')
-      || (url.startsWith('/__async/') ? url.split('/')[2] : 'async') || 'async').toLowerCase();
-    return proto;
-  }
-  return 'http';
-}
-
 export function renderJournal(resetLimit = true) {
   setupEventDelegation();
   setupLazyScroll();
@@ -921,45 +806,37 @@ export function renderJournal(resetLimit = true) {
   const sinceMs = state.journalSince ? new Date(state.journalSince).getTime() : null;
   const untilMs = state.journalUntil ? new Date(state.journalUntil).getTime() : null;
 
-  lastFilteredRequests = state.currentRequests.filter(r => {
-    const verdict = getRequestVerdict(r);
-    if (unmatchedOnly && verdict.key !== 'unmatched') return false;
-    if (verdictFilter !== 'all' && verdict.key !== verdictFilter) return false;
-    const proto = detectRequestProtocol(r);
-    if (protocolFilter !== 'all' && proto !== protocolFilter) return false;
-    if (sinceMs !== null || untilMs !== null) {
-      const loggedDate = r.request && r.request.loggedDate;
-      if (loggedDate) {
-        const t = typeof loggedDate === 'number' ? loggedDate : new Date(loggedDate).getTime();
-        if (!isNaN(t)) {
-          if (sinceMs !== null && t < sinceMs) return false;
-          if (untilMs !== null && t > untilMs) return false;
-        }
-      }
-    }
-    if (!filter) return true;
-    const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
-    const statefulEntity = getHeader(rHeaders, 'x-wiremock-stateful-entity') || '';
-    return matchesJournalEntry(r, filter, statefulEntity, `${verdict.key} ${verdict.type} ${verdict.label} ${proto}`);
+  requestJournal.query({
+    search: filter,
+    unmatchedOnly,
+    verdictFilter,
+    protocolFilter,
+    since: state.journalSince,
+    until: state.journalUntil
   });
 
-  const proxiedFiltered = lastFilteredRequests.filter(r => getRequestVerdict(r).key === 'proxied');
+  const proxiedFiltered = requestJournal.getFilteredProxied();
   if (elements.journalProxiedCount) {
     elements.journalProxiedCount.textContent = proxiedFiltered.length;
   }
   if (elements.btnJournalSnapshotFiltered) {
-    elements.btnJournalSnapshotFiltered.disabled = proxiedFiltered.length === 0;
-    elements.btnJournalSnapshotFiltered.title = proxiedFiltered.length > 0
-      ? `Snapshot ${proxiedFiltered.length} proxied request(s) into disabled stubs`
-      : 'No proxied requests match the active filter';
+    if (!state.capabilities.lifecycle) {
+      elements.btnJournalSnapshotFiltered.disabled = true;
+      elements.btnJournalSnapshotFiltered.title = 'Batch snapshotting requires wiremock-extension-ui lifecycle endpoint';
+    } else {
+      elements.btnJournalSnapshotFiltered.disabled = proxiedFiltered.length === 0;
+      elements.btnJournalSnapshotFiltered.title = proxiedFiltered.length > 0
+        ? `Snapshot ${proxiedFiltered.length} proxied request(s) into disabled stubs (priority 100)`
+        : 'No proxied requests match the active filter';
+    }
   }
 
   if (resetLimit) {
-    visibleCount = 50;
+    requestJournal.resetVisibleWindow(50);
   }
 
-  const total = lastFilteredRequests.length;
-  const itemsToRender = lastFilteredRequests.slice(0, visibleCount);
+  const total = requestJournal.getLastFiltered().length;
+  const itemsToRender = requestJournal.getVisibleSlice();
 
   updateCountDisplay();
 
@@ -978,7 +855,7 @@ export function renderJournal(resetLimit = true) {
 }
 
 export function getFilteredProxiedRequests() {
-  return (lastFilteredRequests || []).filter(r => getRequestVerdict(r).key === 'proxied');
+  return requestJournal.getFilteredProxied();
 }
 
 export function setupJournalAutoRefresh() {

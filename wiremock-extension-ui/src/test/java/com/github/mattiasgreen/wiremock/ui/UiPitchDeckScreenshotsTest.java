@@ -50,7 +50,7 @@ public class UiPitchDeckScreenshotsTest {
                 .dynamicPort()
                 .extensions(
                         new UiAdminApiEndpoint(),
-                        new StubLifecycleAdminEndpoint(new DisabledStubStore()),
+                        new StubLifecycleAdminEndpoint(new StubLifecycleService()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
                         new StatefulAdminEndpoint(stateEngine),
                         new StatefulResponseTransformer(stateEngine),

@@ -3,18 +3,17 @@ package com.github.mattiasgreen.wiremock.logging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.mattiasgreen.wiremock.support.ServeEventTrafficSupport;
 import com.github.tomakehurst.wiremock.extension.Parameters;
 import com.github.tomakehurst.wiremock.extension.ServeEventListener;
 import com.github.tomakehurst.wiremock.http.HttpHeader;
 import com.github.tomakehurst.wiremock.http.HttpHeaders;
 import com.github.tomakehurst.wiremock.http.LoggedResponse;
 import com.github.tomakehurst.wiremock.http.Request;
-import com.github.tomakehurst.wiremock.http.ResponseDefinition;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -103,40 +102,9 @@ public class JsonLoggingListener implements ServeEventListener {
             event.setStubName(stubMapping.getName());
         }
 
-        ResponseDefinition respDef = serveEvent.getResponseDefinition();
         LoggedResponse response = serveEvent.getResponse();
-        boolean isFault =
-                (respDef != null && respDef.getFault() != null) || (response != null && response.getFault() != null);
-
-        boolean isProxied = (respDef != null && respDef.isProxyResponse())
-                || (stubMapping != null
-                        && stubMapping.getResponse() != null
-                        && stubMapping.getResponse().isProxyResponse());
-
-        String targetUpstream = null;
-        if (respDef != null
-                && respDef.getProxyBaseUrl() != null
-                && !respDef.getProxyBaseUrl().isBlank()) {
-            targetUpstream = respDef.getProxyBaseUrl();
-        } else if (stubMapping != null
-                && stubMapping.getResponse() != null
-                && stubMapping.getResponse().getProxyBaseUrl() != null
-                && !stubMapping.getResponse().getProxyBaseUrl().isBlank()) {
-            targetUpstream = stubMapping.getResponse().getProxyBaseUrl();
-        }
-
-        String trafficType;
-        if (isFault) {
-            trafficType = "fault";
-        } else if (isProxied) {
-            trafficType = "proxied";
-        } else if (matched) {
-            trafficType = "stubbed";
-        } else {
-            trafficType = "unmatched";
-        }
-        event.setTrafficType(trafficType);
-        event.setTargetUpstream(targetUpstream);
+        event.setTrafficType(ServeEventTrafficSupport.classifyTrafficType(serveEvent));
+        event.setTargetUpstream(ServeEventTrafficSupport.extractTargetUpstream(serveEvent));
 
         String mdcTraceId = MDC.get("trace_id");
         if (mdcTraceId != null && !mdcTraceId.isBlank()) {
@@ -148,25 +116,12 @@ public class JsonLoggingListener implements ServeEventListener {
         }
 
         Request request = serveEvent.getRequest();
-        String protocol = "http";
-        if (request != null) {
-            if (request.header("X-WireMock-Protocol").isPresent()) {
-                protocol = request.header("X-WireMock-Protocol").firstValue().toLowerCase(Locale.ROOT);
-            } else if (request.header("X-Casual-Service").isPresent()
-                    || (request.getUrl() != null && request.getUrl().startsWith("/__casual/"))) {
-                protocol = "casual";
-            } else if ((request.header("Content-Type").isPresent()
-                            && request.header("Content-Type").firstValue().contains("application/grpc"))
-                    || request.header("X-Grpc-Service").isPresent()) {
-                protocol = "grpc";
-            }
-        }
-        event.setProtocol(protocol);
+        event.setProtocol(ServeEventTrafficSupport.detectProtocol(request));
         if (request != null) {
             WireMockLogEvent.RequestDetails reqDetails = new WireMockLogEvent.RequestDetails();
             reqDetails.setMethod(request.getMethod().getName());
             reqDetails.setUrl(request.getUrl());
-            reqDetails.setClientIp(request.getClientIp());
+            reqDetails.setClientIp(ServeEventTrafficSupport.extractClientIpOrRaw(request));
 
             if (verbose) {
                 reqDetails.setHeaders(extractHeadersMap(request.getHeaders()));

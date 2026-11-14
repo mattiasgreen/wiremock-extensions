@@ -83,6 +83,16 @@ class WireMockCliTest {
                 "_disabled",
                 Boolean.TRUE);
 
+        Map<String, Object> parkedStub = Map.of(
+                "request",
+                Map.of("method", "GET", "url", "/api/v1/parked"),
+                "response",
+                Map.of("status", 200L),
+                "name",
+                "Parked Health",
+                "priority",
+                100L);
+
         // Simple matchers
         assertThat(WireMockCli.QueryEvaluator.matchesStub("cases", stub1)).isTrue();
         assertThat(WireMockCli.QueryEvaluator.matchesStub("GET", stub1)).isTrue();
@@ -111,6 +121,10 @@ class WireMockCliTest {
         assertThat(WireMockCli.QueryEvaluator.matchesStub("status=200", stub2)).isFalse();
         assertThat(WireMockCli.QueryEvaluator.matchesStub("status=disabled", disabledStub))
                 .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesStub("status=disabled", parkedStub))
+                .isTrue();
+        assertThat(WireMockCli.QueryEvaluator.matchesStub("status=active", parkedStub))
+                .isFalse();
         assertThat(WireMockCli.QueryEvaluator.matchesStub("status=active", disabledStub))
                 .isFalse();
         assertThat(WireMockCli.QueryEvaluator.matchesStub("status=active", stub1))

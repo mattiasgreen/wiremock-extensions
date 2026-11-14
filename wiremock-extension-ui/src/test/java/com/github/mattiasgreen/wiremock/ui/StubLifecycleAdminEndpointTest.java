@@ -25,14 +25,12 @@ class StubLifecycleAdminEndpointTest {
     private WireMockServer server;
     private HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private DisabledStubStore disabledStubStore;
 
     @BeforeEach
     void setUp() {
-        disabledStubStore = new DisabledStubStore();
         server = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
-                .extensions(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(disabledStubStore)));
+                .extensions(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(new StubLifecycleService())));
         server.start();
         httpClient = HttpClient.newHttpClient();
     }
@@ -45,15 +43,32 @@ class StubLifecycleAdminEndpointTest {
     }
 
     @Test
-    @DisplayName("Should disable active stub, isolate traffic, and enable it back")
-    void shouldDisableAndEnableStub() throws Exception {
+    @DisplayName("Should expose lifecycle status UP and yield parked prio-100 stubs to prio-50 offline-guard")
+    void shouldExposeLifecycleStatusAndParkStubBehindOfflineGuard() throws Exception {
+        HttpResponse<String> statusRes = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/status"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(statusRes.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readTree(statusRes.body()).get("status").asText())
+                .isEqualTo("UP");
+
+        // Register optional prio-50 offline guard catch-all and prio-5 active stub
+        server.stubFor(WireMock.any(urlMatching("/api/.*"))
+                .atPriority(StubLifecycleService.PRIORITY_OFFLINE_GUARD)
+                .withMetadata(Map.of("role", "offline-guard"))
+                .willReturn(aResponse().withStatus(501).withBody("{\"error\":\"offline-guard\"}")));
+
         UUID stubId = UUID.randomUUID();
         server.stubFor(WireMock.get(urlEqualTo("/api/orders/99"))
                 .withId(stubId)
                 .withName("Order 99")
+                .atPriority(StubLifecycleService.PRIORITY_ACTIVE_STUB)
                 .willReturn(aResponse().withStatus(200).withBody("{\"order\":99}")));
 
-        // 1. Verify stub is active and serves traffic
+        // 1. Active stub (prio 5) wins over offline guard (prio 50)
         HttpResponse<String> liveRes = httpClient.send(
                 HttpRequest.newBuilder()
                         .uri(URI.create(server.baseUrl() + "/api/orders/99"))
@@ -63,111 +78,53 @@ class StubLifecycleAdminEndpointTest {
         assertThat(liveRes.statusCode()).isEqualTo(200);
         assertThat(liveRes.body()).contains("{\"order\":99}");
 
-        // 2. Disable stub via POST /__admin/stubs/{id}/disable
-        HttpResponse<String> disableRes = httpClient.send(
+        // 2. Park stub natively via PUT /__admin/mappings/{id} with priority 100
+        String mappingJson = httpClient
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(server.baseUrl() + "/__admin/mappings/" + stubId))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString())
+                .body();
+        String parkedJson = objectMapper.readTree(mappingJson).toString().replace("\"priority\":5", "\"priority\":100");
+        HttpResponse<String> parkRes = httpClient.send(
                 HttpRequest.newBuilder()
-                        .uri(URI.create(server.baseUrl() + "/__admin/stubs/" + stubId + "/disable"))
-                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .uri(URI.create(server.baseUrl() + "/__admin/mappings/" + stubId))
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(parkedJson))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
-        assertThat(disableRes.statusCode()).isEqualTo(200);
+        assertThat(parkRes.statusCode()).isEqualTo(200);
 
-        JsonNode disableJson = objectMapper.readTree(disableRes.body());
-        assertThat(disableJson.get("status").asText()).isEqualTo("disabled");
-        assertThat(disableJson.get("id").asText()).isEqualTo(stubId.toString());
-
-        // 3. Verify stub is no longer matched by WireMock (returns 404)
-        HttpResponse<String> disabledTrafficRes = httpClient.send(
+        // 3. Offline guard (prio 50) now catches requests instead of parked stub (prio 100)
+        HttpResponse<String> parkedTrafficRes = httpClient.send(
                 HttpRequest.newBuilder()
                         .uri(URI.create(server.baseUrl() + "/api/orders/99"))
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
-        assertThat(disabledTrafficRes.statusCode()).isEqualTo(404);
+        assertThat(parkedTrafficRes.statusCode()).isEqualTo(501);
 
-        // 4. Verify stub appears in /__admin/stubs/disabled
-        HttpResponse<String> listDisabledRes = httpClient.send(
+        // 4. Restore stub to prio 5 and verify traffic returns 200
+        String restoredJson = parkedJson.replace("\"priority\":100", "\"priority\":5");
+        HttpResponse<String> restoreRes = httpClient.send(
                 HttpRequest.newBuilder()
-                        .uri(URI.create(server.baseUrl() + "/__admin/stubs/disabled"))
-                        .GET()
+                        .uri(URI.create(server.baseUrl() + "/__admin/mappings/" + stubId))
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(restoredJson))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
-        assertThat(listDisabledRes.statusCode()).isEqualTo(200);
-        JsonNode disabledListJson = objectMapper.readTree(listDisabledRes.body());
-        assertThat(disabledListJson.get("mappings").isArray()).isTrue();
-        assertThat(disabledListJson.get("mappings")).hasSize(1);
-        assertThat(disabledListJson.get("mappings").get(0).get("id").asText()).isEqualTo(stubId.toString());
+        assertThat(restoreRes.statusCode()).isEqualTo(200);
 
-        // 5. Re-enable stub via POST /__admin/stubs/{id}/enable
-        HttpResponse<String> enableRes = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(server.baseUrl() + "/__admin/stubs/" + stubId + "/enable"))
-                        .POST(HttpRequest.BodyPublishers.noBody())
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(enableRes.statusCode()).isEqualTo(200);
-        JsonNode enableJson = objectMapper.readTree(enableRes.body());
-        assertThat(enableJson.get("status").asText()).isEqualTo("enabled");
-
-        // 6. Verify traffic is matched again
-        HttpResponse<String> reEnabledTrafficRes = httpClient.send(
+        HttpResponse<String> reEnabledRes = httpClient.send(
                 HttpRequest.newBuilder()
                         .uri(URI.create(server.baseUrl() + "/api/orders/99"))
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
-        assertThat(reEnabledTrafficRes.statusCode()).isEqualTo(200);
-        assertThat(reEnabledTrafficRes.body()).contains("{\"order\":99}");
-    }
-
-    @Test
-    @DisplayName("Should toggle stub and perform bulk disable/delete")
-    void shouldToggleAndBulkProcessStubs() throws Exception {
-        UUID id1 = UUID.randomUUID();
-        UUID id2 = UUID.randomUUID();
-
-        server.stubFor(WireMock.get(urlEqualTo("/test/1")).withId(id1).willReturn(ok()));
-        server.stubFor(WireMock.get(urlEqualTo("/test/2")).withId(id2).willReturn(ok()));
-
-        // Toggle id1 (active -> disabled)
-        HttpResponse<String> toggle1 = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(server.baseUrl() + "/__admin/stubs/" + id1 + "/toggle"))
-                        .POST(HttpRequest.BodyPublishers.noBody())
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(toggle1.statusCode()).isEqualTo(200);
-        assertThat(objectMapper.readTree(toggle1.body()).get("status").asText()).isEqualTo("disabled");
-
-        // Bulk disable id2
-        String bulkDisableBody = "{\"action\":\"disable\",\"ids\":[\"" + id2 + "\"]}";
-        HttpResponse<String> bulkRes = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(server.baseUrl() + "/__admin/stubs/bulk"))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(bulkDisableBody))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(bulkRes.statusCode()).isEqualTo(200);
-        assertThat(objectMapper.readTree(bulkRes.body()).get("processed").asInt())
-                .isEqualTo(1);
-
-        // Verify both are now disabled
-        assertThat(disabledStubStore.size()).isEqualTo(2);
-
-        // Bulk delete both
-        String bulkDeleteBody = "{\"action\":\"delete\",\"ids\":[\"" + id1 + "\",\"" + id2 + "\"]}";
-        HttpResponse<String> deleteRes = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(server.baseUrl() + "/__admin/stubs/bulk"))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(bulkDeleteBody))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(deleteRes.statusCode()).isEqualTo(200);
-        assertThat(objectMapper.readTree(deleteRes.body()).get("processed").asInt())
-                .isEqualTo(2);
-        assertThat(disabledStubStore.size()).isEqualTo(0);
+        assertThat(reEnabledRes.statusCode()).isEqualTo(200);
+        assertThat(reEnabledRes.body()).contains("{\"order\":99}");
     }
 
     @Test
@@ -220,10 +177,14 @@ class StubLifecycleAdminEndpointTest {
             assertThat(snapJson.get("totalRecorded").asInt()).isEqualTo(1);
             assertThat(snapJson.get("status").asText()).isEqualTo("disabled");
 
-            // Verify the recorded stub was created in DISABLED store per default
-            assertThat(disabledStubStore.size()).isEqualTo(1);
+            // Verify the recorded stub was created parked at priority 100 in native mappings
             com.github.tomakehurst.wiremock.stubbing.StubMapping recordedStub =
-                    disabledStubStore.getAll().iterator().next();
+                    server.listAllStubMappings().getMappings().stream()
+                            .filter(s -> s.getMetadata() != null
+                                    && "recorded-proxy".equals(s.getMetadata().getString("source")))
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(recordedStub.getPriority()).isEqualTo(StubLifecycleService.PRIORITY_PARKED);
             assertThat(recordedStub.getResponse().getStatus()).isEqualTo(200);
             assertThat(recordedStub.getResponse().getBody()).contains("live-upstream");
             assertThat(recordedStub.getMetadata().getString("project")).isEqualTo("Warehouse");
@@ -334,12 +295,16 @@ class StubLifecycleAdminEndpointTest {
             assertThat(snapJson1.get("status").asText()).isEqualTo("disabled");
             assertThat(snapJson1.get("project").asText()).isEqualTo("CustomerDomain");
 
-            assertThat(disabledStubStore.size()).isEqualTo(1);
-            com.github.tomakehurst.wiremock.stubbing.StubMapping disabledStub =
-                    disabledStubStore.getAll().iterator().next();
-            assertThat(disabledStub.getRequest().getUrl()).isEqualTo("/api/customers/42");
-            assertThat(disabledStub.getResponse().getBody()).contains("Alice");
-            assertThat(disabledStub.getMetadata().getString("project")).isEqualTo("CustomerDomain");
+            com.github.tomakehurst.wiremock.stubbing.StubMapping parkedStub =
+                    server.listAllStubMappings().getMappings().stream()
+                            .filter(s ->
+                                    "/api/customers/42".equals(s.getRequest().getUrl()))
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(parkedStub.getPriority()).isEqualTo(StubLifecycleService.PRIORITY_PARKED);
+            assertThat(parkedStub.getRequest().getUrl()).isEqualTo("/api/customers/42");
+            assertThat(parkedStub.getResponse().getBody()).contains("Alice");
+            assertThat(parkedStub.getMetadata().getString("project")).isEqualTo("CustomerDomain");
 
             // 2. Snapshot invoice request directly to ACTIVE mappings
             String payload2 = objectMapper.writeValueAsString(
@@ -440,7 +405,8 @@ class StubLifecycleAdminEndpointTest {
             assertThat(bodyPatternsStr).doesNotContain("CORRELATION_ID");
             assertThat(bodyPatternsStr).doesNotContain("REQUEST_TIMESTAMP");
 
-            // Verify metadata
+            // Verify metadata and default parked priority
+            assertThat(stubNode.get("priority").asInt()).isEqualTo(StubLifecycleService.PRIORITY_PARKED);
             assertThat(stubNode.get("metadata").get("mode").asText()).isEqualTo("static");
             assertThat(stubNode.get("metadata").get("source").asText()).isEqualTo("recorded-proxy");
             assertThat(stubNode.get("metadata").get("project").asText()).isEqualTo("Billing");

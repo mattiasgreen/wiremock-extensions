@@ -1,6 +1,7 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import com.github.tomakehurst.wiremock.http.ImmutableRequest;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
@@ -78,16 +79,16 @@ public class CasualWireMockGateway
     }
 
     public CasualWireMockGateway(int port, String wireMockBaseUrl) {
-        this(port, new WireMockStoreAdapter(null, null, wireMockBaseUrl), resolveDefaultTimeout());
+        this(port, resolveDefaultStorePort(null, wireMockBaseUrl), resolveDefaultTimeout());
     }
 
     public CasualWireMockGateway(int port, WireMockServer wireMockServer) {
-        this(port, new WireMockStoreAdapter(wireMockServer), resolveDefaultTimeout());
+        this(port, resolveDefaultStorePort(wireMockServer, null), resolveDefaultTimeout());
     }
 
     public CasualWireMockGateway(
             int port, String wireMockBaseUrl, WireMockServer wireMockServer, int upstreamTimeoutSeconds) {
-        this(port, new WireMockStoreAdapter(wireMockServer, null, wireMockBaseUrl), upstreamTimeoutSeconds);
+        this(port, resolveDefaultStorePort(wireMockServer, wireMockBaseUrl), upstreamTimeoutSeconds);
     }
 
     public CasualWireMockGateway(int port, CasualStorePort storePort, int upstreamTimeoutSeconds) {
@@ -96,11 +97,26 @@ public class CasualWireMockGateway
 
     public CasualWireMockGateway(int port, CasualStorePort storePort, int upstreamTimeoutSeconds, int workerThreads) {
         this.port = port;
-        this.storePort = storePort != null ? storePort : new WireMockStoreAdapter(null, null, "http://localhost:8080");
+        this.storePort = storePort != null ? storePort : resolveDefaultStorePort(null, "http://localhost:8080");
         this.upstreamTimeoutSeconds = upstreamTimeoutSeconds > 0 ? upstreamTimeoutSeconds : resolveDefaultTimeout();
         this.workerThreads = Math.max(0, workerThreads);
         this.domainId = UUID.randomUUID();
         this.domainName = "wiremock-casual-domain";
+    }
+
+    static CasualStorePort resolveDefaultStorePort(WireMockServer wireMockServer, String wireMockBaseUrl) {
+        if (wireMockServer != null) {
+            return new WireMockStoreAdapter(wireMockServer, null, wireMockBaseUrl);
+        }
+        if (wireMockBaseUrl != null && !wireMockBaseUrl.isBlank()) {
+            return new HttpCasualStoreAdapter(wireMockBaseUrl);
+        }
+        Optional<WireMockServices> registryServices =
+                CasualRegistry.getInstance().getWireMockServices();
+        if (registryServices.isPresent()) {
+            return new WireMockStoreAdapter(registryServices.get(), "http://localhost:8080");
+        }
+        return new HttpCasualStoreAdapter("http://localhost:8080");
     }
 
     private static int resolveDefaultTimeout() {
@@ -131,7 +147,9 @@ public class CasualWireMockGateway
 
         public Builder wireMockServer(WireMockServer wireMockServer) {
             this.wireMockServer = wireMockServer;
-            if (wireMockServer != null && (this.wireMockBaseUrl == null || this.wireMockBaseUrl.isBlank())) {
+            if (wireMockServer != null
+                    && wireMockServer.isRunning()
+                    && (this.wireMockBaseUrl == null || this.wireMockBaseUrl.isBlank())) {
                 this.wireMockBaseUrl = wireMockServer.baseUrl();
             }
             return this;
@@ -155,7 +173,7 @@ public class CasualWireMockGateway
         public CasualWireMockGateway build() {
             CasualStorePort resolvedStore = storePort;
             if (resolvedStore == null) {
-                resolvedStore = new WireMockStoreAdapter(wireMockServer, null, wireMockBaseUrl);
+                resolvedStore = resolveDefaultStorePort(wireMockServer, wireMockBaseUrl);
             }
             return new CasualWireMockGateway(port, resolvedStore, upstreamTimeoutSeconds, workerThreads);
         }

@@ -31,7 +31,7 @@ All extension classes live under `com.github.mattiasgreen.wiremock.casual.*` and
 
 - **Deep Modules & Clear Seams**:
   - `CasualWireMockGateway`: Thin orchestrator binding the network server to mediation and coordination.
-  - `CasualStorePort` / `WireMockStoreAdapter` / `InMemoryCasualStoreAdapter`: Clean store seam isolating WireMock HTTP matching from reflection and internal state.
+  - `CasualStorePort` / `WireMockStoreAdapter` / `HttpCasualStoreAdapter` / `InMemoryCasualStoreAdapter`: Explicit store seam separating in-process WireMock stores (`WireMockServices`/`Options`/`Stores`, zero reflection), remote HTTP Admin access, and pure in-memory unit-test storage.
   - `CasualHttpMediation`: Deep translation between Casual XATMI buffers and HTTP status/headers/payloads.
   - `CasualTransactionCoordinator`: Multi-upstream 2PC transaction branch enlistment, atomic propagation, and synthetic XA voting overrides.
   - `CasualClient`: Unified client leveraging upstream `NettyNetworkConnection` and `CorrelatorImpl` for auto-negotiated outbound framing.

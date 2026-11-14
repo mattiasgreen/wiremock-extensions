@@ -5,6 +5,7 @@
 import { state } from './state.js';
 import { detectCapabilities } from './capabilities.js';
 import { demoBackend } from './demo-backend.js';
+import { PRIORITY_ACTIVE_PROXY, PRIORITY_ACTIVE_STUB, PRIORITY_PARKED, isProxyStub, isStubParked } from './stub-catalog.js';
 
 let onDemoFallbackHandler = null;
 
@@ -149,26 +150,85 @@ export function apiDelete(endpoint) {
   });
 }
 
-export function toggleStubState(stubId) {
-  return apiPost(`/__admin/stubs/${stubId}/toggle`);
+export function buildToggledStubPayload(stub, forceParked = null) {
+  const payload = JSON.parse(JSON.stringify(stub || {}));
+  delete payload._disabled;
+  delete payload._dynamic;
+  delete payload.isDynamic;
+
+  const targetParked = forceParked !== null ? Boolean(forceParked) : !isStubParked(stub);
+  const meta = payload.metadata && typeof payload.metadata === 'object' ? { ...payload.metadata } : {};
+  const defaultActivePriority = isProxyStub(stub) ? PRIORITY_ACTIVE_PROXY : PRIORITY_ACTIVE_STUB;
+
+  if (targetParked) {
+    if (
+      typeof stub.priority === 'number' &&
+      stub.priority < PRIORITY_PARKED &&
+      stub.priority !== defaultActivePriority
+    ) {
+      meta.previousPriority = stub.priority;
+    }
+    payload.priority = PRIORITY_PARKED;
+  } else {
+    const prev = meta.previousPriority;
+    const restored =
+      typeof prev === 'number' && prev > 0 && prev < PRIORITY_PARKED ? prev : defaultActivePriority;
+    delete meta.previousPriority;
+    payload.priority = restored;
+  }
+
+  if (Object.keys(meta).length > 0) {
+    payload.metadata = meta;
+  } else {
+    delete payload.metadata;
+  }
+  return payload;
+}
+
+async function resolveStubById(stubId) {
+  const cached = (state.currentStubs || []).find(s => s.id === stubId);
+  if (cached) return cached;
+  return apiGet(`/__admin/mappings/${stubId}`);
+}
+
+export async function toggleStubState(stubId) {
+  const stub = await resolveStubById(stubId);
+  const updated = buildToggledStubPayload(stub);
+  return apiPut(`/__admin/mappings/${stubId}`, updated);
 }
 
 export function deleteStubMapping(stubId) {
-  return apiDelete(`/__admin/stubs/${stubId}`)
-    .catch(() => apiDelete(`/__admin/mappings/${stubId}`).catch(() => bulkStubs('delete', [stubId])));
+  return apiDelete(`/__admin/mappings/${stubId}`);
 }
 
 export function saveStubMapping(stubId, stubData) {
-  return apiPut(`/__admin/stubs/${stubId}`, stubData)
-    .catch(() => apiPut(`/__admin/mappings/${stubId}`, stubData));
+  return apiPut(`/__admin/mappings/${stubId}`, stubData);
 }
 
 export function createStubMapping(stubData) {
   return apiPost('/__admin/mappings', stubData);
 }
 
-export function bulkStubs(action, ids) {
-  return apiPost('/__admin/stubs/bulk', { action, ids });
+export async function bulkStubs(action, ids) {
+  const targetIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  if (action === 'delete') {
+    await Promise.all(targetIds.map(id => deleteStubMapping(id)));
+    return { action, processed: targetIds.length };
+  }
+  if (action === 'disable' || action === 'enable') {
+    const wantParked = action === 'disable';
+    let processed = 0;
+    await Promise.all(
+      targetIds.map(async id => {
+        const stub = await resolveStubById(id);
+        if (isStubParked(stub) === wantParked) return;
+        await saveStubMapping(id, buildToggledStubPayload(stub, wantParked));
+        processed++;
+      })
+    );
+    return { action, processed };
+  }
+  throw new Error(`Unsupported bulk action: ${action}`);
 }
 
 export function importMappings(payload) {

@@ -32,7 +32,6 @@ import org.junit.jupiter.api.TestInstance;
 public class UiSnapshotCaptureTest {
 
     private WireMockServer wireMockServer;
-    private DisabledStubStore disabledStubStore;
     private Browser browser;
     private Path webOutputDir;
 
@@ -49,10 +48,9 @@ public class UiSnapshotCaptureTest {
         webOutputDir = baseReports.resolve("web");
         Files.createDirectories(webOutputDir);
 
-        disabledStubStore = new DisabledStubStore();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
-                .extensions(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(disabledStubStore)));
+                .extensions(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(new StubLifecycleService())));
         wireMockServer.start();
 
         seedSampleData();
