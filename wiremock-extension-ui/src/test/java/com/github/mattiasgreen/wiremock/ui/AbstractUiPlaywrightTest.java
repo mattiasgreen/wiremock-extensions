@@ -11,9 +11,11 @@ import com.github.mattiasgreen.wiremock.stateful.extension.StatefulResponseTrans
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -222,12 +224,69 @@ public abstract class AbstractUiPlaywrightTest {
     }
 
     protected void switchTab(String tabId) {
-        String navSelector = "#nav-" + tabId.replace("tab-", "tab-");
-        if (!navSelector.startsWith("#nav-tab-")) {
-            navSelector = "#nav-tab-" + tabId.replace("tab-", "");
+        String normalized = tabId == null ? "stubs" : tabId.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("nav-")) {
+            normalized = normalized.substring(4);
         }
+        String key = normalized.startsWith("tab-") ? normalized.substring(4) : normalized;
+        if ("stub-detail".equals(key)) {
+            key = "stubs";
+        }
+        String navSelector = "#nav-tab-" + key;
+        String panelSelector = "stubs".equals(key) ? "#tab-stub-detail.active" : "#tab-" + key + ".active";
         page.locator(navSelector).click();
-        page.waitForSelector("#" + tabId + ".active");
+        page.waitForSelector(panelSelector);
+    }
+
+    protected void openStubsTab() {
+        switchTab("stubs");
+        page.waitForSelector("#stub-list");
+    }
+
+    protected void openTesterTab() {
+        switchTab("tester");
+    }
+
+    protected void openTesterTab(String protocol) {
+        openTesterTab();
+        page.locator("#btn-tester-proto-" + protocol.toLowerCase(Locale.ROOT)).click();
+    }
+
+    protected void openScenariosTab() {
+        switchTab("scenarios");
+    }
+
+    protected void openNetEmTab() {
+        switchTab("netem");
+    }
+
+    protected void openQueuesTab() {
+        switchTab("queues");
+    }
+
+    protected void openNewStubModal() {
+        page.locator("#btn-create-stub").click();
+        waitForStubEditorOpen();
+    }
+
+    protected void waitForStubEditorOpen() {
+        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+    }
+
+    protected void saveStubEditorAndWaitClosed() {
+        page.locator("#btn-save-editor").click();
+        page.waitForSelector(
+                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+    }
+
+    protected void openOpenApiModal() {
+        page.waitForSelector("#btn-open-openapi-modal");
+        page.locator("#btn-open-openapi-modal").click();
+        page.waitForSelector("#openapi-modal:not(.hidden)");
+    }
+
+    protected void waitForOpenApiModalClosed() {
+        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
     }
 
     protected void filterStubs(String query) {

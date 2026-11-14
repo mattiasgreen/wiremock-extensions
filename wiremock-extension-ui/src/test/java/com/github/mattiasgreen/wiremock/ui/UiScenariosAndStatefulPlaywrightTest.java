@@ -109,8 +109,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         page.waitForSelector("#tester-response-status:not(:has-text('...'))");
         assertThat(page.locator("#tester-response-status").textContent()).contains("201");
 
-        page.locator("#nav-tab-journal").click();
-        page.waitForSelector("#journal-table");
+        openJournalTab();
 
         Locator journalRows = page.locator("#journal-list tr[data-testid='journal-row']");
         assertThat(journalRows.first().locator(".pill-stateful").textContent()).contains("STATEFUL");
@@ -190,8 +189,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         assertThat(page.locator("#tester-response-body").textContent())
                 .contains("Cannot close case: pending tasks exist");
 
-        page.locator("#nav-tab-journal").click();
-        page.waitForSelector("#journal-table");
+        openJournalTab();
 
         Locator firstRow =
                 page.locator("#journal-list tr[data-testid='journal-row']").first();

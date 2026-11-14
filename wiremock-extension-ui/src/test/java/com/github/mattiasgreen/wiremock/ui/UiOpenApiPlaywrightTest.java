@@ -7,8 +7,6 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
-import com.microsoft.playwright.Page;
-import com.microsoft.playwright.options.WaitForSelectorState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,10 +20,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
     @DisplayName("Scenario 10: OpenAPI Import modal, YAML spec paste, and stub synthesis")
     void testOpenApiImportModalWorkflow() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-        page.waitForSelector("#btn-open-openapi-modal");
-
-        page.locator("#btn-open-openapi-modal").click();
-        page.waitForSelector("#openapi-modal:not(.hidden)");
+        openOpenApiModal();
 
         assertThat(page.locator("#openapi-spec-content").isVisible()).isTrue();
         assertThat(page.locator("#btn-submit-openapi-import").isVisible()).isTrue();
@@ -94,7 +89,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector(".modal-feedback.success");
         assertThat(page.locator(".modal-feedback.success").textContent()).contains("Successfully created 1 stubs");
 
-        page.waitForSelector("#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        waitForOpenApiModalClosed();
 
         page.waitForSelector(".stub-card:has-text('/api/v1/warehouse/stock/{stockId}')");
         Locator newStubCard = page.locator(".stub-card:has-text('/api/v1/warehouse/stock/{stockId}')");
@@ -141,8 +136,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
                 assertThat(page.locator(".stub-card").count()).isEqualTo(0);
             }
 
-            page.locator("#btn-open-openapi-modal").click();
-            page.waitForSelector("#openapi-modal:not(.hidden)");
+            openOpenApiModal();
 
             String openApiYaml =
                     """
@@ -215,8 +209,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.locator("#openapi-spec-content").fill(openApiYaml);
             page.locator("#btn-submit-openapi-import").click();
             page.waitForSelector(".modal-feedback.success");
-            page.waitForSelector(
-                    "#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+            waitForOpenApiModalClosed();
 
             page.waitForSelector(".stub-card:has-text('/api/v1/catalog/orders')");
             page.waitForSelector(".stub-card:has-text('/api/v1/catalog/products')");
@@ -272,8 +265,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(historyCards.nth(1).textContent()).contains("200");
             assertThat(historyCards.nth(2).textContent()).contains("201");
 
-            page.locator("#nav-tab-journal").click();
-            page.waitForSelector("#tab-journal.active");
+            openJournalTab();
 
             page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/orders')");
             page.waitForSelector("#journal-list tr.journal-row:has-text('/api/v1/catalog/products')");
@@ -323,8 +315,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
             assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
 
-            page.locator("#btn-open-openapi-modal").click();
-            page.waitForSelector("#openapi-modal:not(.hidden)");
+            openOpenApiModal();
 
             page.locator("#opt-openapi-mode-proxy").click();
             assertThat(page.locator("#openapi-proxy-config").isVisible()).isTrue();
@@ -350,8 +341,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.locator("#openapi-spec-content").fill(specYaml);
             page.locator("#btn-submit-openapi-import").click();
 
-            page.waitForSelector(
-                    "#openapi-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+            waitForOpenApiModalClosed();
             page.waitForSelector("#stub-list .stub-card");
 
             Locator proxyCard = page.locator(".stub-card")
@@ -368,8 +358,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector("#tester-response-status:has-text('200')");
             assertThat(page.locator("#tester-response-body").textContent()).contains("Live Catalog Item");
 
-            page.locator("#nav-tab-stubs").click();
-            page.waitForSelector("#tab-stub-detail.active");
+            openStubsTab();
             page.locator("#project-filter-select").selectOption("Catalog Service");
 
             page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
@@ -393,8 +382,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
 
             upstreamServer.stop();
 
-            page.locator("#nav-tab-tester").click();
-            page.waitForSelector("#tab-tester.active");
+            openTesterTab();
             page.locator("#btn-tester-send").click();
             page.waitForSelector("#tester-response-status:has-text('200')");
             assertThat(page.locator("#tester-response-body").textContent()).contains("Live Catalog Item");
