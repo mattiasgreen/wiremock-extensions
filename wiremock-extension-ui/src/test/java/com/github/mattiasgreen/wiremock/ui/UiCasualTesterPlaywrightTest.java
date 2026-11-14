@@ -265,8 +265,7 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(responseHeaders.textContent()).contains("X-Casual-Error-State: OK");
 
             // 7. Switch back to Journal and verify new entry recorded
-            page.locator("#nav-tab-journal").click();
-            page.waitForSelector("#tab-journal.active");
+            openJournalTab();
             page.locator("#btn-refresh-journal").click();
             page.waitForSelector(".journal-row:nth-child(2)");
             Locator updatedRows = page.locator(".journal-row");

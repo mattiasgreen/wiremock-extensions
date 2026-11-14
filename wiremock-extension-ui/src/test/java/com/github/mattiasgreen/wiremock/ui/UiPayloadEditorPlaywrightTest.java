@@ -23,9 +23,7 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector("#nav-tab-stubs");
 
         // 1. Open Stub Editor modal
-        Locator btnCreate = page.locator("#btn-create-stub");
-        btnCreate.click();
-        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        openNewStubModal();
 
         // 2. Switch to Raw JSON tab
         Locator btnModeJson = page.locator("#btn-editor-mode-json");
@@ -337,9 +335,7 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         String rootJson = "{\"status\":\"CONFIRMED\",\"payload\":\"" + innerXml.replace("\"", "\\\"") + "\"}";
         page.locator("#editor-body").fill(rootJson);
 
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        saveStubEditorAndWaitClosed();
 
         // 2. Select the created stub in catalog list
         page.locator(".stub-card")
@@ -380,15 +376,12 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector("#stub-list");
 
         // 1. Create stub with nested payload
-        page.locator("#btn-create-stub").click();
-        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        openNewStubModal();
 
         page.locator("#editor-url").fill("/api/v1/unified-scope-test");
         String nestedJson = "{\"status\":\"OK\",\"meta\":\"{\\\"version\\\":\\\"2.0\\\"}\"}";
         page.locator("#editor-body").fill(nestedJson);
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        saveStubEditorAndWaitClosed();
 
         // 2. Select stub and inspect Stub Detail Card mode toggle
         page.locator(".stub-card")
@@ -456,8 +449,7 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
                 .isEqualTo(0);
 
         // 5. Navigate to Tester tab and verify Response Body has Rich/Raw toggle
-        page.locator("#nav-tab-tester").click();
-        page.waitForSelector("#tab-tester:not(.hidden)");
+        openTesterTab();
 
         // Send a request to receive response
         page.locator("#tester-url").fill(wireMockServer.baseUrl() + "/api/v1/unified-scope-test");
@@ -504,10 +496,8 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(testerBody.inputValue()).contains("\n  \"valid\": true");
 
         // 2. Open Stub Editor modal and verify Expected Request Pattern sub-editor has top-pill & maximize
-        page.locator("#nav-tab-stubs").click();
-        page.waitForSelector("#stub-list");
-        page.locator("#btn-create-stub").click();
-        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        openStubsTab();
+        openNewStubModal();
 
         // Enable Body Matching to show pattern sub-editor
         page.locator("#editor-body-match-type").selectOption("equalToJson");
@@ -565,16 +555,13 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector("#stub-list");
 
         // 1. Create a stub with nested JSON inside response body
-        page.locator("#btn-create-stub").click();
-        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        openNewStubModal();
 
         page.locator("#editor-url").fill("/api/v1/hierarchical-test");
         String nestedBody = "{\"transferId\": \"SWIFT-999\", \"status\": \"SETTLED\"}";
         String rootMapping = "{\"status\": \"OK\", \"body\": \"" + nestedBody.replace("\"", "\\\"") + "\"}";
         page.locator("#editor-body").fill(rootMapping);
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        saveStubEditorAndWaitClosed();
 
         // 2. Select the created stub in catalog list
         Locator stubCard = page.locator(".stub-card")
@@ -682,9 +669,7 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(updatedRawJson).contains("SWIFT-EDITED-123");
 
         // 10. Click [ 💾 Save Mapping ] and verify saved to server
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        saveStubEditorAndWaitClosed();
 
         // Stub Detail updates with new content asynchronously after loadData()
         page.waitForSelector("#stub-json-viewer:has-text('SWIFT-EDITED-123')");

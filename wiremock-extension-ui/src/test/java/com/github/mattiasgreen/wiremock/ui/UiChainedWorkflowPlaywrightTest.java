@@ -3,8 +3,6 @@ package com.github.mattiasgreen.wiremock.ui;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.microsoft.playwright.Locator;
-import com.microsoft.playwright.Page;
-import com.microsoft.playwright.options.WaitForSelectorState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -49,8 +47,7 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#tester-response-status").textContent()).contains("404");
 
         // Step 3: Switch to Request Journal and locate the logged unmatched request
-        page.locator("#nav-tab-journal").click();
-        page.waitForSelector("#tab-journal.active");
+        openJournalTab();
         page.waitForSelector(".journal-row");
 
         Locator orderRow =
@@ -145,13 +142,10 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(editorBody.inputValue()).contains("APPROVED");
 
         // Step 8: Save stub mapping to WireMock
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        saveStubEditorAndWaitClosed();
 
         // Step 9: Verify stub appears in Stubs catalog
-        page.locator("#nav-tab-stubs").click();
-        page.waitForSelector("#tab-stub-detail.active");
+        openStubsTab();
 
         Locator stubCard = page.locator(".stub-card:has-text('Chained Order Invoice Stub')")
                 .first();
@@ -172,8 +166,7 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(viewportModal.getAttribute("class")).contains("hidden");
 
         // Step 10: Re-run in HTTP Tester and verify matching mock response
-        page.locator("#nav-tab-tester").click();
-        page.waitForSelector("#tab-tester.active");
+        openTesterTab();
 
         page.locator("#btn-tester-send").click();
         page.waitForSelector("#tester-response-status:has-text('200')");

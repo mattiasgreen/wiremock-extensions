@@ -349,9 +349,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
         page.waitForSelector("#stub-list");
 
-        page.locator("#nav-tab-journal").click();
-        page.waitForSelector("#tab-journal.active");
-        page.waitForSelector("#journal-table");
+        openJournalTab();
 
         page.waitForSelector("#journal-filtered-count:has-text('Showing 50 of 57')");
         assertThat(page.locator("#journal-filtered-count").textContent()).contains("Showing 50 of 57");
@@ -437,8 +435,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector("#tester-response-status:has-text('404')");
 
             // 3. Inspect Journal Verdicts
-            page.locator("#nav-tab-journal").click();
-            page.waitForSelector("#journal-table");
+            openJournalTab();
 
             assertThat(page.locator("#journal-list tr[data-verdict='unmatched']")
                             .first()
@@ -482,7 +479,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
             // Click Create Stub from Request -> verify Stub Editor modal opens pre-filled
             createStubBtn.click();
-            page.waitForSelector("#stub-editor-modal:not(.hidden)");
+            waitForStubEditorOpen();
             assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/missing-endpoint");
             assertThat(page.locator("#editor-status").inputValue()).isEqualTo("200");
             page.locator("#btn-cancel-editor").click();
@@ -877,18 +874,14 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         snapshotBtn.click();
 
         // Verify Stub Editor modal opens pre-filled for async snapshot stub
-        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        waitForStubEditorOpen();
         Locator modalTitle = page.locator("#editor-modal-title");
         assertThat(modalTitle.textContent()).isEqualTo("Snapshot Stub from Journal");
         assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/__async/kafka/orders.events");
         assertThat(page.locator("#editor-body").inputValue()).contains("COMMITTED");
 
         // Save snapshot stub and verify it persists
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal",
-                new com.microsoft.playwright.Page.WaitForSelectorOptions()
-                        .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
+        saveStubEditorAndWaitClosed();
 
         assertThat(wireMockServer.listAllStubMappings().getMappings().stream()
                         .anyMatch(s -> "/__async/kafka/orders.events"
