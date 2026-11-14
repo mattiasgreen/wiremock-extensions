@@ -2176,8 +2176,8 @@ class InMemoryDemoBackend {
     if (pathname === '/__admin/ui/version') {
       return responseJson(200, {
         version: '1.14.0',
-        branch: 'wiremock_journal_source_ip',
-        commit: '48f8af2'
+        branch: 'refactor/deepen-architecture',
+        commit: '6c38068'
       });
     }
 

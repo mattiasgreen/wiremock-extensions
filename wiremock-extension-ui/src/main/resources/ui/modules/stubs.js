@@ -26,7 +26,7 @@ import { exportStubs } from './import-export.js';
 import { updateFilterCounts } from './projects.js';
 import { loadData } from './app-loader.js';
 import { renderJournal } from './journal.js';
-import { populateCasualTester } from './casual-tester.js';
+import { populateCasualTester } from './tester.js';
 
 let currentStubViewMode = 'rich';
 

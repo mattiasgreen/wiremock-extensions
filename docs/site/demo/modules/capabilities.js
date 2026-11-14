@@ -162,30 +162,8 @@ export function applyCapabilityVisibility() {
     }
   }
 
-  // 1b. Casual Tester Tab & Container Banner
-  if (elements.navTabCasual) {
-    applyControlState(
-      elements.navTabCasual,
-      caps.casual,
-      'Casual Tester requires wiremock-extension-casual (/__admin/casual/config)'
-    );
-  }
-  const tabCasual = document.getElementById('tab-casual');
-  if (tabCasual) {
-    let casualMissingBanner = document.getElementById('casual-cap-missing-banner');
-    if (!caps.casual) {
-      if (!casualMissingBanner) {
-        casualMissingBanner = document.createElement('div');
-        casualMissingBanner.id = 'casual-cap-missing-banner';
-        casualMissingBanner.className = 'cap-missing-banner';
-        casualMissingBanner.innerHTML = '<span>🔌 <strong>Extension Not Installed:</strong> <code>wiremock-extension-casual</code> is not active on this WireMock instance. Install the extension to enable Casual XATMI protocol service calls, stubbing, and transaction simulation.</span>';
-        tabCasual.prepend(casualMissingBanner);
-      }
-      casualMissingBanner.classList.remove('hidden');
-    } else if (casualMissingBanner) {
-      casualMissingBanner.classList.add('hidden');
-    }
-  }
+  // 1b. Casual Protocol Tester Controls & Container Banner
+  syncCasualCapabilityBanner();
 
   // 2. Prometheus / Otel Metrics Link
   if (elements.linkMetrics) {
@@ -261,6 +239,37 @@ export function applyCapabilityVisibility() {
       caps.lifecycle,
       'Traffic snapshotting requires wiremock-extension-ui lifecycle endpoint'
     );
+  }
+}
+
+/**
+ * Toggles Casual gateway send state and missing-extension banner inside #tab-tester.
+ */
+export function syncCasualCapabilityBanner() {
+  const caps = state.capabilities;
+  const isCasualActive = (state.testerProtocol || 'http') === 'casual';
+  if (elements.btnTesterSendCasual) {
+    applyControlState(
+      elements.btnTesterSendCasual,
+      caps.casual,
+      'Casual Tester requires wiremock-extension-casual (/__admin/casual/config)'
+    );
+  }
+  const tabTester = document.getElementById('tab-tester');
+  if (tabTester) {
+    let casualMissingBanner = document.getElementById('casual-cap-missing-banner');
+    if (!caps.casual && isCasualActive) {
+      if (!casualMissingBanner) {
+        casualMissingBanner = document.createElement('div');
+        casualMissingBanner.id = 'casual-cap-missing-banner';
+        casualMissingBanner.className = 'cap-missing-banner';
+        casualMissingBanner.innerHTML = '<span>🔌 <strong>Extension Not Installed:</strong> <code>wiremock-extension-casual</code> is not active on this WireMock instance. Install the extension to enable Casual XATMI protocol service calls, stubbing, and transaction simulation.</span>';
+        tabTester.prepend(casualMissingBanner);
+      }
+      casualMissingBanner.classList.remove('hidden');
+    } else if (casualMissingBanner) {
+      casualMissingBanner.classList.add('hidden');
+    }
   }
 }
 

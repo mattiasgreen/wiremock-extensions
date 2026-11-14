@@ -253,7 +253,6 @@ body {
    Visible for Stubs and Tester; hidden for Journal and Scenarios to maximize table/visualizer space */
 .main-container[data-active-tab="tab-journal"] .sidebar,
 .main-container[data-active-tab="tab-scenarios"] .sidebar,
-.main-container[data-active-tab="tab-casual"] .sidebar,
 .main-container[data-active-tab="tab-netem"] .sidebar,
 .main-container[data-active-tab="tab-queues"] .sidebar {
   display: none;

@@ -64,8 +64,8 @@
 | **Payload Lens Cancel Action** | `.payload-lens-btn-cancel` | `"payload-lens-btn-cancel"` | Cancels leaf edit and restores tree view without mutating Root Document. |
 | **Root Document Dirty Indicator**| `.dirty-badge` / `#stub-editor-dirty-indicator` | `"stub-editor-dirty-indicator"` | Prominent pill indicating uncommitted in-memory edits awaiting root Save/Discard. |
 | **Top-Level Viewer Badge (Stub)** | `#stub-top-pill` | `"stub-top-pill"` | Badge presenting payload format, non-UTF-8 charset, and size (e.g. `XML · ISO-8859-1 · 0.2 KB`). |
-| **Top-Level Viewer Badge (HTTP Tester)** | `#tester-top-pill` | `"tester-top-pill"` | Badge presenting HTTP tester response format, charset, and size. |
-| **Top-Level Viewer Badge (Casual Tester)** | `#casual-request-top-pill` | `"casual-request-top-pill"` | Composite Casual buffer descriptor badge (e.g. `FIELDED · JSON · ISO-8859-1 · 0.4 KB`). |
+| **Top-Level Viewer Badge (Tester Response)** | `#tester-top-pill` | `"tester-top-pill"` | Badge presenting unified tester response format, charset, and size. |
+| **Top-Level Viewer Badge (Tester Request)** | `#tester-request-top-pill` | `"tester-request-top-pill"` | Composite request descriptor badge (includes Casual buffer type when `proto=casual`, e.g. `FIELDED · JSON · ISO-8859-1 · 0.4 KB`). |
 | **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
 | **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
 | **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |

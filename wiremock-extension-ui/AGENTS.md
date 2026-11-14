@@ -67,10 +67,9 @@ Keep these DOM selector contracts intact across `index.html`, `modules/dom.js`, 
 1. **Frontend Modules (`src/main/resources/ui/modules/`)**:
    - `modules/stubs.js`: Canonical Stub Catalog module (`getAllCatalogStubs`, `getVisibleCatalogStubs`, `getCatalogCounts`, `findCatalogStubById`, `initStubsTab`). Unifies active, disabled, and dynamic stateful stubs under URL-inferred project derivation and boolean query evaluation.
    - `modules/lifecycle.js`: Stub lifecycle operations, modal workflows, and `initStubLifecycleHandlers`.
-   - `modules/journal.js`: Request journal table, diff inspector, and `initJournalTab`.
-   - `modules/tester.js`: HTTP tester UI, history management, local header chips, and `initTesterTab`.
-   - `modules/casual-tester.js`: Casual binary protocol GUI and `initCasualTester`.
-   - `modules/settings.js`: Target host switcher (`updateTargetHostDisplay`, `initTargetConnectionModal`) and persistent header preferences.
+    - `modules/journal.js`: Request journal table, diff inspector, and `initJournalTab`.
+    - `modules/tester.js`: Unified multi-protocol tester (`http`, `kafka`, `amqp`, `casual`), history management, local header chips, and `initTesterTab`.
+    - `modules/settings.js`: Target host switcher (`updateTargetHostDisplay`, `initTargetConnectionModal`) and persistent header preferences.
    - `app.js`: Slim composition root registering route handlers and invoking module initializers.
 
 2. **Backend & Static Asset Services (`src/main/java/.../ui/`)**:
