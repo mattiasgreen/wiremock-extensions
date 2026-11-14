@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,12 +19,15 @@ class AsyncEngineTest {
     private InMemoryMessageBroker testBroker;
     private InMemoryMessageBroker upstreamBroker;
     private AsyncEngine engine;
+    private List<ServeEvent> capturedServeEvents;
 
     @BeforeEach
     void setUp() {
         testBroker = new InMemoryMessageBroker("test-broker");
         upstreamBroker = new InMemoryMessageBroker("upstream-broker");
         engine = AsyncEngine.create(testBroker, upstreamBroker);
+        capturedServeEvents = new CopyOnWriteArrayList<>();
+        engine.setJournalConsumer(capturedServeEvents::add);
     }
 
     @AfterEach
@@ -63,7 +68,7 @@ class AsyncEngineTest {
         assertThat(engine.getMessagesConsumed()).isEqualTo(1L);
         assertThat(engine.getMessagesProduced()).isEqualTo(1L);
         assertThat(engine.getMessagesProxied()).isZero();
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getRequest().getBodyAsString())
                     .isEqualTo("{\"action\":\"GET_BALANCE\",\"accountId\":\"ACC-99\"}");
             assertThat(se.getResponseDefinition().getStatus()).isEqualTo(200);
@@ -93,7 +98,7 @@ class AsyncEngineTest {
         // Metrics & journal
         assertThat(engine.getMessagesConsumed()).isEqualTo(1L);
         assertThat(engine.getMessagesProxied()).isEqualTo(1L);
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
             assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("orders.input");
             assertThat(se.getRequest().getBodyAsString()).isEqualTo("{\"orderId\":\"ORD-777\",\"amount\":49.99}");
@@ -138,7 +143,7 @@ class AsyncEngineTest {
         assertThat(replayResp).isNotNull();
         assertThat(replayResp.correlationId()).isEqualTo("corr-404");
         assertThat(replayResp.payload()).contains("AUTH-999");
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getRequest().getBodyAsString()).isEqualTo("{\"ref\":\"PAY-999\"}");
             assertThat(se.getResponseDefinition().getBody()).contains("AUTH-999");
         });
@@ -161,7 +166,7 @@ class AsyncEngineTest {
         assertThat(published).hasSize(1);
         assertThat(published.get(0).payload()).isEqualTo("{\"event\":\"USER_CREATED\"}");
         assertThat(engine.getMessagesProduced()).isEqualTo(1L);
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getRequest().getBodyAsString()).isEqualTo("{\"event\":\"USER_CREATED\"}");
             assertThat(se.getResponseDefinition().getBody()).contains("PUBLISHED");
         });
