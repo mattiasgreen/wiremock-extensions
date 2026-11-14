@@ -2,6 +2,7 @@
  * Top-level UI data orchestrator coordinating Admin API fetches and console view refreshes.
  */
 import { state } from './state.js';
+import { requestJournal } from './request-journal.js';
 import { elements } from './dom.js';
 import { apiGet, doFetch, detectCapabilities } from './api.js';
 import { isStubParked } from './stub-catalog.js';
@@ -47,16 +48,16 @@ export function loadJournal() {
   return apiGet(serverEndpoint)
     .then(data => {
       if (seq !== journalFetchSeq) return;
-      state.currentRequests = data.requests || [];
       state.journalMeta = data.meta || null;
       state.journalServerFiltered = true;
+      requestJournal.setRequests(data.requests || [], data.meta || null, true);
       if (elements.statRequests) {
         elements.statRequests.textContent =
-          data.meta && data.meta.total !== undefined ? data.meta.total : state.currentRequests.length;
+          data.meta && data.meta.total !== undefined ? data.meta.total : requestJournal.getTotalCount();
       }
       if (elements.journalCount) {
         elements.journalCount.textContent =
-          data.meta && data.meta.filtered !== undefined ? data.meta.filtered : state.currentRequests.length;
+          data.meta && data.meta.filtered !== undefined ? data.meta.filtered : requestJournal.getTotalCount();
       }
       renderJournal();
     })
@@ -66,11 +67,11 @@ export function loadJournal() {
         : `/__admin/requests?limit=${limit}`;
       return apiGet(fallbackEndpoint).then(data => {
         if (seq !== journalFetchSeq) return;
-        state.currentRequests = data.requests || [];
         state.journalMeta = null;
         state.journalServerFiltered = false;
-        if (elements.statRequests) elements.statRequests.textContent = state.currentRequests.length;
-        if (elements.journalCount) elements.journalCount.textContent = state.currentRequests.length;
+        requestJournal.setRequests(data.requests || [], null, false);
+        if (elements.statRequests) elements.statRequests.textContent = requestJournal.getTotalCount();
+        if (elements.journalCount) elements.journalCount.textContent = requestJournal.getTotalCount();
         renderJournal();
       });
     })

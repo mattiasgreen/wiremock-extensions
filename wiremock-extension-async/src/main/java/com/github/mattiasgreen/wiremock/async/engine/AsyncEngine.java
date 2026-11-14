@@ -55,7 +55,6 @@ public class AsyncEngine implements AutoCloseable {
     private final Map<String, Function<AsyncMessage, AsyncMessage>> mockStubs = new ConcurrentHashMap<>();
     private final Map<String, AsyncMessage> harvestedStubs = new ConcurrentHashMap<>();
     private final List<AsyncBridgeRule> bridgeRules = new CopyOnWriteArrayList<>();
-    private final List<ServeEvent> recordedServeEvents = new CopyOnWriteArrayList<>();
     private final List<Thread> activeSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean running = new AtomicBoolean(true);
 
@@ -105,14 +104,11 @@ public class AsyncEngine implements AutoCloseable {
     }
 
     private void recordServeEvent(ServeEvent event) {
-        if (event != null) {
-            recordedServeEvents.add(event);
-            if (journalConsumer != null) {
-                try {
-                    journalConsumer.accept(event);
-                } catch (Exception e) {
-                    LOG.error("[ASYNC-ENGINE] Failed to record ServeEvent in journal consumer: {}", e.getMessage(), e);
-                }
+        if (event != null && journalConsumer != null) {
+            try {
+                journalConsumer.accept(event);
+            } catch (Exception e) {
+                LOG.error("[ASYNC-ENGINE] Failed to record ServeEvent in journal consumer: {}", e.getMessage(), e);
             }
         }
     }
@@ -574,24 +570,6 @@ public class AsyncEngine implements AutoCloseable {
         return Collections.unmodifiableMap(harvestedStubs);
     }
 
-    public List<String> getJournal() {
-        List<String> summary = new ArrayList<>(recordedServeEvents.size());
-        for (ServeEvent se : recordedServeEvents) {
-            String method =
-                    se.getRequest() != null ? se.getRequest().getMethod().getName() : "ASYNC";
-            String url = se.getRequest() != null ? se.getRequest().getUrl() : "";
-            int status = se.getResponseDefinition() != null
-                    ? se.getResponseDefinition().getStatus()
-                    : 200;
-            summary.add(method + ":" + status + ":" + url);
-        }
-        return Collections.unmodifiableList(summary);
-    }
-
-    public List<ServeEvent> getServeEvents() {
-        return Collections.unmodifiableList(new ArrayList<>(recordedServeEvents));
-    }
-
     /**
      * Spawns a virtual-thread consumer loop continuously polling {@code channel} and dispatching
      * received messages to the specified handler.
@@ -862,7 +840,6 @@ public class AsyncEngine implements AutoCloseable {
         mockStubs.clear();
         harvestedStubs.clear();
         bridgeRules.clear();
-        recordedServeEvents.clear();
         testBroker = new InMemoryMessageBroker("default-test-broker");
         upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");
         stopKafkaSink();

@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,12 +20,15 @@ class AsyncPriorityBridgeTest {
     private AsyncEngine engine;
     private InMemoryMessageBroker testBroker;
     private InMemoryMessageBroker upstreamBroker;
+    private List<ServeEvent> capturedServeEvents;
 
     @BeforeEach
     void setUp() {
         testBroker = new InMemoryMessageBroker("test-broker");
         upstreamBroker = new InMemoryMessageBroker("upstream-broker");
         engine = AsyncEngine.create(testBroker, upstreamBroker);
+        capturedServeEvents = new CopyOnWriteArrayList<>();
+        engine.setJournalConsumer(capturedServeEvents::add);
     }
 
     @AfterEach
@@ -58,7 +64,7 @@ class AsyncPriorityBridgeTest {
 
         // Upstream broker must receive ZERO messages (100% isolation)
         assertThat(upstreamBroker.size("orders.inbound")).isZero();
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getRequest().getBodyAsString()).isEqualTo(msg.payload());
             assertThat(se.getResponseDefinition().getStatus()).isEqualTo(200);
             assertThat(se.getResponseDefinition().isProxyResponse()).isFalse();
@@ -88,7 +94,7 @@ class AsyncPriorityBridgeTest {
         assertThat(forwarded.destination()).isEqualTo("upstream-orders-germany");
         assertThat(forwarded.payload()).isEqualTo("{\"item\":\"Widget\",\"qty\":5}");
 
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
             assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("upstream-orders-germany");
             assertThat(se.getRequest().getBodyAsString()).isEqualTo(msg.payload());
@@ -113,7 +119,7 @@ class AsyncPriorityBridgeTest {
         // Verify proxy errors incremented
         assertThat(engine.getProxyErrors()).isEqualTo(1);
         // Verify 502 troubleshooting ServeEvent
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getResponseDefinition().getStatus()).isEqualTo(502);
             assertThat(se.getResponseDefinition().getBody()).contains("MISSING.QUEUE.TARGET");
         });

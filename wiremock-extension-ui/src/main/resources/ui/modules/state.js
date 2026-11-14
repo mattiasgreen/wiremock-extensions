@@ -2,6 +2,7 @@
  * Central UI reactive state store.
  * Holds active data collections, selection pointers, filters, and inspector mode toggles.
  */
+import { requestJournal } from './request-journal.js';
 
 export function parseTargetUrl(rawUrl) {
   if (!rawUrl || !rawUrl.trim()) return null;
@@ -131,7 +132,14 @@ export const state = {
   statusFilter: 'all',   // 'all' | 'active' | 'disabled' | 'dynamic'
   selectedStubIds: new Set(),
   statefulModels: [],
-  currentRequests: [],
+  journalMeta: null,
+  journalServerFiltered: false,
+  get currentRequests() {
+    return requestJournal.getRequests();
+  },
+  set currentRequests(val) {
+    requestJournal.setRequests(val, this.journalMeta || null, Boolean(this.journalServerFiltered));
+  },
   journalVerdictFilter: 'all', // 'all' | 'proxied' | 'stub' | 'stateful' | 'unmatched'
   journalProtocolFilter: 'all', // 'all' | 'http' | 'kafka' | 'amqp' | 'casual'
   journalTimeRange: 'all',     // 'all' | '5m' | '15m' | '1h' | '24h' | 'custom'

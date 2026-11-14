@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.net.URI;
@@ -25,9 +26,8 @@ class AsyncAdminEndpointTest {
 
     @BeforeEach
     void setUp() {
-        AsyncAdminEndpoint adminEndpoint = new AsyncAdminEndpoint();
-        wireMockServer =
-                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensions(adminEndpoint));
+        wireMockServer = new WireMockServer(
+                WireMockConfiguration.options().dynamicPort().extensions(new AsyncExtensionFactory()));
         wireMockServer.start();
         httpClient =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
@@ -38,6 +38,7 @@ class AsyncAdminEndpointTest {
         if (wireMockServer != null && wireMockServer.isRunning()) {
             wireMockServer.stop();
         }
+        AsyncEngine.getInstance().setJournalConsumer(null);
     }
 
     @Test
@@ -88,6 +89,23 @@ class AsyncAdminEndpointTest {
     @Test
     @DisplayName("GET /__admin/async/journal should return recorded journal events")
     void shouldReturnAsyncJournal() throws Exception {
+        String publishPayload =
+                """
+                {
+                  "destination": "orders.journal.test",
+                  "protocol": "kafka",
+                  "payload": "{\\"ok\\":true}"
+                }
+                """;
+        HttpResponse<String> pubResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/publish"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(publishPayload))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(pubResp.statusCode()).isEqualTo(200);
+
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/journal"))
                 .GET()
@@ -99,6 +117,18 @@ class AsyncAdminEndpointTest {
         JsonNode json = MAPPER.readTree(resp.body());
         assertThat(json.has("journal")).isTrue();
         assertThat(json.has("count")).isTrue();
+        assertThat(json.get("count").asInt()).isGreaterThanOrEqualTo(1);
+        assertThat(json.get("journal").toString()).contains("POST:200:/__async/kafka/orders.journal.test");
+
+        HttpResponse<String> statusResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/status"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(statusResp.statusCode()).isEqualTo(200);
+        assertThat(MAPPER.readTree(statusResp.body()).get("journalCount").asInt())
+                .isGreaterThanOrEqualTo(1);
     }
 
     @Test

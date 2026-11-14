@@ -7,10 +7,13 @@ import com.github.mattiasgreen.wiremock.async.amqp.AmqpServer;
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.activemq.artemis.api.core.QueueConfiguration;
@@ -37,6 +40,7 @@ class EmbeddedArtemisAmqpIntegrationTest {
     private InMemoryMessageBroker localTestBroker;
     private AsyncEngine engine;
     private Client qpidClient;
+    private List<ServeEvent> capturedServeEvents;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -60,6 +64,8 @@ class EmbeddedArtemisAmqpIntegrationTest {
         artemisOutboundBroker = new AmqpMessageBroker("artemis-upstream", "amqp://127.0.0.1:" + artemisPort);
         localTestBroker = new InMemoryMessageBroker("wiremock-test-broker");
         engine = AsyncEngine.create(localTestBroker, artemisOutboundBroker);
+        capturedServeEvents = new CopyOnWriteArrayList<>();
+        engine.setJournalConsumer(capturedServeEvents::add);
 
         qpidClient = Client.create();
     }
@@ -153,7 +159,7 @@ class EmbeddedArtemisAmqpIntegrationTest {
         }
 
         // Verify ServeEvent audit recorded the proxy forward
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
             assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("upstream.orders.456");
         });
@@ -202,7 +208,7 @@ class EmbeddedArtemisAmqpIntegrationTest {
         }
 
         // Verify ServeEvent audit recorded the polyglot forward
-        assertThat(engine.getServeEvents()).anySatisfy(se -> {
+        assertThat(capturedServeEvents).anySatisfy(se -> {
             assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
             assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("upstream.polyglot.789");
         });

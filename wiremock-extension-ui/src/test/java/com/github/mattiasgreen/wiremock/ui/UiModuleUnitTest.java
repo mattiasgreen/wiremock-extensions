@@ -2747,4 +2747,98 @@ public class UiModuleUnitTest {
         assertThat(((Number) result.get("andQueryMiss")).intValue()).isEqualTo(0);
         assertThat(((Number) result.get("orQueryMatch")).intValue()).isEqualTo(2);
     }
+
+    @Test
+    @DisplayName(
+            "request-journal: Encapsulates verdicts, protocol filtering, pagination window, and state accessor sync")
+    void testRequestJournalStore() {
+        String script =
+                """
+            async () => {
+                const { RequestJournal, requestJournal } = await import('./modules/request-journal.js');
+                const { state } = await import('./modules/state.js');
+                const now = Date.now();
+                const events = [
+                    {
+                        id: 'j-1',
+                        wasMatched: true,
+                        request: { method: 'GET', url: '/api/orders', headers: {}, loggedDate: now - 60_000 },
+                        response: { status: 200, headers: {} }
+                    },
+                    {
+                        id: 'j-2',
+                        wasMatched: true,
+                        request: { method: 'POST', url: '/__async/kafka/orders.events', headers: {}, loggedDate: now - 10_000 },
+                        responseDefinition: { status: 200, proxyBaseUrl: 'kafka://broker:9092' }
+                    },
+                    {
+                        id: 'j-3',
+                        wasMatched: false,
+                        request: { method: 'DELETE', url: '/api/unknown', headers: {}, loggedDate: now },
+                        response: { status: 404, headers: {} }
+                    }
+                ];
+
+                const localJournal = new RequestJournal();
+                localJournal.setRequests(events, { total: 3, filtered: 3 }, true);
+
+                const byId = localJournal.findById('j-2');
+                const kafkaMatches = localJournal.query({ protocolFilter: 'kafka' }).map(r => r.id);
+                const unmatched = localJournal.query({ unmatchedOnly: true }).map(r => r.id);
+                const proxiedFromAll = (() => {
+                    localJournal.query({});
+                    return localJournal.getFilteredProxied().map(r => r.id);
+                })();
+                const timeBounded = localJournal.query({ since: new Date(now - 20_000).toISOString() }).map(r => r.id);
+
+                localJournal.query({});
+                localJournal.resetVisibleWindow(2);
+                const slice1 = localJournal.getVisibleSlice().map(r => r.id);
+                const batch2 = localJournal.nextVisibleBatch(2).map(r => r.id);
+                const stats = localJournal.getVisibleStats();
+
+                state.currentRequests = events;
+                const syncedCount = requestJournal.getTotalCount();
+                const foundViaSingleton = requestJournal.findById('j-3')?.id || null;
+                state.currentRequests = [];
+
+                return {
+                    totalCount: localJournal.getTotalCount(),
+                    serverFiltered: localJournal.isServerFiltered(),
+                    metaTotal: localJournal.getMeta()?.total ?? null,
+                    byIdUrl: byId?.request?.url ?? null,
+                    kafkaMatches,
+                    unmatched,
+                    proxiedFromAll,
+                    timeBounded,
+                    slice1,
+                    batch2,
+                    stats,
+                    syncedCount,
+                    foundViaSingleton
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("totalCount")).intValue()).isEqualTo(3);
+        assertThat(result.get("serverFiltered")).isEqualTo(true);
+        assertThat(((Number) result.get("metaTotal")).intValue()).isEqualTo(3);
+        assertThat(result.get("byIdUrl")).isEqualTo("/__async/kafka/orders.events");
+        assertThat(result.get("kafkaMatches")).isEqualTo(java.util.List.of("j-2"));
+        assertThat(result.get("unmatched")).isEqualTo(java.util.List.of("j-3"));
+        assertThat(result.get("proxiedFromAll")).isEqualTo(java.util.List.of("j-2"));
+        assertThat(result.get("timeBounded")).isEqualTo(java.util.List.of("j-2", "j-3"));
+        assertThat(result.get("slice1")).isEqualTo(java.util.List.of("j-1", "j-2"));
+        assertThat(result.get("batch2")).isEqualTo(java.util.List.of("j-3"));
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> statsMap = (java.util.Map<String, Object>) result.get("stats");
+        assertThat(((Number) statsMap.get("shown")).intValue()).isEqualTo(3);
+        assertThat(((Number) statsMap.get("filtered")).intValue()).isEqualTo(3);
+        assertThat(((Number) statsMap.get("total")).intValue()).isEqualTo(3);
+        assertThat(((Number) result.get("syncedCount")).intValue()).isEqualTo(3);
+        assertThat(result.get("foundViaSingleton")).isEqualTo("j-3");
+    }
 }
