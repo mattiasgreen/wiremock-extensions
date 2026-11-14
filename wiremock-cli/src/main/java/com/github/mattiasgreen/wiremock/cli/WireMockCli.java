@@ -152,29 +152,14 @@ public final class WireMockCli {
             if (mappingsObj instanceof List<?> list) {
                 for (Object item : list) {
                     if (item instanceof Map<?, ?> itemMap) {
-                        stubs.add((Map<String, Object>) itemMap);
-                    }
-                }
-            }
-        }
-
-        // Also probe disabled stubs extension if available
-        try {
-            HttpResponse<String> disabledResp = sendGet(client, serverUrl, "/__admin/stubs/disabled");
-            if (disabledResp.statusCode() == 200) {
-                Object disabledParsed = MiniJson.parse(disabledResp.body());
-                if (disabledParsed instanceof List<?> list) {
-                    for (Object item : list) {
-                        if (item instanceof Map<?, ?> itemMap) {
-                            Map<String, Object> copy = new HashMap<>((Map<String, Object>) itemMap);
+                        Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) itemMap);
+                        if (copy.get("priority") instanceof Number n && n.intValue() >= 100) {
                             copy.put("_disabled", Boolean.TRUE);
-                            stubs.add(copy);
                         }
+                        stubs.add(copy);
                     }
                 }
             }
-        } catch (Exception ignored) {
-            // Disabled stubs endpoint is optional
         }
 
         // Filter stubs
@@ -621,7 +606,8 @@ public final class WireMockCli {
                     req != null && req.get("method") != null ? req.get("method").toString() : "ANY";
             String url = extractStubUrl(req);
             String name = stub.get("name") != null ? stub.get("name").toString() : "";
-            boolean isDisabled = Boolean.TRUE.equals(stub.get("_disabled"));
+            boolean isDisabled = Boolean.TRUE.equals(stub.get("_disabled"))
+                    || (stub.get("priority") instanceof Number n && n.intValue() >= 100);
 
             Map<String, Object> res = (Map<String, Object>) stub.get("response");
             String status =

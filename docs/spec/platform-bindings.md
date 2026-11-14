@@ -102,11 +102,10 @@
 
 | Capability | HTTP Method | Route | Payload |
 | :--- | :--- | :--- | :--- |
-| **List Active Stubs** | `GET` | `/__admin/mappings` | None |
-| **List Disabled Stubs**| `GET` | `/__admin/stubs/disabled` | None |
+| **List Stubs (Active & Parked)** | `GET` | `/__admin/mappings` | None (priority `>= 100` denotes parked/disabled; `5` active stub; `10` active proxy; `50` optional `offline-guard` catch-all) |
 | **Create Stub** | `POST` | `/__admin/mappings` | Stub JSON definition |
-| **Update Stub** | `PUT` | `/__admin/mappings/{id}` | Stub JSON definition |
-| **Toggle Stub State** | `POST` | `/__admin/stubs/{id}/toggle` | None |
+| **Update / Park / Activate Stub** | `PUT` | `/__admin/mappings/{id}` | Stub JSON definition (sets `priority` and `metadata.previousPriority`) |
+| **Probe Lifecycle Service** | `GET` | `/__admin/lifecycle/status` | None (`{"status":"UP"}`) |
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
 | **Snapshot Project Traffic** | `POST` | `/__admin/projects/{project}/recordings/snapshot` | None |
 | **Toggle Project Mode** | `POST` | `/__admin/projects/{project}/mode` | `{"mode": "stubs" \| "proxy"}` |

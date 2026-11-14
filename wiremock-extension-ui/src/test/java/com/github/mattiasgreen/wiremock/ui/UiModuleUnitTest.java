@@ -1317,12 +1317,11 @@ public class UiModuleUnitTest {
                         name: "Create User",
                         request: { method: "POST", url: "/api/v1/users" },
                         response: { status: 201 }
-                    }
-                ];
-                state.disabledStubs = [
+                    },
                     {
                         id: "disabled-1",
                         name: "Get Single Order",
+                        priority: 100,
                         request: { method: "GET", url: "/api/v1/orders/123" },
                         response: { status: 200 }
                     }
@@ -1373,7 +1372,6 @@ public class UiModuleUnitTest {
                 state.selectedProject = null;
                 state.statusFilter = "all";
                 state.currentStubs = [];
-                state.disabledStubs = [];
                 state.statefulModels = [];
 
                 return {
@@ -1802,8 +1800,8 @@ public class UiModuleUnitTest {
                 demoBackend.reset();
 
                 // 1. Initial Seeding verification
-                const initialStubsCount = demoBackend.stubs.length;
-                const initialDisabledCount = demoBackend.disabledStubs.length;
+                const initialStubsCount = demoBackend.stubs.filter(s => (s.priority ?? 5) < 100).length;
+                const initialDisabledCount = demoBackend.stubs.filter(s => (s.priority ?? 5) >= 100).length;
                 const initialRequestsCount = demoBackend.requests.length;
                 const initialScenarios = demoBackend.scenarios;
                 const initialCasualServices = demoBackend.casualServices;
@@ -1830,9 +1828,19 @@ public class UiModuleUnitTest {
                     method: 'GET'
                 });
 
-                // 5. Stub Lifecycle Toggle
-                const toggleResp = await demoBackend.handleRequest('/__admin/stubs/demo-stub-kyc-verify/toggle', {
-                    method: 'POST'
+                // 5. Stub Lifecycle Toggle (Native Priority Tier Parking)
+                const kycLookupResp = await demoBackend.handleRequest('/__admin/mappings/demo-stub-kyc-verify', {
+                    method: 'GET'
+                });
+                const kycStub = await kycLookupResp.json();
+                const toggleResp = await demoBackend.handleRequest('/__admin/mappings/demo-stub-kyc-verify', {
+                    method: 'PUT',
+                    body: JSON.stringify(Object.assign({}, kycStub, {
+                        priority: 100,
+                        metadata: Object.assign({}, kycStub.metadata || {}, {
+                            previousPriority: kycStub.priority ?? 5
+                        })
+                    }))
                 });
                 const toggleResult = await toggleResp.json();
 
@@ -1860,9 +1868,9 @@ public class UiModuleUnitTest {
                     kycStatusApproved: kycBody.status === 'APPROVED',
                     kycHasEmbeddedReport: kycBody.complianceAudit.includes('<report'),
                     unmatchedStatus: unmatchedResp.status,
-                    toggleResultDisabled: toggleResult.disabled,
-                    stubsAfterToggle: demoBackend.stubs.length,
-                    disabledAfterToggle: demoBackend.disabledStubs.length,
+                    toggleResultDisabled: (toggleResult.priority ?? 5) >= 100,
+                    stubsAfterToggle: demoBackend.stubs.filter(s => (s.priority ?? 5) < 100).length,
+                    disabledAfterToggle: demoBackend.stubs.filter(s => (s.priority ?? 5) >= 100).length,
                     casualStatus: casualResult.status,
                     casualHasEcho: casualResult.payload.includes('ACC-101'),
                     hasCasualStub: demoBackend.stubs.some(s => s.id === 'demo-stub-casual-credit-inquiry'),

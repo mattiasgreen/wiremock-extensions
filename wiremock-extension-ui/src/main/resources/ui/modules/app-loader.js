@@ -4,6 +4,7 @@
 import { state } from './state.js';
 import { elements } from './dom.js';
 import { apiGet, doFetch, detectCapabilities } from './api.js';
+import { isStubParked } from './stub-catalog.js';
 import { renderStubList } from './stubs.js';
 import { renderJournal } from './journal.js';
 import { renderScenarios } from './scenarios.js';
@@ -21,16 +22,6 @@ export function loadMappings() {
       if (elements.stubList) {
         elements.stubList.innerHTML = `<div class="empty-state text-error">Failed to load stubs: ${err.message}</div>`;
       }
-    });
-}
-
-export function loadDisabledStubs() {
-  return apiGet('/__admin/stubs/disabled')
-    .then(data => {
-      state.disabledStubs = data.mappings || [];
-    })
-    .catch(() => {
-      state.disabledStubs = [];
     });
 }
 
@@ -103,7 +94,7 @@ export function loadScenarios() {
         });
       });
 
-      const allStubs = [...state.currentStubs, ...state.disabledStubs];
+      const allStubs = state.currentStubs || [];
       allStubs.forEach(stub => {
         if (stub.scenarioName) {
           if (!scenarioMap.has(stub.scenarioName)) {
@@ -149,11 +140,6 @@ export function loadData() {
   return detectCapabilities(doFetch)
     .then(caps => {
       const promises = [loadMappings(), loadJournal()];
-      if (caps.lifecycle) {
-        promises.push(loadDisabledStubs());
-      } else {
-        state.disabledStubs = [];
-      }
       if (caps.stateful) {
         promises.push(loadStatefulModels());
       } else {
@@ -170,22 +156,19 @@ export function loadData() {
         (acc, m) => acc + ((m.rules && m.rules.length) || 0),
         0
       );
-      const totalStubs = state.currentStubs.length + state.disabledStubs.length + dynamicCount;
+      const activeCount = state.currentStubs.filter(s => !isStubParked(s)).length;
+      const disabledCount = state.currentStubs.filter(isStubParked).length;
+      const totalStubs = state.currentStubs.length + dynamicCount;
       if (elements.statStubs) elements.statStubs.textContent = totalStubs;
       if (elements.stubsCountLabel) {
-        if (!state.capabilities.lifecycle && !state.capabilities.stateful) {
-          elements.stubsCountLabel.textContent = `${state.currentStubs.length} active`;
-        } else if (!state.capabilities.lifecycle) {
-          elements.stubsCountLabel.textContent =
-            dynamicCount > 0
-              ? `${state.currentStubs.length} active · ${dynamicCount} dynamic`
-              : `${state.currentStubs.length} active`;
-        } else {
-          elements.stubsCountLabel.textContent =
-            dynamicCount > 0
-              ? `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled · ${dynamicCount} dynamic`
-              : `${state.currentStubs.length} active · ${state.disabledStubs.length} disabled`;
+        const parts = [`${activeCount} active`];
+        if (disabledCount > 0 || state.capabilities.lifecycle) {
+          parts.push(`${disabledCount} disabled`);
         }
+        if (dynamicCount > 0) {
+          parts.push(`${dynamicCount} dynamic`);
+        }
+        elements.stubsCountLabel.textContent = parts.join(' · ');
       }
       return loadScenarios();
     })

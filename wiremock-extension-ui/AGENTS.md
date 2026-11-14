@@ -65,16 +65,16 @@ Keep these DOM selector contracts intact across `index.html`, `modules/dom.js`, 
 ## 4. Deepened Architecture Topology
 
 1. **Frontend Modules (`src/main/resources/ui/modules/`)**:
-   - `modules/stubs.js`: Canonical Stub Catalog module (`getAllCatalogStubs`, `getVisibleCatalogStubs`, `getCatalogCounts`, `findCatalogStubById`, `initStubsTab`). Unifies active, disabled, and dynamic stateful stubs under URL-inferred project derivation and boolean query evaluation.
-   - `modules/lifecycle.js`: Stub lifecycle operations, modal workflows, and `initStubLifecycleHandlers`.
+   - `modules/stub-catalog.js` & `modules/stubs.js`: Canonical Stub Catalog module partitioning native WireMock mappings into active (`priority < 100`), parked/disabled (`priority >= 100`), `offline-guard` (`priority 50`, `metadata.role === "offline-guard"`), and dynamic stateful stubs with project derivation and boolean query evaluation.
+   - `modules/lifecycle.js`: Native priority-tier stub parking (`/__admin/mappings/{id}`), `offline-guard` template, project mode toggles, and `initStubLifecycleHandlers`.
     - `modules/journal.js`: Request journal table, diff inspector, and `initJournalTab`.
     - `modules/tester.js`: Unified multi-protocol tester (`http`, `kafka`, `amqp`, `casual`), history management, local header chips, and `initTesterTab`.
     - `modules/settings.js`: Target host switcher (`updateTargetHostDisplay`, `initTargetConnectionModal`) and persistent header preferences.
    - `app.js`: Slim composition root registering route handlers and invoking module initializers.
 
 2. **Backend & Static Asset Services (`src/main/java/.../ui/`)**:
-   - `DisabledStubStore`: Thread-safe domain coordinator for stub transitions (`enable`, `disable`, `toggle`, `upsert`, `delete`, `bulkApply`, `switchProjectMode`) and deduplicated `snapshotServeEvents`.
-   - `StubLifecycleAdminEndpoint`: Thin HTTP adapter routing Admin API endpoints to `DisabledStubStore`.
+   - `StubLifecycleService`: Stateless lifecycle coordinator operating directly on `Admin` stub mappings via native priority tiers (`5` active stub, `10` active proxy, `50` `offline-guard`, `>= 100` parked), `switchProjectMode` (`metadata.previousPriority` round-trip), and deduplicated `snapshotRecordings`.
+   - `StubLifecycleAdminEndpoint`: Thin HTTP adapter exposing `/__admin/lifecycle/status`, `/__admin/projects/{project}/recordings/snapshot`, `/__admin/projects/{project}/mode`, `/__admin/stubs/snapshot-filtered`, and `/__admin/stubs/snapshot-template`.
    - `WireMockConsoleProxy`: Standalone reverse proxy and shared static asset resolver (`loadStaticAsset`, `resolveVersionJson`).
    - `UiAdminApiEndpoint`: Admin API endpoint serving static console assets and version info delegated to `WireMockConsoleProxy`.
 

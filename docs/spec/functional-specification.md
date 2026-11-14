@@ -154,12 +154,12 @@ These stories define the **inviolable acceptance criteria** for any client front
 ### Story 9: Remote WireMock Capability Detection & Graceful Degradation
 - **Given** the Web Console is pointing to a remote WireMock instance (e.g. standard vanilla WireMock lacking custom extensions).
 - **When** the console loads or connects to the remote target.
-- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/stubs/disabled`), Stateful Simulation (`/__admin/stateful/models`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
+- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/lifecycle/status` for snapshot recording and project mode flipping), Stateful Simulation (`/__admin/stateful/models`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
 - **And** features backed by missing extensions gracefully degrade with visual hints (`.cap-disabled`) and descriptive tooltips rather than vanishing from the UI:
   - TCP NetEm tab (`#nav-tab-netem`) is styled as `.cap-disabled` with a tooltip indicating missing `wiremock-extension-tcp-netem`.
   - Metrics link (`#link-metrics`) is styled as `.cap-disabled`.
   - Dynamic stub controls (`#btn-create-dynamic-stub`, `#btn-filter-dynamic`) are styled as `.cap-disabled`.
-  - Stub pause/lifecycle controls (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk disable) are styled as `.cap-disabled` with explanatory tooltips.
+  - Recording snapshot & project mode controls (`#btn-project-snapshot`, `#btn-project-mode-toggle`, `#btn-journal-snapshot-filtered`) are styled as `.cap-disabled` when `/__admin/lifecycle/status` is unavailable, while native priority-tier stub parking (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk enable/disable via `/__admin/mappings/{id}`) remains enabled even on vanilla WireMock.
   - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational with zero console exceptions.
 - **When** the user opens the Target Server modal (`#btn-target-host`).
 - **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing the active ratio (e.g. `1/5 active (Degraded)` or `All 5 extensions active`) and clear `Active` / `Not Installed` status badges for each capability.

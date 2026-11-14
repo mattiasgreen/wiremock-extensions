@@ -7,11 +7,9 @@ import java.util.List;
 
 public class UiExtensionFactory implements ExtensionFactory {
 
-    private final DisabledStubStore disabledStubStore = new DisabledStubStore();
-
     @Override
     public List<Extension> create(WireMockServices services) {
-        StubLifecycleService service = new StubLifecycleService(services.getAdmin(), disabledStubStore);
+        StubLifecycleService service = new StubLifecycleService(services.getAdmin());
         return List.of(new UiAdminApiEndpoint(), new StubLifecycleAdminEndpoint(service));
     }
 }

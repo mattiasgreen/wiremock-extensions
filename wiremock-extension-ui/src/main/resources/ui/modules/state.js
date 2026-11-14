@@ -126,7 +126,6 @@ export const state = {
   targetConfig: parseTargetUrl(initialTarget),
   connectionStrategy: initialStrategy,
   currentStubs: [],
-  disabledStubs: [],
   selectedStubId: null,
   selectedProject: null, // null means all projects
   statusFilter: 'all',   // 'all' | 'active' | 'disabled' | 'dynamic'

@@ -14,10 +14,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
- * Admin API Extension providing endpoints for stub lifecycle management:
- * enable, disable, toggle, bulk operations, snapshots, and querying disabled stubs.
+ * Admin API Extension providing priority-tier stub lifecycle extensions:
+ * capability status probe, project proxy/stubs mode switching, and serve event snapshot conversions.
  *
- * <p>Acts as a thin HTTP adapter mapping Admin API routes to {@link StubLifecycleService}.
+ * <p>Individual stub parking/activation and bulk updates use WireMock's native {@code /__admin/mappings/{id}} API.
+ * Acts as a thin HTTP adapter mapping Admin API routes to {@link StubLifecycleService}.
  */
 public class StubLifecycleAdminEndpoint implements AdminApiExtension {
 
@@ -29,10 +30,6 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
         this.service = Objects.requireNonNull(service, "service must not be null");
     }
 
-    public StubLifecycleAdminEndpoint(DisabledStubStore disabledStubStore) {
-        this(new StubLifecycleService(disabledStubStore));
-    }
-
     @Override
     public String getName() {
         return EXTENSION_NAME;
@@ -40,99 +37,12 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
 
     @Override
     public void contributeAdminApiRoutes(Router router) {
-        // Query all disabled stubs
-        router.add(RequestMethod.GET, "/stubs/disabled", (admin, serveEvent, pathParams) -> {
-            List<StubMapping> disabledList = new ArrayList<>(service.getAllDisabled());
-            Map<String, Object> result = Map.of("mappings", disabledList, "meta", Map.of("total", disabledList.size()));
-            return ok(result);
-        });
+        // Capability health probe used by the Web UI to detect lifecycle extension availability
+        router.add(
+                RequestMethod.GET, "/lifecycle/status", (admin, serveEvent, pathParams) -> ok(Map.of("status", "UP")));
 
-        // Disable a specific stub
-        router.add(RequestMethod.POST, "/stubs/{id}/disable", (admin, serveEvent, pathParams) -> {
-            UUID id = parseUuid(pathParams.get("id"));
-            if (id == null) return badRequest("Invalid UUID format");
-
-            StubLifecycleService.TransitionResult res = service.withAdmin(admin).disable(id);
-            if (!res.found()) return notFound("Stub not found");
-            return ok(Map.of("status", res.status(), "id", res.id().toString(), "name", res.name()));
-        });
-
-        // Enable a specific stub
-        router.add(RequestMethod.POST, "/stubs/{id}/enable", (admin, serveEvent, pathParams) -> {
-            UUID id = parseUuid(pathParams.get("id"));
-            if (id == null) return badRequest("Invalid UUID format");
-
-            StubLifecycleService.TransitionResult res = service.withAdmin(admin).enable(id);
-            if (!res.found()) return notFound("Disabled stub not found");
-            return ok(Map.of("status", res.status(), "id", res.id().toString(), "name", res.name()));
-        });
-
-        // Toggle stub active <-> disabled
-        router.add(RequestMethod.POST, "/stubs/{id}/toggle", (admin, serveEvent, pathParams) -> {
-            UUID id = parseUuid(pathParams.get("id"));
-            if (id == null) return badRequest("Invalid UUID format");
-
-            StubLifecycleService.TransitionResult res = service.withAdmin(admin).toggle(id);
-            if (!res.found()) return notFound("Stub not found");
-            return ok(Map.of("status", res.status(), "id", res.id().toString(), "name", res.name()));
-        });
-
-        // Edit / Upsert stub mapping
-        router.add(RequestMethod.PUT, "/stubs/{id}", (admin, serveEvent, pathParams) -> {
-            UUID id = parseUuid(pathParams.get("id"));
-            if (id == null) return badRequest("Invalid UUID format");
-
-            String body = serveEvent.getRequest().getBodyAsString();
-            if (body == null || body.isBlank()) return badRequest("Request body is required");
-
-            StubMapping updatedStub;
-            try {
-                updatedStub = Json.read(body, StubMapping.class);
-            } catch (Exception e) {
-                return badRequest("Failed to deserialize StubMapping: " + e.getMessage());
-            }
-
-            return ok(service.withAdmin(admin).upsert(id, updatedStub));
-        });
-
-        // Delete a stub mapping by ID
-        router.add(RequestMethod.DELETE, "/stubs/{id}", (admin, serveEvent, pathParams) -> {
-            UUID id = parseUuid(pathParams.get("id"));
-            if (id == null) return badRequest("Invalid UUID format");
-
-            service.withAdmin(admin).delete(id);
-            return ok(Map.of("status", "deleted", "id", id.toString()));
-        });
-
-        // Bulk operations: enable, disable, delete
-        router.add(RequestMethod.POST, "/stubs/bulk", (admin, serveEvent, pathParams) -> {
-            String body = serveEvent.getRequest().getBodyAsString();
-            if (body == null || body.isBlank()) return badRequest("Request body is required");
-
-            try {
-                JsonNode root = objectMapper.readTree(body);
-                String action = root.path("action").asText("");
-                JsonNode idsNode = root.path("ids");
-                if (!idsNode.isArray()) return badRequest("Missing or invalid 'ids' array");
-
-                List<UUID> ids = new ArrayList<>();
-                for (JsonNode idNode : idsNode) {
-                    try {
-                        ids.add(UUID.fromString(idNode.asText()));
-                    } catch (IllegalArgumentException ignored) {
-                    }
-                }
-
-                int count = service.withAdmin(admin).bulkApply(action, ids);
-                return ok(Map.of("action", action, "processed", count));
-            } catch (IllegalArgumentException e) {
-                return badRequest(e.getMessage());
-            } catch (IOException e) {
-                return badRequest("Failed to parse request: " + e.getMessage());
-            }
-        });
-
-        // Project Recording Snapshot: converts proxied journal traffic into DISABLED stubs grouped to project
+        // Project Recording Snapshot: converts proxied journal traffic into parked (priority 100) stubs grouped to
+        // project
         router.add(RequestMethod.POST, "/projects/{project}/recordings/snapshot", (admin, serveEvent, pathParams) -> {
             String projectParam = pathParams.get("project");
             String targetProject = projectParam != null ? URLDecoder.decode(projectParam, StandardCharsets.UTF_8) : "";
@@ -264,15 +174,6 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 return badRequest(e.getMessage());
             }
         });
-    }
-
-    private static UUID parseUuid(String value) {
-        if (value == null) return null;
-        try {
-            return UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
     }
 
     private RecordedStubConverter.SnapshotOptions parseSnapshotOptions(String body) {

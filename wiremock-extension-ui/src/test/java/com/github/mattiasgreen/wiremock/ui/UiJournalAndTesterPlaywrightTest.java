@@ -549,9 +549,11 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             snapshotBtn.click();
             page.waitForSelector("#btn-journal-snapshot-filtered:has-text('Snapshotted')");
 
-            // Verify in disabled stub store
-            assertThat(disabledStubStore.getAll().stream().anyMatch(s -> "/api/v1/orders/101"
-                            .equals(s.getRequest().getUrl())))
+            // Verify parked priority-100 snapshot stub in WireMock mappings
+            assertThat(wireMockServer.listAllStubMappings().getMappings().stream()
+                            .anyMatch(s -> StubLifecycleService.isParked(s)
+                                    && "/api/v1/orders/101"
+                                            .equals(s.getRequest().getUrl())))
                     .isTrue();
 
         } finally {

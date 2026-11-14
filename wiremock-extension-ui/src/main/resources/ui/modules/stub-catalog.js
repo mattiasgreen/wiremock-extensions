@@ -2,13 +2,34 @@
  * Canonical frontend domain module for WireMock stub management.
  *
  * Encapsulates:
- * - Aggregation of active stubs, parked disabled stubs, and dynamic stateful stubs.
+ * - Native priority-tier classification (5 = active stub, 10 = proxy, 50 = offline guard, 100+ = parked/disabled).
+ * - Aggregation of WireMock mappings and dynamic stateful stubs.
  * - Project ownership derivation and distinct project extraction.
  * - Multi-token boolean query evaluation and status filtering.
  * - Selection tracking for bulk operations.
  */
 import { matchesStub } from './filter.js';
 import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
+
+export const PRIORITY_ACTIVE_STUB = 5;
+export const PRIORITY_ACTIVE_PROXY = 10;
+export const PRIORITY_OFFLINE_GUARD = 50;
+export const PRIORITY_PARKED = 100;
+
+export function isStubParked(stub) {
+  return Boolean(stub && typeof stub.priority === 'number' && stub.priority >= PRIORITY_PARKED);
+}
+
+export function isProxyStub(stub) {
+  return Boolean(
+    (stub && stub.response && stub.response.proxyBaseUrl) ||
+      (stub && stub.metadata && String(stub.metadata.mode || '').toLowerCase() === 'proxy')
+  );
+}
+
+export function isOfflineGuardStub(stub) {
+  return Boolean(stub && stub.metadata && String(stub.metadata.role || '').toLowerCase() === 'offline-guard');
+}
 
 export function getStubUrl(req) {
   if (!req) return '/';
@@ -60,24 +81,31 @@ export function getStubApi(stub) {
 
 export class StubCatalog {
   constructor() {
-    this._active = [];
-    this._disabled = [];
+    this._mappings = [];
     this._dynamic = [];
     this._selectedIds = new Set();
   }
 
-  setRawCollections({ active = [], disabled = [], statefulModels = [] }) {
-    this._active = Array.isArray(active) ? active : [];
-    this._disabled = Array.isArray(disabled) ? disabled : [];
+  setRawCollections({ mappings, active = [], disabled = [], statefulModels = [] }) {
+    if (Array.isArray(mappings)) {
+      this._mappings = mappings;
+    } else {
+      const normalizedActive = Array.isArray(active) ? active : [];
+      const normalizedDisabled = (Array.isArray(disabled) ? disabled : []).map(d => ({
+        ...d,
+        priority: isStubParked(d) ? d.priority : PRIORITY_PARKED
+      }));
+      this._mappings = [...normalizedActive, ...normalizedDisabled];
+    }
     this._dynamic = normalizeStatefulModelsToStubs(statefulModels || []);
   }
 
   setActiveStubs(active) {
-    this._active = Array.isArray(active) ? active : [];
+    this._mappings = Array.isArray(active) ? active : [];
   }
 
-  setDisabledStubs(disabled) {
-    this._disabled = Array.isArray(disabled) ? disabled : [];
+  setMappings(mappings) {
+    this._mappings = Array.isArray(mappings) ? mappings : [];
   }
 
   setStatefulModels(models) {
@@ -85,13 +113,16 @@ export class StubCatalog {
   }
 
   getAll() {
-    const active = this._active.map(s => ({ ...s, _disabled: false, _dynamic: false }));
-    const disabled = this._disabled.map(s => ({ ...s, _disabled: true, _dynamic: false }));
+    const mappings = this._mappings.map(s => ({
+      ...s,
+      _disabled: isStubParked(s),
+      _dynamic: false
+    }));
     const dynamic = this._dynamic.map(s => ({ ...s, _disabled: false, _dynamic: true }));
 
     const seen = new Set();
     const result = [];
-    for (const s of [...active, ...disabled, ...dynamic]) {
+    for (const s of [...mappings, ...dynamic]) {
       if (s && s.id && !seen.has(s.id)) {
         seen.add(s.id);
         result.push(s);
@@ -105,13 +136,13 @@ export class StubCatalog {
     return this.getAll().find(s => s.id === id) || null;
   }
 
-  query({ search = '', status = 'all', project = null } = {}) {
+  query({ search = '', status = 'all', project = '' } = {}) {
     const filter = (search || '').trim();
-    const allStubs = this.getAll();
+    const all = this.getAll();
 
-    return allStubs.filter(s => {
-      const isDynamic = !!s.isDynamic || !!s._dynamic;
-      const isDisabled = !!s._disabled || this._disabled.some(d => d.id === s.id);
+    return all.filter(s => {
+      const isDynamic = !!s._dynamic;
+      const isDisabled = isDynamic ? false : isStubParked(s);
 
       if (status === 'active' && (isDisabled || isDynamic)) return false;
       if (status === 'disabled' && (!isDisabled || isDynamic)) return false;
@@ -130,37 +161,37 @@ export class StubCatalog {
   }
 
   getCounts(projectFilter = null) {
-    let activeList = this._active;
-    let disabledList = this._disabled;
+    let mappingList = this._mappings;
     let dynamicList = this._dynamic;
 
     if (projectFilter) {
-      activeList = activeList.filter(s => getStubProject(s) === projectFilter);
-      disabledList = disabledList.filter(s => getStubProject(s) === projectFilter);
+      mappingList = mappingList.filter(s => getStubProject(s) === projectFilter);
       dynamicList = dynamicList.filter(s => (s.metadata && s.metadata.project) === projectFilter);
     }
 
+    const activeCount = mappingList.filter(s => !isStubParked(s)).length;
+    const disabledCount = mappingList.filter(isStubParked).length;
+
     return {
-      all: activeList.length + disabledList.length + dynamicList.length,
-      active: activeList.length,
-      disabled: disabledList.length,
+      all: mappingList.length + dynamicList.length,
+      active: activeCount,
+      disabled: disabledCount,
       dynamic: dynamicList.length
     };
   }
 
   getProjects() {
-    const all = [...this._active, ...this._disabled];
     const projectsMap = new Map();
 
-    all.forEach(stub => {
+    this._mappings.forEach(stub => {
       const proj = getStubProject(stub);
-      const isDisabled = this._disabled.some(d => d.id === stub.id);
+      const parked = isStubParked(stub);
       if (!projectsMap.has(proj)) {
         projectsMap.set(proj, { name: proj, total: 0, active: 0, disabled: 0 });
       }
       const entry = projectsMap.get(proj);
       entry.total++;
-      if (isDisabled) entry.disabled++;
+      if (parked) entry.disabled++;
       else entry.active++;
     });
 

@@ -1,6 +1,6 @@
 /**
- * Stub lifecycle operations: enable, disable, toggle, clone, edit, delete.
- * Interacts with /__admin/stubs/* and /__admin/mappings/*.
+ * Stub lifecycle operations: priority-tier park/activate, clone, edit, delete.
+ * Interacts directly with WireMock's standard /__admin/mappings/* API.
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
@@ -28,6 +28,7 @@ import { switchImportTab, handleBundleImport } from './import-export.js';
 
 let activeEditingStub = null;
 let isCloneMode = false;
+let activeTemplateRole = null;
 let activeEditorMode = 'form';
 let rawJsonComponent = null;
 
@@ -219,6 +220,19 @@ export const STUB_TEMPLATES = {
     body: '',
     proxyBaseUrl: 'http://erp-system:8089',
     project: 'ERP System'
+  },
+  'offline-guard': {
+    name: 'Offline Catch-All Guard (501)',
+    priority: 50,
+    method: 'ANY',
+    url: '.*',
+    bodyMatchType: 'none',
+    bodyMatchPattern: '',
+    status: 501,
+    headers: 'Content-Type: application/json',
+    body: JSON.stringify({ error: 'Not Implemented: offline simulation guard' }, null, 2),
+    proxyBaseUrl: '',
+    role: 'offline-guard'
   }
 };
 
@@ -298,6 +312,7 @@ export function formatResponseBodyJson() {
 export function applyStubTemplate(templateKey) {
   const tpl = STUB_TEMPLATES[templateKey];
   if (!tpl) return;
+  activeTemplateRole = tpl.role || null;
 
   const nameInput = document.getElementById('editor-name');
   const methodSelect = document.getElementById('editor-method');
@@ -494,10 +509,11 @@ export function buildStubFromForm() {
     }
   }
 
-  // Preserve existing metadata, update project & tags
+  // Preserve existing metadata, update project, tags & role
   const originalMeta = activeEditingStub && activeEditingStub.metadata ? { ...activeEditingStub.metadata } : {};
   if (project) originalMeta.project = project;
   if (tags.length > 0) originalMeta.tags = tags;
+  if (activeTemplateRole) originalMeta.role = activeTemplateRole;
   if (proxyUrl) {
     originalMeta.mode = 'proxy';
     originalMeta.proxyBaseUrl = proxyUrl;
@@ -726,6 +742,7 @@ export function openStubEditor(stub, clone = false) {
 
   activeEditingStub = stub;
   isCloneMode = clone;
+  activeTemplateRole = (stub && stub.metadata && stub.metadata.role) || null;
 
   const titleEl = document.getElementById('editor-modal-title');
   if (titleEl) {
@@ -943,30 +960,24 @@ export function saveStubEditor() {
     ? (stubPayload.id || stubPayload.uuid)
     : null;
   const targetId = existingId || payloadId;
+  const existsInCatalog = Boolean(targetId) &&
+    (state.currentStubs || []).some(s => (s.id || s.uuid) === targetId);
 
   if (isCloneMode && stubPayload) {
     delete stubPayload.id;
     delete stubPayload.uuid;
   }
 
-  const isSnapshot = !targetId && stubPayload.metadata && stubPayload.metadata.source === 'recorded-proxy';
-  const savePromise = (isCloneMode || !targetId)
-    ? createStubMapping(stubPayload).then(async saved => {
-        if (isSnapshot && saved && saved.id && state.capabilities.lifecycle) {
-          try {
-            await toggleStubState(saved.id);
-          } catch (_) {}
-        }
-        return saved;
-      })
-    : saveStubMapping(targetId, { ...stubPayload, id: targetId });
+  const savePromise = (!isCloneMode && existsInCatalog)
+    ? saveStubMapping(targetId, { ...stubPayload, id: targetId })
+    : createStubMapping(stubPayload);
 
   return savePromise
     .then(saved => {
       closeStubEditor();
       return loadData().then(() => {
         if (saved && saved.id) {
-          const found = [...state.currentStubs, ...state.disabledStubs].find(s => s.id === saved.id);
+          const found = state.currentStubs.find(s => s.id === saved.id);
           if (found) selectStub(found, true);
         }
       });

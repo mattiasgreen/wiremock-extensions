@@ -123,8 +123,16 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
     }
 
     @Test
-    @DisplayName("Should toggle stub between active and disabled states in detail view and affect HTTP traffic")
+    @DisplayName("Should toggle stub between active and parked priority tiers and yield to offline-guard")
     void testEnableDisableStubToggle() throws Exception {
+        wireMockServer.stubFor(com.github.tomakehurst.wiremock.client.WireMock.any(
+                        com.github.tomakehurst.wiremock.client.WireMock.urlMatching("/api/.*"))
+                .atPriority(StubLifecycleService.PRIORITY_OFFLINE_GUARD)
+                .withMetadata(java.util.Map.of("role", "offline-guard"))
+                .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+                        .withStatus(501)
+                        .withBody("{\"error\":\"offline-guard\"}")));
+
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector(".stub-card:has-text('/api/v1/users')");
 
@@ -149,7 +157,7 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         assertThat(toggleBtn.textContent()).contains("Enable Stub");
 
         HttpResponse<String> disabledRes = client.send(req, HttpResponse.BodyHandlers.ofString());
-        assertThat(disabledRes.statusCode()).isEqualTo(404);
+        assertThat(disabledRes.statusCode()).isEqualTo(501);
 
         toggleBtn.click();
         page.waitForSelector(".stub-card:not(.stub-disabled):has-text('/api/v1/users')");

@@ -29,7 +29,6 @@ public abstract class AbstractUiPlaywrightTest {
 
     protected static WireMockServer wireMockServer;
     protected static StateEngine stateEngine;
-    protected static DisabledStubStore disabledStubStore;
     protected static Playwright playwright;
     protected static Browser browser;
     protected static BrowserContext context;
@@ -74,12 +73,11 @@ public abstract class AbstractUiPlaywrightTest {
             return;
         }
         stateEngine = new StateEngine();
-        disabledStubStore = new DisabledStubStore();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
                         new UiAdminApiEndpoint(),
-                        new StubLifecycleAdminEndpoint(disabledStubStore),
+                        new StubLifecycleAdminEndpoint(new StubLifecycleService()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
                         new StatefulAdminEndpoint(stateEngine),
                         new StatefulResponseTransformer(stateEngine),
@@ -129,7 +127,7 @@ public abstract class AbstractUiPlaywrightTest {
                     && !response.url().contains("/__admin/stateful/")
                     && !response.url().contains("/__admin/async/")
                     && !response.url().contains("/__admin/journal/")
-                    && !response.url().contains("/__admin/stubs/disabled")) {
+                    && !response.url().contains("/__admin/lifecycle/")) {
                 System.err.println("HTTP ERROR RESPONSE: " + response.status() + " " + response.url());
                 httpErrors.add(response.status() + " " + response.url());
             }
@@ -154,9 +152,7 @@ public abstract class AbstractUiPlaywrightTest {
         if (stateEngine != null) {
             stateEngine.clearAll();
         }
-        if (disabledStubStore != null) {
-            disabledStubStore.clear();
-        }
+
         wireMockServer.resetAll();
         wireMockServer.stubFor(
                 get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));

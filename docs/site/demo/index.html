@@ -37,7 +37,7 @@
       <div class="brand">
         <span class="logo">⚡</span>
         <h1>WireMock <span class="brand-title">Console</span></h1>
-        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: refactor/deepen-architecture | Commit: 6c38068">v1.14.0 (refactor/deepen-architecture@6c38068)</span>
+        <span id="app-version-badge" class="brand-version-badge" title="WireMock Extensions v1.14.0 | Branch: refactor/deepen-architecture | Commit: 5fa8702">v1.14.0 (refactor/deepen-architecture@5fa8702)</span>
         <span id="demo-mode-badge" class="badge-demo hidden" title="Interactive In-Browser Showcase Demo">✨ Demo Mode</span>
       </div>
       <nav class="nav-tabs" role="tablist">
@@ -1030,6 +1030,7 @@
                 <option value="url-pattern">Matching URL Regex Pattern (GET /api/v1/items/[0-9]+)</option>
                 <option value="error-response">Error Response (404 Not Found)</option>
                 <option value="proxy-route">🌐 Live Service Proxy Route (Forward to upstream ERP/CRM)</option>
+                <option value="offline-guard">🛡️ Offline Catch-All Guard (Priority 50 · 501)</option>
               </select>
               <button type="button" id="btn-apply-template" class="btn btn-tiny btn-secondary">Apply Example</button>
             </div>
@@ -1042,8 +1043,8 @@
               <input type="text" id="editor-name" class="form-control" placeholder="Descriptive stub name...">
             </div>
             <div class="form-group" style="flex: 1;">
-              <label for="editor-priority">Priority (1 = highest):</label>
-              <input type="number" id="editor-priority" class="form-control" value="5" min="1" max="100">
+              <label for="editor-priority">Priority (1 = highest, 100+ = disabled):</label>
+              <input type="number" id="editor-priority" class="form-control" value="5" min="1" max="999">
             </div>
           </div>
 

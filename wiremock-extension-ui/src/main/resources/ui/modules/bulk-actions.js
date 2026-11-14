@@ -1,6 +1,6 @@
 /**
  * Multi-selection and bulk operations toolbar.
- * Endpoints: POST /__admin/stubs/bulk
+ * Native priority parking/deletion via /__admin/mappings/{id}.
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
