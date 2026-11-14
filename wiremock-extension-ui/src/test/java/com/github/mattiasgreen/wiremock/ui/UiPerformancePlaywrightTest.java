@@ -69,13 +69,7 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
         cdp.send("Profiler.start");
 
         // 3. Rapid tab cycling across all panels
-        String[] tabs = {
-            "#nav-tab-journal",
-            "#nav-tab-tester",
-            "#nav-tab-casual",
-            "#nav-tab-scenarios",
-            "#nav-tab-netem",
-            "#nav-tab-stubs"
+        String[] tabs = {"#nav-tab-journal", "#nav-tab-tester", "#nav-tab-scenarios", "#nav-tab-netem", "#nav-tab-stubs"
         };
         for (int cycle = 0; cycle < 3; cycle++) {
             for (String tabId : tabs) {

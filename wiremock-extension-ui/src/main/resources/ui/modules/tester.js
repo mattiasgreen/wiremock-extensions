@@ -4,7 +4,7 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
-import { highlightJson, highlightPayload, formatXml, detectFormat } from './highlighter.js';
+import { highlightJson, highlightPayload, formatXml, formatPayload, detectFormat } from './highlighter.js';
 import {
   discoverEmbeddedPayloads,
   renderFormattedWithNestedPreviews,
@@ -13,14 +13,17 @@ import {
   openPayloadLens,
   detectCharset,
   formatPayloadDescriptor,
+  formatCasualBufferDescriptor,
   pushViewportLayer,
   createPayloadComponent
 } from './payload-lens.js';
 import { openStubEditor } from './lifecycle.js';
-import { setRoute, toBase64 } from './router.js';
+import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
 import { generateCurl, sendStubToTester } from './stubs.js';
 import { dispatchRequest } from './dispatcher.js';
 import { loadJournal } from './app-loader.js';
+import { doFetch } from './api.js';
+import { syncCasualCapabilityBanner } from './capabilities.js';
 import {
   resolveMacro,
   loadLocalHeaders,
@@ -31,6 +34,174 @@ import {
   LOCAL_HEADERS_KEY,
   LOCAL_HEADERS_ENABLED_KEY
 } from './settings.js';
+
+let lastHexResponseBody = '';
+let lastCasualResponseData = null;
+
+function fetchCasualConfig() {
+  return doFetch('/__admin/casual/config', { method: 'GET' })
+    .then(res => (res.status >= 200 && res.status < 300 ? res.json() : null))
+    .then(config => {
+      if (!config) return;
+      if (elements.testerCasualPort && config.port) {
+        elements.testerCasualPort.value = config.port;
+      }
+      if (elements.testerCasualGatewayStatus) {
+        const runningStr = config.running ? 'Running' : 'Ready';
+        elements.testerCasualGatewayStatus.textContent = `Casual Gateway: Port ${config.port} (${runningStr})`;
+      }
+    })
+    .catch(() => {});
+}
+
+function syncDefaultCasualHeaders() {
+  if (!elements.testerCasualHeaders) return;
+  const current = elements.testerCasualHeaders.value.trim();
+  const service = elements.testerCasualService ? elements.testerCasualService.value.trim() : 'echoService';
+  const bufferType = elements.testerCasualBuffer ? elements.testerCasualBuffer.value : 'JSON';
+  const ctype = bufferType === 'X_OCTET'
+    ? 'application/octet-stream'
+    : (bufferType.includes('STRING') ? 'text/plain; charset=UTF-8' : 'application/json');
+
+  if (!current || current.startsWith('Content-Type:') || current.startsWith('X-Casual-Service:')) {
+    elements.testerCasualHeaders.value = `Content-Type: ${ctype}\nX-Casual-Service: ${service}\nX-Casual-Buffer-Type: ${bufferType}`;
+  }
+}
+
+export function updateTesterRequestPill() {
+  const topPill = document.getElementById('tester-request-top-pill');
+  if (!topPill || !elements.testerBody) return;
+  const raw = elements.testerBody.value || '';
+  const fmt = detectFormat(raw);
+  const sizeKb = (new Blob([raw]).size / 1024).toFixed(1);
+  if ((state.testerProtocol || 'http') === 'casual') {
+    const bufferType = elements.testerCasualBuffer ? elements.testerCasualBuffer.value : 'JSON';
+    const rawHeaders = (elements.testerCasualHeaders && elements.testerCasualHeaders.value) || '';
+    const charset = detectCharset(raw, rawHeaders);
+    topPill.textContent = formatCasualBufferDescriptor(bufferType, fmt, sizeKb, charset);
+  } else {
+    const rawHeaders = (elements.testerHeaders && elements.testerHeaders.value) || '';
+    const charset = detectCharset(raw, rawHeaders);
+    topPill.textContent = formatPayloadDescriptor(fmt, sizeKb, charset);
+  }
+}
+
+export function populateCasualTester({ service, payload, bufferType = 'JSON', headers = null, switchTab = true } = {}) {
+  switchTesterProtocol('casual', false);
+  if (service && elements.testerCasualService) {
+    elements.testerCasualService.value = service;
+  }
+  if (bufferType && elements.testerCasualBuffer) {
+    let normBuffer = String(bufferType).toUpperCase();
+    if (normBuffer.includes('FIELD')) normBuffer = 'FIELDED';
+    else if (normBuffer.includes('STRING')) normBuffer = 'CSTRING';
+    else if (normBuffer.includes('OCTET')) normBuffer = 'X_OCTET';
+    elements.testerCasualBuffer.value = normBuffer;
+  }
+  if (elements.testerBody) {
+    elements.testerBody.value = payload || '{\n  \n}';
+    if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
+  }
+  if (elements.testerCasualHeaders) {
+    if (headers) {
+      const hLines = [];
+      for (const [k, v] of Object.entries(headers)) {
+        hLines.push(`${k}: ${v}`);
+      }
+      elements.testerCasualHeaders.value = hLines.join('\n');
+    } else {
+      elements.testerCasualHeaders.value = '';
+      syncDefaultCasualHeaders();
+    }
+  }
+  if (elements.testerCasualEncoding) {
+    elements.testerCasualEncoding.value = (elements.testerCasualBuffer && elements.testerCasualBuffer.value === 'X_OCTET') ? 'hex' : 'text';
+  }
+  fetchCasualConfig();
+  updateTesterRequestPill();
+  if (switchTab) {
+    activateTab('tab-tester', false);
+    updateTesterRoute(false);
+  }
+}
+
+function handleCasualFileUpload(event) {
+  const file = event?.target?.files?.[0];
+  if (!file || !elements.testerBody) return;
+  const encoding = elements.testerCasualEncoding ? elements.testerCasualEncoding.value : 'text';
+  const applyPayload = (val) => {
+    elements.testerBody.value = val;
+    if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
+    updateTesterRequestPill();
+    updateTesterRoute(true);
+  };
+
+  if (encoding === 'hex') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const bytes = new Uint8Array(e.target.result);
+      let hex = '';
+      for (let i = 0; i < bytes.length; i++) {
+        hex += bytes[i].toString(16).padStart(2, '0').toUpperCase() + ' ';
+      }
+      applyPayload(hex.trim());
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (encoding === 'base64') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const bytes = new Uint8Array(e.target.result);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      applyPayload(btoa(binary));
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = (e) => applyPayload(e.target.result);
+    reader.readAsText(file);
+  }
+}
+
+function downloadCasualBinaryResponse() {
+  if (!lastCasualResponseData || !lastCasualResponseData.payload) return;
+  try {
+    const binaryString = atob(lastCasualResponseData.payload);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${lastCasualResponseData.service || 'casual-response'}.bin`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (_) {
+    const blob = new Blob([lastCasualResponseData.payload], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${lastCasualResponseData.service || 'casual-response'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}
+
+export function setTesterViewMode(mode) {
+  state.testerViewMode = mode;
+  if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.toggle('active', mode === 'highlighted');
+  if (elements.btnViewRaw) elements.btnViewRaw.classList.toggle('active', mode === 'raw');
+  if (elements.btnViewHex) elements.btnViewHex.classList.toggle('active', mode === 'hex');
+  renderTesterResponse(state.lastRawResponseBody);
+}
 
 export {
   resolveMacro,
@@ -155,6 +326,26 @@ export function switchTesterProtocol(protocol, updateRoute = true) {
   if (elements.testerSectionHeadersAmqp) elements.testerSectionHeadersAmqp.classList.toggle('hidden', protocol !== 'amqp');
   if (elements.testerSectionHeadersCasual) elements.testerSectionHeadersCasual.classList.toggle('hidden', protocol !== 'casual');
 
+  if (elements.testerCasualPayloadControls) elements.testerCasualPayloadControls.classList.toggle('hidden', protocol !== 'casual');
+  if (elements.testerCasualGatewayStatus) elements.testerCasualGatewayStatus.classList.toggle('hidden', protocol !== 'casual');
+  if (elements.btnViewHex) elements.btnViewHex.classList.toggle('hidden', protocol !== 'casual');
+  if (elements.btnTesterCopyCurl) elements.btnTesterCopyCurl.classList.toggle('hidden', protocol === 'casual');
+
+  if (protocol === 'casual') {
+    fetchCasualConfig();
+    syncDefaultCasualHeaders();
+  } else {
+    if (elements.btnTesterDownloadBinary) elements.btnTesterDownloadBinary.style.display = 'none';
+    if (elements.testerResponseCode) elements.testerResponseCode.classList.add('hidden');
+    if (elements.testerResponseExecution) elements.testerResponseExecution.classList.add('hidden');
+    if (state.testerViewMode === 'hex') {
+      state.testerViewMode = 'highlighted';
+      if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.add('active');
+      if (elements.btnViewRaw) elements.btnViewRaw.classList.remove('active');
+      if (elements.btnViewHex) elements.btnViewHex.classList.remove('active');
+    }
+  }
+
   const bodyLabel = document.getElementById('tester-body-label');
   if (bodyLabel) {
     if (protocol === 'kafka') bodyLabel.textContent = 'Event Payload';
@@ -166,6 +357,9 @@ export function switchTesterProtocol(protocol, updateRoute = true) {
   if (elements.testerSettlementBanner) {
     elements.testerSettlementBanner.classList.add('hidden');
   }
+
+  syncCasualCapabilityBanner();
+  updateTesterRequestPill();
 
   if (updateRoute) {
     updateTesterRoute(true);
@@ -208,16 +402,16 @@ export function applyQuickTemplate(templateId) {
     if (elements.testerCasualService) elements.testerCasualService.value = tpl.service;
     if (elements.testerCasualBuffer) elements.testerCasualBuffer.value = tpl.bufferType;
     if (elements.testerCasualHeaders) elements.testerCasualHeaders.value = tpl.headers;
-    if (elements.casualServiceName) elements.casualServiceName.value = tpl.service;
-    if (elements.casualBufferType) elements.casualBufferType.value = tpl.bufferType;
-    if (elements.casualRequestHeaders) elements.casualRequestHeaders.value = tpl.headers;
-    if (elements.casualRequestPayload) elements.casualRequestPayload.value = tpl.body;
+    if (elements.testerCasualEncoding) {
+      elements.testerCasualEncoding.value = tpl.bufferType === 'X_OCTET' ? 'hex' : 'text';
+    }
     if (elements.testerBody) {
       elements.testerBody.value = tpl.body;
       if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
     }
   }
 
+  updateTesterRequestPill();
   updateTesterRoute(true);
 }
 
@@ -266,11 +460,24 @@ export function parseHeadersInput(text) {
 
 export function updateTesterRoute(replace = true) {
   if (!elements.testerMethod || !elements.testerUrl) return;
+  const proto = state.testerProtocol || 'http';
+  const b = elements.testerBody ? elements.testerBody.value.trim() : '';
+  if (proto === 'casual') {
+    const s = elements.testerCasualService ? elements.testerCasualService.value.trim() : '';
+    const buf = elements.testerCasualBuffer ? elements.testerCasualBuffer.value : 'JSON';
+    setRoute('tester', {
+      proto: 'casual',
+      s: s && s !== 'echoService' ? s : null,
+      b: buf !== 'JSON' ? buf : null,
+      p: b ? toBase64(b) : null,
+      m: null,
+      h: null
+    }, replace);
+    return;
+  }
   const m = elements.testerMethod.value;
   const p = elements.testerUrl.value.trim();
   const h = elements.testerHeaders ? elements.testerHeaders.value.trim() : '';
-  const b = elements.testerBody ? elements.testerBody.value.trim() : '';
-  const proto = state.testerProtocol || 'http';
   setRoute('tester', {
     proto: proto !== 'http' ? proto : null,
     m: m !== 'GET' ? m : null,
@@ -425,22 +632,49 @@ export function restoreHistoryItem(item) {
       if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
     }
   } else if (proto === 'casual') {
+    if (elements.testerCasualHost) elements.testerCasualHost.value = item.host || '127.0.0.1';
+    if (elements.testerCasualPort) elements.testerCasualPort.value = item.port || 7772;
     if (elements.testerCasualService) elements.testerCasualService.value = item.serviceName || item.url || 'echoService';
     if (elements.testerCasualBuffer) elements.testerCasualBuffer.value = item.bufferType || 'JSON';
     if (elements.testerCasualHeaders) elements.testerCasualHeaders.value = item.headersText || '';
-    if (elements.casualServiceName) elements.casualServiceName.value = item.serviceName || item.url || 'echoService';
-    if (elements.casualBufferType) elements.casualBufferType.value = item.bufferType || 'JSON';
-    if (elements.casualRequestHeaders) elements.casualRequestHeaders.value = item.headersText || '';
-    if (elements.casualRequestPayload) elements.casualRequestPayload.value = item.bodyText || '';
+    if (elements.testerCasualEncoding) {
+      elements.testerCasualEncoding.value = item.payloadEncoding || (item.bufferType === 'X_OCTET' ? 'hex' : 'text');
+    }
     if (elements.testerBody) {
       elements.testerBody.value = item.bodyText || '';
       if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
     }
+    lastCasualResponseData = {
+      service: item.serviceName || item.url || 'echoService',
+      bufferType: item.bufferType || 'JSON',
+      payload: item.responseBody || '',
+      isBinary: Boolean(item.isBinary),
+      sizeBytes: item.size,
+      payloadHex: item.payloadHex || '',
+      errorState: item.errorState || 'OK',
+      errorCode: item.errorCode !== undefined ? item.errorCode : 0,
+      userCode: item.userCode !== undefined ? item.userCode : 0,
+      execution: item.execution || ''
+    };
+  } else {
+    lastCasualResponseData = null;
   }
 
   const methodOrOp = item.method || (proto === 'casual' ? 'CALL' : (proto === 'kafka' ? 'PRODUCE' : (proto === 'amqp' ? 'PUBLISH' : 'GET')));
   displaySentRequest(methodOrOp, item.url || item.destination || item.serviceName || '', item.headersText || '', item.bodyText || '');
-  displayResponseResult(item.status, item.statusText || '', item.duration || 0, item.responseHeaders || [], item.responseBody || '');
+  const casualExtra = proto === 'casual' ? {
+    service: item.serviceName || item.url || 'echoService',
+    bufferType: item.bufferType || 'JSON',
+    isBinary: Boolean(item.isBinary),
+    sizeBytes: item.size,
+    payloadHex: item.payloadHex || '',
+    errorState: item.errorState || (item.status === 'ERR' || item.status === 'ERROR' ? 'ERROR' : 'OK'),
+    errorCode: item.errorCode !== undefined ? item.errorCode : 0,
+    userCode: item.userCode !== undefined ? item.userCode : 0,
+    execution: item.execution || ''
+  } : null;
+  displayResponseResult(item.status, item.statusText || '', item.duration || 0, item.responseHeaders || [], item.responseBody || '', casualExtra);
+  updateTesterRequestPill();
   updateTesterRoute(true);
 }
 
@@ -519,9 +753,23 @@ export function displaySentRequest(method, url, headersText, bodyText) {
   }
 }
 
-export function displayResponseResult(status, statusText, elapsed, headerLines, responseBody) {
+export function displayResponseResult(status, statusText, elapsed, headerLines, responseBody, extra = null) {
+  const isCasual = Boolean(extra && extra.errorState !== undefined);
+  lastHexResponseBody = (extra && extra.payloadHex) || '';
+  if (isCasual) {
+    lastCasualResponseData = { ...extra, payload: responseBody };
+  } else {
+    lastCasualResponseData = null;
+  }
+
   if (elements.testerResponseStatus) {
-    if (status === 'ERROR') {
+    if (isCasual) {
+      const errorState = extra.errorState || 'OK';
+      const errorCode = extra.errorCode !== undefined ? extra.errorCode : 0;
+      const isOk = errorState === 'OK';
+      elements.testerResponseStatus.textContent = `${errorState} (${errorCode})`;
+      elements.testerResponseStatus.className = `card-value ${isOk ? 'status-200' : 'status-500'}`;
+    } else if (status === 'ERROR') {
       elements.testerResponseStatus.textContent = 'ERROR';
       elements.testerResponseStatus.className = 'card-value status-500';
     } else {
@@ -533,8 +781,30 @@ export function displayResponseResult(status, statusText, elapsed, headerLines, 
     elements.testerResponseTime.textContent = `${elapsed} ms`;
   }
   if (elements.testerResponseSize) {
-    const bytes = new Blob([responseBody || '']).size;
+    const bytes = (extra && extra.sizeBytes !== undefined) ? extra.sizeBytes : new Blob([responseBody || '']).size;
     elements.testerResponseSize.textContent = formatBytes(bytes);
+  }
+  if (elements.testerResponseCode) {
+    if (isCasual && extra.userCode !== undefined) {
+      const sizeStr = (extra.isBinary && extra.sizeBytes !== undefined) ? ` | ${extra.sizeBytes} B` : '';
+      elements.testerResponseCode.textContent = `UserCode: ${extra.userCode}${sizeStr}`;
+      elements.testerResponseCode.classList.remove('hidden');
+    } else {
+      elements.testerResponseCode.textContent = '';
+      elements.testerResponseCode.classList.add('hidden');
+    }
+  }
+  if (elements.testerResponseExecution) {
+    if (isCasual && extra.execution) {
+      elements.testerResponseExecution.textContent = `UUID: ${extra.execution}`;
+      elements.testerResponseExecution.classList.remove('hidden');
+    } else {
+      elements.testerResponseExecution.textContent = '';
+      elements.testerResponseExecution.classList.add('hidden');
+    }
+  }
+  if (elements.btnTesterDownloadBinary) {
+    elements.btnTesterDownloadBinary.classList.toggle('hidden', !(isCasual && extra.isBinary));
   }
   if (elements.testerResponseHeaderCount) {
     elements.testerResponseHeaderCount.textContent = headerLines.length;
@@ -543,7 +813,12 @@ export function displayResponseResult(status, statusText, elapsed, headerLines, 
     elements.testerResponseHeaders.textContent = headerLines.join('\n') || '(no headers)';
   }
   state.lastResponseHeaders = headerLines;
-  renderTesterResponse(responseBody);
+  if (isCasual && extra.isBinary && state.testerViewMode === 'highlighted') {
+    state.lastRawResponseBody = responseBody;
+    setTesterViewMode('hex');
+  } else {
+    renderTesterResponse(responseBody);
+  }
 }
 
 export function renderTesterResponse(bodyText) {
@@ -554,6 +829,19 @@ export function renderTesterResponse(bodyText) {
   const topPillGroup = document.getElementById('tester-top-pill-group');
   const topPill = document.getElementById('tester-top-pill');
   const btnMax = document.getElementById('btn-tester-response-maximize');
+
+  if (state.testerViewMode === 'hex' || (lastCasualResponseData && lastCasualResponseData.isBinary && state.testerViewMode !== 'raw')) {
+    elements.testerResponseBody.textContent = lastHexResponseBody || bodyText || '';
+    if (topPillGroup) topPillGroup.style.display = 'none';
+    return;
+  }
+
+  if (lastCasualResponseData && lastCasualResponseData.isBinary && state.testerViewMode === 'raw') {
+    elements.testerResponseBody.textContent = bodyText || '';
+    if (topPillGroup) topPillGroup.style.display = 'none';
+    return;
+  }
+
   const charset = detectCharset(bodyText, state.lastResponseHeaders);
   const fmt = detectFormat(bodyText);
 
@@ -569,6 +857,7 @@ export function renderTesterResponse(bodyText) {
     readOnlyReason: 'Received response payload is read-only',
     text: bodyText,
     format: fmt,
+    bufferType: (lastCasualResponseData && lastCasualResponseData.bufferType) || undefined,
     charset,
     defaultMode: state.testerViewMode === 'raw' ? 'raw' : 'rich',
     title: 'HTTP Tester Response',
@@ -640,6 +929,9 @@ export async function executeTesterRequest() {
   let correlationId = '';
   let replyTo = '';
   let bufferType = 'JSON';
+  let host = '127.0.0.1';
+  let port = 7772;
+  let payloadEncoding = 'text';
 
   let sendBtn = elements.btnTesterSend;
   let sendingText = '⏳ Sending...';
@@ -668,7 +960,10 @@ export async function executeTesterRequest() {
     resetText = '🚀 Publish Message';
   } else if (proto === 'casual') {
     destination = (elements.testerCasualService ? elements.testerCasualService.value.trim() : '') || 'echoService';
+    host = (elements.testerCasualHost ? elements.testerCasualHost.value.trim() : '') || '127.0.0.1';
+    port = (elements.testerCasualPort ? parseInt(elements.testerCasualPort.value.trim(), 10) : 7772) || 7772;
     bufferType = (elements.testerCasualBuffer ? elements.testerCasualBuffer.value : '') || 'JSON';
+    payloadEncoding = (elements.testerCasualEncoding ? elements.testerCasualEncoding.value : '') || 'text';
     headersText = elements.testerCasualHeaders ? elements.testerCasualHeaders.value.trim() : '';
     if (!bodyText) bodyText = '{}';
     method = 'CALL';
@@ -717,7 +1012,7 @@ export async function executeTesterRequest() {
   }
 
   try {
-    const result = await dispatchRequest({
+    const dispatchOptions = {
       protocol: proto,
       destination: destination,
       method: method,
@@ -728,17 +1023,50 @@ export async function executeTesterRequest() {
       correlationId: correlationId,
       replyTo: replyTo,
       bufferType: bufferType
-    });
+    };
+    if (proto === 'casual') {
+      dispatchOptions.host = host;
+      dispatchOptions.port = port;
+      dispatchOptions.payloadEncoding = payloadEncoding;
+      dispatchOptions.timeoutSeconds = 4;
+    }
 
-    displayResponseResult(
-      result.status,
-      result.statusText,
-      result.elapsedMs,
-      result.responseHeaders,
-      result.responseBody
-    );
+    const result = await dispatchRequest(dispatchOptions);
 
-    if (result.banner) {
+    const settlement = result.settlement || {};
+    if (proto === 'casual') {
+      if (settlement.requestHeaders) {
+        const finalSentText = Object.entries(settlement.requestHeaders).map(([k, v]) => `${k}: ${v}`).join('\n');
+        displaySentRequest(method, destination, finalSentText, bodyText);
+      }
+      if (result.status === 'ERR') {
+        displayResponseResult('ERROR', result.statusText, result.elapsedMs, [], result.responseBody, {
+          service: destination,
+          errorState: 'ERROR',
+          errorCode: -1,
+          userCode: -1
+        });
+      } else {
+        displayResponseResult(
+          result.status,
+          result.statusText,
+          result.elapsedMs,
+          result.responseHeaders,
+          result.responseBody,
+          { service: destination, ...settlement }
+        );
+      }
+    } else {
+      displayResponseResult(
+        result.status,
+        result.statusText,
+        result.elapsedMs,
+        result.responseHeaders,
+        result.responseBody
+      );
+    }
+
+    if (result.banner && proto !== 'casual') {
       showSettlementBanner(result.banner.text, result.banner.type);
     }
 
@@ -759,8 +1087,8 @@ export async function executeTesterRequest() {
     };
     if (proto === 'kafka') {
       historyItem.key = key;
-      if (result.settlement && result.settlement.partition !== undefined) {
-        historyItem.partition = result.settlement.partition;
+      if (settlement.partition !== undefined) {
+        historyItem.partition = settlement.partition;
       }
     } else if (proto === 'amqp') {
       historyItem.correlationId = correlationId;
@@ -768,6 +1096,21 @@ export async function executeTesterRequest() {
     } else if (proto === 'casual') {
       historyItem.serviceName = destination;
       historyItem.bufferType = bufferType;
+      historyItem.host = host;
+      historyItem.port = port;
+      historyItem.payloadEncoding = payloadEncoding;
+      historyItem.errorState = settlement.errorState || (result.status === 'ERR' ? 'ERROR' : 'OK');
+      historyItem.errorCode = settlement.errorCode !== undefined ? settlement.errorCode : (result.status === 'ERR' ? -1 : 0);
+      historyItem.userCode = settlement.userCode !== undefined ? settlement.userCode : 0;
+      historyItem.execution = settlement.execution || '';
+      historyItem.isBinary = Boolean(settlement.isBinary);
+      historyItem.payloadHex = settlement.payloadHex || '';
+      if (settlement.sizeBytes !== undefined) historyItem.size = settlement.sizeBytes;
+      if (settlement.errorState) {
+        historyItem.status = settlement.errorState === 'OK' ? 'OK' : settlement.errorState;
+        historyItem.statusText = settlement.errorState;
+      }
+      updateTesterRoute(true);
     }
     saveTesterHistoryItem(historyItem);
 
@@ -889,22 +1232,72 @@ export function initTesterTab() {
     btnPresetAmqpReply.addEventListener('click', () => appendAmqpHeader('message-type', 'OrderValidationRequest'));
   }
 
-  // Casual Presets
-  const btnCasualPresetTx = document.getElementById('btn-casual-preset-tx');
+  // Casual Controls & Presets
   if (elements.btnTesterSendCasual) {
     elements.btnTesterSendCasual.addEventListener('click', executeTesterRequest);
+  }
+  if (elements.testerCasualService) {
+    elements.testerCasualService.addEventListener('input', () => syncDefaultCasualHeaders());
+  }
+  if (elements.testerCasualBuffer) {
+    elements.testerCasualBuffer.addEventListener('change', () => {
+      syncDefaultCasualHeaders();
+      if (elements.testerCasualEncoding) {
+        const val = elements.testerCasualBuffer.value;
+        if ((val === 'X_OCTET' || val === 'FIELDED') && elements.testerCasualEncoding.value === 'text') {
+          elements.testerCasualEncoding.value = 'hex';
+        } else if (val === 'JSON' && elements.testerCasualEncoding.value === 'hex') {
+          elements.testerCasualEncoding.value = 'text';
+        }
+      }
+      updateTesterRequestPill();
+      updateTesterRoute(true);
+    });
+  }
+  [elements.testerCasualService, elements.testerCasualHost, elements.testerCasualPort].forEach(el => {
+    if (el) el.addEventListener('change', () => updateTesterRoute(true));
+  });
+  if (elements.testerCasualHeaders) {
+    elements.testerCasualHeaders.addEventListener('input', () => {
+      if ((state.testerProtocol || 'http') === 'casual') updateTesterRequestPill();
+    });
+  }
+  if (elements.btnTesterUploadFile && elements.testerCasualFileInput) {
+    elements.btnTesterUploadFile.addEventListener('click', () => elements.testerCasualFileInput.click());
+    elements.testerCasualFileInput.addEventListener('change', handleCasualFileUpload);
+  }
+  if (elements.btnTesterDownloadBinary) {
+    elements.btnTesterDownloadBinary.addEventListener('click', downloadCasualBinaryResponse);
   }
   const btnTesterCasualPresetTx = document.getElementById('btn-tester-casual-preset-tx');
   if (btnTesterCasualPresetTx && elements.testerCasualHeaders) {
     btnTesterCasualPresetTx.addEventListener('click', () => {
       const cur = elements.testerCasualHeaders.value.trim();
       if (!cur.includes('X-Casual-Transaction-State')) {
-        elements.testerCasualHeaders.value = (cur ? cur + '\n' : '') + 'X-Casual-Transaction-State: ACTIVE';
+        elements.testerCasualHeaders.value = (cur ? cur + '\n' : '') + 'X-Casual-Transaction-State: TX_ACTIVE';
       }
     });
   }
   if (elements.btnTesterResetForm) {
     elements.btnTesterResetForm.addEventListener('click', () => {
+      if ((state.testerProtocol || 'http') === 'casual') {
+        if (elements.testerCasualHost) elements.testerCasualHost.value = '127.0.0.1';
+        if (elements.testerCasualService) elements.testerCasualService.value = 'echoService';
+        if (elements.testerCasualBuffer) elements.testerCasualBuffer.value = 'JSON';
+        if (elements.testerCasualEncoding) elements.testerCasualEncoding.value = 'text';
+        if (elements.testerBody) {
+          elements.testerBody.value = '{\n  "message": "Hello Casual"\n}';
+          if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
+        }
+        if (elements.testerCasualHeaders) {
+          elements.testerCasualHeaders.value = '';
+          syncDefaultCasualHeaders();
+        }
+        fetchCasualConfig();
+        updateTesterRequestPill();
+        updateTesterRoute(true);
+        return;
+      }
       if (elements.testerMethod) elements.testerMethod.value = 'GET';
       if (elements.testerUrl) elements.testerUrl.value = '/api/v1/users';
       if (elements.testerHeaders) elements.testerHeaders.value = '';
@@ -949,6 +1342,13 @@ export function initTesterTab() {
     elements.btnTesterFormatJson.addEventListener('click', () => {
       if (!elements.testerBody || !elements.testerBody.value.trim()) return;
       const val = elements.testerBody.value.trim();
+      if ((state.testerProtocol || 'http') === 'casual') {
+        elements.testerBody.value = formatPayload(val);
+        if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
+        updateTesterRequestPill();
+        updateTesterRoute(true);
+        return;
+      }
       const detected = detectFormat(val);
       if (detected === 'xml') {
         elements.testerBody.value = formatXml(val);
@@ -991,26 +1391,20 @@ export function initTesterTab() {
     });
   }
   if (elements.btnViewHighlighted) {
-    elements.btnViewHighlighted.addEventListener('click', () => {
-      state.testerViewMode = 'highlighted';
-      elements.btnViewHighlighted.classList.add('active');
-      if (elements.btnViewRaw) elements.btnViewRaw.classList.remove('active');
-      renderTesterResponse(state.lastRawResponseBody);
-    });
+    elements.btnViewHighlighted.addEventListener('click', () => setTesterViewMode('highlighted'));
   }
   if (elements.btnViewRaw) {
-    elements.btnViewRaw.addEventListener('click', () => {
-      state.testerViewMode = 'raw';
-      elements.btnViewRaw.classList.add('active');
-      if (elements.btnViewHighlighted) elements.btnViewHighlighted.classList.remove('active');
-      renderTesterResponse(state.lastRawResponseBody);
-    });
+    elements.btnViewRaw.addEventListener('click', () => setTesterViewMode('raw'));
+  }
+  if (elements.btnViewHex) {
+    elements.btnViewHex.addEventListener('click', () => setTesterViewMode('hex'));
   }
   if (elements.btnTesterCopyResponse) {
     elements.btnTesterCopyResponse.addEventListener('click', () => {
-      if (state.lastRawResponseBody) {
+      const copyText = state.lastRawResponseBody || (elements.testerResponseBody && elements.testerResponseBody.textContent) || '';
+      if (copyText) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(state.lastRawResponseBody).catch(() => {});
+          navigator.clipboard.writeText(copyText).catch(() => {});
         }
         elements.btnTesterCopyResponse.textContent = '✅ Copied!';
         setTimeout(() => elements.btnTesterCopyResponse.textContent = '📋 Copy', 1500);
@@ -1057,7 +1451,13 @@ export function initTesterTab() {
       title: 'HTTP Tester Request Body',
       context: 'tester-request',
       defaultAction: 'edit',
-      onChange: () => updateTesterRoute(true)
+      onChange: () => {
+        if ((state.testerProtocol || 'http') === 'casual') updateTesterRequestPill();
+        updateTesterRoute(true);
+      }
+    });
+    elements.testerBody.addEventListener('input', () => {
+      if ((state.testerProtocol || 'http') === 'casual') updateTesterRequestPill();
     });
     if (elements.testerBodyEmbeddedBar) {
       attachEmbeddedPayloadsBar(elements.testerBody, elements.testerBodyEmbeddedBar, () => updateTesterRoute(true));

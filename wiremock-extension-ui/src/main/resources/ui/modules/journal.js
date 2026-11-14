@@ -23,8 +23,7 @@ import {
 import { setRoute, activateTab } from './router.js';
 import { matchesJournalEntry, extractRequestSource } from './filter.js';
 import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
-import { updateTesterRoute } from './tester.js';
-import { fetchCasualConfig, updateCasualRoute, populateCasualTester } from './casual-tester.js';
+import { updateTesterRoute, populateCasualTester } from './tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
   getSnapshotStubTemplate,

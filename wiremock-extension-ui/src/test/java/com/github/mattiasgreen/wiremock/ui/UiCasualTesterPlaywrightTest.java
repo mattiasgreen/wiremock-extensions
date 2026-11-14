@@ -50,91 +50,93 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .withBody("{\"echoed\": true, \"service\": \"echoService\"}")));
 
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#casual");
-        page.waitForSelector("#tab-casual.active");
+        page.waitForSelector("#tab-tester.active");
+        page.waitForSelector("#btn-tester-proto-casual.active");
 
-        // Verify navigation tab
-        Locator navTab = page.locator("#nav-tab-casual");
+        // Verify legacy #nav-tab-casual is removed and normalized to unified Tester (#tester?proto=casual)
+        assertThat(page.locator("#nav-tab-casual").count()).isZero();
+        Locator navTab = page.locator("#nav-tab-tester");
         assertThat(navTab.isVisible()).isTrue();
-        assertThat(navTab.textContent()).contains("Casual Tester");
+        assertThat(navTab.textContent()).contains("Tester");
+        assertThat(page.url()).contains("#tester?proto=casual");
 
-        // Verify target port prefilled
-        page.locator("#casual-target-port").fill(String.valueOf(casualGateway.getPort()));
-        page.locator("#casual-service-name").fill("echoService");
-        page.locator("#casual-request-payload").fill("{\"testMessage\": \"Hello from Playwright\"}");
+        // Verify target port prefilled and form controls inside unified tester
+        page.locator("#tester-casual-port").fill(String.valueOf(casualGateway.getPort()));
+        page.locator("#tester-casual-service").fill("echoService");
+        page.locator("#tester-body").fill("{\"testMessage\": \"Hello from Playwright\"}");
 
         // Test Format JSON
-        page.locator("#btn-casual-format-json").click();
-        assertThat(page.locator("#casual-request-payload").inputValue())
-                .contains("  \"testMessage\": \"Hello from Playwright\"");
+        page.locator("#btn-tester-format-json").click();
+        assertThat(page.locator("#tester-body").inputValue()).contains("  \"testMessage\": \"Hello from Playwright\"");
 
         // Execute tpcall
-        page.locator("#btn-casual-send").click();
+        page.locator("#btn-tester-send-casual").click();
 
-        page.waitForSelector("#casual-response-status:has-text('OK')");
-        Locator statusEl = page.locator("#casual-response-status");
+        page.waitForSelector("#tester-response-status:has-text('OK')");
+        Locator statusEl = page.locator("#tester-response-status");
         assertThat(statusEl.textContent()).contains("OK (0)");
 
-        Locator bodyEl = page.locator("#casual-response-body");
+        Locator bodyEl = page.locator("#tester-response-body");
         assertThat(bodyEl.textContent()).contains("\"echoed\": true");
         assertThat(bodyEl.textContent()).contains("\"service\": \"echoService\"");
 
-        Locator timeEl = page.locator("#casual-response-time");
+        Locator timeEl = page.locator("#tester-response-time");
         assertThat(timeEl.textContent()).contains("ms");
 
         // Verify response headers
-        Locator responseHeaders = page.locator("#casual-response-headers");
+        Locator responseHeaders = page.locator("#tester-response-headers");
         assertThat(responseHeaders.isVisible()).isTrue();
         assertThat(responseHeaders.textContent()).contains("Content-Type: application/json");
         assertThat(responseHeaders.textContent()).contains("X-Casual-Error-State: OK");
-        assertThat(page.locator("#casual-response-header-count").textContent()).matches("\\d+");
+        assertThat(page.locator("#tester-response-header-count").textContent()).matches("\\d+");
 
         // Verify Sent Request tab
-        page.locator("#btn-casual-tab-request").click();
-        assertThat(page.locator("#casual-view-request").isVisible()).isTrue();
-        assertThat(page.locator("#casual-view-response").isVisible()).isFalse();
-        assertThat(page.locator("#casual-sent-headers").textContent()).contains("X-Casual-Service: echoService");
-        assertThat(page.locator("#casual-sent-body").textContent())
+        page.locator("#btn-tester-tab-request").click();
+        assertThat(page.locator("#tester-view-request").isVisible()).isTrue();
+        assertThat(page.locator("#tester-view-response").isVisible()).isFalse();
+        assertThat(page.locator("#tester-sent-headers").textContent()).contains("X-Casual-Service: echoService");
+        assertThat(page.locator("#tester-sent-body").textContent())
                 .contains("\"testMessage\": \"Hello from Playwright\"");
 
         // Verify Both tab
-        page.locator("#btn-casual-tab-both").click();
-        assertThat(page.locator("#casual-view-request").isVisible()).isTrue();
-        assertThat(page.locator("#casual-view-response").isVisible()).isTrue();
-        assertThat(page.locator("#casual-inspector-content").getAttribute("class"))
+        page.locator("#btn-tester-tab-both").click();
+        assertThat(page.locator("#tester-view-request").isVisible()).isTrue();
+        assertThat(page.locator("#tester-view-response").isVisible()).isTrue();
+        assertThat(page.locator("#tester-inspector-content").getAttribute("class"))
                 .contains("both-mode");
 
         // Switch back to Response tab
-        page.locator("#btn-casual-tab-response").click();
-        assertThat(page.locator("#casual-view-response").isVisible()).isTrue();
-        assertThat(page.locator("#casual-view-request").isVisible()).isFalse();
-        assertThat(page.locator("#casual-inspector-content").getAttribute("class"))
+        page.locator("#btn-tester-tab-response").click();
+        assertThat(page.locator("#tester-view-response").isVisible()).isTrue();
+        assertThat(page.locator("#tester-view-request").isVisible()).isFalse();
+        assertThat(page.locator("#tester-inspector-content").getAttribute("class"))
                 .doesNotContain("both-mode");
 
         // Test Preset badges
-        page.locator("#btn-casual-preset-tx").click();
-        assertThat(page.locator("#casual-request-headers").inputValue())
+        page.locator("#btn-tester-casual-preset-tx").click();
+        assertThat(page.locator("#tester-casual-headers").inputValue())
                 .contains("X-Casual-Transaction-State: TX_ACTIVE");
 
         // Verify history item recorded
-        Locator historyItems = page.locator("#casual-history-list .history-item");
+        Locator historyItems = page.locator("#tester-history-list .history-item");
         assertThat(historyItems.count()).isGreaterThanOrEqualTo(1);
         Locator firstHistory = historyItems.first();
         assertThat(firstHistory.textContent()).contains("echoService");
         assertThat(firstHistory.textContent()).contains("OK");
 
         // Test unmatched service call
-        page.locator("#casual-service-name").fill("unstubbedService");
-        page.locator("#btn-casual-send").click();
+        page.locator("#tester-casual-service").fill("unstubbedService");
+        page.locator("#btn-tester-send-casual").click();
 
-        page.waitForSelector("#casual-response-status:has-text('TPENOENT')");
-        assertThat(page.locator("#casual-response-status").textContent()).contains("TPENOENT (6)");
+        page.waitForSelector("#tester-response-status:has-text('TPENOENT')");
+        assertThat(page.locator("#tester-response-status").textContent()).contains("TPENOENT (6)");
 
         // Verify history contains 2 items
-        assertThat(page.locator("#casual-history-list .history-item").count()).isGreaterThanOrEqualTo(2);
+        assertThat(page.locator("#tester-history-list .history-item").count()).isGreaterThanOrEqualTo(2);
 
         // Click first history item to restore echoService
-        page.locator("#casual-history-list .history-item").nth(1).click();
-        assertThat(page.locator("#casual-service-name").inputValue()).isEqualTo("echoService");
+        page.locator("#tester-history-list .history-item").nth(1).click();
+        assertThat(page.locator("#tester-casual-service").inputValue()).isEqualTo("echoService");
 
         assertThat(pageErrors).isEmpty();
     }
@@ -149,34 +151,35 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                         .withHeader("X-Casual-Buffer-Type", "X_OCTET")
                         .withBody(new byte[] {0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x21})));
 
-        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#casual");
-        page.waitForSelector("#tab-casual.active");
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester?proto=casual");
+        page.waitForSelector("#tab-tester.active");
+        page.waitForSelector("#btn-tester-proto-casual.active");
 
-        page.locator("#casual-target-port").fill(String.valueOf(casualGateway.getPort()));
-        page.locator("#casual-service-name").fill("binaryService");
-        page.locator("#casual-buffer-type").selectOption("X_OCTET");
+        page.locator("#tester-casual-port").fill(String.valueOf(casualGateway.getPort()));
+        page.locator("#tester-casual-service").fill("binaryService");
+        page.locator("#tester-casual-buffer").selectOption("X_OCTET");
 
-        page.locator("#casual-payload-encoding").selectOption("hex");
-        page.locator("#casual-request-payload").fill("01 02 03 04");
+        page.locator("#tester-casual-encoding").selectOption("hex");
+        page.locator("#tester-body").fill("01 02 03 04");
 
-        page.locator("#btn-casual-send").click();
+        page.locator("#btn-tester-send-casual").click();
 
-        page.waitForSelector("#casual-response-status:has-text('OK')");
-        assertThat(page.locator("#casual-response-status").textContent()).contains("OK (0)");
+        page.waitForSelector("#tester-response-status:has-text('OK')");
+        assertThat(page.locator("#tester-response-status").textContent()).contains("OK (0)");
 
-        assertThat(page.locator("#casual-response-code").textContent()).contains("6 B");
+        assertThat(page.locator("#tester-response-code").textContent()).contains("6 B");
 
-        Locator downloadBtn = page.locator("#btn-casual-download-binary");
+        Locator downloadBtn = page.locator("#btn-tester-download-binary");
         assertThat(downloadBtn.isVisible()).isTrue();
 
-        Locator bodyEl = page.locator("#casual-response-body");
+        Locator bodyEl = page.locator("#tester-response-body");
         assertThat(bodyEl.textContent()).contains("48 65 6C 6C 6F 21");
         assertThat(bodyEl.textContent()).contains("|Hello!|");
 
-        page.locator("#btn-casual-view-raw").click();
+        page.locator("#btn-view-raw").click();
         assertThat(bodyEl.textContent()).contains("SGVsbG8h");
 
-        page.locator("#btn-casual-view-hex").click();
+        page.locator("#btn-view-hex").click();
         assertThat(bodyEl.textContent()).contains("48 65 6C 6C 6F 21");
 
         assertThat(pageErrors).isEmpty();
@@ -241,22 +244,23 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(replayBtn.textContent()).contains("Replay in Casual Tester");
             replayBtn.click();
 
-            // 4. Verify tab switched to Casual Tester with pre-filled service and payload
-            page.waitForSelector("#tab-casual.active");
-            assertThat(page.locator("#casual-service-name").inputValue()).isEqualTo("upstreamEcho");
-            assertThat(page.locator("#casual-request-payload").inputValue()).contains("\"clientCall\": 1");
-            assertThat(page.locator("#casual-request-headers").inputValue()).contains("X-Casual-Service: upstreamEcho");
+            // 4. Verify tab switched to Unified Tester (Casual protocol) with pre-filled service and payload
+            page.waitForSelector("#tab-tester.active");
+            page.waitForSelector("#btn-tester-proto-casual.active");
+            assertThat(page.locator("#tester-casual-service").inputValue()).isEqualTo("upstreamEcho");
+            assertThat(page.locator("#tester-body").inputValue()).contains("\"clientCall\": 1");
+            assertThat(page.locator("#tester-casual-headers").inputValue()).contains("X-Casual-Service: upstreamEcho");
 
-            // 5. Send replayed request from Casual Tester
-            page.locator("#btn-casual-send").click();
+            // 5. Send replayed request from Unified Tester
+            page.locator("#btn-tester-send-casual").click();
 
-            // 6. Verify response in Casual Tester is received from upstream
-            page.waitForSelector("#casual-response-status:has-text('OK')");
-            assertThat(page.locator("#casual-response-status").textContent()).contains("OK (0)");
-            Locator responseBody = page.locator("#casual-response-body");
+            // 6. Verify response in Unified Tester is received from upstream
+            page.waitForSelector("#tester-response-status:has-text('OK')");
+            assertThat(page.locator("#tester-response-status").textContent()).contains("OK (0)");
+            Locator responseBody = page.locator("#tester-response-body");
             assertThat(responseBody.textContent()).contains("\"upstream\": true");
             assertThat(responseBody.textContent()).contains("\"received\": \"proxyOK\"");
-            Locator responseHeaders = page.locator("#casual-response-headers");
+            Locator responseHeaders = page.locator("#tester-response-headers");
             assertThat(responseHeaders.isVisible()).isTrue();
             assertThat(responseHeaders.textContent()).contains("X-Casual-Error-State: OK");
 

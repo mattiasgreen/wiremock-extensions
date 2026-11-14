@@ -73,21 +73,6 @@ import {
   updateTargetHostDisplay,
   initTargetConnectionModal
 } from './modules/settings.js';
-import {
-  initCasualTester,
-  executeCasualRequest,
-  formatCasualJsonPayload,
-  resetCasualForm,
-  setCasualViewMode,
-  setCasualInspectorTab,
-  appendCasualHeader,
-  clearCasualHistory,
-  toggleCasualHistory,
-  setCasualHistoryCollapsed,
-  updateCasualRoute,
-  handleCasualFileUpload,
-  downloadCasualBinaryResponse
-} from './modules/casual-tester.js';
 import { setupOpenApiModal } from './modules/openapi.js';
 import {
   renderProjectSelector,
@@ -244,7 +229,6 @@ initStubsTab();
 initStubLifecycleHandlers();
 initJournalTab();
 initTesterTab();
-initCasualTester();
 initScenariosTab();
 initTargetConnectionModal({ loadData, loadVersionInfo });
 initNetEmTab();
@@ -282,10 +266,22 @@ registerRouteHandlers({
       renderJournal();
     }
   },
-  applyTester: (params) => {
-    const proto = params.get('proto');
+  applyTester: (params, forcedProto = null) => {
+    const proto = forcedProto || params.get('proto');
     if (proto) {
       switchTesterProtocol(proto, false);
+    }
+    if (proto === 'casual') {
+      const s = params.get('s');
+      if (s && elements.testerCasualService) elements.testerCasualService.value = s;
+      const buf = params.get('b');
+      if (buf && elements.testerCasualBuffer) elements.testerCasualBuffer.value = buf;
+      const p = params.get('p');
+      if (p && elements.testerBody) {
+        elements.testerBody.value = fromBase64(p);
+        if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
+      }
+      return;
     }
     const m = params.get('m');
     if (m && elements.testerMethod) elements.testerMethod.value = m;
@@ -294,16 +290,10 @@ registerRouteHandlers({
     const h = params.get('h');
     if (h && elements.testerHeaders) elements.testerHeaders.value = fromBase64(h);
     const b = params.get('b');
-    if (b && elements.testerBody) elements.testerBody.value = fromBase64(b);
-  },
-  applyCasual: (params) => {
-    switchTesterProtocol('casual', false);
-    const s = params.get('s');
-    if (s && elements.casualServiceName) elements.casualServiceName.value = s;
-    const b = params.get('b');
-    if (b && elements.casualBufferType) elements.casualBufferType.value = b;
-    const p = params.get('p');
-    if (p && elements.casualRequestPayload) elements.casualRequestPayload.value = fromBase64(p);
+    if (b && elements.testerBody) {
+      elements.testerBody.value = fromBase64(b);
+      if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
+    }
   },
   applyNetEm: () => {
     activateNetEm();

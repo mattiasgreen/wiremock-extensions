@@ -165,7 +165,8 @@ export const state = {
     lifecycle: true,
     stateful: true,
     netem: true,
-    metrics: true
+    metrics: true,
+    casual: true
   },
   capabilitiesDetected: false
 };

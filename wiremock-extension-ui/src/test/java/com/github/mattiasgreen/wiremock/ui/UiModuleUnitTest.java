@@ -2318,16 +2318,16 @@ public class UiModuleUnitTest {
                 """
             async () => {
                 const { elements } = await import('./modules/dom.js');
-                const { updateCasualRequestPill, initCasualTester } = await import('./modules/casual-tester.js');
-                const { displayResponseResult } = await import('./modules/tester.js');
+                const { displayResponseResult, updateTesterRequestPill, switchTesterProtocol } = await import('./modules/tester.js');
                 const { demoBackend } = await import('./modules/demo-backend.js');
 
-                // 1. Casual Request Pill with ISO-8859-1 header
-                if (elements.casualBufferType) elements.casualBufferType.value = 'CSTRING';
-                if (elements.casualRequestHeaders) elements.casualRequestHeaders.value = 'Content-Type: text/plain; charset=ISO-8859-1\\nX-Casual-Service: echoService';
-                if (elements.casualRequestPayload) elements.casualRequestPayload.value = 'Åke Söderström';
-                updateCasualRequestPill();
-                const casualReqPillText = document.getElementById('casual-request-top-pill')?.textContent || '';
+                // 1. Casual Request Pill with ISO-8859-1 header inside Unified Tester
+                switchTesterProtocol('casual', false);
+                if (elements.testerCasualBuffer) elements.testerCasualBuffer.value = 'CSTRING';
+                if (elements.testerCasualHeaders) elements.testerCasualHeaders.value = 'Content-Type: text/plain; charset=ISO-8859-1\\nX-Casual-Service: echoService';
+                if (elements.testerBody) elements.testerBody.value = 'Åke Söderström';
+                updateTesterRequestPill();
+                const casualReqPillText = document.getElementById('tester-request-top-pill')?.textContent || '';
 
                 // 2. HTTP Tester Response Pill with KOI8-R header
                 displayResponseResult(
