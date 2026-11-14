@@ -1,65 +1,79 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.admin.model.ListStubMappingsResult;
-import com.github.tomakehurst.wiremock.common.Json;
+import com.github.tomakehurst.wiremock.common.FileSource;
+import com.github.tomakehurst.wiremock.core.Options;
+import com.github.tomakehurst.wiremock.extension.Extension;
+import com.github.tomakehurst.wiremock.extension.ExtensionDeclarations;
 import com.github.tomakehurst.wiremock.extension.Parameters;
 import com.github.tomakehurst.wiremock.extension.ServeEventListener;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import com.github.tomakehurst.wiremock.http.Request;
+import com.github.tomakehurst.wiremock.store.Stores;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Production {@link CasualStorePort} adapter connecting the Casual gateway to WireMock
- * via {@link WireMockServices} SPI, {@link WireMockServer}, or HTTP admin API.
+ * In-process {@link CasualStorePort} adapter connecting the Casual gateway directly to WireMock
+ * public store and extension contracts ({@link WireMockServices}, {@link WireMockServer},
+ * {@link Options}, and {@link Stores}) with zero reflection or HTTP loopback calls.
  */
-public class WireMockStoreAdapter implements CasualStorePort {
+public final class WireMockStoreAdapter implements CasualStorePort {
 
     private static final Logger LOG = LoggerFactory.getLogger(WireMockStoreAdapter.class);
 
     private final WireMockServer wireMockServer;
     private final WireMockServices wireMockServices;
-    private final String baseUrl;
-    private final HttpClient httpClient;
+    private final String explicitBaseUrl;
 
     public WireMockStoreAdapter(WireMockServer wireMockServer) {
-        this(wireMockServer, null, wireMockServer != null ? wireMockServer.baseUrl() : null);
+        this(Objects.requireNonNull(wireMockServer, "wireMockServer must not be null"), null, null);
     }
 
     public WireMockStoreAdapter(WireMockServices wireMockServices, String baseUrl) {
-        this(null, wireMockServices, baseUrl);
+        this(null, Objects.requireNonNull(wireMockServices, "wireMockServices must not be null"), baseUrl);
     }
 
     public WireMockStoreAdapter(WireMockServer wireMockServer, WireMockServices wireMockServices, String baseUrl) {
+        if (wireMockServer == null && wireMockServices == null) {
+            throw new IllegalArgumentException(
+                    "In-process WireMockStoreAdapter requires WireMockServer or WireMockServices (use HttpCasualStoreAdapter for remote URLs)");
+        }
         this.wireMockServer = wireMockServer;
         this.wireMockServices = wireMockServices;
-        this.baseUrl = baseUrl != null
-                ? baseUrl
-                : (wireMockServer != null ? wireMockServer.baseUrl() : "http://localhost:8080");
-        this.httpClient =
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+        this.explicitBaseUrl = normalizeOptionalBaseUrl(baseUrl);
+    }
+
+    private static String normalizeOptionalBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return null;
+        }
+        String trimmed = baseUrl.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     @Override
     public Optional<StubMapping> findMatchingStub(Request request) {
+        if (request == null) {
+            return Optional.empty();
+        }
         List<StubMapping> mappings = new ArrayList<>(getActiveStubMappings());
         mappings.sort((a, b) -> {
             int pa = a.getPriority() != null ? a.getPriority() : 5;
@@ -78,50 +92,21 @@ public class WireMockStoreAdapter implements CasualStorePort {
 
     @Override
     public List<StubMapping> getActiveStubMappings() {
-        if (wireMockServices != null) {
-            try {
-                return excludeParkedStubs(
-                        wireMockServices.getStores().getStubStore().getAll());
-            } catch (Exception ignored) {
-            }
-        }
         if (wireMockServer != null) {
             return excludeParkedStubs(wireMockServer.getStubMappings().stream());
         }
-        Optional<WireMockServices> servicesOpt = CasualRegistry.getInstance().getWireMockServices();
-        if (servicesOpt.isPresent()) {
+        Stores stores = resolveStores();
+        if (stores != null && stores.getStubStore() != null) {
             try {
-                return excludeParkedStubs(
-                        servicesOpt.get().getStores().getStubStore().getAll());
-            } catch (Exception ignored) {
-            }
-        }
-        if (baseUrl != null && !baseUrl.isBlank()) {
-            try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(baseUrl + "/__admin/mappings"))
-                        .GET()
-                        .timeout(Duration.ofSeconds(2))
-                        .build();
-                HttpResponse<String> response =
-                        httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-                if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    ListStubMappingsResult result = Json.read(response.body(), ListStubMappingsResult.class);
-                    if (result != null && result.getMappings() != null) {
-                        return excludeParkedStubs(result.getMappings().stream());
-                    }
-                }
-            } catch (IOException | InterruptedException | RuntimeException e) {
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                LOG.debug("Failed to query WireMock mappings over HTTP: {}", e.getMessage());
+                return excludeParkedStubs(stores.getStubStore().getAll());
+            } catch (RuntimeException e) {
+                LOG.debug("Could not query StubStore directly: {}", sanitize(e.getMessage()));
             }
         }
         return Collections.emptyList();
     }
 
-    private static List<StubMapping> excludeParkedStubs(java.util.stream.Stream<StubMapping> stubs) {
+    private static List<StubMapping> excludeParkedStubs(Stream<StubMapping> stubs) {
         return stubs.filter(s -> s != null && (s.getPriority() == null || s.getPriority() < 100))
                 .toList();
     }
@@ -131,66 +116,38 @@ public class WireMockStoreAdapter implements CasualStorePort {
         if (bodyFileName == null || bodyFileName.isBlank()) {
             return null;
         }
-        if (wireMockServices != null) {
+        Stores stores = resolveStores();
+        if (stores != null && stores.getFilesBlobStore() != null) {
             try {
-                byte[] bytes = wireMockServices
-                        .getStores()
-                        .getFilesBlobStore()
-                        .getStreamSource(bodyFileName)
-                        .getStream()
-                        .readAllBytes();
-                if (bytes != null && bytes.length > 0) {
-                    return new String(bytes, StandardCharsets.UTF_8);
-                }
-            } catch (IOException | RuntimeException ignored) {
-            }
-        }
-        if (wireMockServer != null) {
-            try {
-                Field appField = WireMockServer.class.getDeclaredField("wireMockApp");
-                appField.setAccessible(true);
-                Object wireMockApp = appField.get(wireMockServer);
-                Field storesField = wireMockApp.getClass().getDeclaredField("stores");
-                storesField.setAccessible(true);
-                com.github.tomakehurst.wiremock.store.Stores stores =
-                        (com.github.tomakehurst.wiremock.store.Stores) storesField.get(wireMockApp);
-                if (stores != null && stores.getFilesBlobStore() != null) {
-                    byte[] bytes = stores.getFilesBlobStore()
-                            .getStreamSource(bodyFileName)
-                            .getStream()
-                            .readAllBytes();
-                    if (bytes != null && bytes.length > 0) {
-                        return new String(bytes, StandardCharsets.UTF_8);
+                Optional<InputStream> streamOpt = stores.getFilesBlobStore().getStream(bodyFileName);
+                if (streamOpt.isPresent()) {
+                    try (InputStream in = streamOpt.get()) {
+                        byte[] bytes = in.readAllBytes();
+                        if (bytes.length > 0) {
+                            return new String(bytes, StandardCharsets.UTF_8);
+                        }
                     }
                 }
-            } catch (ReflectiveOperationException | IOException | RuntimeException ignored) {
-            }
-            try {
-                byte[] bytes = wireMockServer
-                        .getOptions()
-                        .filesRoot()
-                        .getBinaryFileNamed(bodyFileName)
-                        .readContents();
-                if (bytes != null && bytes.length > 0) {
-                    return new String(bytes, StandardCharsets.UTF_8);
-                }
-            } catch (RuntimeException ignored) {
+            } catch (IOException | RuntimeException e) {
+                LOG.debug(
+                        "Could not read body file '{}' from BlobStore: {}",
+                        sanitize(bodyFileName),
+                        sanitize(e.getMessage()));
             }
         }
-        Optional<WireMockServices> servicesOpt = CasualRegistry.getInstance().getWireMockServices();
-        if (servicesOpt.isPresent()) {
+
+        FileSource filesRoot = resolveFilesRoot();
+        if (filesRoot != null) {
             try {
-                byte[] bytes = servicesOpt
-                        .get()
-                        .getStores()
-                        .getFilesBlobStore()
-                        .getStreamSource(bodyFileName)
-                        .getStream()
-                        .readAllBytes();
+                byte[] bytes = filesRoot.getBinaryFileNamed(bodyFileName).readContents();
                 if (bytes != null && bytes.length > 0) {
                     return new String(bytes, StandardCharsets.UTF_8);
                 }
-            } catch (IOException | RuntimeException ignored) {
+            } catch (RuntimeException e) {
+                LOG.debug(
+                        "Could not read body file '{}' from FileSource: {}",
+                        sanitize(bodyFileName),
+                        sanitize(e.getMessage()));
             }
         }
         return null;
@@ -198,103 +155,155 @@ public class WireMockStoreAdapter implements CasualStorePort {
 
     @Override
     public void recordServeEvent(ServeEvent serveEvent) {
+        if (serveEvent == null) {
+            return;
+        }
         recordServeEventInJournal(serveEvent);
         notifyServeEventListeners(serveEvent);
     }
 
     private void recordServeEventInJournal(ServeEvent serveEvent) {
-        if (wireMockServices != null) {
-            try {
-                wireMockServices.getStores().getRequestJournalStore().add(serveEvent);
-                return;
-            } catch (Exception e) {
-                LOG.debug("Could not add ServeEvent to WireMockServices RequestJournalStore: {}", e.getMessage());
-            }
+        if (wireMockServer != null
+                && wireMockServer.getOptions() != null
+                && wireMockServer.getOptions().requestJournalDisabled()) {
+            return;
         }
-        if (wireMockServer != null) {
+        Stores stores = resolveStores();
+        if (stores != null && stores.getRequestJournalStore() != null) {
             try {
-                Field appField = WireMockServer.class.getDeclaredField("wireMockApp");
-                appField.setAccessible(true);
-                Object wireMockApp = appField.get(wireMockServer);
-                try {
-                    Field storesField = wireMockApp.getClass().getDeclaredField("stores");
-                    storesField.setAccessible(true);
-                    com.github.tomakehurst.wiremock.store.Stores stores =
-                            (com.github.tomakehurst.wiremock.store.Stores) storesField.get(wireMockApp);
-                    if (stores != null && stores.getRequestJournalStore() != null) {
-                        stores.getRequestJournalStore().add(serveEvent);
-                        return;
-                    }
-                } catch (Throwable ignored) {
-                }
-            } catch (Throwable t) {
-                LOG.debug("Could not add ServeEvent to wireMockServer journal: {}", t.getMessage());
-            }
-        }
-        Optional<WireMockServices> servicesOpt = CasualRegistry.getInstance().getWireMockServices();
-        if (servicesOpt.isPresent()) {
-            try {
-                servicesOpt.get().getStores().getRequestJournalStore().add(serveEvent);
-            } catch (Exception e) {
-                LOG.debug("Could not add ServeEvent to RequestJournalStore: {}", e.getMessage());
+                stores.getRequestJournalStore().add(serveEvent);
+            } catch (RuntimeException e) {
+                LOG.debug("Could not add ServeEvent to RequestJournalStore: {}", sanitize(e.getMessage()));
             }
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void notifyServeEventListeners(ServeEvent serveEvent) {
-        Map<String, ServeEventListener> listeners = new LinkedHashMap<>();
-        if (wireMockServer != null) {
-            try {
-                Field appField = WireMockServer.class.getDeclaredField("wireMockApp");
-                appField.setAccessible(true);
-                Object wireMockApp = appField.get(wireMockServer);
-                if (wireMockApp != null) {
-                    try {
-                        Method getExtensions = wireMockApp.getClass().getMethod("getExtensions");
-                        com.github.tomakehurst.wiremock.extension.Extensions exts =
-                                (com.github.tomakehurst.wiremock.extension.Extensions)
-                                        getExtensions.invoke(wireMockApp);
-                        if (exts != null) {
-                            listeners.putAll(exts.ofType(ServeEventListener.class));
-                        }
-                    } catch (Throwable ignored) {
-                    }
-                    if (listeners.isEmpty()) {
-                        Field listenersField = wireMockApp.getClass().getDeclaredField("serveEventListeners");
-                        listenersField.setAccessible(true);
-                        Map<String, ServeEventListener> map =
-                                (Map<String, ServeEventListener>) listenersField.get(wireMockApp);
-                        if (map != null) {
-                            listeners.putAll(map);
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                LOG.debug("Could not resolve ServeEventListeners from wireMockServer: {}", t.getMessage());
-            }
-        }
-        if (listeners.isEmpty() && wireMockServices != null && wireMockServices.getExtensions() != null) {
-            listeners.putAll(wireMockServices.getExtensions().ofType(ServeEventListener.class));
-        }
-        if (listeners.isEmpty()) {
-            Optional<WireMockServices> servicesOpt =
-                    CasualRegistry.getInstance().getWireMockServices();
-            if (servicesOpt.isPresent() && servicesOpt.get().getExtensions() != null) {
-                listeners.putAll(servicesOpt.get().getExtensions().ofType(ServeEventListener.class));
-            }
-        }
-        for (ServeEventListener listener : listeners.values()) {
+        List<ServeEventListener> listeners = resolveServeEventListeners();
+        for (ServeEventListener listener : listeners) {
             try {
                 listener.afterComplete(serveEvent, Parameters.empty());
-            } catch (Throwable t) {
-                LOG.warn("Failed to notify ServeEventListener [{}]: {}", listener.getName(), t.getMessage());
+            } catch (RuntimeException e) {
+                LOG.warn(
+                        "Failed to notify ServeEventListener [{}]: {}",
+                        sanitize(listener.getName()),
+                        sanitize(e.getMessage()));
             }
         }
+    }
+
+    private List<ServeEventListener> resolveServeEventListeners() {
+        List<ServeEventListener> ordered = new ArrayList<>();
+        Set<ServeEventListener> seenInstances = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<String> seenNames = new HashSet<>();
+
+        if (wireMockServices != null && wireMockServices.getExtensions() != null) {
+            for (ServeEventListener listener : wireMockServices
+                    .getExtensions()
+                    .ofType(ServeEventListener.class)
+                    .values()) {
+                registerUniqueListener(listener, ordered, seenInstances, seenNames);
+            }
+        }
+
+        if (wireMockServer != null && wireMockServer.getOptions() != null) {
+            Options options = wireMockServer.getOptions();
+            CasualRegistry.getInstance()
+                    .getWireMockServices(options.getStores())
+                    .filter(services -> services.getExtensions() != null)
+                    .ifPresent(services -> {
+                        for (ServeEventListener listener : services.getExtensions()
+                                .ofType(ServeEventListener.class)
+                                .values()) {
+                            registerUniqueListener(listener, ordered, seenInstances, seenNames);
+                        }
+                    });
+
+            ExtensionDeclarations declarations = options.getDeclaredExtensions();
+            if (declarations != null && declarations.getInstances() != null) {
+                for (Extension ext : declarations.getInstances().values()) {
+                    if (ext instanceof ServeEventListener listener) {
+                        registerUniqueListener(listener, ordered, seenInstances, seenNames);
+                    }
+                }
+            }
+        }
+
+        if (wireMockServices == null && wireMockServer == null) {
+            CasualRegistry.getInstance()
+                    .getWireMockServices()
+                    .filter(services -> services.getExtensions() != null)
+                    .ifPresent(services -> {
+                        for (ServeEventListener listener : services.getExtensions()
+                                .ofType(ServeEventListener.class)
+                                .values()) {
+                            registerUniqueListener(listener, ordered, seenInstances, seenNames);
+                        }
+                    });
+        }
+
+        return ordered;
+    }
+
+    private static void registerUniqueListener(
+            ServeEventListener listener,
+            List<ServeEventListener> ordered,
+            Set<ServeEventListener> seenInstances,
+            Set<String> seenNames) {
+        if (listener == null || !seenInstances.add(listener)) {
+            return;
+        }
+        String name = listener.getName();
+        if (name != null && !seenNames.add(name)) {
+            return;
+        }
+        ordered.add(listener);
+    }
+
+    private Stores resolveStores() {
+        if (wireMockServices != null && wireMockServices.getStores() != null) {
+            return wireMockServices.getStores();
+        }
+        if (wireMockServer != null
+                && wireMockServer.getOptions() != null
+                && wireMockServer.getOptions().getStores() != null) {
+            return wireMockServer.getOptions().getStores();
+        }
+        return CasualRegistry.getInstance()
+                .getWireMockServices()
+                .map(WireMockServices::getStores)
+                .orElse(null);
+    }
+
+    private FileSource resolveFilesRoot() {
+        if (wireMockServices != null && wireMockServices.getFiles() != null) {
+            return wireMockServices.getFiles();
+        }
+        if (wireMockServer != null && wireMockServer.getOptions() != null) {
+            return wireMockServer.getOptions().filesRoot();
+        }
+        return CasualRegistry.getInstance()
+                .getWireMockServices()
+                .map(WireMockServices::getFiles)
+                .orElse(null);
     }
 
     @Override
     public String getBaseUrl() {
-        return baseUrl;
+        if (explicitBaseUrl != null) {
+            return explicitBaseUrl;
+        }
+        if (wireMockServer != null && wireMockServer.isRunning()) {
+            try {
+                return wireMockServer.baseUrl();
+            } catch (IllegalStateException ignored) {
+                // Fall back when HTTP listener is disabled
+            }
+        }
+        return "http://localhost:8080";
+    }
+
+    private static String sanitize(String value) {
+        return value != null ? value.replace('\r', ' ').replace('\n', ' ') : "";
     }
 }

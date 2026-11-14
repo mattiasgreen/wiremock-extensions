@@ -78,13 +78,9 @@
         <Bug pattern="CRLF_INJECTION_LOGS,SECCRLFLOG"/>
     </Match>
 
-    <!-- Exclude reflection setAccessible for dynamic field table reloading and WireMock server reflection in casual extension -->
+    <!-- Exclude reflection setAccessible for dynamic field table reloading in casual extension -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.casual.CasualBufferUtils"/>
-        <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED"/>
-    </Match>
-    <Match>
-        <Class name="com.github.mattiasgreen.wiremock.casual.WireMockStoreAdapter"/>
         <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED"/>
     </Match>
 </FindBugsFilter>

@@ -1,8 +1,12 @@
 package com.github.mattiasgreen.wiremock.casual;
 
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
+import com.github.tomakehurst.wiremock.store.Stores;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +24,7 @@ public class CasualRegistry {
             new AtomicReference<>(CasualConfiguration.fromEnvironment());
     private final AtomicReference<CasualWireMockGateway> gatewayRef = new AtomicReference<>(null);
     private final AtomicReference<WireMockServices> servicesRef = new AtomicReference<>(null);
+    private final Map<Stores, WireMockServices> servicesByStores = Collections.synchronizedMap(new WeakHashMap<>());
 
     private CasualRegistry() {}
 
@@ -47,8 +52,26 @@ public class CasualRegistry {
         return Optional.ofNullable(servicesRef.get());
     }
 
+    public Optional<WireMockServices> getWireMockServices(Stores stores) {
+        if (stores == null) {
+            return getWireMockServices();
+        }
+        WireMockServices mapped = servicesByStores.get(stores);
+        if (mapped != null) {
+            return Optional.of(mapped);
+        }
+        WireMockServices fallback = servicesRef.get();
+        if (fallback != null && fallback.getStores() == stores) {
+            return Optional.of(fallback);
+        }
+        return Optional.empty();
+    }
+
     public void setWireMockServices(WireMockServices services) {
         servicesRef.set(services);
+        if (services != null && services.getStores() != null) {
+            servicesByStores.put(services.getStores(), services);
+        }
     }
 
     public synchronized CasualConfiguration updateConfig(CasualConfiguration newConfig) {
