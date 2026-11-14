@@ -1,3 +1,11 @@
+sourceSets {
+    main {
+        java {
+            srcDir rootProject.file('shared/traffic-support/src/main/java')
+        }
+    }
+}
+
 dependencies {
     implementation libs.logback.classic
     implementation libs.logstash.logback.encoder
