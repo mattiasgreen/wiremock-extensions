@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMetadata;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMode;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,11 +25,7 @@ class AsyncEngineBridgeTest {
         engine.setJournalConsumer(capturedEvents::add);
 
         // Register mock stub
-        engine.addMockStub("TIER_STANDARD", req -> AsyncMessage.builder()
-                .correlationId(req.correlationId())
-                .destination(req.replyTo())
-                .payload("{\"status\":\"MOCK_APPROVED\"}")
-                .build());
+        engine.addMockStub("TIER_STANDARD", "{\"status\":\"MOCK_APPROVED\"}");
 
         // System A sends message to orders.inbound on test broker
         AsyncMessage msg = AsyncMessage.builder()
@@ -105,8 +103,15 @@ class AsyncEngineBridgeTest {
         assertThat(clientReply).isNotNull();
         assertThat(clientReply.payload()).isEqualTo("{\"status\":\"UPSTREAM_VIP_OK\"}");
 
-        // Verify stub was harvested into engine catalog
-        assertThat(engine.getHarvestedStubs()).containsKey("TIER_ENTERPRISE");
+        // Verify stub was harvested into native WireMock StubMapping catalog
+        assertThat(engine.getStubStore().getAll().toList()).anySatisfy(stub -> {
+            assertThat(AsyncMetadata.from(stub.getMetadata()))
+                    .isPresent()
+                    .get()
+                    .extracting(AsyncMetadata::mode)
+                    .isEqualTo(AsyncMode.MOCK);
+            assertThat(stub.getResponse().getBody()).isEqualTo("{\"status\":\"UPSTREAM_VIP_OK\"}");
+        });
 
         // 4. Offline Replay: Send second enterprise order with upstream offline
         AsyncMessage repeatMsg = AsyncMessage.builder()

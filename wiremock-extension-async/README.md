@@ -481,10 +481,15 @@ The extension exposes management routes under `/__admin/async/` for health monit
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/__admin/async/status` | Returns active sinks, connection lease counters, and consumed/produced metrics. |
-| `GET` | `/__admin/async/journal` | Returns recent in-process async journal events (`CONSUME`, `PUBLISH`, `PROXY_FORWARD`, `ASYNC_PROXY_ERROR`). |
-| `GET` | `/__admin/async/harvested` | Returns transient wire messages harvested by the live proxy bridge before being snapshotted into stubs. *(Note: All registered async stubs are standard WireMock stubs queried via `GET /__admin/mappings`)*. |
 | `POST` | `/__admin/async/publish` | Injects a synthetic outbound message into a destination queue or topic for test harness coordination. |
 | `POST` | `/__admin/async/sinks/kafka` | Dynamically starts or reconfigures the in-process Netty Kafka wire sink. |
+
+### Core `StubStore` Evaluation & Request Journal Recording
+
+`wiremock-extension-async` stores all async mocks and proxy bridge rules directly as standard WireMock `StubMapping` records (`metadata.async`) inside WireMock's core `StubStore` rather than maintaining separate extension stub or journal endpoints:
+
+- **Unified Stub Matching & Priority Evaluation (`StubStore` / `/__admin/mappings`)**: Async stubs carry protocol metadata under `metadata.async` (`protocol`, `channel`, `ackPolicy`, or upstream bridge rewrite target) and are queried/managed via standard `/__admin/mappings` APIs. `AsyncEngine` evaluates matching `StubMapping` definitions in WireMock priority order so high-priority offline test stubs (e.g., `priority: 1–10`) supersede lower-priority live proxy bridge rules (e.g., `priority: 100+`).
+- **Unified Request Journal (`/__admin/requests` & `/__admin/ui/api/requests`)**: Inbound consumes, outbound publishes, proxy bridge forwards, and upstream bridge errors (`502` / `.dlq`) are recorded directly into WireMock's core request journal (`ServeEvent`s). Any recorded async exchange can be promoted directly into an offline stub via `/__admin/lifecycle/snapshot-template` or `/__admin/lifecycle/snapshots`.
 
 ### Example: Publish Synthetic Message via Admin API
 

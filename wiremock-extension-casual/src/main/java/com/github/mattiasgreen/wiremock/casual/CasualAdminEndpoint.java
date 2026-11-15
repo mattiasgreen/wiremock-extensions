@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.laz.casual.network.protocol.messages.domain.CasualDomainDiscoveryReplyMessage;
@@ -28,16 +29,22 @@ public class CasualAdminEndpoint implements AdminApiExtension {
     public static final String EXTENSION_NAME = "casual-admin-endpoint";
     private static final Logger LOG = LoggerFactory.getLogger(CasualAdminEndpoint.class);
 
-    private final CasualRegistry registry;
+    private final Supplier<CasualRegistry> registrySupplier;
     private final ObjectMapper objectMapper;
 
     public CasualAdminEndpoint() {
-        this(CasualRegistry.getInstance());
+        this.registrySupplier = CasualRegistry::getInstance;
+        this.objectMapper = new ObjectMapper();
     }
 
     public CasualAdminEndpoint(CasualRegistry registry) {
-        this.registry = Objects.requireNonNull(registry, "registry must not be null");
+        Objects.requireNonNull(registry, "registry must not be null");
+        this.registrySupplier = () -> registry;
         this.objectMapper = new ObjectMapper();
+    }
+
+    private CasualRegistry registry() {
+        return registrySupplier.get();
     }
 
     @Override
@@ -105,10 +112,11 @@ public class CasualAdminEndpoint implements AdminApiExtension {
 
             int port = root.hasNonNull("port") ? root.get("port").asInt() : 0;
             if (port <= 0
-                    || (registry.getGateway().isPresent()
+                    || (registry().getGateway().isPresent()
                             && port == CasualConfiguration.DEFAULT_PORT
                             && (host.equals("127.0.0.1") || host.equalsIgnoreCase("localhost")))) {
-                port = registry.getGateway()
+                port = registry()
+                        .getGateway()
                         .map(CasualWireMockGateway::getPort)
                         .orElse(port > 0 ? port : CasualClient.DEFAULT_PORT);
             }
@@ -248,10 +256,11 @@ public class CasualAdminEndpoint implements AdminApiExtension {
             }
 
             if (port <= 0
-                    || (registry.getGateway().isPresent()
+                    || (registry().getGateway().isPresent()
                             && port == CasualConfiguration.DEFAULT_PORT
                             && (host.equals("127.0.0.1") || host.equalsIgnoreCase("localhost")))) {
-                port = registry.getGateway()
+                port = registry()
+                        .getGateway()
                         .map(CasualWireMockGateway::getPort)
                         .orElse(port > 0 ? port : CasualClient.DEFAULT_PORT);
             }
@@ -292,12 +301,15 @@ public class CasualAdminEndpoint implements AdminApiExtension {
 
     private ResponseDefinition getConfigJson() {
         try {
-            CasualConfiguration config = registry.getConfig();
+            CasualConfiguration config = registry().getConfig();
             Map<String, Object> map = config.toMap();
             map.put(
                     "running",
-                    registry.getGateway().map(CasualWireMockGateway::isRunning).orElse(false));
-            registry.getGateway().ifPresent(gw -> map.put("port", gw.getPort()));
+                    registry()
+                            .getGateway()
+                            .map(CasualWireMockGateway::isRunning)
+                            .orElse(false));
+            registry().getGateway().ifPresent(gw -> map.put("port", gw.getPort()));
             String json = objectMapper.writeValueAsString(map);
             return jsonResponse(200, json);
         } catch (JsonProcessingException e) {
@@ -313,11 +325,14 @@ public class CasualAdminEndpoint implements AdminApiExtension {
 
         try {
             CasualConfiguration update = objectMapper.readValue(body, CasualConfiguration.class);
-            CasualConfiguration updated = registry.updateConfig(update);
+            CasualConfiguration updated = registry().updateConfig(update);
             Map<String, Object> map = updated.toMap();
             map.put(
                     "running",
-                    registry.getGateway().map(CasualWireMockGateway::isRunning).orElse(false));
+                    registry()
+                            .getGateway()
+                            .map(CasualWireMockGateway::isRunning)
+                            .orElse(false));
             String json = objectMapper.writeValueAsString(map);
             return jsonResponse(200, json);
         } catch (JsonProcessingException | IllegalArgumentException e) {
@@ -329,7 +344,7 @@ public class CasualAdminEndpoint implements AdminApiExtension {
     }
 
     private ResponseDefinition resetConfig() {
-        registry.reset();
+        registry().reset();
         return getConfigJson();
     }
 

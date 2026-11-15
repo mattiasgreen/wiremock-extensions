@@ -39,11 +39,7 @@ class AsyncPriorityBridgeTest {
     @Test
     @DisplayName("High-priority mock stub should intercept message and isolate upstream completely")
     void shouldInterceptWithHighPriorityMockStub() {
-        engine.addMockStub("VIP-ORDER", msg -> AsyncMessage.builder()
-                .correlationId(msg.correlationId())
-                .destination(msg.replyTo())
-                .payload("{\"status\":\"CONFIRMED_VIP\"}")
-                .build());
+        engine.addMockStub("VIP-ORDER", "{\"status\":\"CONFIRMED_VIP\"}");
 
         // Publish to test broker
         AsyncMessage msg = AsyncMessage.builder()

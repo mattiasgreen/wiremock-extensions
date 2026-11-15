@@ -17,10 +17,10 @@ configurations {
 }
 
 dependencies {
+    api project(':wiremock-extension-common')
     api project(':wiremock-extension-json-logging')
     api project(':wiremock-extension-otel')
     api project(':wiremock-extension-openapi')
-    api project(':wiremock-extension-stateful')
     api project(':wiremock-extension-ui')
     api project(':wiremock-extension-tcp-netem')
     api project(':wiremock-extension-casual')
@@ -62,7 +62,7 @@ tasks.register('runWithArtemis', JavaExec) {
 tasks.register('runUpstream', JavaExec) {
     group = 'application'
     description = 'Runs simulated upstream mock service on port 8089 for live proxy testing'
-    classpath = sourceSets.main.runtimeClasspath
+    classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.github.mattiasgreen.wiremock.bundle.UpstreamMockServer'
 }
 
@@ -71,7 +71,7 @@ def configureStandaloneShadow = { task, String classifier ->
     task.mergeServiceFiles()
     task.manifest {
         attributes(
-            'Main-Class': 'com.github.tomakehurst.wiremock.standalone.WireMockServerRunner',
+            'Main-Class': 'com.github.mattiasgreen.wiremock.bundle.StandaloneDevServer',
             'Implementation-Title': 'WireMock Standalone with Extensions',
             'Implementation-Version': project.version
         )

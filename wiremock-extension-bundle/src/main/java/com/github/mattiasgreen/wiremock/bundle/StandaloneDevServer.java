@@ -4,11 +4,16 @@ import com.github.mattiasgreen.wiremock.casual.CasualConfiguration;
 import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.mattiasgreen.wiremock.journal.store.CompressedStores;
-import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
+import com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.common.FileSource;
 import com.github.tomakehurst.wiremock.common.SingleRootFileSource;
+import com.github.tomakehurst.wiremock.core.Version;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.standalone.CommandLineOptions;
+import java.util.ArrayList;
+import java.util.List;
 
 public class StandaloneDevServer {
 
@@ -21,12 +26,17 @@ public class StandaloneDevServer {
             printHelp();
             return;
         }
-        int port = parseMainPort(args, 8080);
-        String rootDir = parseRootDir(args, ".");
-        WireMockServer server = startServer(port, rootDir);
+        CommandLineOptions cli = new CommandLineOptions(normalizeArgs(args));
+        if (cli.version()) {
+            System.out.println(Version.getCurrentVersion());
+            return;
+        }
+        String rootDir = resolveRootDir(cli);
+        WireMockServer server = startServer(cli);
 
         int netemPort = resolveNetEmPort(server.port());
-        CasualConfiguration casualConfig = CasualRegistry.getInstance().getConfig();
+        CasualRegistry casualRegistry = CasualRegistry.getInstance();
+        CasualConfiguration casualConfig = casualRegistry.getConfig();
 
         System.out.println("=================================================================");
         System.out.println("🚀 WireMock Suite Server running at http://localhost:" + server.port());
@@ -35,7 +45,7 @@ public class StandaloneDevServer {
         System.out.println(
                 "👉 TCP NetEm Ingress:   http://localhost:" + netemPort + " (dual-ingress -> :" + server.port() + ")");
         if (casualConfig.isEnabled()) {
-            int casualPort = CasualRegistry.getInstance()
+            int casualPort = casualRegistry
                     .getGateway()
                     .map(CasualWireMockGateway::getPort)
                     .orElse(casualConfig.getPort());
@@ -75,6 +85,7 @@ public class StandaloneDevServer {
         System.out.println("Options:");
         System.out.println("  --port <port>             HTTP port to bind (default: 8080)");
         System.out.println("  --root-dir <path>         Path for mappings and __files (default: .)");
+        System.out.println("  --version                 Print WireMock version and exit");
         System.out.println("  --help, -h                Show this help message");
         System.out.println();
         System.out.println("Environment Variables:");
@@ -82,8 +93,9 @@ public class StandaloneDevServer {
         System.out.println("  WIREMOCK_CASUAL_PORT      Dedicated TCP port for Casual / XATMI gateway (default: 7772)");
         System.out.println("  WIREMOCK_CASUAL_ENABLED   Enable/disable Casual TCP gateway (default: true)");
         System.out.println();
-        System.out.println("For standard WireMock CLI options, run with WireMock runner:");
-        System.out.println("  java -cp wiremock-*-standalone.jar wiremock.Run --help");
+        System.out.println("Standard WireMock CLI options (such as --bind-address, --global-response-templating,");
+        System.out.println(
+                "--max-request-journal-entries, --no-request-journal, --enable-stub-cors) are also supported.");
     }
 
     public static String parseRootDir(String[] args, String defaultDir) {
@@ -164,27 +176,60 @@ public class StandaloneDevServer {
     }
 
     public static WireMockServer startServer(int port, String rootDir) {
+        String effectiveRootDir = (rootDir != null && !rootDir.isBlank()) ? rootDir : ".";
+        return startServer("--port", String.valueOf(port), "--root-dir", effectiveRootDir);
+    }
+
+    /**
+     * Parses WireMock CLI options via {@link CommandLineOptions} and launches the bundled server
+     * with Zstandard journal stores, extension scanning, TCP NetEm proxy, and Casual gateway.
+     *
+     * @param args CLI arguments (bare leading integer is normalized to {@code --port <port>})
+     * @return started {@link WireMockServer} instance
+     */
+    public static WireMockServer startServer(String... args) {
+        CommandLineOptions cli = new CommandLineOptions(normalizeArgs(args));
+        return startServer(cli);
+    }
+
+    private static WireMockServer startServer(CommandLineOptions cli) {
         System.setProperty("wiremock.verbose.json", "true");
 
-        String effectiveRootDir = (rootDir != null && !rootDir.isBlank()) ? rootDir : ".";
+        String effectiveRootDir = resolveRootDir(cli);
         WireMockConfiguration options = WireMockConfiguration.options()
-                .port(port)
+                .port(cli.portNumber())
                 .usingFilesUnderDirectory(effectiveRootDir)
                 .withStores(new CompressedStores(new SingleRootFileSource(effectiveRootDir)))
-                .extensionScanningEnabled(true);
+                .extensionScanningEnabled(true)
+                .templatingEnabled(cli.getResponseTemplatingEnabled())
+                .globalTemplating(cli.getResponseTemplatingGlobal())
+                .stubCorsEnabled(cli.getStubCorsEnabled())
+                .gzipDisabled(cli.getGzipDisabled())
+                .enableBrowserProxying(cli.browserProxySettings() != null
+                        && cli.browserProxySettings().enabled());
+
+        if (cli.bindAddress() != null && !cli.bindAddress().isBlank()) {
+            options.bindAddress(cli.bindAddress());
+        }
+        if (cli.requestJournalDisabled()) {
+            options.disableRequestJournal();
+        }
+        cli.maxRequestJournalEntries().ifPresent(options::maxRequestJournalEntries);
+
         WireMockServer server = new WireMockServer(options);
         server.start();
 
         int netemPort = resolveNetEmPort(server.port());
         try {
-            TcpNetEmRegistry.getInstance()
+            NetEmEngine.getDefault()
                     .register(new NetEmProxyConfig("wiremock-netem", netemPort, "127.0.0.1", server.port(), true));
         } catch (Exception e) {
             System.err.println("Could not bind default TCP NetEm proxy on port " + netemPort + ": " + e.getMessage());
         }
 
         CasualConfiguration casualConfig = CasualConfiguration.fromEnvironment();
-        CasualRegistry.getInstance().setConfig(casualConfig);
+        CasualRegistry casualRegistry = CasualRegistry.getInstance();
+        casualRegistry.setConfig(casualConfig);
 
         if (casualConfig.isEnabled()) {
             try {
@@ -193,7 +238,7 @@ public class StandaloneDevServer {
                         .wireMockServer(server)
                         .build();
                 casualGateway.start();
-                CasualRegistry.getInstance().setGateway(casualGateway);
+                casualRegistry.setGateway(casualGateway);
             } catch (Exception e) {
                 System.err.println("Could not bind default Casual TCP gateway on port " + casualConfig.getPort() + ": "
                         + e.getMessage());
@@ -201,5 +246,70 @@ public class StandaloneDevServer {
         }
 
         return server;
+    }
+
+    static String[] normalizeArgs(String... args) {
+        if (args == null || args.length == 0) {
+            return new String[0];
+        }
+        boolean hasPortFlag = false;
+        for (String arg : args) {
+            if (arg != null
+                    && ("--port".equals(arg)
+                            || "-port".equals(arg)
+                            || arg.startsWith("--port=")
+                            || arg.startsWith("-port="))) {
+                hasPortFlag = true;
+                break;
+            }
+        }
+        List<String> normalized = new ArrayList<>(args.length + 1);
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg == null) {
+                continue;
+            }
+            if ("-port".equals(arg)) {
+                normalized.add("--port");
+            } else if (arg.startsWith("-port=")) {
+                normalized.add("--port=" + arg.substring("-port=".length()));
+            } else if ("-root-dir".equals(arg)) {
+                normalized.add("--root-dir");
+            } else if (arg.startsWith("-root-dir=")) {
+                normalized.add("--root-dir=" + arg.substring("-root-dir=".length()));
+            } else if ("-version".equalsIgnoreCase(arg)) {
+                normalized.add("--version");
+            } else if ("-help".equalsIgnoreCase(arg) || "-h".equalsIgnoreCase(arg)) {
+                normalized.add("--help");
+            } else if (!hasPortFlag && i == 0 && isInteger(arg)) {
+                normalized.add("--port");
+                normalized.add(arg);
+            } else {
+                normalized.add(arg);
+            }
+        }
+        return normalized.toArray(String[]::new);
+    }
+
+    private static String resolveRootDir(CommandLineOptions cli) {
+        FileSource filesRoot = cli.filesRoot();
+        if (filesRoot == null
+                || filesRoot.getPath() == null
+                || filesRoot.getPath().isBlank()) {
+            return ".";
+        }
+        return filesRoot.getPath();
+    }
+
+    private static boolean isInteger(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            Integer.parseInt(value);
+            return true;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 }

@@ -1,4 +1,5 @@
 dependencies {
+    implementation project(':wiremock-extension-common')
     implementation libs.jackson.databind
     implementation libs.jackson.datatype.jsr310
 }

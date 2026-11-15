@@ -141,7 +141,7 @@ class KafkaIntegrationTest {
         try (KafkaMessageBroker upstreamKafka = new KafkaMessageBroker("upstream-kafka", bootstrapServers);
                 AsyncEngine engine = AsyncEngine.create(testBroker, upstreamKafka)) {
             engine.addBridgeRule(
-                    "kafka-upstream-bridge", 100, "orders\\.outbound\\.(.*)", "upstream-kafka", "upstream.orders.$1");
+                    "kafka-upstream-bridge", 20, "orders\\.outbound\\.(.*)", "upstream-kafka", "upstream.orders.$1");
 
             AsyncMessage outbound = AsyncMessage.builder()
                     .destination("orders.outbound.processed")

@@ -8,20 +8,31 @@ import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * {@link ExtensionFactory} wiring an isolated {@link NetEmEngine} per WireMockServer instance.
+ */
 public class TcpNetEmExtensionFactory implements ExtensionFactory {
 
-    private final NetEmEngine engine;
+    private final NetEmEngine explicitEngine;
 
     public TcpNetEmExtensionFactory() {
-        this(NetEmEngine.getDefault());
+        this.explicitEngine = null;
     }
 
     public TcpNetEmExtensionFactory(NetEmEngine engine) {
-        this.engine = Objects.requireNonNull(engine, "engine must not be null");
+        this.explicitEngine = Objects.requireNonNull(engine, "engine must not be null");
     }
 
     @Override
     public List<Extension> create(WireMockServices wireMockServices) {
-        return List.of(new TcpNetEmAdminEndpoint(engine), new NetEmStubListener(engine));
+        NetEmEngine engine = explicitEngine;
+        if (engine == null) {
+            engine = new NetEmEngine();
+            NetEmEngine.setDefault(engine);
+        }
+        if (wireMockServices != null && wireMockServices.getAdmin() != null) {
+            NetEmEngine.registerForAdmin(wireMockServices.getAdmin(), engine);
+        }
+        return List.of(new TcpNetEmAdminEndpoint(engine), new NetEmStubListener(engine), engine);
     }
 }

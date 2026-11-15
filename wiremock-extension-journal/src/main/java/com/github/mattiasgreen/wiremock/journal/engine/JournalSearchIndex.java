@@ -22,6 +22,7 @@ public class JournalSearchIndex {
 
     private final ConcurrentHashMap<String, Set<UUID>> tokenToEvents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Set<String>> eventToTokens = new ConcurrentHashMap<>();
+    private final Set<UUID> completeEvents = ConcurrentHashMap.newKeySet();
 
     private final AtomicLong totalSearches = new AtomicLong(0);
     private final AtomicLong indexHits = new AtomicLong(0);
@@ -35,7 +36,14 @@ public class JournalSearchIndex {
             return;
         }
 
-        Set<String> tokens = extractTokens(event);
+        Set<String> tokens = new HashSet<>();
+        boolean complete = extractTokens(event, tokens);
+        if (complete) {
+            completeEvents.add(id);
+        } else {
+            completeEvents.remove(id);
+        }
+
         if (tokens.isEmpty()) {
             return;
         }
@@ -56,6 +64,7 @@ public class JournalSearchIndex {
             return;
         }
 
+        completeEvents.remove(id);
         Set<String> tokens = eventToTokens.remove(id);
         if (tokens != null) {
             for (String token : tokens) {
@@ -76,6 +85,48 @@ public class JournalSearchIndex {
     public void clear() {
         tokenToEvents.clear();
         eventToTokens.clear();
+        completeEvents.clear();
+    }
+
+    /**
+     * Checks whether the indexed content for {@code eventId} contains {@code rawToken}.
+     *
+     * @param eventId unique ServeEvent identifier
+     * @param rawToken search token candidate
+     * @return {@code Optional.of(true)} on token match, {@code Optional.of(false)} when the event
+     *     was completely indexed and the token is absent, or {@link Optional#empty()} when the
+     *     index cannot decide and the caller should fall back to inspecting the event directly
+     */
+    public Optional<Boolean> containsEventToken(UUID eventId, String rawToken) {
+        if (eventId == null || rawToken == null) {
+            return Optional.empty();
+        }
+        String token = rawToken.trim().toLowerCase(Locale.ROOT);
+        if (token.length() < MIN_TOKEN_LENGTH
+                || token.length() > MAX_TOKEN_LENGTH
+                || TOKEN_SPLIT_PATTERN.matcher(token).find()) {
+            return Optional.empty();
+        }
+
+        Set<String> tokens = eventToTokens.get(eventId);
+        if (tokens != null) {
+            if (tokens.contains(token)) {
+                indexHits.incrementAndGet();
+                return Optional.of(true);
+            }
+            for (String candidate : tokens) {
+                if (candidate.contains(token)) {
+                    indexHits.incrementAndGet();
+                    return Optional.of(true);
+                }
+            }
+        }
+
+        if (completeEvents.contains(eventId)) {
+            indexHits.incrementAndGet();
+            return Optional.of(false);
+        }
+        return Optional.empty();
     }
 
     /**
@@ -149,12 +200,12 @@ public class JournalSearchIndex {
         return eventToTokens.size();
     }
 
-    private Set<String> extractTokens(ServeEvent event) {
-        Set<String> tokens = new HashSet<>();
+    private boolean extractTokens(ServeEvent event, Set<String> tokens) {
+        boolean complete = true;
 
         // 1. URL path tokens and query
         if (event.getRequest() != null && event.getRequest().getUrl() != null) {
-            tokenizeInto(event.getRequest().getUrl(), tokens);
+            complete &= tokenizeInto(event.getRequest().getUrl(), tokens);
         }
 
         // 2. Correlation and Tenant Headers
@@ -166,50 +217,59 @@ public class JournalSearchIndex {
                         || key.contains("id")
                         || key.contains("service")) {
                     for (String val : header.values()) {
-                        tokenizeInto(val, tokens);
+                        complete &= tokenizeInto(val, tokens);
                     }
                 }
             }
         }
 
         // 3. Request Body Tokens
-        if (tokens.size() < MAX_TOKENS_PER_EVENT
-                && event.getRequest() != null
-                && event.getRequest().getBody() != null) {
+        if (event.getRequest() != null && event.getRequest().getBody() != null) {
             byte[] body = event.getRequest().getBody();
-            if (body.length > 0 && body.length <= 1024 * 1024) {
+            if (body.length > 1024 * 1024) {
+                complete = false;
+            } else if (body.length > 0) {
                 String text = new String(body, StandardCharsets.UTF_8);
-                tokenizeInto(text, tokens);
+                complete &= tokenizeInto(text, tokens);
             }
         }
 
         // 4. Response Body Tokens
-        if (tokens.size() < MAX_TOKENS_PER_EVENT
-                && event.getResponse() != null
-                && event.getResponse().getBody() != null) {
+        if (event.getResponse() != null && event.getResponse().getBody() != null) {
             byte[] body = event.getResponse().getBody();
-            if (body.length > 0 && body.length <= 1024 * 1024) {
+            if (body.length > 1024 * 1024) {
+                complete = false;
+            } else if (body.length > 0) {
                 String text = new String(body, StandardCharsets.UTF_8);
-                tokenizeInto(text, tokens);
+                complete &= tokenizeInto(text, tokens);
             }
         }
 
-        return tokens;
+        return complete;
     }
 
-    private void tokenizeInto(String text, Set<String> target) {
-        if (text == null || text.isBlank() || target.size() >= MAX_TOKENS_PER_EVENT) {
-            return;
+    private boolean tokenizeInto(String text, Set<String> target) {
+        if (text == null || text.isBlank()) {
+            return true;
         }
 
+        boolean complete = true;
         String[] rawTokens = TOKEN_SPLIT_PATTERN.split(text);
         for (String raw : rawTokens) {
-            if (raw.length() >= MIN_TOKEN_LENGTH && raw.length() <= MAX_TOKEN_LENGTH) {
-                target.add(raw.toLowerCase(Locale.ROOT));
-                if (target.size() >= MAX_TOKENS_PER_EVENT) {
-                    break;
+            if (raw.length() > MAX_TOKEN_LENGTH) {
+                complete = false;
+                continue;
+            }
+            if (raw.length() >= MIN_TOKEN_LENGTH) {
+                String normalized = raw.toLowerCase(Locale.ROOT);
+                if (!target.contains(normalized)) {
+                    if (target.size() >= MAX_TOKENS_PER_EVENT) {
+                        return false;
+                    }
+                    target.add(normalized);
                 }
             }
         }
+        return complete;
     }
 }

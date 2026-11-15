@@ -9,6 +9,7 @@ import com.github.mattiasgreen.wiremock.journal.engine.ZstdCodec;
 import com.github.mattiasgreen.wiremock.journal.model.ClusterSignature;
 import com.github.mattiasgreen.wiremock.journal.model.CompressedServeEvent;
 import com.github.mattiasgreen.wiremock.journal.model.JournalStats;
+import com.github.mattiasgreen.wiremock.support.IndexedBodyLookup;
 import com.github.tomakehurst.wiremock.store.RequestJournalStore;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.util.*;
@@ -22,7 +23,7 @@ import java.util.stream.Stream;
  * High-density RequestJournalStore backed by in-memory Zstandard compression,
  * ingestion-time token indexing, and autonomous memory headroom governance.
  */
-public final class CompressedRequestJournalStore implements RequestJournalStore {
+public final class CompressedRequestJournalStore implements RequestJournalStore, IndexedBodyLookup {
 
     private final ConcurrentLinkedDeque<UUID> deque = new ConcurrentLinkedDeque<>();
     private final ConcurrentHashMap<UUID, ServeEvent> serveEvents = new ConcurrentHashMap<>();
@@ -34,6 +35,7 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
     private final AtomicLong rawBytesTotal = new AtomicLong(0);
     private final AtomicLong compressedBytesTotal = new AtomicLong(0);
     private final AtomicLong totalEvictions = new AtomicLong(0);
+    private final Object evictionStatsLock = new Object();
 
     private final AtomicLong eventsSinceLastRebalance = new AtomicLong(0);
     private final AtomicLong evictionsSinceLastRebalance = new AtomicLong(0);
@@ -104,6 +106,11 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
     }
 
     @Override
+    public Optional<Boolean> containsEventToken(UUID eventId, String token) {
+        return compactor.getSearchIndex().containsEventToken(eventId, token);
+    }
+
+    @Override
     public void add(ServeEvent serveEvent) {
         if (serveEvent == null) {
             return;
@@ -150,12 +157,17 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
     public void removeLast() {
         UUID id = deque.pollLast();
         if (id != null) {
-            ServeEvent removed = serveEvents.remove(id);
+            ServeEvent removed;
+            synchronized (evictionStatsLock) {
+                removed = serveEvents.remove(id);
+                if (removed != null) {
+                    totalEvictions.incrementAndGet();
+                }
+            }
             if (removed != null) {
                 rawBytesTotal.addAndGet(-calculateRawSize(removed));
                 compressedBytesTotal.addAndGet(-calculateStoredSize(removed));
                 compactor.getSearchIndex().remove(id);
-                totalEvictions.incrementAndGet();
                 if (config.compressionEnabled() && evictionsSinceLastRebalance.incrementAndGet() >= 1000) {
                     rebalanceAsync(false);
                 }
@@ -329,13 +341,20 @@ public final class CompressedRequestJournalStore implements RequestJournalStore 
         long maxMem = Runtime.getRuntime().maxMemory();
         long usedMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
 
+        int retainedEvents;
+        long evictions;
+        synchronized (evictionStatsLock) {
+            retainedEvents = serveEvents.size();
+            evictions = totalEvictions.get();
+        }
+
         return new JournalStats(
-                serveEvents.size(),
+                retainedEvents,
                 raw,
                 comp,
                 ratio,
                 compactor.getDictionaryPool().getActiveDictionaryCount(),
-                totalEvictions.get(),
+                evictions,
                 usedMem,
                 maxMem);
     }

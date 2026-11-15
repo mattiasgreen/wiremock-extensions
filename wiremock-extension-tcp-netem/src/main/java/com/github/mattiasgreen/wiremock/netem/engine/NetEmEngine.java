@@ -2,12 +2,17 @@ package com.github.mattiasgreen.wiremock.netem.engine;
 
 import com.github.mattiasgreen.wiremock.netem.journal.NetEmCircularJournal;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmProxyConfig;
+import com.github.mattiasgreen.wiremock.netem.model.NetEmStats;
 import com.github.mattiasgreen.wiremock.netem.model.NetEmToxicConfig;
+import com.github.mattiasgreen.wiremock.support.NetEmMetricsSource;
+import com.github.mattiasgreen.wiremock.support.NetEmProxyMetricsSnapshot;
+import com.github.tomakehurst.wiremock.core.Admin;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Deep network emulation engine owning proxy lifecycle, circular journal,
@@ -16,12 +21,30 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>Replaces JVM-wide static singletons with instance-scoped dependency injection,
  * preventing parallel test pollution and eliminating unmanaged sleep threads.
  */
-public class NetEmEngine implements AutoCloseable {
+public class NetEmEngine implements NetEmMetricsSource, AutoCloseable {
 
-    private static final NetEmEngine DEFAULT_INSTANCE = new NetEmEngine();
+    private static final AtomicReference<NetEmEngine> LATEST_INSTANCE = new AtomicReference<>(new NetEmEngine());
+    private static final Map<Admin, NetEmEngine> BY_ADMIN = Collections.synchronizedMap(new WeakHashMap<>());
 
     public static NetEmEngine getDefault() {
-        return DEFAULT_INSTANCE;
+        return LATEST_INSTANCE.get();
+    }
+
+    public static void setDefault(NetEmEngine engine) {
+        LATEST_INSTANCE.set(Objects.requireNonNull(engine, "engine must not be null"));
+    }
+
+    public static Optional<NetEmEngine> forAdmin(Admin admin) {
+        if (admin == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(BY_ADMIN.get(admin));
+    }
+
+    public static void registerForAdmin(Admin admin, NetEmEngine engine) {
+        if (admin != null && engine != null) {
+            BY_ADMIN.put(admin, engine);
+        }
     }
 
     public interface ToxicLease extends AutoCloseable {
@@ -74,6 +97,26 @@ public class NetEmEngine implements AutoCloseable {
 
     public Collection<TcpNetEmProxy> list() {
         return List.copyOf(proxies.values());
+    }
+
+    @Override
+    public List<NetEmProxyMetricsSnapshot> snapshotProxies() {
+        return proxies.values().stream()
+                .map(proxy -> {
+                    NetEmStats stats = proxy.getStats();
+                    String name = proxy.getConfig().getName();
+                    return new NetEmProxyMetricsSnapshot(
+                            name != null ? name : "default",
+                            stats.getActiveConnections(),
+                            stats.getNormalTransfers(),
+                            stats.getImpairedTransfers(),
+                            stats.getToxicCounters(),
+                            stats.getBytesUpstreamNormal(),
+                            stats.getBytesDownstreamNormal(),
+                            stats.getBytesUpstreamImpaired(),
+                            stats.getBytesDownstreamImpaired());
+                })
+                .toList();
     }
 
     public boolean remove(String name) {

@@ -99,14 +99,10 @@ class EmbeddedArtemisAmqpIntegrationTest {
     @DisplayName("Should route standard messages to real Artemis broker with $1 rewriting and isolate VIP mocks")
     void shouldRouteToRealArtemisBrokerWithWildcardRewritingAndMockIsolation() throws Exception {
         // High priority rule (mock stub): Mock VIP orders completely
-        engine.addMockStub("VIP-ORDER", msg -> AsyncMessage.builder()
-                .correlationId(msg.correlationId())
-                .destination(msg.replyTo() != null ? msg.replyTo() : "orders.vip.replies")
-                .payload("{\"orderId\":\"" + msg.destination() + "\",\"status\":\"VIP_MOCKED\"}")
-                .build());
+        engine.addMockStub("VIP-ORDER", "{\"orderId\":\"orders.vip.999\",\"status\":\"VIP_MOCKED\"}");
 
-        // Low priority fallback rule (priority = 100): Forward standard orders to Artemis queue upstream.orders.$1
-        engine.addBridgeRule("Standard Orders Fallback", 100, "orders\\.standard\\.(.*)", "", "upstream.orders.$1");
+        // Active bridge fallback rule (priority < 100): Forward standard orders to Artemis queue upstream.orders.$1
+        engine.addBridgeRule("Standard Orders Fallback", 20, "orders\\.standard\\.(.*)", "", "upstream.orders.$1");
 
         // 1. VIP Message -> Intercepted by WireMock Mock, 0 messages sent to Artemis
         AsyncMessage vipMsg = AsyncMessage.builder()
