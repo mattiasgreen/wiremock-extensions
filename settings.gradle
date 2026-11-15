@@ -1,10 +1,10 @@
 rootProject.name = 'wiremock-extensions'
 
+include 'wiremock-extension-common'
 include 'wiremock-extension-json-logging'
 include 'wiremock-extension-otel'
 include 'wiremock-extension-openapi'
 include 'wiremock-extension-ui'
-include 'wiremock-extension-stateful'
 include 'wiremock-extension-tcp-netem'
 include 'wiremock-extension-casual'
 include 'wiremock-extension-async'
