@@ -1,12 +1,5 @@
-sourceSets {
-    main {
-        java {
-            srcDir rootProject.file('shared/traffic-support/src/main/java')
-        }
-    }
-}
-
 dependencies {
+    implementation project(':wiremock-extension-common')
     implementation libs.logback.classic
     implementation libs.logstash.logback.encoder
     implementation libs.jackson.databind

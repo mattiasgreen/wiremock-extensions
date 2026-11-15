@@ -172,28 +172,6 @@ public final class ServeEventTrafficSupport {
     }
 
     /**
-     * Returns whether a {@link ServeEvent} was handled by the stateful AST extension.
-     *
-     * @param event serve event
-     * @return {@code true} if {@code X-WireMock-Stateful: true} is present on the response
-     */
-    public static boolean isStateful(ServeEvent event) {
-        if (event == null) {
-            return false;
-        }
-        HttpHeaders resHeaders =
-                event.getResponse() != null ? event.getResponse().getHeaders() : null;
-        if (resHeaders == null && event.getResponseDefinition() != null) {
-            resHeaders = event.getResponseDefinition().getHeaders();
-        }
-        if (resHeaders == null) {
-            return false;
-        }
-        HttpHeader stateful = resHeaders.getHeader("X-WireMock-Stateful");
-        return stateful != null && stateful.isPresent() && "true".equalsIgnoreCase(stateful.firstValue());
-    }
-
-    /**
      * Returns whether a {@link ServeEvent} produced a WireMock simulated fault.
      *
      * @param event serve event
@@ -280,19 +258,13 @@ public final class ServeEventTrafficSupport {
 
     /**
      * Classifies a {@link ServeEvent} into UI journal filter verdict categories:
-     * {@code "stateful"}, {@code "unmatched"}, {@code "proxied"}, or {@code "stub"}.
+     * {@code "unmatched"}, {@code "proxied"}, or {@code "stub"}.
      *
      * @param event serve event
      * @return journal verdict key
      */
     public static String classifyJournalVerdict(ServeEvent event) {
-        if (event == null) {
-            return "unmatched";
-        }
-        if (isStateful(event)) {
-            return "stateful";
-        }
-        if (!event.getWasMatched()) {
+        if (event == null || !event.getWasMatched()) {
             return "unmatched";
         }
         if (isProxied(event)) {
