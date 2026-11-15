@@ -2,7 +2,7 @@
  * Stub lifecycle operations: priority-tier park/activate, clone, edit, delete.
  * Interacts directly with WireMock's standard /__admin/mappings/* API.
  */
-import { state } from './state.js';
+import { state, uiActions } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { normalizeJsonPayload } from './base64.js';
 import { formatPayload, detectFormat } from './highlighter.js';
@@ -20,9 +20,7 @@ import {
   saveStubMapping,
   createStubMapping
 } from './api.js';
-import { loadData } from './app-loader.js';
-import { selectStub, renderStubList, findCatalogStubById } from './stubs.js';
-import { renderProjectSelector } from './projects.js';
+import { stubCatalog } from './stub-catalog.js';
 import { executeBulkAction } from './bulk-actions.js';
 import { switchImportTab, handleBundleImport } from './import-export.js';
 
@@ -94,12 +92,12 @@ export function requestCloseStubEditor(force = false) {
 export function handleToggleStub(stubId) {
   if (!stubId) return;
   return toggleStubState(stubId)
-    .then(() => loadData())
+    .then(() => (uiActions.loadData ? uiActions.loadData() : Promise.resolve()))
     .then(() => {
       // Re-select if it was currently selected
       if (state.selectedStubId === stubId) {
-        const found = findCatalogStubById(stubId);
-        if (found) selectStub(found, false);
+        const found = stubCatalog.getById(stubId);
+        if (found && uiActions.selectStub) uiActions.selectStub(found, false);
       }
     })
     .catch(err => {
@@ -109,7 +107,7 @@ export function handleToggleStub(stubId) {
 
 export function handleDeleteStub(stubId) {
   if (!stubId) return;
-  const found = findCatalogStubById(stubId);
+  const found = stubCatalog.getById(stubId);
   const name = found ? (found.name || stubId) : stubId;
   if (!confirm(`Are you sure you want to permanently delete stub "${name}"?`)) {
     return;
@@ -123,7 +121,7 @@ export function handleDeleteStub(stubId) {
         if (elements.stubDetailView) elements.stubDetailView.classList.add('hidden');
         if (elements.stubDetailEmpty) elements.stubDetailEmpty.classList.remove('hidden');
       }
-      return loadData();
+      return uiActions.loadData ? uiActions.loadData() : Promise.resolve();
     })
     .catch(err => {
       alert('Failed to delete stub: ' + err.message);
@@ -731,8 +729,6 @@ function cleanStubForWireMock(s) {
   if (!s || typeof s !== 'object') return s;
   const clean = { ...s };
   delete clean._disabled;
-  delete clean._dynamic;
-  delete clean.isDynamic;
   return clean;
 }
 
@@ -975,10 +971,10 @@ export function saveStubEditor() {
   return savePromise
     .then(saved => {
       closeStubEditor();
-      return loadData().then(() => {
+      return (uiActions.loadData ? uiActions.loadData() : Promise.resolve()).then(() => {
         if (saved && saved.id) {
-          const found = state.currentStubs.find(s => s.id === saved.id);
-          if (found) selectStub(found, true);
+          const found = stubCatalog.getById(saved.id);
+          if (found && uiActions.selectStub) uiActions.selectStub(found, true);
         }
       });
     })
@@ -994,14 +990,14 @@ export function initStubLifecycleHandlers() {
   if (elements.btnEditStub) {
     elements.btnEditStub.addEventListener('click', () => {
       if (!state.selectedStubId) return;
-      const stub = findCatalogStubById(state.selectedStubId);
+      const stub = stubCatalog.getById(state.selectedStubId);
       if (stub) openStubEditor(stub, false);
     });
   }
   if (elements.btnCloneStub) {
     elements.btnCloneStub.addEventListener('click', () => {
       if (!state.selectedStubId) return;
-      const stub = findCatalogStubById(state.selectedStubId);
+      const stub = stubCatalog.getById(state.selectedStubId);
       if (stub) openStubEditor(stub, true);
     });
   }

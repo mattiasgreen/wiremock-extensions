@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
  *       (3 Case HTTP, 3 CRM HTTP, 1 Billing Casual 2PC) are recorded as {@code proxy} in the
  *       WireMock Request Journal.</li>
  *   <li><b>Snapshot &amp; Flip to {@code STUBS MODE}</b>: Invokes the UI lifecycle endpoints
- *       ({@code /__admin/projects/_all/recordings/snapshot} and {@code /__admin/projects/_all/mode})
+ *       ({@code /__admin/lifecycle/snapshots} and {@code /__admin/lifecycle/projects/_all/mode})
  *       and shuts down Server B completely.</li>
  *   <li><b>Run 2 (Fully Simulated / {@code STUBS MODE})</b>: Re-runs the exact same 10-step scenario
  *       with Server B offline and verifies all HTTP and Casual 2PC calls succeed from recorded stubs.</li>
@@ -119,7 +119,7 @@ class BankingProgressiveSimulationTest {
             // =========================================================================
             HttpResponse<String> snapshotResp = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(wmBase + "/__admin/projects/_all/recordings/snapshot"))
+                            .uri(URI.create(wmBase + "/__admin/lifecycle/snapshots"))
                             .POST(HttpRequest.BodyPublishers.noBody())
                             .build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -128,7 +128,7 @@ class BankingProgressiveSimulationTest {
 
             HttpResponse<String> modeResp = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(wmBase + "/__admin/projects/_all/mode"))
+                            .uri(URI.create(wmBase + "/__admin/lifecycle/projects/_all/mode"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString("{\"mode\":\"stubs\"}", StandardCharsets.UTF_8))
                             .build(),

@@ -108,13 +108,7 @@ class UiVanillaWireMockPlaywrightTest {
         page.locator("#btn-toggle-stub").click();
         page.waitForSelector("#detail-lifecycle-state:has-text('ACTIVE')");
 
-        // 3. Verify Stateful controls degrade gracefully
-        Locator filterDynamic = page.locator("#btn-filter-dynamic");
-        assertThat(filterDynamic.isDisabled()).isTrue();
-        assertThat(filterDynamic.getAttribute("class")).contains("cap-disabled");
-        assertThat(filterDynamic.getAttribute("title")).contains("requires wiremock-extension-stateful");
-
-        // 4. Verify Target Host capability matrix reports 1/5 active (Core only)
+        // 3. Verify Target Host capability matrix reports Core active and optional extensions disabled
         page.locator("#btn-target-host").click();
         page.waitForSelector("#target-host-modal:not(.hidden)");
         page.waitForSelector(".capability-row");
@@ -127,9 +121,6 @@ class UiVanillaWireMockPlaywrightTest {
 
         Locator lifecycleBadge = page.locator("[data-testid='cap-badge-lifecycle']");
         assertThat(lifecycleBadge.textContent()).isEqualTo("Not Installed");
-
-        Locator statefulBadge = page.locator("[data-testid='cap-badge-stateful']");
-        assertThat(statefulBadge.textContent()).isEqualTo("Not Installed");
 
         Locator netemBadge = page.locator("[data-testid='cap-badge-netem']");
         assertThat(netemBadge.textContent()).isEqualTo("Not Installed");

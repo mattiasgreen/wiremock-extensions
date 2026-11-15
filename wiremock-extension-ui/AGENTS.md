@@ -27,9 +27,9 @@ Always choose the fastest verification loop that covers your edit:
    ```
    - Domain suites (inheriting from `AbstractUiPlaywrightTest`):
      - `UiStubsAndLifecyclePlaywrightTest`: Stubs catalog, boolean filter, create/edit/clone, enable/disable, bulk actions, projects.
-     - `UiJournalAndTesterPlaywrightTest`: HTTP Tester, presets/history, Request Journal filtering, resolutions/triage.
+     - `UiJournalAndTesterPlaywrightTest`: Multi-Protocol Tester, presets/history, Request Journal filtering, resolutions/triage.
      - `UiOpenApiPlaywrightTest`: OpenAPI YAML/JSON import, live proxy recording, project mode flip, POST example synthesis.
-     - `UiScenariosAndStatefulPlaywrightTest`: Scenarios DAG visualizer, dynamic stateful stubs, target host modal, vanilla WireMock graceful degradation.
+     - Scenario DAG visualizer, target host modal, and vanilla WireMock graceful degradation Playwright specs.
 5. **Console Proxy Loop (< 4s)**:
    ```bash
    ./gradlew :wiremock-extension-ui:test --tests "WireMockConsoleProxyTest" -q --console=plain
@@ -40,7 +40,7 @@ Always choose the fastest verification loop that covers your edit:
 ## 2. Scalable Zero-Build Vanilla ES6 Invariants
 
 1. **Zero NPM / Zero Bundlers**: Pure ES6 modules (`import` / `export`) under `src/main/resources/ui/modules/`. Never add `package.json`, Webpack, Vite, or external CDN dependencies (must remain 100% air-gapped capable).
-2. **Single Source of Truth**: Author UI files **only** in `wiremock-extension-ui/src/main/resources/ui/`. Never hand-edit `docs/site/demo/`; run `./gradlew :wiremock-extension-ui:syncDemoSite` when syncing the static demo.
+2. **Single Source of Truth**: Author UI files **only** in `wiremock-extension-ui/src/main/resources/ui/`. Never hand-edit `docs/site/demo/`; it is gitignored and assembled automatically during static site builds by `.github/workflows/pages.yml` (never committed to Git).
 3. **Zero Marketing Assets in Classpath**: Never place `.gif` or `.png` screenshots inside `src/main/resources/ui/` (keeps the published Maven Central JAR `< 200 KB`).
 4. **Container-Level Event Delegation**: Attach delegated listeners on stable parent containers (`#stub-list`, `#journal-list`) via `e.target.closest('[data-action]')` rather than binding per-row closures inside render loops.
 5. **Mandatory XSS Escaping & Non-Blocking Feedback**:
@@ -52,7 +52,7 @@ Always choose the fastest verification loop that covers your edit:
 ## 3. Core DOM ID Contracts
 
 Keep these DOM selector contracts intact across `index.html`, `modules/dom.js`, and Playwright tests:
-- **Navigation**: `#nav-tab-stubs`, `#nav-tab-journal`, `#nav-tab-tester`, `#nav-tab-scenarios`, `#nav-tab-netem`.
+- **Navigation**: `#nav-tab-stubs`, `#nav-tab-journal`, `#nav-tab-tester`, `#nav-tab-scenarios`, `#nav-tab-netem`, `#nav-tab-queues`.
 - **Stubs**: `#search-box`, `#stub-list`, `#btn-test-stub`, `#btn-copy-curl`, `#btn-copy-json`.
 - **Journal**: `#journal-table`, `#journal-list`, `#journal-search`, `#filter-unmatched-only`, `#journal-auto-refresh`.
 - **Tester**: `#tester-method`, `#tester-url`, `#btn-tester-send`, `#tester-response-body`.
@@ -65,16 +65,18 @@ Keep these DOM selector contracts intact across `index.html`, `modules/dom.js`, 
 ## 4. Deepened Architecture Topology
 
 1. **Frontend Modules (`src/main/resources/ui/modules/`)**:
-   - `modules/stub-catalog.js` & `modules/stubs.js`: Canonical Stub Catalog module partitioning native WireMock mappings into active (`priority < 100`), parked/disabled (`priority >= 100`), `offline-guard` (`priority 50`, `metadata.role === "offline-guard"`), and dynamic stateful stubs with project derivation and boolean query evaluation.
+   - `modules/stub-catalog.js` & `modules/stubs.js`: Canonical Stub Catalog module partitioning native WireMock mappings into active (`priority < 100`), parked (`priority >= 100`), and `offline-guard` (`priority 50`, `metadata.role === "offline-guard"`) tiers with project derivation and boolean query evaluation.
    - `modules/lifecycle.js`: Native priority-tier stub parking (`/__admin/mappings/{id}`), `offline-guard` template, project mode toggles, and `initStubLifecycleHandlers`.
-    - `modules/journal.js`: Request journal table, diff inspector, and `initJournalTab`.
-    - `modules/tester.js`: Unified multi-protocol tester (`http`, `kafka`, `amqp`, `casual`), history management, local header chips, and `initTesterTab`.
-    - `modules/settings.js`: Target host switcher (`updateTargetHostDisplay`, `initTargetConnectionModal`) and persistent header preferences.
+   - `modules/journal.js` & `modules/request-journal.js`: Request journal table, diff inspector, indexed server lookup, and `initJournalTab`.
+   - `modules/tester.js`: Unified Multi-Protocol Tester (`http`, `kafka`, `amqp`, `casual`), history management, local header chips, and `initTesterTab`.
+   - `modules/queues.js`: Async destination explorer, topic/queue inspection, and broker connection workflows (`#nav-tab-queues`).
+   - `modules/scenarios.js`, `modules/netem.js`, `modules/openapi.js`, `modules/projects.js`, `modules/bulk-actions.js`, `modules/import-export.js`, `modules/dispatcher.js`, `modules/capabilities.js`: Feature workspaces and shared state/UI helpers (`state.js`, `api.js`, `router.js`, `dom.js`, `filter.js`, `highlighter.js`, `payload-lens.js`, `base64.js`, `app-loader.js`, `demo-backend.js`, `demo-fixtures-*.js`).
+   - `modules/settings.js`: Target host switcher (`updateTargetHostDisplay`, `initTargetConnectionModal`) and persistent header preferences.
    - `app.js`: Slim composition root registering route handlers and invoking module initializers.
 
 2. **Backend & Static Asset Services (`src/main/java/.../ui/`)**:
    - `StubLifecycleService`: Stateless lifecycle coordinator operating directly on `Admin` stub mappings via native priority tiers (`5` active stub, `10` active proxy, `50` `offline-guard`, `>= 100` parked), `switchProjectMode` (`metadata.previousPriority` round-trip), and deduplicated `snapshotRecordings`.
-   - `StubLifecycleAdminEndpoint`: Thin HTTP adapter exposing `/__admin/lifecycle/status`, `/__admin/projects/{project}/recordings/snapshot`, `/__admin/projects/{project}/mode`, `/__admin/stubs/snapshot-filtered`, and `/__admin/stubs/snapshot-template`.
+   - `StubLifecycleAdminEndpoint`: Thin HTTP adapter exposing `/__admin/lifecycle/status`, `/__admin/lifecycle/snapshots`, `/__admin/lifecycle/snapshot-template`, and `/__admin/lifecycle/projects/{project}/mode`.
    - `WireMockConsoleProxy`: Standalone reverse proxy and shared static asset resolver (`loadStaticAsset`, `resolveVersionJson`).
    - `UiAdminApiEndpoint`: Admin API endpoint serving static console assets and version info delegated to `WireMockConsoleProxy`.
 

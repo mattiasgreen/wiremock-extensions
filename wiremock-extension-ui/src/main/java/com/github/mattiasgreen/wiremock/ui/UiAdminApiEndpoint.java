@@ -151,21 +151,26 @@ public class UiAdminApiEndpoint implements AdminApiExtension {
                 .withStatus(200)
                 .withHeader("Content-Type", "application/json; charset=utf-8")
                 .withHeader("Cache-Control", "no-cache, no-store, must-revalidate")
-                .withBody(WireMockConsoleProxy.resolveVersionJson())
+                .withBody(UiAssetLoader.resolveVersionJson())
                 .build();
     }
 
     private ResponseDefinition serveResource(String resourcePath) {
-        WireMockConsoleProxy.StaticAsset asset = WireMockConsoleProxy.loadStaticAsset(resourcePath);
-        ResponseDefinitionBuilder builder = ResponseDefinitionBuilder.responseDefinition()
-                .withStatus(asset.status())
-                .withHeader("Content-Type", asset.contentType())
-                .withHeader("Cache-Control", asset.cacheControl())
-                .withBody(asset.bodyAsString());
-        if (asset.servedFrom() != null) {
-            builder.withHeader("X-Served-From", asset.servedFrom());
+        UiAssetLoader.StaticAsset asset = UiAssetLoader.loadStaticAsset(resourcePath);
+        if (!asset.found()) {
+            return ResponseDefinitionBuilder.responseDefinition()
+                    .withStatus(404)
+                    .withHeader("Content-Type", "text/plain; charset=utf-8")
+                    .withHeader("Cache-Control", "no-cache")
+                    .withBody("Asset not found")
+                    .build();
         }
-        return builder.build();
+        return ResponseDefinitionBuilder.responseDefinition()
+                .withStatus(200)
+                .withHeader("Content-Type", asset.mimeType())
+                .withHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                .withBody(asset.content())
+                .build();
     }
 
     static final class EnrichedServeEventView {

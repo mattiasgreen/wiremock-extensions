@@ -139,7 +139,7 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("matchesJournalEntry: Method, URL, status, and stateful entity baseline matching")
+    @DisplayName("matchesJournalEntry: Method, URL, status, and stub name baseline matching")
     void testMatchesJournalEntryBaseline() {
         String script =
                 """
@@ -433,19 +433,8 @@ public class UiModuleUnitTest {
                     }
                 };
 
-                const dynamicStub = {
-                    id: "dynamic-cases-0",
-                    isDynamic: true,
-                    rule: {
-                        route: { method: "POST", pathPattern: "/api/cases" },
-                        mutations: [{ type: "init_entity", idParam: "caseId" }],
-                        response: { status: 201 }
-                    }
-                };
-
                 return {
-                    standardCurl: generateCreateStubCurl(standardStub),
-                    dynamicCurl: generateCreateStubCurl(dynamicStub)
+                    standardCurl: generateCreateStubCurl(standardStub)
                 };
             }
         """;
@@ -461,13 +450,6 @@ public class UiModuleUnitTest {
         assertThat(standardCurl).contains("\"name\": \"Get User\"");
         assertThat(standardCurl).contains("\"url\": \"/api/users/1234\"");
         assertThat(standardCurl).endsWith("\nEOF");
-
-        String dynamicCurl = result.get("dynamicCurl");
-        assertThat(dynamicCurl).contains("curl -X POST ");
-        assertThat(dynamicCurl).contains("/__admin/stateful/rules");
-        assertThat(dynamicCurl).contains("--data-binary @- << 'EOF'");
-        assertThat(dynamicCurl).contains("\"pathPattern\": \"/api/cases\"");
-        assertThat(dynamicCurl).endsWith("\nEOF");
     }
 
     @Test
@@ -1326,17 +1308,6 @@ public class UiModuleUnitTest {
                         response: { status: 200 }
                     }
                 ];
-                state.statefulModels = [
-                    {
-                        entity: "cases",
-                        rules: [
-                            {
-                                route: { method: "POST", pathPattern: "/api/v1/cases" },
-                                response: { statusCode: 201 }
-                            }
-                        ]
-                    }
-                ];
                 state.selectedProject = null;
                 state.statusFilter = "all";
 
@@ -1357,27 +1328,21 @@ public class UiModuleUnitTest {
                 state.statusFilter = "disabled";
                 const disabledOnly = getVisibleCatalogStubs("");
 
-                state.statusFilter = "dynamic";
-                const dynamicOnly = getVisibleCatalogStubs("");
-
                 // Query filter checks with boolean AND
                 state.statusFilter = "all";
                 const andQuery = getVisibleCatalogStubs("GET AND /orders");
 
                 const foundActive = findCatalogStubById("active-1");
                 const foundDisabled = findCatalogStubById("disabled-1");
-                const foundDynamic = findCatalogStubById("dynamic-cases-0");
 
                 // Reset state
                 state.selectedProject = null;
                 state.statusFilter = "all";
                 state.currentStubs = [];
-                state.statefulModels = [];
 
                 return {
                     allVisibleCount: allVisible.length,
                     bulkVisibleCount: bulkVisible.length,
-                    bulkExcludesDynamic: !bulkVisible.some(s => s.isDynamic || s._dynamic),
                     ordersVisibleCount: ordersVisible.length,
                     ordersBulkCount: ordersBulk.length,
                     ordersCountsAll: ordersCounts.all,
@@ -1385,11 +1350,9 @@ public class UiModuleUnitTest {
                     ordersCountsDisabled: ordersCounts.disabled,
                     activeOnlyCount: activeOnly.length,
                     disabledOnlyCount: disabledOnly.length,
-                    dynamicOnlyCount: dynamicOnly.length,
                     andQueryCount: andQuery.length,
                     foundActive: foundActive !== null && foundActive.id === "active-1",
-                    foundDisabled: foundDisabled !== null && foundDisabled.id === "disabled-1",
-                    foundDynamic: foundDynamic !== null && foundDynamic.id === "dynamic-cases-0"
+                    foundDisabled: foundDisabled !== null && foundDisabled.id === "disabled-1"
                 };
             }
         """;
@@ -1397,9 +1360,8 @@ public class UiModuleUnitTest {
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(result.get("allVisibleCount")).isEqualTo(4); // 2 active + 1 disabled + 1 dynamic
-        assertThat(result.get("bulkVisibleCount")).isEqualTo(3); // excludes dynamic
-        assertThat(result.get("bulkExcludesDynamic")).isEqualTo(true);
+        assertThat(result.get("allVisibleCount")).isEqualTo(3); // 2 active + 1 disabled
+        assertThat(result.get("bulkVisibleCount")).isEqualTo(3);
         assertThat(result.get("ordersVisibleCount")).isEqualTo(2); // active-1 and disabled-1
         assertThat(result.get("ordersBulkCount")).isEqualTo(2);
         assertThat(result.get("ordersCountsAll")).isEqualTo(2);
@@ -1407,11 +1369,9 @@ public class UiModuleUnitTest {
         assertThat(result.get("ordersCountsDisabled")).isEqualTo(1);
         assertThat(result.get("activeOnlyCount")).isEqualTo(2);
         assertThat(result.get("disabledOnlyCount")).isEqualTo(1);
-        assertThat(result.get("dynamicOnlyCount")).isEqualTo(1);
         assertThat(result.get("andQueryCount")).isEqualTo(2); // active-1 and disabled-1
         assertThat(result.get("foundActive")).isEqualTo(true);
         assertThat(result.get("foundDisabled")).isEqualTo(true);
-        assertThat(result.get("foundDynamic")).isEqualTo(true);
     }
 
     @Test
@@ -1879,8 +1839,7 @@ public class UiModuleUnitTest {
                     hasAsyncAmqpStub: demoBackend.stubs.some(s => s.id === 'demo-stub-async-amqp-payments'),
                     hasAsyncJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__async/kafka/orders.events')),
                     hasCasualQueueJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/queues/billing.q/enqueue')),
-                    asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP',
-                    asyncHarvestedOk: (await (await demoBackend.handleRequest('/__admin/async/harvested', { method: 'GET' })).json()).count === 0
+                    asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP'
                 };
             }
         """;
@@ -1900,7 +1859,6 @@ public class UiModuleUnitTest {
         assertThat(result.get("hasAsyncJournalEntry")).isEqualTo(true);
         assertThat(result.get("hasCasualQueueJournalEntry")).isEqualTo(true);
         assertThat(result.get("asyncStatusUp")).isEqualTo(true);
-        assertThat(result.get("asyncHarvestedOk")).isEqualTo(true);
         assertThat(((Number) result.get("completeOrderStatus")).intValue()).isEqualTo(200);
         assertThat(result.get("completeOrderDelivered")).isEqualTo(true);
         assertThat(result.get("scenarioAfterComplete")).isEqualTo("COMPLETED");
@@ -1916,12 +1874,13 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("stub-catalog: Encapsulates active, disabled, dynamic stubs, queries, projects, and selection")
+    @DisplayName("stub-catalog: Encapsulates active/disabled stubs, counts, queries, selection, and state delegation")
     void testStubCatalogDomainModule() {
         String script =
                 """
             async () => {
-                const { StubCatalog, getStubProject, extractBaseSegment } = await import('./modules/stub-catalog.js');
+                const { StubCatalog, stubCatalog, getStubProject, extractBaseSegment } = await import('./modules/stub-catalog.js');
+                const { state } = await import('./modules/state.js');
                 const catalog = new StubCatalog();
 
                 const active = [
@@ -1932,16 +1891,8 @@ public class UiModuleUnitTest {
                 const disabled = [
                     { id: '4', request: { method: 'DELETE', url: '/api/v1/orders/1' }, metadata: { project: 'orders' } }
                 ];
-                const stateful = [
-                    {
-                        entity: 'Inventory',
-                        rules: [
-                            { id: 'inv-1', request: { method: 'GET', url: '/inventory/check' }, metadata: { project: 'inventory' } }
-                        ]
-                    }
-                ];
 
-                catalog.setRawCollections({ active, disabled, statefulModels: stateful });
+                catalog.setRawCollections({ active, disabled });
 
                 const totalAll = catalog.getAll().length;
                 const counts = catalog.getCounts();
@@ -1950,6 +1901,10 @@ public class UiModuleUnitTest {
                 const queryActiveOnly = catalog.query({ status: 'active' });
                 const projects = catalog.getProjects();
 
+                catalog.setSelectedStubId('2');
+                const selectedStubId = catalog.getSelectedStubId();
+                const selectedStub = catalog.getSelectedStub();
+
                 catalog.select('1');
                 catalog.select('2');
                 const selectedBefore = catalog.getSelectedCount();
@@ -1957,19 +1912,33 @@ public class UiModuleUnitTest {
                 const selectedAfter = catalog.getSelectedCount();
                 const isSelected2 = catalog.isSelected('2');
 
+                // Verify state.currentStubs and state.selectedStubId delegate to shared stubCatalog
+                state.currentStubs = active;
+                state.selectedStubId = '3';
+                const stateCatalogCount = stubCatalog.getAll().length;
+                const stateDelegatedSelectedId = stubCatalog.getSelectedStubId();
+                const stateDelegatedSelectedStub = stubCatalog.getSelectedStub();
+                state.currentStubs = [];
+                state.selectedStubId = null;
+
                 return {
                     totalAll,
                     countsAll: counts.all,
                     countsActive: counts.active,
                     countsDisabled: counts.disabled,
-                    countsDynamic: counts.dynamic,
+                    hasDynamicKey: Object.prototype.hasOwnProperty.call(counts, 'dynamic'),
                     ordersTotal: ordersCounts.all,
                     queryOrdersLen: queryOrders.length,
                     queryActiveOnlyLen: queryActiveOnly.length,
                     projectNames: projects.map(p => p.name),
+                    selectedStubId,
+                    selectedStubMatchesId2: selectedStub !== null && selectedStub.id === '2',
                     selectedBefore,
                     selectedAfter,
                     isSelected2,
+                    stateCatalogCount,
+                    stateDelegatedSelectedId,
+                    stateDelegatedSelectedMatches3: stateDelegatedSelectedStub !== null && stateDelegatedSelectedStub.id === '3',
                     inferredProject: getStubProject({ request: { url: '/payments/charge' } }),
                     baseSegment: extractBaseSegment('/api/v2/customers/profile')
                 };
@@ -1979,19 +1948,73 @@ public class UiModuleUnitTest {
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(((Number) result.get("totalAll")).intValue()).isEqualTo(5);
-        assertThat(((Number) result.get("countsAll")).intValue()).isEqualTo(5);
+        assertThat(((Number) result.get("totalAll")).intValue()).isEqualTo(4);
+        assertThat(((Number) result.get("countsAll")).intValue()).isEqualTo(4);
         assertThat(((Number) result.get("countsActive")).intValue()).isEqualTo(3);
         assertThat(((Number) result.get("countsDisabled")).intValue()).isEqualTo(1);
-        assertThat(((Number) result.get("countsDynamic")).intValue()).isEqualTo(1);
+        assertThat(result.get("hasDynamicKey")).isEqualTo(false);
         assertThat(((Number) result.get("ordersTotal")).intValue()).isEqualTo(3);
         assertThat(((Number) result.get("queryOrdersLen")).intValue()).isEqualTo(3);
         assertThat(((Number) result.get("queryActiveOnlyLen")).intValue()).isEqualTo(3);
+        assertThat(result.get("selectedStubId")).isEqualTo("2");
+        assertThat(result.get("selectedStubMatchesId2")).isEqualTo(true);
         assertThat(((Number) result.get("selectedBefore")).intValue()).isEqualTo(2);
         assertThat(((Number) result.get("selectedAfter")).intValue()).isEqualTo(1);
         assertThat(result.get("isSelected2")).isEqualTo(true);
+        assertThat(((Number) result.get("stateCatalogCount")).intValue()).isEqualTo(3);
+        assertThat(result.get("stateDelegatedSelectedId")).isEqualTo("3");
+        assertThat(result.get("stateDelegatedSelectedMatches3")).isEqualTo(true);
         assertThat(result.get("inferredProject")).isEqualTo("api-payments");
         assertThat(result.get("baseSegment")).isEqualTo("customers");
+    }
+
+    @Test
+    @DisplayName(
+            "api & demoBackend: Consolidated /__admin/lifecycle/snapshots, snapshot-template, and projects/{project}/mode routes")
+    void testConsolidatedLifecycleApiAndDemoBackendRoutes() {
+        String script =
+                """
+            async () => {
+                const { snapshotProjectRecordings, snapshotFilteredRecordings, getSnapshotStubTemplate, setProjectMode } = await import('./modules/api.js');
+                const { demoBackend } = await import('./modules/demo-backend.js');
+
+                demoBackend.reset();
+                demoBackend.setDemoMode(true);
+                try {
+                    const reqId = demoBackend.requests[0].id;
+                    const projSnap = await snapshotProjectRecordings('Order Service');
+                    const filteredSnap = await snapshotFilteredRecordings([reqId], 'CustomerDomain', true);
+                    const template = await getSnapshotStubTemplate(reqId, 'OrderDomain');
+                    const modeRes = await setProjectMode('_all', 'stubs');
+
+                    return {
+                        projSnapTotal: projSnap.totalRecorded,
+                        projSnapStatus: projSnap.status,
+                        filteredSnapTotal: filteredSnap.totalRecorded,
+                        filteredSnapStatus: filteredSnap.status,
+                        templateProject: template && template.metadata ? template.metadata.project : null,
+                        templateSource: template && template.metadata ? template.metadata.source : null,
+                        modeProject: modeRes.project,
+                        modeActive: modeRes.activeMode
+                    };
+                } finally {
+                    demoBackend.setDemoMode(false);
+                    demoBackend.reset();
+                }
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("projSnapTotal")).intValue()).isEqualTo(1);
+        assertThat(result.get("projSnapStatus")).isEqualTo("disabled");
+        assertThat(((Number) result.get("filteredSnapTotal")).intValue()).isEqualTo(1);
+        assertThat(result.get("filteredSnapStatus")).isEqualTo("active");
+        assertThat(result.get("templateProject")).isEqualTo("OrderDomain");
+        assertThat(result.get("templateSource")).isEqualTo("recorded-proxy");
+        assertThat(result.get("modeProject")).isEqualTo("_all");
+        assertThat(result.get("modeActive")).isEqualTo("stubs");
     }
 
     @Test

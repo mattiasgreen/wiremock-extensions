@@ -225,16 +225,15 @@ function matchPrefixedToken(token, prefixes) {
 
 /**
  * Evaluates whether a journal entry matches a given query string (with AND / OR support).
- * Searches standard fields (source IP/host, method, URL, status, stubName, entity) as well as
+ * Searches standard fields (source IP/host, method, URL, status, stubName, resolution) as well as
  * deep attributes (request headers, query params, request body, response body, response headers).
  *
  * @param {object} req The journal request serve event
  * @param {string} query The raw filter string
- * @param {string} [statefulEntity] Optional extracted stateful entity header
  * @param {string} [resolution] Optional resolution verdict string
  * @returns {boolean}
  */
-export function matchesJournalEntry(req, query, statefulEntity = '', resolution = '') {
+export function matchesJournalEntry(req, query, resolution = '') {
   if (!query || !query.trim()) return true;
 
   const src = extractRequestSource(req);
@@ -246,7 +245,6 @@ export function matchesJournalEntry(req, query, statefulEntity = '', resolution 
   const url = (req.request && req.request.url ? req.request.url : '').toLowerCase();
   const status = String((req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || '');
   const stubName = (req.stubMapping && req.stubMapping.name ? req.stubMapping.name : '').toLowerCase();
-  const entity = (statefulEntity || '').toLowerCase();
   const res = (resolution || '').toLowerCase();
 
   // Lazy cache deep text representation for multi-term queries
@@ -275,7 +273,6 @@ export function matchesJournalEntry(req, query, statefulEntity = '', resolution 
       url.includes(token) ||
       status.includes(token) ||
       stubName.includes(token) ||
-      entity.includes(token) ||
       res.includes(token)
     ) {
       return true;

@@ -119,10 +119,6 @@ import {
   loadData
 } from './modules/app-loader.js';
 import {
-  setupDynamicStubModal,
-  normalizeStatefulModelsToStubs
-} from './modules/dynamic-stubs.js';
-import {
   initNetEmTab,
   activateNetEm,
   deactivateNetEm
@@ -220,7 +216,6 @@ registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
 setupOpenApiModal();
 setupProjectLifecycleBar(loadData);
-setupDynamicStubModal();
 
 // Feature module initializers
 initStubsTab();

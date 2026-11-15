@@ -14,8 +14,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -357,5 +363,103 @@ public class UiAssetAndContractTest {
             }
         }
         assertThat(checkedIds).isGreaterThan(50);
+    }
+
+    @Test
+    void testUiAssetLoaderAndDecoupledEndpointContract() throws Exception {
+        UiAssetLoader.StaticAsset indexAsset = UiAssetLoader.loadStaticAsset("/ui/index.html");
+        assertThat(indexAsset.found()).isTrue();
+        assertThat(indexAsset.mimeType()).contains("text/html");
+        assertThat(indexAsset.bodyAsString()).contains("WireMock Console");
+
+        UiAssetLoader.StaticAsset traversalAsset = UiAssetLoader.loadStaticAsset("/ui/../secret.txt");
+        assertThat(traversalAsset.found()).isFalse();
+
+        UiAssetLoader.StaticAsset missingAsset = UiAssetLoader.loadStaticAsset("/ui/nonexistent-contract-file.js");
+        assertThat(missingAsset.found()).isFalse();
+
+        JsonNode versionJson = objectMapper.readTree(UiAssetLoader.resolveVersionJson());
+        assertThat(versionJson.get("version").asText()).isNotBlank();
+        assertThat(versionJson.get("commit").asText()).isNotBlank();
+        assertThat(versionJson.get("branch").asText()).isNotBlank();
+
+        Path endpointSource = Path.of("src/main/java/com/github/mattiasgreen/wiremock/ui/UiAdminApiEndpoint.java");
+        assertThat(Files.isRegularFile(endpointSource)).isTrue();
+        String endpointSourceText = Files.readString(endpointSource, StandardCharsets.UTF_8);
+        assertThat(endpointSourceText).doesNotContain("WireMockConsoleProxy");
+        assertThat(endpointSourceText).contains("UiAssetLoader");
+    }
+
+    @Test
+    void testNoEsModuleImportCyclesInvolvingStubsJs() throws Exception {
+        Path modulesDir = Path.of("src/main/resources/ui/modules");
+        assertThat(Files.isDirectory(modulesDir)).isTrue();
+
+        Map<String, Set<String>> graph = new HashMap<>();
+        Pattern sideEffectImport = Pattern.compile("(?m)^\\s*import\\s+['\"](\\.[^'\"]+)['\"]");
+
+        try (Stream<Path> paths = Files.list(modulesDir)) {
+            List<Path> moduleFiles =
+                    paths.filter(p -> p.toString().endsWith(".js")).toList();
+            assertThat(moduleFiles).isNotEmpty();
+
+            for (Path jsFile : moduleFiles) {
+                String name = jsFile.getFileName().toString();
+                String content = Files.readString(jsFile, StandardCharsets.UTF_8);
+                Set<String> imports = new LinkedHashSet<>();
+
+                Matcher m = ES_IMPORT_PATTERN.matcher(content);
+                while (m.find()) {
+                    Path resolved = jsFile.getParent().resolve(m.group(1)).normalize();
+                    if (resolved.getParent() != null && resolved.getParent().equals(modulesDir)) {
+                        imports.add(resolved.getFileName().toString());
+                    }
+                }
+                Matcher sideMatcher = sideEffectImport.matcher(content);
+                while (sideMatcher.find()) {
+                    Path resolved =
+                            jsFile.getParent().resolve(sideMatcher.group(1)).normalize();
+                    if (resolved.getParent() != null && resolved.getParent().equals(modulesDir)) {
+                        imports.add(resolved.getFileName().toString());
+                    }
+                }
+                graph.put(name, imports);
+            }
+        }
+
+        assertThat(graph).containsKey("stubs.js");
+
+        // BFS from every dependency of stubs.js verifying stubs.js is never reachable again
+        Map<String, String> parent = new HashMap<>();
+        Set<String> visited = new HashSet<>();
+        Deque<String> queue = new ArrayDeque<>();
+
+        for (String dep : graph.getOrDefault("stubs.js", Set.of())) {
+            assertThat(dep).as("stubs.js must not self-import").isNotEqualTo("stubs.js");
+            parent.put(dep, "stubs.js");
+            visited.add(dep);
+            queue.add(dep);
+        }
+
+        while (!queue.isEmpty()) {
+            String current = queue.poll();
+            for (String next : graph.getOrDefault(current, Set.of())) {
+                if ("stubs.js".equals(next)) {
+                    List<String> cycle = new ArrayList<>();
+                    cycle.add("stubs.js");
+                    String cursor = current;
+                    while (cursor != null) {
+                        cycle.add(0, cursor);
+                        cursor = parent.get(cursor);
+                    }
+                    org.assertj.core.api.Assertions.fail(
+                            "Detected circular ES6 import involving stubs.js: " + String.join(" -> ", cycle));
+                }
+                if (visited.add(next)) {
+                    parent.put(next, current);
+                    queue.add(next);
+                }
+            }
+        }
     }
 }

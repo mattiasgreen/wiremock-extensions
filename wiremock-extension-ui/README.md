@@ -54,7 +54,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 ![Stubs and HTTP Tester Demo](../docs/images/demo-stubs-and-tester.gif)
 
 - **Request Journal Viewer & Snapshot Recording**:
-  - Search and filter recorded requests by method, URL, or matching status (`PROXIED`, `STUB`, `STATEFUL`, `UNMATCHED`).
+  - Search and filter recorded requests by method, URL, or matching status (`PROXIED`, `STUB`, `UNMATCHED`).
   - Expandable inline inspector showing request headers/body and corresponding response definition.
   - **Inline Base64-Decoded JSON Inspection**: Automatically detects Base64-encoded JSON in request and response payloads, providing interactive `[Raw]` / `[Decoded]` view toggle pills.
   - **1-Click Exact-Match Snapshotting**: Save proxied requests as static offline stubs (`📸 Snapshot Stub`) with exact request body matching (`equalToJson`, `equalTo`, `binaryEqualTo`), preventing collision when multiple requests target the same endpoint.
@@ -70,22 +70,20 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
   - State operations & rejection invariants inspector with one-click **⚡ Test** triggers.
   - Per-scenario targeted controls: override scenario state on the fly or reset individual scenarios to `Started`.
 
-- **Dynamic Stateful API Simulation**:
-  - Unified explorer listing both declarative stubs and `[⚡ DYNAMIC]` stateful simulation stubs with route scope indicators (e.g. `/api/v1/cases/*/close`).
-  - Dedicated **Stateful Specification Inspector** detailing entity schemas, path parameter mappings, mutations (`set_field`, `append_to_list`, `increment`), and invariant guard conditions.
-  - **Dynamic Stub Bootstrapper Modal**: Pre-packaged templates (*Case Management with tasks*, *Order Fulfillment with items*) with interactive JSON schema editing.
-  - **Invariant Violation Diagnostics**: Direct transition to HTTP Tester and immediate visual tracing of invariant rejections (e.g., HTTP 409 responses) in the Request Journal with passed/violated badges.
-
-![Dynamic Stateful API Simulation Demo](../docs/images/demo-stateful-simulation.gif)
-
 ![Scenarios DAG Visualizer Demo](../docs/images/demo-scenarios-dag.gif)
+
+- **Lifecycle Admin Endpoints (`/__admin/lifecycle/*`)**:
+  - `GET /__admin/lifecycle/status`: Capability health probe (`{"status":"UP"}`).
+  - `POST /__admin/lifecycle/snapshots`: Unified traffic-to-stub snapshot endpoint supporting whole-project (`{"project":"..."}` or empty body for `_all`) and filtered request-ID captures (`{"requestIds":[...]}`).
+  - `POST /__admin/lifecycle/snapshot-template`: Generates an editable `StubMapping` template from a single journal event.
+  - `POST /__admin/lifecycle/projects/{project}/mode`: Switches a project (or `_all`) between `proxy` and `stubs` modes using priority-tier parking.
 
 - **URL Addressability & Deep Linking**:
   - All tabs, selected stubs, journal details, and tester inputs synchronize with the URL hash (e.g. `#stubs?stubId=...`, `#tester?method=POST&url=...`).
 - **Swagger UI Integration**:
   - Relative neighbor link to `../swagger-ui/` for environments where Swagger UI is co-hosted.
-- **Developer Hot-Reloading**:
-  - During local development, the endpoint detects local resources on disk and reloads HTML/CSS/JS without restarting the server.
+- **Developer Hot-Reloading & Asset Resolution (`UiAssetLoader`)**:
+  - `UiAdminApiEndpoint` resolves static HTML/CSS/ES6 modules and `/__admin/ui/version` through `UiAssetLoader`, checking local dev resource directories first with path-traversal protection before falling back to `UiAssetLoader.class.getResourceAsStream(...)`, while `WireMockConsoleProxy` remains self-contained for zero-compile JEP 330 execution.
 
 ## Usage
 
@@ -201,5 +199,3 @@ To maintain high development velocity and fast feedback loops while honoring the
    - Encoding/decoding query parameters (`#tester?m=POST&p=...`), active tab switching, and state restoration on hash change.
 5. **JSON Highlighter & Formatter (`modules/highlighter.js`)**:
    - Tokenization edge cases, HTML entity escaping, null/boolean coloring, and large payload truncation.
-6. **Dynamic Stateful Model Normalizer (`modules/dynamic-stubs.js`)**:
-   - Converting in-memory AST schemas, routes, and mutation specifications into virtual stub mappings.

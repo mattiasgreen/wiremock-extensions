@@ -1,5 +1,5 @@
 /**
- * Demo Showcase seed fixture dataset: Scenarios, Stateful AST, NetEm, Casual & Async fixtures.
+ * Demo Showcase seed fixture dataset: Scenarios, NetEm, Casual & Async fixtures.
  */
 export const SEED_SCENARIOS = [
   {
@@ -7,27 +7,6 @@ export const SEED_SCENARIOS = [
     name: 'OrderLifecycle',
     state: 'PROCESSING',
     possibleStates: ['Started', 'PROCESSING', 'COMPLETED']
-  }
-];
-
-export const SEED_STATEFUL_MODELS = [
-  {
-    modelId: 'BankingCaseManagement',
-    name: 'BankingCaseManagement',
-    rules: [
-      {
-        ruleId: 'auto-approval-tier-1',
-        description: 'Auto-approves low-risk KYC cases under SEK 10,000 threshold',
-        condition: 'input.riskScore < 20 && input.amount <= 10000',
-        action: 'state.status = "APPROVED"; state.tier = "TIER_1";'
-      },
-      {
-        ruleId: 'manual-review-tier-2',
-        description: 'Flags borderline KYC cases for senior compliance officer review',
-        condition: 'input.riskScore >= 20 || input.amount > 10000',
-        action: 'state.status = "PENDING_REVIEW"; state.tier = "TIER_2";'
-      }
-    ]
   }
 ];
 

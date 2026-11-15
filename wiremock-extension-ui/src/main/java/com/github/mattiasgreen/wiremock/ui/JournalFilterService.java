@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.ui;
 
+import com.github.mattiasgreen.wiremock.support.IndexedBodyLookup;
 import com.github.mattiasgreen.wiremock.support.ServeEventTrafficSupport;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.time.Instant;
@@ -23,13 +24,19 @@ public class JournalFilterService {
             List<ServeEvent> requests, Map<String, String> resolvedHosts, int total, int filtered) {}
 
     private final ClientSourceResolver sourceResolver;
+    private final IndexedBodyLookup indexedBodyLookup;
 
     public JournalFilterService() {
-        this(new ClientSourceResolver());
+        this(new ClientSourceResolver(), null);
     }
 
     public JournalFilterService(ClientSourceResolver sourceResolver) {
+        this(sourceResolver, null);
+    }
+
+    public JournalFilterService(ClientSourceResolver sourceResolver, IndexedBodyLookup indexedBodyLookup) {
         this.sourceResolver = Objects.requireNonNull(sourceResolver, "sourceResolver must not be null");
+        this.indexedBodyLookup = indexedBodyLookup;
     }
 
     /**
@@ -37,7 +44,7 @@ public class JournalFilterService {
      *
      * @param events all recorded serve events
      * @param query raw search query supporting boolean AND / OR
-     * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stateful"}, {@code "stub"}, {@code "unmatched"})
+     * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stub"}, {@code "unmatched"})
      * @param unmatchedOnly if true, restricts exclusively to unmatched requests (404s)
      * @param status optional HTTP status code filter
      * @param limit maximum number of results to return
@@ -53,7 +60,7 @@ public class JournalFilterService {
      *
      * @param events all recorded serve events
      * @param query raw search query supporting boolean AND / OR
-     * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stateful"}, {@code "stub"}, {@code "unmatched"})
+     * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stub"}, {@code "unmatched"})
      * @param unmatchedOnly if true, restricts exclusively to unmatched requests (404s)
      * @param status optional HTTP status code filter
      * @param since optional lower datetime bound (inclusive)
@@ -80,7 +87,7 @@ public class JournalFilterService {
      *
      * @param events all recorded serve events
      * @param query raw search query supporting boolean AND / OR
-     * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stateful"}, {@code "stub"}, {@code "unmatched"})
+     * @param verdict verdict filter ({@code "all"}, {@code "proxied"}, {@code "stub"}, {@code "unmatched"})
      * @param unmatchedOnly if true, restricts exclusively to unmatched requests (404s)
      * @param status optional HTTP status code filter
      * @param since optional lower datetime bound (inclusive)
@@ -164,7 +171,7 @@ public class JournalFilterService {
             String eventVerdict = candidateVerdicts.get(i);
             String srcIp = ClientSourceResolver.extractSourceIp(event.getRequest());
             String srcHost = srcIp.isEmpty() ? "" : hosts.getOrDefault(srcIp, "");
-            if (JournalQueryMatcher.matches(event, query, eventVerdict, srcIp, srcHost)) {
+            if (JournalQueryMatcher.matches(event, query, eventVerdict, srcIp, srcHost, indexedBodyLookup)) {
                 matched.add(event);
             }
         }
@@ -189,8 +196,8 @@ public class JournalFilterService {
     }
 
     /**
-     * Classifies a {@link ServeEvent} into one of the 4 core verdicts:
-     * {@code "stateful"}, {@code "unmatched"}, {@code "proxied"}, or {@code "stub"}.
+     * Classifies a {@link ServeEvent} into one of the core verdicts:
+     * {@code "unmatched"}, {@code "proxied"}, or {@code "stub"}.
      *
      * @param event serve event to classify
      * @return verdict key

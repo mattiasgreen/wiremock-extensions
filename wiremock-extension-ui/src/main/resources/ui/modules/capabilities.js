@@ -22,13 +22,6 @@ export const CAPABILITY_METADATA = [
     endpoint: '/__admin/lifecycle/status'
   },
   {
-    key: 'stateful',
-    name: 'Dynamic Stateful API',
-    desc: 'In-memory stateful AST simulation and multi-tenant rules',
-    icon: '🧠',
-    endpoint: '/__admin/stateful/models'
-  },
-  {
     key: 'netem',
     name: 'TCP Network Emulation',
     desc: 'L4 latency, jitter, bandwidth throttle, and packet loss',
@@ -174,30 +167,7 @@ export function applyCapabilityVisibility() {
     );
   }
 
-  // 3. Stateful / Dynamic Stubs Controls
-  if (elements.btnCreateDynamicStub) {
-    applyControlState(
-      elements.btnCreateDynamicStub,
-      caps.stateful,
-      'Stateful entity generator requires wiremock-extension-stateful'
-    );
-  }
-  if (elements.btnFilterDynamic) {
-    applyControlState(
-      elements.btnFilterDynamic,
-      caps.stateful,
-      'Dynamic stateful simulation requires wiremock-extension-stateful'
-    );
-    if (!caps.stateful && state.statusFilter === 'dynamic') {
-      state.statusFilter = 'all';
-      if (elements.btnFilterAll) {
-        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-        elements.btnFilterAll.classList.add('active');
-      }
-    }
-  }
-
-  // 4. Lifecycle Snapshots & Project Mode Controls (priority parking & filter work natively on all WireMock hosts)
+  // 3. Lifecycle Snapshots & Project Mode Controls (priority parking & filter work natively on all WireMock hosts)
   if (elements.btnProjectSnapshot) {
     applyControlState(
       elements.btnProjectSnapshot,

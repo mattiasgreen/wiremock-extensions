@@ -4,7 +4,8 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { getStubUrl, sendStubToTester } from './stubs.js';
+import { getStubUrl } from './stub-catalog.js';
+import { sendStubToTester } from './tester.js';
 
 let doFetchFn = null;
 let loadScenariosFn = null;
@@ -16,7 +17,7 @@ export function registerScenarioFetchers({ doFetch, loadScenarios }) {
 
 export function renderScenarios(scenarios) {
   if (!scenarios || scenarios.length === 0) {
-    elements.scenariosContainer.innerHTML = '<div class="empty-state">No active stateful scenarios defined.</div>';
+    elements.scenariosContainer.innerHTML = '<div class="empty-state">No active scenarios defined.</div>';
     return;
   }
 
