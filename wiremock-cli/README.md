@@ -17,9 +17,9 @@ Modern microservice, backend, and integration testing happens inside terminal wi
 ## 2. How It Addresses the Problem
 
 `wiremock-cli` provides an instant terminal observability tool that runs **directly via JDK 21 JEP 330 single-file source-code execution**:
-- **Zero-Compile Inner Loop**: Run scripts immediately with zero pre-compilation step (`java wiremock-cli/WireMockCli.java` or `wm`).
+- **Zero-Compile Inner Loop**: Run scripts immediately with zero pre-compilation step (`./wiremock-cli/bin/wm` or `java wiremock-cli/src/main/java/com/github/mattiasgreen/wiremock/cli/WireMockCli.java`).
 - **Zero External Runtime Dependencies**: No `curl`, no `jq`, and no `npm` required. Uses standard JDK 21 libraries (`java.net.http.HttpClient`, `java.time`, and a lightweight built-in JSON tokenizer/AST).
-- **Graceful Capability Degradation**: Works out of the box against any standard vanilla WireMock instance in the world, while lighting up dedicated extensions (`tcp-netem`, `stateful`, `otel`, `ui`) when detected.
+- **Graceful Capability Degradation**: Works out of the box against any standard vanilla WireMock instance in the world, while lighting up dedicated extensions (`tcp-netem`, `otel`, `ui`) when detected.
 - **UNIX Composability**: Preserves terminal scrollback, supports ANSI color suppression (`NO_COLOR`), and outputs clean tabular formats or raw JSON for piping.
 
 ---
@@ -40,8 +40,8 @@ wiremock-cli\bin\wm.cmd --help
 
 ### Direct JDK 21 JEP 330 Execution
 ```bash
-java wiremock-cli/WireMockCli.java stubs
-java wiremock-cli/WireMockConsoleProxy.java
+java wiremock-cli/src/main/java/com/github/mattiasgreen/wiremock/cli/WireMockCli.java stubs
+java wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java
 ```
 
 ---
@@ -65,7 +65,6 @@ Core Capabilities:
 
 Extensions Suite Matrix:
   ✓ tcp-netem            /__admin/tcp-netem/proxies
-  ✓ stateful             /__admin/stateful/models
   ✓ otel metrics         /__admin/metrics/prometheus
   ✓ console ui           /__admin/ui/
 ```
@@ -200,15 +199,13 @@ wm info
 ```
 wiremock-cli/
 ├── README.md                          # This documentation guide
-├── WireMockCli.java                   # JEP 330 standalone source launcher
-├── WireMockConsoleProxy.java          # JEP 330 standalone proxy launcher
 ├── bin/
 │   ├── wm                             # 1-line Bash launcher (Linux/macOS/Git Bash)
 │   └── wm.cmd                         # 1-line Windows Cmd / PowerShell launcher
 ├── build.gradle                       # Gradle test dependencies & check wiring
 └── src/
     ├── main/java/com/github/mattiasgreen/wiremock/cli/
-    │   └── WireMockCli.java           # Compiled CLI entrypoint & library class
+    │   └── WireMockCli.java           # Single-file JEP 330 runner & compiled CLI entrypoint
     └── test/java/com/github/mattiasgreen/wiremock/cli/
         ├── WireMockCliTest.java       # Unit tests (MiniJson, QueryEvaluator, Formatter)
         └── WireMockCliIntegrationTest.java # Integration tests against ephemeral WireMock

@@ -104,7 +104,6 @@ public final class WireMockCli {
         // 2. Probe extension endpoints
         out.println(fmt.bold("Extensions Suite Matrix:"));
         probeExtension(client, serverUrl, "tcp-netem", "/__admin/tcp-netem/proxies", fmt, out);
-        probeExtension(client, serverUrl, "stateful", "/__admin/stateful/models", fmt, out);
         probeExtension(client, serverUrl, "otel metrics", "/__admin/metrics/prometheus", fmt, out);
         probeExtension(client, serverUrl, "console ui", "/__admin/ui/", fmt, out);
         out.println();
@@ -555,26 +554,18 @@ public final class WireMockCli {
                 List<String> cmd = new ArrayList<>();
                 cmd.add("java");
 
-                File candidate1 = new File("wiremock-cli/WireMockConsoleProxy.java");
-                File candidate2 = new File("WireMockConsoleProxy.java");
-                File candidate3 = new File("../wiremock-cli/WireMockConsoleProxy.java");
-                File candidate4 = new File(
+                File candidate1 = new File(
                         "wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java");
-                File candidate5 = new File(
+                File candidate2 = new File(
                         "../wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java");
 
                 if (candidate1.isFile()) {
                     cmd.add(candidate1.getPath());
                 } else if (candidate2.isFile()) {
                     cmd.add(candidate2.getPath());
-                } else if (candidate3.isFile()) {
-                    cmd.add(candidate3.getPath());
-                } else if (candidate4.isFile()) {
-                    cmd.add(candidate4.getPath());
-                } else if (candidate5.isFile()) {
-                    cmd.add(candidate5.getPath());
                 } else {
-                    err.println("Could not locate WireMockConsoleProxy.java. Ensure it exists in wiremock-cli/.");
+                    err.println("Could not locate WireMockConsoleProxy.java in "
+                            + "wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/.");
                     return 1;
                 }
 

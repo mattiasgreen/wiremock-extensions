@@ -24,13 +24,6 @@ spotless {
         trimTrailingWhitespace()
         endWithNewline()
     }
-    java {
-        target 'shared/**/*.java'
-        palantirJavaFormat('2.50.0')
-        removeUnusedImports()
-        trimTrailingWhitespace()
-        endWithNewline()
-    }
 }
 
 subprojects {
@@ -188,7 +181,7 @@ subprojects {
 }
 
 dependencies {
-    subprojects.findAll { it.name != 'wiremock-examples' }.each { subproj ->
+    subprojects.findAll { it.name != 'wiremock-examples' && it.name != 'wiremock-cli' }.each { subproj ->
         nmcpAggregation subproj
     }
 }
