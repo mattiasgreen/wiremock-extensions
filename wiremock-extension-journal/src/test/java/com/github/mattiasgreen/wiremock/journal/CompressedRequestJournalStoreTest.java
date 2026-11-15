@@ -2,7 +2,6 @@ package com.github.mattiasgreen.wiremock.journal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveAntiOomGuard;
 import com.github.mattiasgreen.wiremock.journal.engine.AdaptiveJournalCompactor;
 import com.github.mattiasgreen.wiremock.journal.engine.DictionaryPool;
 import com.github.mattiasgreen.wiremock.journal.engine.JournalMemoryGovernor;
@@ -296,13 +295,51 @@ class CompressedRequestJournalStoreTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
-    void shouldMaintainBackwardsCompatibilityWithAdaptiveAntiOomGuard() {
-        AdaptiveAntiOomGuard legacyGuard = new AdaptiveAntiOomGuard(10 * 1024 * 1024, 50 * 1024 * 1024);
-        assertThat(legacyGuard).isInstanceOf(JournalMemoryGovernor.class);
-        CompressedRequestJournalStore legacyStore =
-                new CompressedRequestJournalStore(codec, dictionaryPool, legacyGuard);
-        assertThat(legacyStore.getAntiOomGuard()).isSameAs(legacyGuard);
+    void shouldResolveIndexedBodyLookupWithZeroDecompression() {
+        StubMapping stub = new StubMapping();
+        stub.setId(UUID.randomUUID());
+
+        ServeEvent indexedEvent = createServeEvent(
+                stub,
+                "/api/orders/lookup",
+                "{\"customer\":\"AcmeCorp\",\"txId\":\"TX-LOOKUP-77\"}",
+                "{\"status\":\"APPROVED\"}");
+        store.add(indexedEvent);
+
+        StringBuilder truncatedPayload = new StringBuilder("{");
+        for (int i = 0; i < 300; i++) {
+            if (i > 0) {
+                truncatedPayload.append(',');
+            }
+            truncatedPayload
+                    .append("\"k")
+                    .append(i)
+                    .append("\":\"val")
+                    .append(i)
+                    .append('\"');
+        }
+        truncatedPayload.append('}');
+        ServeEvent truncatedEvent = createServeEvent(stub, "/api/orders/large", truncatedPayload.toString(), "{}");
+        store.add(truncatedEvent);
+
+        long decompressionsBefore = store.getDecompressionCount();
+
+        assertThat(store.containsEventToken(indexedEvent.getId(), "TX-LOOKUP-77"))
+                .contains(true);
+        assertThat(store.containsEventToken(indexedEvent.getId(), "lookup-77")).contains(true);
+        assertThat(store.containsEventToken(indexedEvent.getId(), "missingtoken"))
+                .contains(false);
+
+        assertThat(store.containsEventToken(indexedEvent.getId(), "ab")).isEmpty();
+        assertThat(store.containsEventToken(indexedEvent.getId(), "two words")).isEmpty();
+        assertThat(store.containsEventToken(indexedEvent.getId(), "a".repeat(65)))
+                .isEmpty();
+        assertThat(store.containsEventToken(UUID.randomUUID(), "TX-LOOKUP-77")).isEmpty();
+
+        // Events that exceed MAX_TOKENS_PER_EVENT omit completeness so missing tokens safely fall back
+        assertThat(store.containsEventToken(truncatedEvent.getId(), "notpresenttoken"))
+                .isEmpty();
+        assertThat(store.getDecompressionCount()).isEqualTo(decompressionsBefore);
     }
 
     @Test

@@ -46,12 +46,6 @@
         <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
     </Match>
 
-    <!-- Exclude browser launcher and local file operations in desktop client WireMockStudio -->
-    <Match>
-        <Class name="com.github.mattiasgreen.wiremock.ui.WireMockStudio"/>
-        <Bug pattern="PATH_TRAVERSAL_IN,COMMAND_INJECTION"/>
-    </Match>
-
     <!-- Exclude CLI file reading operations for CasualClient and CasualCli -->
     <Match>
         <Class name="com.github.mattiasgreen.wiremock.casual.CasualClient"/>

@@ -3,7 +3,13 @@ package com.github.mattiasgreen.wiremock.bundle;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
+import com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.client.WireMock;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +22,7 @@ class StandaloneDevServerTest {
         if (server != null && server.isRunning()) {
             server.stop();
         }
+        NetEmEngine.getDefault().closeAll();
         CasualRegistry.getInstance().reset();
         System.clearProperty("wiremock.casual.port");
         System.clearProperty("wiremock.netem.port");
@@ -84,5 +91,42 @@ class StandaloneDevServerTest {
         assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"-h"})).isTrue();
         assertThat(StandaloneDevServer.hasHelpFlag(new String[] {"--port", "8080", "--help"}))
                 .isTrue();
+    }
+
+    @Test
+    void testStartServerSupportsGlobalResponseTemplatingAndJournalLimitFlags() throws Exception {
+        System.setProperty("wiremock.casual.port", "0");
+        System.setProperty("wiremock.netem.port", "0");
+
+        server = StandaloneDevServer.startServer(
+                "--port", "0", "--global-response-templating", "--max-request-journal-entries", "50");
+
+        assertThat(server.isRunning()).isTrue();
+        assertThat(server.getOptions().getResponseTemplatingEnabled()).isTrue();
+        assertThat(server.getOptions().getResponseTemplatingGlobal()).isTrue();
+        assertThat(server.getOptions().maxRequestJournalEntries()).contains(50);
+
+        server.stubFor(WireMock.get(WireMock.urlEqualTo("/template-check"))
+                .willReturn(WireMock.aResponse().withStatus(200).withBody("path={{request.path}}")));
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> response = client.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + server.port() + "/template-check"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo("path=/template-check");
+    }
+
+    @Test
+    void testNormalizeArgsForBarePortAndSingleDashFlags() {
+        assertThat(StandaloneDevServer.normalizeArgs("9094")).containsExactly("--port", "9094");
+        assertThat(StandaloneDevServer.normalizeArgs("--max-request-journal-entries", "50"))
+                .containsExactly("--max-request-journal-entries", "50");
+        assertThat(StandaloneDevServer.normalizeArgs("-port", "9092", "-root-dir", "data", "-version"))
+                .containsExactly("--port", "9092", "--root-dir", "data", "--version");
     }
 }

@@ -1,5 +1,8 @@
 package com.github.mattiasgreen.wiremock.async.admin;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -12,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,8 +46,12 @@ class AsyncAdminEndpointTest {
     }
 
     @Test
-    @DisplayName("GET /__admin/async/status should return beta status and health indicators")
+    @DisplayName("GET /__admin/async/status should return beta status, health indicators, and native asyncStubCount")
     void shouldReturnAsyncStatus() throws Exception {
+        wireMockServer.stubFor(post(urlEqualTo("/__async/kafka/orders.events"))
+                .willReturn(aResponse().withStatus(200).withBody("{\"ok\":true}"))
+                .withMetadata(Map.of("async", Map.of("mode", "mock", "channel", "orders.events"))));
+
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/status"))
                 .GET()
@@ -56,6 +64,9 @@ class AsyncAdminEndpointTest {
         assertThat(json.get("status").asText()).isEqualTo("UP");
         assertThat(json.get("beta").asBoolean()).isTrue();
         assertThat(json.has("kafkaSinkRunning")).isTrue();
+        assertThat(json.get("asyncStubCount").asLong()).isEqualTo(1L);
+        assertThat(json.has("journalCount")).isFalse();
+        assertThat(json.has("harvestedCount")).isFalse();
     }
 
     @Test
@@ -87,80 +98,18 @@ class AsyncAdminEndpointTest {
     }
 
     @Test
-    @DisplayName("GET /__admin/async/journal should return recorded journal events")
-    void shouldReturnAsyncJournal() throws Exception {
-        String publishPayload =
-                """
-                {
-                  "destination": "orders.journal.test",
-                  "protocol": "kafka",
-                  "payload": "{\\"ok\\":true}"
-                }
-                """;
-        HttpResponse<String> pubResp = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/publish"))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(publishPayload))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(pubResp.statusCode()).isEqualTo(200);
-
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/journal"))
-                .GET()
-                .build();
-
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-        assertThat(resp.statusCode()).isEqualTo(200);
-
-        JsonNode json = MAPPER.readTree(resp.body());
-        assertThat(json.has("journal")).isTrue();
-        assertThat(json.has("count")).isTrue();
-        assertThat(json.get("count").asInt()).isGreaterThanOrEqualTo(1);
-        assertThat(json.get("journal").toString()).contains("POST:200:/__async/kafka/orders.journal.test");
-
-        HttpResponse<String> statusResp = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/status"))
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(statusResp.statusCode()).isEqualTo(200);
-        assertThat(MAPPER.readTree(statusResp.body()).get("journalCount").asInt())
-                .isGreaterThanOrEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("GET /__admin/async/harvested should return live messages harvested by the proxy bridge")
-    void shouldReturnHarvestedMessages() throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/harvested"))
-                .GET()
-                .build();
-
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-        assertThat(resp.statusCode()).isEqualTo(200);
-
-        JsonNode json = MAPPER.readTree(resp.body());
-        assertThat(json.has("harvested")).isTrue();
-        assertThat(json.has("count")).isTrue();
-    }
-
-    @Test
-    @DisplayName("GET /__admin/async/stubs should return harvested offline stubs (deprecated alias)")
-    void shouldReturnAsyncStubs() throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/stubs"))
-                .GET()
-                .build();
-
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-        assertThat(resp.statusCode()).isEqualTo(200);
-
-        JsonNode json = MAPPER.readTree(resp.body());
-        assertThat(json.has("stubs")).isTrue();
-        assertThat(json.has("count")).isTrue();
+    @DisplayName("Removed legacy endpoints (/async/journal, /async/harvested, /async/stubs) should not be served")
+    void shouldNotServeRemovedLegacyShadowEndpoints() throws Exception {
+        for (String legacyPath :
+                new String[] {"/__admin/async/journal", "/__admin/async/harvested", "/__admin/async/stubs"}) {
+            HttpResponse<String> resp = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(wireMockServer.baseUrl() + legacyPath))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(resp.statusCode()).isEqualTo(404);
+        }
     }
 
     @Test

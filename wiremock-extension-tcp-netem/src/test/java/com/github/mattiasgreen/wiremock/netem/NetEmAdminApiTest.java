@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmExtensionFactory;
+import com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine;
 import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.net.URI;
@@ -190,5 +191,101 @@ class NetEmAdminApiTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(resetResp.statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void shouldIsolateNetEmEnginesAcrossMultipleWireMockServers() throws Exception {
+        NetEmEngine previousDefault = NetEmEngine.getDefault();
+        WireMockServer serverA = null;
+        WireMockServer serverB = null;
+        NetEmEngine engineA = null;
+        NetEmEngine engineB = null;
+        try {
+            serverA = new WireMockServer(wireMockConfig().dynamicPort().extensions(new TcpNetEmExtensionFactory()));
+            serverA.start();
+            engineA = NetEmEngine.getDefault();
+
+            serverB = new WireMockServer(wireMockConfig().dynamicPort().extensions(new TcpNetEmExtensionFactory()));
+            serverB.start();
+            engineB = NetEmEngine.getDefault();
+
+            assertThat(engineA).isNotSameAs(engineB);
+
+            String createA =
+                    """
+                {
+                    "name": "iso-proxy-a",
+                    "listenPort": 0,
+                    "targetHost": "127.0.0.1",
+                    "targetPort": %d,
+                    "enabled": true
+                }
+                """
+                            .formatted(serverA.port());
+
+            HttpResponse<String> respCreateA = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(serverA.baseUrl() + "/__admin/tcp-netem/proxies"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(createA))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(respCreateA.statusCode()).isEqualTo(201);
+
+            String createB =
+                    """
+                {
+                    "name": "iso-proxy-b",
+                    "listenPort": 0,
+                    "targetHost": "127.0.0.1",
+                    "targetPort": %d,
+                    "enabled": true
+                }
+                """
+                            .formatted(serverB.port());
+
+            HttpResponse<String> respCreateB = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(serverB.baseUrl() + "/__admin/tcp-netem/proxies"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(createB))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(respCreateB.statusCode()).isEqualTo(201);
+
+            HttpResponse<String> listA = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(serverA.baseUrl() + "/__admin/tcp-netem/proxies"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> listB = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(serverB.baseUrl() + "/__admin/tcp-netem/proxies"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            JsonNode nodesA = objectMapper.readTree(listA.body());
+            JsonNode nodesB = objectMapper.readTree(listB.body());
+            assertThat(nodesA).hasSize(1);
+            assertThat(nodesA.get(0).get("name").asText()).isEqualTo("iso-proxy-a");
+            assertThat(nodesB).hasSize(1);
+            assertThat(nodesB.get(0).get("name").asText()).isEqualTo("iso-proxy-b");
+        } finally {
+            if (engineA != null) {
+                engineA.close();
+            }
+            if (engineB != null) {
+                engineB.close();
+            }
+            if (serverA != null && serverA.isRunning()) {
+                serverA.stop();
+            }
+            if (serverB != null && serverB.isRunning()) {
+                serverB.stop();
+            }
+            NetEmEngine.setDefault(previousDefault);
+        }
     }
 }

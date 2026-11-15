@@ -9,12 +9,23 @@ import com.github.mattiasgreen.wiremock.async.destination.DestinationProvider;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaProduceRecord;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaWireSink;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMetadata;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMode;
+import com.github.tomakehurst.wiremock.client.WireMock;
+import com.github.tomakehurst.wiremock.matching.ContentPattern;
+import com.github.tomakehurst.wiremock.matching.RequestPattern;
+import com.github.tomakehurst.wiremock.matching.StringValuePattern;
+import com.github.tomakehurst.wiremock.store.InMemoryStubMappingStore;
+import com.github.tomakehurst.wiremock.store.StubMappingStore;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,9 +36,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -41,7 +53,7 @@ import org.slf4j.LoggerFactory;
 public class AsyncEngine implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AsyncEngine.class);
-    private static final AsyncEngine INSTANCE = new AsyncEngine();
+    private static final AtomicReference<AsyncEngine> LATEST_INSTANCE = new AtomicReference<>(new AsyncEngine());
 
     private static final List<String> BUILT_IN_PROTOCOLS = List.of("in-memory", "kafka", "amqp", "ibmmq");
 
@@ -52,12 +64,12 @@ public class AsyncEngine implements AutoCloseable {
 
     private final Map<String, BiConsumer<String, AsyncMessage>> destinationPublishers = new ConcurrentHashMap<>();
     private final Map<String, DestinationProvider> destinationProviders = new ConcurrentHashMap<>();
-    private final Map<String, Function<AsyncMessage, AsyncMessage>> mockStubs = new ConcurrentHashMap<>();
-    private final Map<String, AsyncMessage> harvestedStubs = new ConcurrentHashMap<>();
-    private final List<AsyncBridgeRule> bridgeRules = new CopyOnWriteArrayList<>();
     private final List<Thread> activeSubscriptions = new CopyOnWriteArrayList<>();
     private final AtomicBoolean running = new AtomicBoolean(true);
 
+    private volatile StubMappingStore stubStore = new InMemoryStubMappingStore();
+    private volatile boolean usingInternalStubStore = true;
+    private volatile Supplier<Collection<DestinationProvider>> extensionProvidersSupplier;
     private volatile Consumer<ServeEvent> journalConsumer;
     private volatile MessageBroker testBroker;
     private volatile MessageBroker upstreamBroker;
@@ -66,13 +78,25 @@ public class AsyncEngine implements AutoCloseable {
     private AmqpServer amqpServer;
 
     private AsyncEngine() {
+        this(AsyncBrokerRegistry.getInstance());
+    }
+
+    private AsyncEngine(AsyncBrokerRegistry brokerRegistry) {
         this.testBroker = new InMemoryMessageBroker("default-test-broker");
         this.upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");
-        this.brokerRegistry = AsyncBrokerRegistry.getInstance();
+        this.brokerRegistry = Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
     }
 
     public static AsyncEngine getInstance() {
-        return INSTANCE;
+        return LATEST_INSTANCE.get();
+    }
+
+    public static AsyncEngine create() {
+        return new AsyncEngine(AsyncBrokerRegistry.create());
+    }
+
+    public static void setDefault(AsyncEngine engine) {
+        LATEST_INSTANCE.set(Objects.requireNonNull(engine, "engine must not be null"));
     }
 
     public static AsyncEngine create(MessageBroker testBroker, MessageBroker upstreamBroker) {
@@ -81,9 +105,8 @@ public class AsyncEngine implements AutoCloseable {
 
     public static AsyncEngine create(
             MessageBroker testBroker, MessageBroker upstreamBroker, AsyncBrokerRegistry brokerRegistry) {
-        AsyncEngine engine = new AsyncEngine();
+        AsyncEngine engine = new AsyncEngine(brokerRegistry);
         engine.setBrokers(testBroker, upstreamBroker);
-        engine.setBrokerRegistry(brokerRegistry);
         return engine;
     }
 
@@ -93,6 +116,19 @@ public class AsyncEngine implements AutoCloseable {
 
     public AsyncBrokerRegistry getBrokerRegistry() {
         return brokerRegistry;
+    }
+
+    public void setStubStore(StubMappingStore stubStore) {
+        this.stubStore = Objects.requireNonNull(stubStore, "stubStore must not be null");
+        this.usingInternalStubStore = false;
+    }
+
+    public StubMappingStore getStubStore() {
+        return stubStore;
+    }
+
+    public void setExtensionProvidersSupplier(Supplier<Collection<DestinationProvider>> supplier) {
+        this.extensionProvidersSupplier = supplier;
     }
 
     public void setJournalConsumer(Consumer<ServeEvent> consumer) {
@@ -215,21 +251,39 @@ public class AsyncEngine implements AutoCloseable {
         LOG.info("[ASYNC-ENGINE] Registered destination provider for protocol [{}]", proto);
     }
 
+    private Map<String, DestinationProvider> effectiveDestinationProviders() {
+        Map<String, DestinationProvider> combined = new LinkedHashMap<>();
+        Supplier<Collection<DestinationProvider>> supplier = extensionProvidersSupplier;
+        if (supplier != null) {
+            Collection<DestinationProvider> discovered = supplier.get();
+            if (discovered != null) {
+                for (DestinationProvider provider : discovered) {
+                    if (provider != null && provider.getProtocol() != null) {
+                        combined.putIfAbsent(provider.getProtocol().toLowerCase(Locale.ROOT), provider);
+                    }
+                }
+            }
+        }
+        combined.putAll(destinationProviders);
+        return combined;
+    }
+
     public Optional<DestinationProvider> getDestinationProvider(String protocol) {
         if (protocol == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(destinationProviders.get(protocol.toLowerCase(Locale.ROOT)));
+        return Optional.ofNullable(effectiveDestinationProviders().get(protocol.toLowerCase(Locale.ROOT)));
     }
 
     public synchronized List<AsyncDestination> listAllDestinations() {
+        Map<String, DestinationProvider> providers = effectiveDestinationProviders();
         List<AsyncDestination> result = new ArrayList<>();
         for (String proto : BUILT_IN_PROTOCOLS) {
-            if (!destinationProviders.containsKey(proto)) {
+            if (!providers.containsKey(proto)) {
                 result.addAll(listBuiltInDestinations(proto));
             }
         }
-        for (DestinationProvider provider : destinationProviders.values()) {
+        for (DestinationProvider provider : providers.values()) {
             result.addAll(provider.listDestinations());
         }
         return Collections.unmodifiableList(result);
@@ -278,7 +332,7 @@ public class AsyncEngine implements AutoCloseable {
             return Collections.emptyList();
         }
         String proto = protocol.toLowerCase(Locale.ROOT);
-        DestinationProvider custom = destinationProviders.get(proto);
+        DestinationProvider custom = effectiveDestinationProviders().get(proto);
         if (custom != null) {
             return custom.peekMessages(destination, limit);
         }
@@ -384,7 +438,7 @@ public class AsyncEngine implements AutoCloseable {
             return false;
         }
         String proto = protocol.toLowerCase(Locale.ROOT);
-        DestinationProvider custom = destinationProviders.get(proto);
+        DestinationProvider custom = effectiveDestinationProviders().get(proto);
         if (custom != null) {
             return custom.deleteMessage(destination, messageId);
         }
@@ -409,7 +463,7 @@ public class AsyncEngine implements AutoCloseable {
             return;
         }
         String proto = protocol.toLowerCase(Locale.ROOT);
-        DestinationProvider custom = destinationProviders.get(proto);
+        DestinationProvider custom = effectiveDestinationProviders().get(proto);
         if (custom != null) {
             custom.purgeDestination(destination);
             return;
@@ -446,7 +500,7 @@ public class AsyncEngine implements AutoCloseable {
             return false;
         }
         String proto = protocol.toLowerCase(Locale.ROOT);
-        DestinationProvider custom = destinationProviders.get(proto);
+        DestinationProvider custom = effectiveDestinationProviders().get(proto);
         if (custom != null) {
             return custom.publishMessage(destination, msg);
         }
@@ -541,33 +595,54 @@ public class AsyncEngine implements AutoCloseable {
         return upstreamBroker;
     }
 
-    public void addMockStub(String payloadKeyword, Function<AsyncMessage, AsyncMessage> replyProducer) {
-        if (payloadKeyword != null && replyProducer != null) {
-            mockStubs.put(payloadKeyword, replyProducer);
-        }
+    public StubMapping addMockStub(String payloadKeyword, String replyPayload) {
+        return addMockStub(null, payloadKeyword, replyPayload);
     }
 
-    public void addBridgeRule(
+    public StubMapping addMockStub(String channel, String payloadKeyword, String replyPayload) {
+        Objects.requireNonNull(payloadKeyword, "payloadKeyword must not be null");
+        Objects.requireNonNull(replyPayload, "replyPayload must not be null");
+        Map<String, Object> asyncMap = new LinkedHashMap<>();
+        asyncMap.put("mode", "mock");
+        asyncMap.put("protocol", "in-memory");
+        if (channel != null && !channel.isBlank()) {
+            asyncMap.put("channel", channel);
+        }
+        StubMapping mapping = WireMock.post(WireMock.urlMatching("/__async/.*"))
+                .withName("async-mock:" + payloadKeyword)
+                .atPriority(5)
+                .withRequestBody(WireMock.containing(payloadKeyword))
+                .willReturn(WireMock.aResponse().withStatus(200).withBody(replyPayload))
+                .withMetadata(Map.of("async", Collections.unmodifiableMap(asyncMap)))
+                .build();
+        stubStore.add(mapping);
+        return mapping;
+    }
+
+    public StubMapping addBridgeRule(
             String name, int priority, String channelPattern, String proxyBroker, String proxyChannel) {
         if (channelPattern == null || channelPattern.isBlank()) {
-            return;
+            return null;
         }
-        Pattern pattern = Pattern.compile(channelPattern);
-        bridgeRules.add(new AsyncBridgeRule(
-                Objects.requireNonNullElse(name, "BridgeRule"),
-                priority,
-                pattern,
-                Objects.requireNonNullElse(proxyBroker, ""),
-                Objects.requireNonNullElse(proxyChannel, "")));
-        bridgeRules.sort(Comparator.comparingInt(AsyncBridgeRule::priority));
-    }
-
-    public List<AsyncBridgeRule> getBridgeRules() {
-        return Collections.unmodifiableList(bridgeRules);
-    }
-
-    public Map<String, AsyncMessage> getHarvestedStubs() {
-        return Collections.unmodifiableMap(harvestedStubs);
+        Pattern.compile(channelPattern);
+        String safeName = Objects.requireNonNullElse(name, "BridgeRule");
+        String safeBroker = Objects.requireNonNullElse(proxyBroker, "");
+        String safeChannel = Objects.requireNonNullElse(proxyChannel, "");
+        String upstreamTarget = "async://" + (safeBroker.isEmpty() ? "upstream" : safeBroker);
+        Map<String, Object> asyncMap = Map.of(
+                "mode", "proxy",
+                "channelPattern", channelPattern,
+                "proxyBroker", safeBroker,
+                "proxyChannel", safeChannel);
+        Map<String, Object> metaMap = Map.of("mode", "proxy", "async", asyncMap);
+        StubMapping mapping = WireMock.any(WireMock.urlMatching("/__async/.*"))
+                .withName(safeName)
+                .atPriority(priority)
+                .willReturn(WireMock.aResponse().proxiedFrom(upstreamTarget))
+                .withMetadata(metaMap)
+                .build();
+        stubStore.add(mapping);
+        return mapping;
     }
 
     /**
@@ -606,9 +681,9 @@ public class AsyncEngine implements AutoCloseable {
     }
 
     /**
-     * Pulls the next message from the test broker. If a configured mock matches, it produces an immediate
-     * reply onto the test broker reply channel. If a priority bridge rule matches, it applies wildcard capture
-     * group rewriting and forwards to the target. If target is unreachable or missing, records a synthetic 502.
+     * Pulls the next message from the test broker and evaluates active WireMock {@link StubMapping}s
+     * declaring {@code metadata.async} in ascending priority order (skipping parked stubs with
+     * priority {@code >= 100}). Unmatched messages fall back to default upstream proxy forwarding.
      *
      * @param channel channel name to process
      * @return true if a message was processed, false if the queue was empty
@@ -620,40 +695,63 @@ public class AsyncEngine implements AutoCloseable {
         }
         messagesConsumed.incrementAndGet();
 
-        // 1. High-Priority Mock Stubs
-        for (Map.Entry<String, Function<AsyncMessage, AsyncMessage>> stub : mockStubs.entrySet()) {
-            if (msg.payload().contains(stub.getKey())) {
-                AsyncMessage reply = stub.getValue().apply(msg);
-                ServeEvent se = AsyncServeEventMediation.buildServeEvent(
-                        msg.protocol(),
-                        channel,
-                        msg.key(),
-                        msg.correlationId(),
-                        msg.replyTo(),
-                        msg.headers(),
-                        msg.payload(),
-                        200,
-                        reply != null ? reply.payload() : "",
-                        null,
-                        null);
-                recordServeEvent(se);
-                if (reply != null && msg.replyTo() != null && !msg.replyTo().isBlank()) {
-                    messagesProduced.incrementAndGet();
-                    testBroker.send(msg.replyTo(), reply);
-                }
-                return true; // Mock isolation
-            }
-        }
+        List<StubMapping> candidates = stubStore
+                .getAll()
+                .filter(s -> s != null && (s.getPriority() == null || s.getPriority() < 100))
+                .filter(s -> AsyncMetadata.from(s.getMetadata()).isPresent())
+                .sorted(Comparator.comparingInt((StubMapping s) -> s.getPriority() != null ? s.getPriority() : 5)
+                        .thenComparingInt(s -> AsyncMetadata.from(s.getMetadata())
+                                .map(m -> m.mode() == AsyncMode.MOCK ? 0 : 1)
+                                .orElse(2)))
+                .toList();
 
-        // 2. Previously Harvested Stubs
-        for (Map.Entry<String, AsyncMessage> harvested : harvestedStubs.entrySet()) {
-            if (msg.payload().contains(harvested.getKey())) {
-                AsyncMessage template = harvested.getValue();
+        for (StubMapping stub : candidates) {
+            AsyncMetadata meta = AsyncMetadata.from(stub.getMetadata()).orElseThrow();
+            if (!isAsyncRoutableStub(stub, meta)) {
+                continue;
+            }
+            if (meta.mode() == AsyncMode.PROXY) {
+                if (!meta.channel().isBlank() && !meta.channel().equals(channel)) {
+                    continue;
+                }
+                String patternStr = !meta.channelPattern().isBlank()
+                        ? meta.channelPattern()
+                        : (!meta.channel().isBlank() ? Pattern.quote(meta.channel()) : "");
+                if (patternStr.isBlank()) {
+                    continue;
+                }
+                Matcher matcher = Pattern.compile(patternStr).matcher(channel);
+                if (matcher.matches()) {
+                    String targetChannel =
+                            meta.proxyChannel().isEmpty() ? channel : matcher.replaceAll(meta.proxyChannel());
+                    String targetBroker = meta.proxyBroker();
+                    AsyncMessage forwarded = msg.destination().equals(targetChannel)
+                            ? msg
+                            : AsyncMessage.builder()
+                                    .id(msg.id())
+                                    .correlationId(msg.correlationId())
+                                    .replyTo(msg.replyTo())
+                                    .destination(targetChannel)
+                                    .protocol(msg.protocol())
+                                    .key(msg.key())
+                                    .payload(msg.payload())
+                                    .headers(msg.headers())
+                                    .timestamp(msg.timestamp())
+                                    .build();
+                    String ruleName =
+                            stub.getName() != null && !stub.getName().isBlank() ? stub.getName() : "BridgeRule";
+                    forwardUpstreamOrRecord502(ruleName, channel, targetBroker, targetChannel, forwarded, stub);
+                    return true;
+                }
+            } else if (matchesMockStub(stub, meta, channel, msg)) {
+                String replyBody = resolveMockReplyBody(stub, meta);
+                int status = stub.getResponse() != null && stub.getResponse().getStatus() > 0
+                        ? stub.getResponse().getStatus()
+                        : 200;
                 AsyncMessage reply = AsyncMessage.builder()
                         .correlationId(msg.correlationId())
                         .destination(msg.replyTo())
-                        .payload(template.payload())
-                        .headers(template.headers())
+                        .payload(replyBody)
                         .build();
                 ServeEvent se = AsyncServeEventMediation.buildServeEvent(
                         msg.protocol(),
@@ -663,10 +761,10 @@ public class AsyncEngine implements AutoCloseable {
                         msg.replyTo(),
                         msg.headers(),
                         msg.payload(),
-                        200,
-                        reply.payload(),
+                        status,
+                        replyBody,
                         null,
-                        null);
+                        stub);
                 recordServeEvent(se);
                 if (msg.replyTo() != null && !msg.replyTo().isBlank()) {
                     messagesProduced.incrementAndGet();
@@ -676,38 +774,78 @@ public class AsyncEngine implements AutoCloseable {
             }
         }
 
-        // 3. Low-Priority Bridging Rules with Wildcard Routing & 502 Troubleshooting
-        for (AsyncBridgeRule rule : bridgeRules) {
-            Matcher matcher = rule.pattern().matcher(channel);
-            if (matcher.matches()) {
-                String targetChannel =
-                        rule.proxyChannel().isEmpty() ? channel : matcher.replaceAll(rule.proxyChannel());
-                String targetBroker = rule.proxyBroker();
-                AsyncMessage forwarded = msg.destination().equals(targetChannel)
-                        ? msg
-                        : AsyncMessage.builder()
-                                .id(msg.id())
-                                .correlationId(msg.correlationId())
-                                .replyTo(msg.replyTo())
-                                .destination(targetChannel)
-                                .protocol(msg.protocol())
-                                .key(msg.key())
-                                .payload(msg.payload())
-                                .headers(msg.headers())
-                                .timestamp(msg.timestamp())
-                                .build();
-                forwardUpstreamOrRecord502(rule.name(), channel, targetBroker, targetChannel, forwarded);
-                return true;
-            }
-        }
-
-        // 4. Default Fallback Proxy Mode: Forward to upstream broker
-        forwardUpstreamOrRecord502("default", channel, "", channel, msg);
+        // Default Fallback Proxy Mode: Forward to upstream broker
+        forwardUpstreamOrRecord502("default", channel, "", channel, msg, null);
         return true;
     }
 
+    private static boolean isAsyncRoutableStub(StubMapping stub, AsyncMetadata meta) {
+        if (meta.mode() == AsyncMode.PROXY
+                || !meta.channel().isBlank()
+                || !meta.channelPattern().isBlank()) {
+            return true;
+        }
+        return isAsyncUrl(stub.getRequest());
+    }
+
+    private static boolean isAsyncUrl(RequestPattern req) {
+        if (req == null) {
+            return false;
+        }
+        return startsWithAsyncPrefix(req.getUrl())
+                || startsWithAsyncPrefix(req.getUrlPath())
+                || startsWithAsyncPrefix(req.getUrlPattern())
+                || startsWithAsyncPrefix(req.getUrlPathPattern());
+    }
+
+    private static boolean startsWithAsyncPrefix(String url) {
+        return url != null && url.startsWith("/__async/");
+    }
+
+    private static boolean matchesMockStub(StubMapping stub, AsyncMetadata meta, String channel, AsyncMessage msg) {
+        if (!meta.channel().isBlank() && !meta.channel().equals(channel)) {
+            return false;
+        }
+        if (!meta.channelPattern().isBlank() && !Pattern.matches(meta.channelPattern(), channel)) {
+            return false;
+        }
+        RequestPattern req = stub.getRequest();
+        if (meta.channel().isBlank() && meta.channelPattern().isBlank() && req != null) {
+            String exactUrl = req.getUrl() != null ? req.getUrl() : req.getUrlPath();
+            if (exactUrl != null && !exactUrl.endsWith("/" + channel)) {
+                return false;
+            }
+        }
+        List<ContentPattern<?>> bodyPatterns = req != null ? req.getBodyPatterns() : null;
+        if (bodyPatterns != null && !bodyPatterns.isEmpty()) {
+            String payload = Objects.requireNonNullElse(msg.payload(), "");
+            for (ContentPattern<?> pattern : bodyPatterns) {
+                if (pattern instanceof StringValuePattern stringPattern
+                        && !stringPattern.match(payload).isExactMatch()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static String resolveMockReplyBody(StubMapping stub, AsyncMetadata meta) {
+        if (stub.getResponse() != null && stub.getResponse().getBody() != null) {
+            return stub.getResponse().getBody();
+        }
+        if (!meta.produce().isEmpty() && meta.produce().get(0).payload() != null) {
+            return meta.produce().get(0).payload();
+        }
+        return "";
+    }
+
     private void forwardUpstreamOrRecord502(
-            String ruleName, String sourceChannel, String targetBroker, String targetChannel, AsyncMessage forwarded) {
+            String ruleName,
+            String sourceChannel,
+            String targetBroker,
+            String targetChannel,
+            AsyncMessage forwarded,
+            StubMapping matchedStub) {
         String brokerLabel = (targetBroker == null || targetBroker.isEmpty()) ? "upstream" : targetBroker;
         String proxiedTarget = brokerLabel + "/" + targetChannel;
 
@@ -719,6 +857,7 @@ public class AsyncEngine implements AutoCloseable {
                     targetChannel,
                     proxiedTarget,
                     forwarded,
+                    matchedStub,
                     "Target queue not found or broker unreachable");
             return;
         }
@@ -737,12 +876,20 @@ public class AsyncEngine implements AutoCloseable {
                     200,
                     "{\"status\":\"BRIDGED\",\"destination\":\"" + targetChannel + "\"}",
                     proxiedTarget,
-                    null);
+                    matchedStub);
             recordServeEvent(se);
         } catch (RuntimeException e) {
             String safeErr = Objects.toString(e.getMessage(), e.getClass().getSimpleName())
                     .replaceAll("[\r\n\"]", "");
-            recordUpstream502(ruleName, sourceChannel, brokerLabel, targetChannel, proxiedTarget, forwarded, safeErr);
+            recordUpstream502(
+                    ruleName,
+                    sourceChannel,
+                    brokerLabel,
+                    targetChannel,
+                    proxiedTarget,
+                    forwarded,
+                    matchedStub,
+                    safeErr);
         }
     }
 
@@ -753,6 +900,7 @@ public class AsyncEngine implements AutoCloseable {
             String targetChannel,
             String proxiedTarget,
             AsyncMessage msg,
+            StubMapping matchedStub,
             String errorDetail) {
         proxyErrors.incrementAndGet();
         String errorBody = "{\"error\":\"ASYNC_PROXY_ERROR\",\"status\":502,\"targetChannel\":\"" + targetChannel
@@ -768,7 +916,7 @@ public class AsyncEngine implements AutoCloseable {
                 502,
                 errorBody,
                 proxiedTarget,
-                null);
+                matchedStub);
         recordServeEvent(se);
         LOG.error(
                 "[ASYNC-PROXY-ERROR] Bridge [{}] failed forwarding [{}] to [{}]: {}",
@@ -785,7 +933,23 @@ public class AsyncEngine implements AutoCloseable {
         }
 
         if (originalMatchKeyword != null && !originalMatchKeyword.isBlank()) {
-            harvestedStubs.put(originalMatchKeyword, reply);
+            String stubName = "async-harvested:" + originalMatchKeyword;
+            stubStore
+                    .getAll()
+                    .filter(s -> s != null && stubName.equals(s.getName()))
+                    .toList()
+                    .forEach(stubStore::remove);
+            StubMapping harvested = WireMock.post(WireMock.urlMatching("/__async/.*"))
+                    .withName(stubName)
+                    .atPriority(5)
+                    .withRequestBody(WireMock.containing(originalMatchKeyword))
+                    .willReturn(WireMock.aResponse()
+                            .withStatus(200)
+                            .withBody(Objects.requireNonNullElse(reply.payload(), "")))
+                    .withMetadata(Map.of(
+                            "async", Map.of("mode", "mock", "harvested", true, "matchKeyword", originalMatchKeyword)))
+                    .build();
+            stubStore.add(harvested);
         }
 
         messagesConsumed.incrementAndGet();
@@ -837,9 +1001,9 @@ public class AsyncEngine implements AutoCloseable {
         messagesProxied.set(0);
         proxyErrors.set(0);
         destinationPublishers.clear();
-        mockStubs.clear();
-        harvestedStubs.clear();
-        bridgeRules.clear();
+        if (usingInternalStubStore) {
+            stubStore.clear();
+        }
         testBroker = new InMemoryMessageBroker("default-test-broker");
         upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");
         stopKafkaSink();
@@ -850,7 +1014,4 @@ public class AsyncEngine implements AutoCloseable {
     public synchronized void close() {
         reset();
     }
-
-    public record AsyncBridgeRule(
-            String name, int priority, Pattern pattern, String proxyBroker, String proxyChannel) {}
 }

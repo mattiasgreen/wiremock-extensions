@@ -6,21 +6,20 @@ import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMetadata;
 import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
-import com.github.tomakehurst.wiremock.core.Admin;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
-import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * AdminApiExtension contributing Admin API routes for asynchronous messaging status,
@@ -33,20 +32,33 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
     public static final String EXTENSION_NAME = "async-admin-endpoint";
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
-    private final AsyncEngine engine;
-    private final AsyncBrokerRegistry brokerRegistry;
+    private final Supplier<AsyncEngine> engineSupplier;
+    private final Supplier<AsyncBrokerRegistry> brokerRegistrySupplier;
 
     public AsyncAdminEndpoint() {
-        this(AsyncEngine.getInstance(), AsyncBrokerRegistry.getInstance());
+        this.engineSupplier = AsyncEngine::getInstance;
+        this.brokerRegistrySupplier = AsyncBrokerRegistry::getInstance;
     }
 
     public AsyncAdminEndpoint(AsyncEngine engine) {
-        this(engine, AsyncBrokerRegistry.getInstance());
+        Objects.requireNonNull(engine, "engine must not be null");
+        this.engineSupplier = () -> engine;
+        this.brokerRegistrySupplier = engine::getBrokerRegistry;
     }
 
     public AsyncAdminEndpoint(AsyncEngine engine, AsyncBrokerRegistry brokerRegistry) {
-        this.engine = Objects.requireNonNull(engine, "engine must not be null");
-        this.brokerRegistry = Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
+        Objects.requireNonNull(engine, "engine must not be null");
+        Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
+        this.engineSupplier = () -> engine;
+        this.brokerRegistrySupplier = () -> brokerRegistry;
+    }
+
+    private AsyncEngine engine() {
+        return engineSupplier.get();
+    }
+
+    private AsyncBrokerRegistry brokerRegistry() {
+        return brokerRegistrySupplier.get();
     }
 
     @Override
@@ -58,72 +70,28 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
     public void contributeAdminApiRoutes(Router router) {
         // GET /__admin/async/status
         router.add(RequestMethod.GET, "/async/status", (admin, serveEvent, pathParams) -> {
+            AsyncEngine currentEngine = engine();
             Map<String, Object> resp = new HashMap<>();
             resp.put("status", "UP");
             resp.put("beta", true);
-            resp.put("kafkaSinkRunning", engine.isKafkaSinkRunning());
-            resp.put("kafkaSinkPort", engine.getKafkaSinkPort());
-            resp.put("messagesConsumed", engine.getMessagesConsumed());
-            resp.put("messagesProduced", engine.getMessagesProduced());
-            resp.put("messagesProxied", engine.getMessagesProxied());
-            resp.put("journalCount", buildAsyncJournalSummary(admin).size());
-            resp.put("harvestedCount", engine.getHarvestedStubs().size());
+            resp.put("kafkaSinkRunning", currentEngine.isKafkaSinkRunning());
+            resp.put("kafkaSinkPort", currentEngine.getKafkaSinkPort());
+            resp.put("messagesConsumed", currentEngine.getMessagesConsumed());
+            resp.put("messagesProduced", currentEngine.getMessagesProduced());
+            resp.put("messagesProxied", currentEngine.getMessagesProxied());
 
-            try {
-                return ResponseDefinitionBuilder.responseDefinition()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(MAPPER.writeValueAsString(resp))
-                        .build();
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-                return ResponseDefinitionBuilder.responseDefinition()
-                        .withStatus(500)
-                        .build();
+            long asyncStubCount = 0;
+            if (admin != null
+                    && admin.listAllStubMappings() != null
+                    && admin.listAllStubMappings().getMappings() != null) {
+                asyncStubCount = admin.listAllStubMappings().getMappings().stream()
+                        .filter(s ->
+                                s != null && AsyncMetadata.from(s.getMetadata()).isPresent())
+                        .count();
             }
-        });
+            resp.put("asyncStubCount", asyncStubCount);
 
-        // GET /__admin/async/journal
-        router.add(RequestMethod.GET, "/async/journal", (admin, serveEvent, pathParams) -> {
             try {
-                List<String> journal = buildAsyncJournalSummary(admin);
-                Map<String, Object> resp = Map.of("count", journal.size(), "journal", journal);
-                return ResponseDefinitionBuilder.responseDefinition()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(MAPPER.writeValueAsString(resp))
-                        .build();
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-                return ResponseDefinitionBuilder.responseDefinition()
-                        .withStatus(500)
-                        .build();
-            }
-        });
-
-        // GET /__admin/async/harvested - Returns live wire messages harvested by the proxy bridge
-        router.add(RequestMethod.GET, "/async/harvested", (admin, serveEvent, pathParams) -> {
-            try {
-                Map<String, Object> resp = Map.of(
-                        "count", engine.getHarvestedStubs().size(),
-                        "harvested", engine.getHarvestedStubs());
-                return ResponseDefinitionBuilder.responseDefinition()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(MAPPER.writeValueAsString(resp))
-                        .build();
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-                return ResponseDefinitionBuilder.responseDefinition()
-                        .withStatus(500)
-                        .build();
-            }
-        });
-
-        // GET /__admin/async/stubs (Deprecated alias for /async/harvested; registered stubs live under
-        // /__admin/mappings)
-        router.add(RequestMethod.GET, "/async/stubs", (admin, serveEvent, pathParams) -> {
-            try {
-                Map<String, Object> resp = Map.of(
-                        "count", engine.getHarvestedStubs().size(),
-                        "stubs", engine.getHarvestedStubs());
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
@@ -143,7 +111,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 JsonNode json = MAPPER.readTree(reqBody);
                 AsyncMessage message = parseAsyncMessage(json, "kafka", "");
 
-                engine.publish(message.destination(), message);
+                engine().publish(message.destination(), message);
 
                 Map<String, Object> resp = Map.of(
                         "published", true,
@@ -174,14 +142,14 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 int port = json.has("port") ? json.get("port").asInt() : 0;
 
                 if ("stop".equalsIgnoreCase(action)) {
-                    engine.stopKafkaSink();
+                    engine().stopKafkaSink();
                 } else {
-                    engine.startKafkaSink(port, null);
+                    engine().startKafkaSink(port, null);
                 }
 
                 Map<String, Object> resp = Map.of(
-                        "kafkaSinkRunning", engine.isKafkaSinkRunning(),
-                        "kafkaSinkPort", engine.getKafkaSinkPort());
+                        "kafkaSinkRunning", engine().isKafkaSinkRunning(),
+                        "kafkaSinkPort", engine().getKafkaSinkPort());
 
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
@@ -207,7 +175,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         // GET /__admin/async/connections
         router.add(RequestMethod.GET, "/async/connections", (admin, serveEvent, pathParams) -> {
             try {
-                List<Map<String, Object>> list = brokerRegistry.listSanitized();
+                List<Map<String, Object>> list = brokerRegistry().listSanitized();
                 Map<String, Object> resp = Map.of("count", list.size(), "connections", list);
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
@@ -224,10 +192,11 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         // POST /__admin/async/connections
         router.add(RequestMethod.POST, "/async/connections", (admin, serveEvent, pathParams) -> {
             try {
+                AsyncBrokerRegistry registry = brokerRegistry();
                 String reqBody = serveEvent.getRequest().getBodyAsString();
                 JsonNode node = MAPPER.readTree(reqBody);
                 List<com.github.mattiasgreen.wiremock.async.connection.BrokerConnection> registered =
-                        brokerRegistry.registerFromJson(node);
+                        registry.registerFromJson(node);
                 if (registered.isEmpty()) {
                     return ResponseDefinitionBuilder.responseDefinition()
                             .withStatus(400)
@@ -238,7 +207,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
 
                 List<Map<String, Object>> sanitizedList = new ArrayList<>();
                 for (var c : registered) {
-                    sanitizedList.add(brokerRegistry.exportSanitized(c.id()));
+                    sanitizedList.add(registry.exportSanitized(c.id()));
                 }
 
                 Map<String, Object> resp = new LinkedHashMap<>();
@@ -262,7 +231,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         // DELETE /__admin/async/connections/{id}
         router.add(RequestMethod.DELETE, "/async/connections/{id}", (admin, serveEvent, pathParams) -> {
             String id = pathParams.get("id");
-            boolean removed = brokerRegistry.remove(id);
+            boolean removed = brokerRegistry().remove(id);
             if (removed) {
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(204)
@@ -279,7 +248,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         // GET /__admin/async/destinations
         router.add(RequestMethod.GET, "/async/destinations", (admin, serveEvent, pathParams) -> {
             try {
-                List<AsyncDestination> destinations = engine.listAllDestinations();
+                List<AsyncDestination> destinations = engine().listAllDestinations();
                 Map<String, Object> resp = Map.of("count", destinations.size(), "destinations", destinations);
                 return ResponseDefinitionBuilder.responseDefinition()
                         .withStatus(200)
@@ -301,7 +270,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                     try {
                         String protocol = pathParams.get("protocol");
                         String name = pathParams.get("name");
-                        List<AsyncMessage> messages = engine.peekMessages(protocol, name, 50);
+                        List<AsyncMessage> messages = engine().peekMessages(protocol, name, 50);
                         Map<String, Object> resp = Map.of(
                                 "protocol", protocol,
                                 "destination", name,
@@ -327,7 +296,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                     String protocol = pathParams.get("protocol");
                     String name = pathParams.get("name");
                     String id = pathParams.get("id");
-                    boolean deleted = engine.deleteMessage(protocol, name, id);
+                    boolean deleted = engine().deleteMessage(protocol, name, id);
                     if (deleted) {
                         return ResponseDefinitionBuilder.responseDefinition()
                                 .withStatus(204)
@@ -345,7 +314,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
         router.add(RequestMethod.DELETE, "/async/destinations/{protocol}/{name}", (admin, serveEvent, pathParams) -> {
             String protocol = pathParams.get("protocol");
             String name = pathParams.get("name");
-            engine.purgeDestination(protocol, name);
+            engine().purgeDestination(protocol, name);
             return ResponseDefinitionBuilder.responseDefinition()
                     .withStatus(204)
                     .build();
@@ -363,7 +332,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                         JsonNode json = MAPPER.readTree(reqBody);
                         AsyncMessage msg = parseAsyncMessage(json, protocol, name);
 
-                        boolean published = engine.publishMessage(protocol, name, msg);
+                        boolean published = engine().publishMessage(protocol, name, msg);
                         if (published) {
                             return ResponseDefinitionBuilder.responseDefinition()
                                     .withStatus(201)
@@ -423,51 +392,5 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 .headers(headers)
                 .timestamp(Instant.now())
                 .build();
-    }
-
-    private static List<String> buildAsyncJournalSummary(Admin admin) {
-        if (admin == null
-                || admin.getServeEvents() == null
-                || admin.getServeEvents().getServeEvents() == null) {
-            return List.of();
-        }
-        List<ServeEvent> events = admin.getServeEvents().getServeEvents();
-        List<String> summary = new ArrayList<>();
-        for (ServeEvent se : events) {
-            if (!isAsyncServeEvent(se)) {
-                continue;
-            }
-            String method = se.getRequest().getMethod() != null
-                    ? se.getRequest().getMethod().getName()
-                    : "ASYNC";
-            String url = se.getRequest().getUrl() != null ? se.getRequest().getUrl() : "";
-            int status = 200;
-            if (se.getResponseDefinition() != null) {
-                status = se.getResponseDefinition().getStatus();
-            } else if (se.getResponse() != null) {
-                status = se.getResponse().getStatus();
-            }
-            summary.add(method + ":" + status + ":" + url);
-        }
-        return Collections.unmodifiableList(summary);
-    }
-
-    private static boolean isAsyncServeEvent(ServeEvent se) {
-        if (se == null || se.getRequest() == null) {
-            return false;
-        }
-        String url = se.getRequest().getUrl();
-        if (url != null && url.startsWith("/__async/")) {
-            return true;
-        }
-        return se.getRequest().getHeaders() != null
-                && (se.getRequest()
-                                .getHeaders()
-                                .getHeader("X-WireMock-Async-Protocol")
-                                .isPresent()
-                        || se.getRequest()
-                                .getHeaders()
-                                .getHeader("X-Async-Destination")
-                                .isPresent());
     }
 }

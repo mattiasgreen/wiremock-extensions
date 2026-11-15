@@ -1,8 +1,7 @@
 dependencies {
+    implementation project(':wiremock-extension-common')
     implementation libs.zstd.jni
     implementation libs.jackson.databind
-
-    testImplementation project(':wiremock-extension-casual')
 }
 
 tasks.withType(Test).configureEach {

@@ -357,7 +357,7 @@ Here is the complete inner loop for proxying live Casual interactions, recording
 4. **Snapshot Record to Generate Persistent Stubs**:
    Capture all recorded live proxy calls from the journal into permanent offline stubs via the Admin API:
    ```bash
-   curl -X POST http://localhost:8080/__admin/recordings/snapshot \
+   curl -X POST http://localhost:8080/__admin/lifecycle/snapshots \
      -H "Content-Type: application/json" \
      -d '{
        "outputFormat": "FULL",
@@ -368,7 +368,7 @@ Here is the complete inner loop for proxying live Casual interactions, recording
        }
      }'
    ```
-   *UI Alternative*: In the WireMock Console Web UI at [http://localhost:8080/__admin/ui](http://localhost:8080/__admin/ui), open the **Request Journal** tab and click **Snapshot / Harvest**, or click the project mode pill to switch from **LIVE PROXY** to **STUBS**.
+   *UI Alternative*: In the WireMock Console Web UI at [http://localhost:8080/__admin/ui](http://localhost:8080/__admin/ui), open the **Request Journal** tab and click **Snapshot / Harvest**, or click the project mode pill (backed by `POST /__admin/lifecycle/projects/{project}/mode`) to switch from **LIVE PROXY** to **STUBS**.
 
 5. **Verify Recorded Offline Stubs**:
    WireMock automatically synthesizes offline stubs:
@@ -546,7 +546,7 @@ curl -X POST http://localhost:8080/__admin/mappings \
 #### 3. Trigger Snapshot Recording
 Snapshot all proxied requests into offline stubs:
 ```bash
-curl -X POST http://localhost:8080/__admin/recordings/snapshot \
+curl -X POST http://localhost:8080/__admin/lifecycle/snapshots \
   -H "Content-Type: application/json" \
   -d '{
     "outputFormat": "FULL",

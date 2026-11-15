@@ -12,7 +12,6 @@ import java.util.Optional;
 public class TcpNetEmRegistry {
 
     private static final TcpNetEmRegistry INSTANCE = new TcpNetEmRegistry();
-    private final NetEmEngine engine = NetEmEngine.getDefault();
 
     private TcpNetEmRegistry() {}
 
@@ -21,34 +20,34 @@ public class TcpNetEmRegistry {
     }
 
     public NetEmEngine getEngine() {
-        return engine;
+        return NetEmEngine.getDefault();
     }
 
     public NetEmCircularJournal getJournal() {
-        return engine.getJournal();
+        return getEngine().getJournal();
     }
 
     public TcpNetEmProxy register(NetEmProxyConfig config) throws IOException {
-        return engine.register(config);
+        return getEngine().register(config);
     }
 
     public Optional<TcpNetEmProxy> get(String name) {
-        return engine.get(name);
+        return getEngine().get(name);
     }
 
     public Collection<TcpNetEmProxy> list() {
-        return engine.list();
+        return getEngine().list();
     }
 
     public boolean remove(String name) {
-        return engine.remove(name);
+        return getEngine().remove(name);
     }
 
     public void resetAll() {
-        engine.resetAll();
+        getEngine().resetAll();
     }
 
     public void closeAll() {
-        engine.closeAll();
+        getEngine().closeAll();
     }
 }

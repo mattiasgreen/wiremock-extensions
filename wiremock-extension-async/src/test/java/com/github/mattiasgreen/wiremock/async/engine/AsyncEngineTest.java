@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMetadata;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMode;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,11 +40,7 @@ class AsyncEngineTest {
     @Test
     @DisplayName("Should intercept matching message and respond immediately with mock without upstream leakage")
     void shouldInterceptMockStubWithoutUpstreamLeakage() {
-        engine.addMockStub("GET_BALANCE", req -> AsyncMessage.builder()
-                .correlationId(req.correlationId())
-                .destination(req.replyTo())
-                .payload("{\"balance\": 1500.00}")
-                .build());
+        engine.addMockStub("GET_BALANCE", "{\"balance\": 1500.00}");
 
         AsyncMessage msg = AsyncMessage.builder()
                 .correlationId("corr-101")
@@ -119,7 +117,14 @@ class AsyncEngineTest {
         // 2. Process outbound reply and harvest
         boolean harvested = engine.processOutboundReply("payments.responses", "PAY-999");
         assertThat(harvested).isTrue();
-        assertThat(engine.getHarvestedStubs()).containsKey("PAY-999");
+        assertThat(engine.getStubStore().getAll().toList()).anySatisfy(stub -> {
+            assertThat(AsyncMetadata.from(stub.getMetadata()))
+                    .isPresent()
+                    .get()
+                    .extracting(AsyncMetadata::mode)
+                    .isEqualTo(AsyncMode.MOCK);
+            assertThat(stub.getResponse().getBody()).contains("AUTH-999");
+        });
 
         // 3. Forwarded to test broker
         AsyncMessage forwarded = testBroker.poll("payments.responses");

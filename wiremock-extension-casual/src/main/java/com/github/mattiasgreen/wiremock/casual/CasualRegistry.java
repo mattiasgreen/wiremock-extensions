@@ -1,5 +1,6 @@
 package com.github.mattiasgreen.wiremock.casual;
 
+import com.github.tomakehurst.wiremock.core.Admin;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import com.github.tomakehurst.wiremock.store.Stores;
 import java.util.Collections;
@@ -12,24 +13,48 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Singleton registry holding the current Casual configuration and active gateway instance.
- * Allows runtime inspection and dynamic reconfiguration via Admin API endpoints.
+ * Per-server registry holding Casual configuration, active gateway, and WireMock services.
+ * Supports isolated {@link CasualRegistry} instances per server while preserving backward-compatible
+ * {@link #getInstance()} delegation and cross-server {@link Stores} lookup for {@link WireMockStoreAdapter}.
  */
 public class CasualRegistry {
 
     private static final Logger LOG = LoggerFactory.getLogger(CasualRegistry.class);
-    private static final CasualRegistry INSTANCE = new CasualRegistry();
+    private static final AtomicReference<CasualRegistry> LATEST_INSTANCE = new AtomicReference<>(new CasualRegistry());
+    private static final Map<Admin, CasualRegistry> BY_ADMIN = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Stores, WireMockServices> SERVICES_BY_STORES =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private final AtomicReference<CasualConfiguration> configRef =
             new AtomicReference<>(CasualConfiguration.fromEnvironment());
     private final AtomicReference<CasualWireMockGateway> gatewayRef = new AtomicReference<>(null);
     private final AtomicReference<WireMockServices> servicesRef = new AtomicReference<>(null);
-    private final Map<Stores, WireMockServices> servicesByStores = Collections.synchronizedMap(new WeakHashMap<>());
 
     private CasualRegistry() {}
 
+    public static CasualRegistry create() {
+        return new CasualRegistry();
+    }
+
     public static CasualRegistry getInstance() {
-        return INSTANCE;
+        return LATEST_INSTANCE.get();
+    }
+
+    public static void setDefault(CasualRegistry registry) {
+        LATEST_INSTANCE.set(Objects.requireNonNull(registry, "registry must not be null"));
+    }
+
+    public static Optional<CasualRegistry> forAdmin(Admin admin) {
+        if (admin == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(BY_ADMIN.get(admin));
+    }
+
+    public static void registerForAdmin(Admin admin, CasualRegistry registry) {
+        if (admin != null && registry != null) {
+            BY_ADMIN.put(admin, registry);
+        }
     }
 
     public CasualConfiguration getConfig() {
@@ -56,7 +81,7 @@ public class CasualRegistry {
         if (stores == null) {
             return getWireMockServices();
         }
-        WireMockServices mapped = servicesByStores.get(stores);
+        WireMockServices mapped = SERVICES_BY_STORES.get(stores);
         if (mapped != null) {
             return Optional.of(mapped);
         }
@@ -70,7 +95,7 @@ public class CasualRegistry {
     public void setWireMockServices(WireMockServices services) {
         servicesRef.set(services);
         if (services != null && services.getStores() != null) {
-            servicesByStores.put(services.getStores(), services);
+            SERVICES_BY_STORES.put(services.getStores(), services);
         }
     }
 

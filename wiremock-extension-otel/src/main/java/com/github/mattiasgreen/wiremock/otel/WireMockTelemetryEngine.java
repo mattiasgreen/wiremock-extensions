@@ -1,8 +1,8 @@
 package com.github.mattiasgreen.wiremock.otel;
 
-import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmProxy;
-import com.github.mattiasgreen.wiremock.netem.engine.TcpNetEmRegistry;
 import com.github.mattiasgreen.wiremock.otel.tracing.WireMockRequestTextMapGetter;
+import com.github.mattiasgreen.wiremock.support.NetEmMetricsSource;
+import com.github.mattiasgreen.wiremock.support.NetEmProxyMetricsSnapshot;
 import com.github.tomakehurst.wiremock.core.Admin;
 import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import com.github.tomakehurst.wiremock.http.Request;
@@ -37,7 +37,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
+import java.util.ServiceConfigurationError;
+import java.util.ServiceLoader;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.slf4j.MDC;
@@ -117,8 +121,27 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
 
     public static WireMockTelemetryEngine create(WireMockServices services) {
         Supplier<Admin> adminSupplier = services != null ? services::getAdmin : null;
+        Supplier<Collection<NetEmProxyMetricsSnapshot>> fallback = defaultNetEmSupplier();
+        Supplier<Collection<NetEmProxyMetricsSnapshot>> netEmSupplier = () -> {
+            if (services != null && services.getExtensions() != null) {
+                Collection<NetEmMetricsSource> sources = services.getExtensions()
+                        .ofType(NetEmMetricsSource.class)
+                        .values();
+                if (!sources.isEmpty()) {
+                    List<NetEmProxyMetricsSnapshot> snapshots = new ArrayList<>();
+                    for (NetEmMetricsSource source : sources) {
+                        List<NetEmProxyMetricsSnapshot> items = source.snapshotProxies();
+                        if (items != null) {
+                            snapshots.addAll(items);
+                        }
+                    }
+                    return snapshots;
+                }
+            }
+            return fallback.get();
+        };
         return new WireMockTelemetryEngine(
-                resolveTracingEnabled(), resolveOtlpEndpoint(), null, adminSupplier, defaultNetEmSupplier());
+                resolveTracingEnabled(), resolveOtlpEndpoint(), null, adminSupplier, netEmSupplier);
     }
 
     public static WireMockTelemetryEngine create(
@@ -139,7 +162,7 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
             String otlpEndpoint,
             SpanExporter customSpanExporter,
             Supplier<Admin> adminSupplier,
-            Supplier<Collection<TcpNetEmProxy>> netEmSupplier) {
+            Supplier<Collection<NetEmProxyMetricsSnapshot>> netEmSupplier) {
 
         this.tracingEnabled = tracingEnabled;
         this.adminSupplier = adminSupplier;
@@ -281,7 +304,7 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 });
     }
 
-    private void registerNetEmInstruments(Supplier<Collection<TcpNetEmProxy>> netEmSupplier) {
+    private void registerNetEmInstruments(Supplier<Collection<NetEmProxyMetricsSnapshot>> netEmSupplier) {
         if (netEmSupplier == null) {
             return;
         }
@@ -291,14 +314,13 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 .ofLongs()
                 .buildWithCallback(measurement -> {
                     try {
-                        Collection<TcpNetEmProxy> proxies = netEmSupplier.get();
+                        Collection<NetEmProxyMetricsSnapshot> proxies = netEmSupplier.get();
                         if (proxies != null && !proxies.isEmpty()) {
-                            for (TcpNetEmProxy proxy : proxies) {
+                            for (NetEmProxyMetricsSnapshot proxy : proxies) {
+                                String name = proxy.name() != null ? proxy.name() : "default";
                                 measurement.record(
-                                        proxy.getStats().getActiveConnections(),
-                                        Attributes.of(
-                                                AttributeKey.stringKey("proxy"),
-                                                proxy.getConfig().getName()));
+                                        proxy.activeConnections(),
+                                        Attributes.of(AttributeKey.stringKey("proxy"), name));
                             }
                         }
                     } catch (LinkageError | RuntimeException ignored) {
@@ -309,25 +331,25 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 .setDescription("Total transfers processed through NetEm proxy")
                 .buildWithCallback(measurement -> {
                     try {
-                        Collection<TcpNetEmProxy> proxies = netEmSupplier.get();
+                        Collection<NetEmProxyMetricsSnapshot> proxies = netEmSupplier.get();
                         if (proxies != null && !proxies.isEmpty()) {
-                            for (TcpNetEmProxy proxy : proxies) {
-                                String name = proxy.getConfig().getName();
+                            for (NetEmProxyMetricsSnapshot proxy : proxies) {
+                                String name = proxy.name() != null ? proxy.name() : "default";
                                 measurement.record(
-                                        proxy.getStats().getNormalTransfers(),
+                                        proxy.normalTransfers(),
                                         Attributes.builder()
                                                 .put("proxy", name)
                                                 .put("outcome", "normal")
                                                 .put("toxic", "none")
                                                 .build());
                                 measurement.record(
-                                        proxy.getStats().getImpairedTransfers(),
+                                        proxy.impairedTransfers(),
                                         Attributes.builder()
                                                 .put("proxy", name)
                                                 .put("outcome", "impaired")
                                                 .put("toxic", "any")
                                                 .build());
-                                proxy.getStats().getToxicCounters().forEach((toxic, count) -> {
+                                proxy.toxicCounters().forEach((toxic, count) -> {
                                     measurement.record(
                                             count,
                                             Attributes.builder()
@@ -346,33 +368,33 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
                 .setDescription("Total bytes transferred through NetEm proxy")
                 .buildWithCallback(measurement -> {
                     try {
-                        Collection<TcpNetEmProxy> proxies = netEmSupplier.get();
+                        Collection<NetEmProxyMetricsSnapshot> proxies = netEmSupplier.get();
                         if (proxies != null && !proxies.isEmpty()) {
-                            for (TcpNetEmProxy proxy : proxies) {
-                                String name = proxy.getConfig().getName();
+                            for (NetEmProxyMetricsSnapshot proxy : proxies) {
+                                String name = proxy.name() != null ? proxy.name() : "default";
                                 measurement.record(
-                                        proxy.getStats().getBytesUpstreamNormal(),
+                                        proxy.bytesUpstreamNormal(),
                                         Attributes.builder()
                                                 .put("proxy", name)
                                                 .put("direction", "upstream")
                                                 .put("outcome", "normal")
                                                 .build());
                                 measurement.record(
-                                        proxy.getStats().getBytesDownstreamNormal(),
+                                        proxy.bytesDownstreamNormal(),
                                         Attributes.builder()
                                                 .put("proxy", name)
                                                 .put("direction", "downstream")
                                                 .put("outcome", "normal")
                                                 .build());
                                 measurement.record(
-                                        proxy.getStats().getBytesUpstreamImpaired(),
+                                        proxy.bytesUpstreamImpaired(),
                                         Attributes.builder()
                                                 .put("proxy", name)
                                                 .put("direction", "upstream")
                                                 .put("outcome", "impaired")
                                                 .build());
                                 measurement.record(
-                                        proxy.getStats().getBytesDownstreamImpaired(),
+                                        proxy.bytesDownstreamImpaired(),
                                         Attributes.builder()
                                                 .put("proxy", name)
                                                 .put("direction", "downstream")
@@ -612,12 +634,19 @@ public class WireMockTelemetryEngine implements Closeable, AutoCloseable {
         return tracingEnabled;
     }
 
-    private static Supplier<Collection<TcpNetEmProxy>> defaultNetEmSupplier() {
+    private static Supplier<Collection<NetEmProxyMetricsSnapshot>> defaultNetEmSupplier() {
         return () -> {
             try {
-                return TcpNetEmRegistry.getInstance().list();
-            } catch (LinkageError | RuntimeException ignored) {
-                return null;
+                List<NetEmProxyMetricsSnapshot> snapshots = new ArrayList<>();
+                for (NetEmMetricsSource source : ServiceLoader.load(NetEmMetricsSource.class)) {
+                    List<NetEmProxyMetricsSnapshot> items = source.snapshotProxies();
+                    if (items != null) {
+                        snapshots.addAll(items);
+                    }
+                }
+                return snapshots;
+            } catch (ServiceConfigurationError | LinkageError | RuntimeException ignored) {
+                return List.of();
             }
         };
     }

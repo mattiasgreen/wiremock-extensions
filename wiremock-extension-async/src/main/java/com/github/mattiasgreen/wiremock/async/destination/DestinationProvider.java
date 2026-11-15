@@ -1,12 +1,18 @@
 package com.github.mattiasgreen.wiremock.async.destination;
 
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.tomakehurst.wiremock.extension.Extension;
 import java.util.List;
 
 /**
  * Protocol-specific provider interface for querying and mutating destination queues and topics.
  */
-public interface DestinationProvider {
+public interface DestinationProvider extends Extension {
+
+    @Override
+    default String getName() {
+        return "destination-provider-" + getProtocol();
+    }
 
     /**
      * Protocol identifier handled by this provider (e.g. {@code "kafka"}, {@code "amqp"}, {@code "casual"}, {@code "in-memory"}).
