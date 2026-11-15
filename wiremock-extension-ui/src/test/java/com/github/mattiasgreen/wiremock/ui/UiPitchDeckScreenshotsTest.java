@@ -2,11 +2,6 @@ package com.github.mattiasgreen.wiremock.ui;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
-import com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition;
-import com.github.mattiasgreen.wiremock.stateful.dsl.*;
-import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
-import com.github.mattiasgreen.wiremock.stateful.extension.StatefulAdminEndpoint;
-import com.github.mattiasgreen.wiremock.stateful.extension.StatefulResponseTransformer;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
@@ -18,7 +13,6 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.*;
 
@@ -27,7 +21,6 @@ import org.junit.jupiter.api.*;
 public class UiPitchDeckScreenshotsTest {
 
     private WireMockServer wireMockServer;
-    private StateEngine stateEngine;
     private Playwright playwright;
     private Browser browser;
     private Path outputDir;
@@ -45,15 +38,12 @@ public class UiPitchDeckScreenshotsTest {
         }
         Files.createDirectories(outputDir);
 
-        stateEngine = new StateEngine();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
                         new UiAdminApiEndpoint(),
                         new StubLifecycleAdminEndpoint(new StubLifecycleService()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
-                        new StatefulAdminEndpoint(stateEngine),
-                        new StatefulResponseTransformer(stateEngine),
                         new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint()));
         wireMockServer.start();
 
@@ -128,31 +118,6 @@ public class UiPitchDeckScreenshotsTest {
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"orderId\": \"ORD-9942\", \"status\": \"AWAITING_FULFILLMENT\"}")));
-
-        // Register dynamic state model
-        stateEngine.registerGlobalModel(createCasesModel());
-    }
-
-    private AstModelDefinition createCasesModel() {
-        return SimulatorModel.forEntity("cases")
-                .idPathParam("caseId")
-                .idPrefix("case-")
-                .onPost("/api/v1/cases")
-                .initialState(Map.of("status", "OPEN", "tasks", List.of()))
-                .respondWith(201, ResponseSource.entity())
-                .onGet("/api/v1/cases/{caseId}")
-                .respondWith(200, ResponseSource.entity())
-                .onPost("/api/v1/cases/{caseId}/tasks")
-                .mutate(Action.appendToList("tasks", Source.requestBodyWithGeneratedId("id", "task-")))
-                .respondWith(201, ResponseSource.entity())
-                .onPut("/api/v1/cases/{caseId}/close")
-                .require(
-                        Expr.list("tasks").allMatch(Expr.field("status").notEq("PENDING")),
-                        409,
-                        "Cannot close case: pending tasks exist")
-                .mutate(Action.setField("status", "CLOSED"))
-                .respondWith(200, ResponseSource.entity())
-                .build();
     }
 
     @Test

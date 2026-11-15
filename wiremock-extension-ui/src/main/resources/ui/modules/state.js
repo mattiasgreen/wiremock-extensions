@@ -3,6 +3,21 @@
  * Holds active data collections, selection pointers, filters, and inspector mode toggles.
  */
 import { requestJournal } from './request-journal.js';
+import { stubCatalog, setCatalogOriginResolver } from './stub-catalog.js';
+
+export const uiActions = {
+  selectStub: null,
+  renderStubList: null,
+  renderJournal: null,
+  loadData: null,
+  loadJournal: null
+};
+
+export function registerUiActions(partial) {
+  if (partial && typeof partial === 'object') {
+    Object.assign(uiActions, partial);
+  }
+}
 
 export function parseTargetUrl(rawUrl) {
   if (!rawUrl || !rawUrl.trim()) return null;
@@ -126,12 +141,27 @@ export const state = {
   apiBaseUrl: initialTarget,
   targetConfig: parseTargetUrl(initialTarget),
   connectionStrategy: initialStrategy,
-  currentStubs: [],
-  selectedStubId: null,
+  get currentStubs() {
+    return stubCatalog.getAll();
+  },
+  set currentStubs(val) {
+    stubCatalog.setMappings(val);
+  },
+  get selectedStubId() {
+    return stubCatalog.getSelectedStubId();
+  },
+  set selectedStubId(val) {
+    stubCatalog.setSelectedStubId(val);
+  },
   selectedProject: null, // null means all projects
-  statusFilter: 'all',   // 'all' | 'active' | 'disabled' | 'dynamic'
-  selectedStubIds: new Set(),
-  statefulModels: [],
+  statusFilter: 'all',   // 'all' | 'active' | 'disabled'
+  get selectedStubIds() {
+    return stubCatalog.selectedIds;
+  },
+  set selectedStubIds(val) {
+    stubCatalog.replaceSelectedIds(val);
+  },
+  contextStub: null,
   journalMeta: null,
   journalServerFiltered: false,
   get currentRequests() {
@@ -140,11 +170,12 @@ export const state = {
   set currentRequests(val) {
     requestJournal.setRequests(val, this.journalMeta || null, Boolean(this.journalServerFiltered));
   },
-  journalVerdictFilter: 'all', // 'all' | 'proxied' | 'stub' | 'stateful' | 'unmatched'
+  journalVerdictFilter: 'all', // 'all' | 'proxied' | 'stub' | 'unmatched'
   journalProtocolFilter: 'all', // 'all' | 'http' | 'kafka' | 'amqp' | 'casual'
   journalTimeRange: 'all',     // 'all' | '5m' | '15m' | '1h' | '24h' | 'custom'
   journalSince: null,
   journalUntil: null,
+  journalCurrentPage: 1,
   expandedRequestId: null,
   journalLimit: 100,
   allScenarios: [],
@@ -170,11 +201,12 @@ export const state = {
   capabilities: {
     core: true,
     lifecycle: true,
-    stateful: true,
     netem: true,
     metrics: true,
     casual: true
   },
   capabilitiesDetected: false
 };
+
+setCatalogOriginResolver(getWireMockUri);
 

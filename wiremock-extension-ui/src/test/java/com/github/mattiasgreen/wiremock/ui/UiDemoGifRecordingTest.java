@@ -2,10 +2,6 @@ package com.github.mattiasgreen.wiremock.ui;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
-import com.github.mattiasgreen.wiremock.stateful.dsl.*;
-import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
-import com.github.mattiasgreen.wiremock.stateful.extension.StatefulAdminEndpoint;
-import com.github.mattiasgreen.wiremock.stateful.extension.StatefulResponseTransformer;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.madgag.gif.fmsware.AnimatedGifEncoder;
@@ -20,8 +16,6 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
-import java.util.Map;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.*;
 
@@ -30,7 +24,6 @@ import org.junit.jupiter.api.*;
 public class UiDemoGifRecordingTest {
 
     private WireMockServer wireMockServer;
-    private StateEngine stateEngine;
     private Playwright playwright;
     private Browser browser;
     private Path outputDir;
@@ -49,15 +42,12 @@ public class UiDemoGifRecordingTest {
         }
         Files.createDirectories(outputDir);
 
-        stateEngine = new StateEngine();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
                         new UiAdminApiEndpoint(),
                         new StubLifecycleAdminEndpoint(new StubLifecycleService()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
-                        new StatefulAdminEndpoint(stateEngine),
-                        new StatefulResponseTransformer(stateEngine),
                         new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint()));
         wireMockServer.start();
 
@@ -179,9 +169,6 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2400);
 
         } finally {
-            if (stateEngine != null) {
-                stateEngine.clearAll();
-            }
             encoder.finish();
             context.close();
         }
@@ -248,9 +235,6 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2200);
 
         } finally {
-            if (stateEngine != null) {
-                stateEngine.clearAll();
-            }
             encoder.finish();
             context.close();
         }
@@ -314,9 +298,6 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2400);
 
         } finally {
-            if (stateEngine != null) {
-                stateEngine.clearAll();
-            }
             encoder.finish();
             context.close();
         }
@@ -372,9 +353,6 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 2200);
 
         } finally {
-            if (stateEngine != null) {
-                stateEngine.clearAll();
-            }
             encoder.finish();
             context.close();
         }
@@ -578,9 +556,6 @@ public class UiDemoGifRecordingTest {
     }
 
     private void setupInitialStubs() {
-        if (stateEngine != null) {
-            stateEngine.clearAll();
-        }
         wireMockServer.resetAll();
         wireMockServer.stubFor(
                 get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));
@@ -647,140 +622,5 @@ public class UiDemoGifRecordingTest {
                 .willReturn(status(409)
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"error\": \"Order already delivered\"}")));
-    }
-
-    private com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition createCasesModel() {
-        return SimulatorModel.forEntity("cases")
-                .idPathParam("caseId")
-                .idPrefix("case-")
-                .onPost("/api/v1/cases")
-                .initialState(Map.of("status", "OPEN", "tasks", List.of()))
-                .respondWith(201, ResponseSource.entity())
-                .onGet("/api/v1/cases/{caseId}")
-                .respondWith(200, ResponseSource.entity())
-                .onPost("/api/v1/cases/{caseId}/tasks")
-                .mutate(Action.appendToList("tasks", Source.requestBodyWithGeneratedId("id", "task-")))
-                .respondWith(201, ResponseSource.entity())
-                .onPut("/api/v1/cases/{caseId}/close")
-                .require(
-                        Expr.list("tasks").allMatch(Expr.field("status").notEq("PENDING")),
-                        409,
-                        "Cannot close case: pending tasks exist")
-                .mutate(Action.setField("status", "CLOSED"))
-                .respondWith(200, ResponseSource.entity())
-                .build();
-    }
-
-    @Test
-    @DisplayName("Generate demo GIF 6: Dynamic Stateful Simulation Stubs & Invariant Violation Tracing")
-    void recordDynamicStatefulSimulationWorkflow() {
-        Path gifPath = outputDir.resolve("demo-stateful-simulation.gif");
-        AnimatedGifEncoder encoder = new AnimatedGifEncoder();
-        encoder.start(gifPath.toString());
-        encoder.setRepeat(0); // Loop forever
-        encoder.setQuality(10);
-
-        BrowserContext context = browser.newContext(new Browser.NewContextOptions()
-                .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-                .setDeviceScaleFactor(1));
-        Page page = context.newPage();
-        page.onResponse(res -> {
-            if (res.status() >= 400) System.out.println("HTTP ERROR: " + res.status() + " " + res.url());
-        });
-        page.onDialog(dialog -> {
-            System.out.println("BROWSER DIALOG: " + dialog.type() + " - " + dialog.message());
-            dialog.accept();
-        });
-
-        try {
-            if (stateEngine != null) {
-                stateEngine.registerGlobalModel(createCasesModel());
-            }
-
-            // Step 1: Open Stubs tab with unified stubs view
-            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
-            applyZoom(page);
-            page.waitForSelector(".stub-card.stub-dynamic");
-            recordFrame(page, encoder, 1400);
-
-            // Step 2: Filter by Dynamic stubs pill
-            page.locator("#btn-filter-dynamic").click();
-            recordFrame(page, encoder, 1300);
-
-            // Step 3: Inspect dynamic Close Case stub (shows invariant rule & scope)
-            Locator closeCaseCard = page.locator(
-                    ".stub-card", new Page.LocatorOptions().setHasText("PUT /api/v1/cases/{caseId}/close"));
-            closeCaseCard.click();
-            page.waitForSelector("#detail-stateful-section:not(.hidden)");
-            recordFrame(page, encoder, 2000);
-
-            // Step 4: Open Dynamic Stub Creation Modal to show templates
-            page.locator("#btn-create-dynamic-stub").click();
-            page.waitForSelector("#dynamic-stub-modal:not(.hidden)");
-            recordFrame(page, encoder, 1600);
-
-            // Select Order Fulfillment template
-            page.locator("#dynamic-template-select").selectOption("order-fulfillment");
-            recordFrame(page, encoder, 1800);
-
-            page.locator("#btn-cancel-dynamic").click();
-            page.waitForSelector(
-                    "#dynamic-stub-modal",
-                    new Page.WaitForSelectorOptions()
-                            .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
-
-            // Step 5: Test dynamic stub transition into HTTP Tester
-            page.locator("#btn-filter-all").click();
-            Locator taskCard = page.locator(".stub-card", new Page.LocatorOptions().setHasText("POST /api/v1/cases"));
-            taskCard.first().click();
-            page.locator("#btn-test-stub").click();
-            page.waitForSelector("#tab-tester.active");
-            recordFrame(page, encoder, 1300);
-
-            // Step 6: Create case-101
-            page.locator("#tester-headers").fill("X-Correlation-Id: demo-session-1\nContent-Type: application/json");
-            page.locator("#tester-body").fill("{\"title\": \"Customer Dispute Case\"}");
-            page.locator("#btn-tester-send").click();
-            page.waitForSelector("#tester-response-status:has-text('201')");
-            recordFrame(page, encoder, 1800);
-
-            // Step 7: Add a pending task
-            page.locator("#tester-url").fill("/api/v1/cases/case-101/tasks");
-            page.locator("#tester-body").fill("{\"title\": \"Verify payment records\", \"status\": \"PENDING\"}");
-            page.locator("#btn-tester-send").click();
-            page.waitForSelector("#tester-response-status:has-text('201')");
-            recordFrame(page, encoder, 1800);
-
-            // Step 8: Attempt to close case -> Invariant Violation (409)
-            page.locator("#tester-method").selectOption("PUT");
-            page.locator("#tester-url").fill("/api/v1/cases/case-101/close");
-            page.locator("#tester-body").fill("{}");
-            page.locator("#btn-tester-send").click();
-            page.waitForSelector("#tester-response-status:has-text('409')");
-            recordFrame(page, encoder, 2400);
-
-            // Step 9: Switch to Request Journal to inspect the Invariant Violation trace
-            page.locator("#nav-tab-journal").click();
-            page.waitForSelector("#journal-table");
-            recordFrame(page, encoder, 1400);
-
-            Locator firstRow =
-                    page.locator("#journal-list tr[data-testid='journal-row']").first();
-            firstRow.click();
-            page.waitForSelector("tr[data-testid='journal-detail-row']:not(.hidden)");
-            page.waitForSelector("div[data-testid='journal-stateful-card']");
-            recordFrame(page, encoder, 2600);
-
-        } finally {
-            if (stateEngine != null) {
-                stateEngine.clearAll();
-            }
-            encoder.finish();
-            context.close();
-        }
-
-        Assertions.assertTrue(Files.exists(gifPath) && gifPath.toFile().length() > 0, "GIF must be created");
-        System.out.println("Generated GIF 6: " + gifPath.toAbsolutePath() + " ("
-                + (gifPath.toFile().length() / 1024) + " KB)");
     }
 }

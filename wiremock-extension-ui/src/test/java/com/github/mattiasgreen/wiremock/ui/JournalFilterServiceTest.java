@@ -5,13 +5,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.support.IndexedBodyLookup;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.common.Timing;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.http.ContentTypeHeader;
+import com.github.tomakehurst.wiremock.http.Cookie;
+import com.github.tomakehurst.wiremock.http.FormParameter;
+import com.github.tomakehurst.wiremock.http.HttpHeader;
+import com.github.tomakehurst.wiremock.http.HttpHeaders;
+import com.github.tomakehurst.wiremock.http.LoggedResponse;
+import com.github.tomakehurst.wiremock.http.QueryParameter;
+import com.github.tomakehurst.wiremock.http.Request;
+import com.github.tomakehurst.wiremock.http.RequestMethod;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import com.github.tomakehurst.wiremock.verification.LoggedRequest;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -270,5 +292,213 @@ class JournalFilterServiceTest {
 
     private static String encode(String value) {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    @Test
+    @DisplayName(
+            "Uses IndexedBodyLookup before scanning bodies and skips body decompression on definitive index hit/miss")
+    void shouldUseIndexedBodyLookupAndSkipBodyScanWhenDefinitive() {
+        AtomicInteger responseBodyReads = new AtomicInteger();
+        AtomicInteger indexLookups = new AtomicInteger();
+
+        UUID eventId = UUID.randomUUID();
+        LoggedRequest request = LoggedRequest.createFrom(new Request() {
+            @Override
+            public String getUrl() {
+                return "/api/orders/indexed-test";
+            }
+
+            @Override
+            public String getAbsoluteUrl() {
+                return "http://localhost:8080/api/orders/indexed-test";
+            }
+
+            @Override
+            public RequestMethod getMethod() {
+                return RequestMethod.POST;
+            }
+
+            @Override
+            public String getScheme() {
+                return "http";
+            }
+
+            @Override
+            public String getHost() {
+                return "localhost";
+            }
+
+            @Override
+            public int getPort() {
+                return 8080;
+            }
+
+            @Override
+            public String getClientIp() {
+                return "127.0.0.1";
+            }
+
+            @Override
+            public String getHeader(String key) {
+                return "X-Tenant-Header".equalsIgnoreCase(key) ? "acme-corp" : null;
+            }
+
+            @Override
+            public HttpHeader header(String key) {
+                return new HttpHeader(key, getHeader(key));
+            }
+
+            @Override
+            public ContentTypeHeader contentTypeHeader() {
+                return new ContentTypeHeader("application/json");
+            }
+
+            @Override
+            public HttpHeaders getHeaders() {
+                return new HttpHeaders(new HttpHeader("X-Tenant-Header", "acme-corp"));
+            }
+
+            @Override
+            public boolean containsHeader(String key) {
+                return "X-Tenant-Header".equalsIgnoreCase(key);
+            }
+
+            @Override
+            public Set<String> getAllHeaderKeys() {
+                return Set.of("X-Tenant-Header");
+            }
+
+            @Override
+            public Map<String, Cookie> getCookies() {
+                return Collections.emptyMap();
+            }
+
+            @Override
+            public QueryParameter queryParameter(String key) {
+                return QueryParameter.absent(key);
+            }
+
+            @Override
+            public FormParameter formParameter(String key) {
+                return FormParameter.absent(key);
+            }
+
+            @Override
+            public Map<String, FormParameter> formParameters() {
+                return Collections.emptyMap();
+            }
+
+            @Override
+            public byte[] getBody() {
+                return new byte[0];
+            }
+
+            @Override
+            public String getBodyAsString() {
+                return "";
+            }
+
+            @Override
+            public String getBodyAsBase64() {
+                return "";
+            }
+
+            @Override
+            public boolean isBrowserProxyRequest() {
+                return false;
+            }
+
+            @Override
+            public Optional<Request> getOriginalRequest() {
+                return Optional.empty();
+            }
+
+            @Override
+            public String getProtocol() {
+                return "HTTP/1.1";
+            }
+
+            @Override
+            public com.github.tomakehurst.wiremock.common.url.PathParams getPathParameters() {
+                return com.github.tomakehurst.wiremock.common.url.PathParams.empty();
+            }
+
+            @Override
+            public boolean isMultipart() {
+                return false;
+            }
+
+            @Override
+            public Collection<Part> getParts() {
+                return Collections.emptyList();
+            }
+
+            @Override
+            public Part getPart(String name) {
+                return null;
+            }
+        });
+
+        LoggedResponse countingResponse =
+                new LoggedResponse(
+                        200,
+                        new HttpHeaders(new HttpHeader("X-Resp-Tag", "billing-tag")),
+                        java.util.Base64.getEncoder()
+                                .encodeToString("{\"note\":\"miss-in-index-but-in-body fallback-body-token\"}"
+                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                        null,
+                        "") {
+                    @Override
+                    public String getBodyAsString() {
+                        responseBodyReads.incrementAndGet();
+                        return super.getBodyAsString();
+                    }
+                };
+
+        ServeEvent event = new ServeEvent(
+                eventId, request, null, ok().build(), countingResponse, true, Timing.UNTIMED, new LinkedList<>());
+
+        IndexedBodyLookup lookup = (id, token) -> {
+            assertThat(id).isEqualTo(eventId);
+            indexLookups.incrementAndGet();
+            if ("indexed-hit".equals(token)) {
+                return Optional.of(true);
+            }
+            if ("miss-in-index-but-in-body".equals(token)) {
+                return Optional.of(false);
+            }
+            return Optional.empty();
+        };
+
+        JournalFilterService service = new JournalFilterService(
+                new ClientSourceResolver(ip -> "", 16, java.time.Duration.ofMinutes(1)), lookup);
+
+        // 1. Header matches BEFORE indexed lookup and BEFORE body scan
+        JournalFilterService.JournalFilterResult headerResult =
+                service.filter(List.of(event), "acme-corp", "all", false, null, 10);
+        assertThat(headerResult.filtered()).isEqualTo(1);
+        assertThat(indexLookups.get()).isZero();
+        assertThat(responseBodyReads.get()).isZero();
+
+        // 2. Indexed definitive TRUE skips body scan
+        JournalFilterService.JournalFilterResult hitResult =
+                service.filter(List.of(event), "indexed-hit", "all", false, null, 10);
+        assertThat(hitResult.filtered()).isEqualTo(1);
+        assertThat(indexLookups.get()).isEqualTo(1);
+        assertThat(responseBodyReads.get()).isZero();
+
+        // 3. Indexed definitive FALSE skips body scan (even when token exists in body)
+        JournalFilterService.JournalFilterResult missResult =
+                service.filter(List.of(event), "miss-in-index-but-in-body", "all", false, null, 10);
+        assertThat(missResult.filtered()).isZero();
+        assertThat(indexLookups.get()).isEqualTo(2);
+        assertThat(responseBodyReads.get()).isZero();
+
+        // 4. Indexed Optional.empty() falls back to body scan
+        JournalFilterService.JournalFilterResult fallbackResult =
+                service.filter(List.of(event), "fallback-body-token", "all", false, null, 10);
+        assertThat(fallbackResult.filtered()).isEqualTo(1);
+        assertThat(indexLookups.get()).isEqualTo(3);
+        assertThat(responseBodyReads.get()).isEqualTo(1);
     }
 }

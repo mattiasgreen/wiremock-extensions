@@ -2,11 +2,10 @@
  * Import & Export Hub: WireMock JSON bundle export/import and unified import modal.
  * Endpoint: POST /__admin/mappings/import
  */
-import { state } from './state.js';
+import { state, uiActions } from './state.js';
 import { elements } from './dom.js';
 import { importMappings } from './api.js';
-import { loadData } from './app-loader.js';
-import { getStubProject } from './projects.js';
+import { getStubProject } from './stub-catalog.js';
 import { mountCodeInputEditor } from './payload-lens.js';
 
 export function exportStubs(scope = 'all') {
@@ -125,7 +124,7 @@ export function handleBundleImport() {
   }
 
   importMappings(payload)
-    .then(() => loadData())
+    .then(() => (uiActions.loadData ? uiActions.loadData() : Promise.resolve()))
     .then(() => {
       if (feedbackEl) {
         feedbackEl.textContent = `Successfully imported ${mappings.length} mappings!`;

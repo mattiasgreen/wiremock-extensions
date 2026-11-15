@@ -1,13 +1,11 @@
 /**
  * Top-level UI data orchestrator coordinating Admin API fetches and console view refreshes.
  */
-import { state } from './state.js';
+import { state, uiActions, registerUiActions } from './state.js';
 import { requestJournal } from './request-journal.js';
 import { elements } from './dom.js';
 import { apiGet, doFetch, detectCapabilities } from './api.js';
 import { isStubParked } from './stub-catalog.js';
-import { renderStubList } from './stubs.js';
-import { renderJournal } from './journal.js';
 import { renderScenarios } from './scenarios.js';
 import { renderProjectSelector, updateFilterCounts } from './projects.js';
 import { updateBulkToolbar } from './bulk-actions.js';
@@ -59,7 +57,7 @@ export function loadJournal() {
         elements.journalCount.textContent =
           data.meta && data.meta.filtered !== undefined ? data.meta.filtered : requestJournal.getTotalCount();
       }
-      renderJournal();
+      if (uiActions.renderJournal) uiActions.renderJournal();
     })
     .catch(() => {
       const fallbackEndpoint = unmatchedOnly
@@ -72,7 +70,7 @@ export function loadJournal() {
         requestJournal.setRequests(data.requests || [], null, false);
         if (elements.statRequests) elements.statRequests.textContent = requestJournal.getTotalCount();
         if (elements.journalCount) elements.journalCount.textContent = requestJournal.getTotalCount();
-        renderJournal();
+        if (uiActions.renderJournal) uiActions.renderJournal();
       });
     })
     .catch(err => {
@@ -126,48 +124,24 @@ export function loadScenarios() {
     });
 }
 
-export function loadStatefulModels() {
-  return apiGet('/__admin/stateful/models')
-    .then(data => {
-      state.statefulModels = Array.isArray(data) ? data : [];
-    })
-    .catch(() => {
-      state.statefulModels = [];
-    });
-}
-
 export function loadData() {
   loadTesterHistoryFromStorage();
   return detectCapabilities(doFetch)
-    .then(caps => {
-      const promises = [loadMappings(), loadJournal()];
-      if (caps.stateful) {
-        promises.push(loadStatefulModels());
-      } else {
-        state.statefulModels = [];
-      }
-      return Promise.all(promises);
-    })
+    .then(() => Promise.all([loadMappings(), loadJournal()]))
     .then(() => {
-      renderStubList();
+      if (uiActions.renderStubList) uiActions.renderStubList();
       renderProjectSelector();
       updateFilterCounts();
       updateBulkToolbar();
-      const dynamicCount = (state.statefulModels || []).reduce(
-        (acc, m) => acc + ((m.rules && m.rules.length) || 0),
-        0
-      );
-      const activeCount = state.currentStubs.filter(s => !isStubParked(s)).length;
-      const disabledCount = state.currentStubs.filter(isStubParked).length;
-      const totalStubs = state.currentStubs.length + dynamicCount;
+      const stubs = state.currentStubs || [];
+      const activeCount = stubs.filter(s => !isStubParked(s)).length;
+      const disabledCount = stubs.filter(isStubParked).length;
+      const totalStubs = stubs.length;
       if (elements.statStubs) elements.statStubs.textContent = totalStubs;
       if (elements.stubsCountLabel) {
         const parts = [`${activeCount} active`];
         if (disabledCount > 0 || state.capabilities.lifecycle) {
           parts.push(`${disabledCount} disabled`);
-        }
-        if (dynamicCount > 0) {
-          parts.push(`${dynamicCount} dynamic`);
         }
         elements.stubsCountLabel.textContent = parts.join(' · ');
       }
@@ -180,3 +154,5 @@ export function loadData() {
       console.error('Error refreshing data', err);
     });
 }
+
+registerUiActions({ loadData, loadJournal });

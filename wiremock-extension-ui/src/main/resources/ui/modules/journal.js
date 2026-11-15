@@ -2,7 +2,7 @@
  * Request Journal viewer, diff inspector, and auto-refresh poller.
  * Contract: Bound to #journal-table, #journal-search, #journal-auto-refresh.
  */
-import { state } from './state.js';
+import { state, uiActions, registerUiActions } from './state.js';
 import { elements, escapeHtml } from './dom.js';
 import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
 import {
@@ -29,7 +29,7 @@ import {
   detectRequestProtocol,
   getHeader
 } from './request-journal.js';
-import { generateCurl, generateJavaStubFor, selectStub } from './stubs.js';
+import { generateCurl, generateJavaStubFor } from './stub-catalog.js';
 import { updateTesterRoute, populateCasualTester } from './tester.js';
 import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
@@ -37,8 +37,11 @@ import {
   doFetch,
   snapshotFilteredRecordings
 } from './api.js';
-import { loadJournal, loadData } from './app-loader.js';
 import { loadExcludedJsonPaths } from './settings.js';
+
+function loadJournal() {
+  return uiActions.loadJournal ? uiActions.loadJournal() : Promise.resolve();
+}
 
 let journalAutoRefreshTimer = null;
 let loadJournalFn = null;
@@ -158,10 +161,6 @@ function buildRowHtml(req) {
     : null;
   const displayStatus = isCasual ? casualErrorState : status;
   const verdict = getRequestVerdict(req);
-  const isStateful = verdict.key === 'stateful';
-  const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
-  const dynamicRoute = getHeader(resHeaders, 'x-wiremock-stateful-route');
-  const dynamicInvariants = getHeader(resHeaders, 'x-wiremock-stateful-invariants');
   const src = extractRequestSource(req);
   const sourceFilterToken = src.host || src.ip;
 
@@ -259,22 +258,6 @@ function buildRowHtml(req) {
             </div>
             ` : ''}
             <div class="journal-detail-grid">
-              ${isStateful ? `
-              <div class="journal-detail-card journal-stateful-card" data-testid="journal-stateful-card">
-                <div class="journal-card-header">
-                  <span>🧠 Stateful Simulation Trace</span>
-                  <span class="status-badge badge-dynamic">STATEFUL</span>
-                </div>
-                <div class="journal-section-title">Entity &amp; Route</div>
-                <div style="font-family: monospace; font-size: 0.85rem; margin-bottom: 8px;">
-                  <strong>${escapeHtml(dynamicEntity || 'Entity')}</strong>: ${escapeHtml(dynamicRoute || '')}
-                </div>
-                <div class="journal-section-title">Invariant Evaluation</div>
-                <div style="font-size: 0.85rem;" class="${(dynamicInvariants || '').toUpperCase().startsWith('VIOLATED') ? 'text-danger' : 'text-success'}">
-                  🛡️ ${escapeHtml(dynamicInvariants || 'PASSED')}
-                </div>
-              </div>
-              ` : ''}
               <div class="journal-detail-card">
                 <div class="journal-card-header">
                   <span>${isCasual ? `Casual Request: tpcall("${escapeHtml(casualService || cleanTarget)}")` : isAsync ? `${protocol} ${operation}: ${escapeHtml(cleanTarget || url)}` : `Request: ${escapeHtml(method)} ${escapeHtml(url)}`}</span>
@@ -330,7 +313,7 @@ function buildRowHtml(req) {
                 <div class="journal-card-header">
                   <span>${isCasual ? `Casual Response: ${escapeHtml(String(displayStatus))} (${escapeHtml(stubName)})` : `Response: Status ${status} (${escapeHtml(stubName)})`}</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    ${verdict.key !== 'unmatched' && !isStateful ? `
+                    ${verdict.key !== 'unmatched' ? `
                       <button class="btn btn-small btn-snapshot-req ${!state.capabilities.lifecycle ? 'cap-disabled' : ''}" data-id="${req.id}" ${!state.capabilities.lifecycle ? 'disabled title="Snapshotting into offline stubs requires wiremock-extension-ui lifecycle endpoint"' : `title="${verdict.key === 'proxied' ? 'Snapshot this live proxied response into a disabled static stub for offline simulation' : 'Save a disabled snapshot copy of this response'}"`}>📸 Snapshot Stub</button>
                     ` : ''}
                     ${verdict.key !== 'unmatched' ? `
@@ -654,8 +637,8 @@ function setupEventDelegation() {
       if (stubId) {
         const found = state.currentStubs.find(s => s.id === stubId);
         activateTab('tab-stubs', false);
-        if (found) {
-          selectStub(found, true);
+        if (found && uiActions.selectStub) {
+          uiActions.selectStub(found, true);
         }
       }
       return;
@@ -874,7 +857,7 @@ export function setupJournalAutoRefresh() {
 }
 
 export function initJournalTab() {
-  ['all', 'proxied', 'stub', 'stateful', 'unmatched'].forEach(verdict => {
+  ['all', 'proxied', 'stub', 'unmatched'].forEach(verdict => {
     const btn = document.getElementById(`btn-journal-verdict-${verdict}`);
     if (btn) {
       btn.addEventListener('click', () => {
@@ -1029,7 +1012,7 @@ export function initJournalTab() {
             });
           }
         }
-        await loadData();
+        if (uiActions.loadData) await uiActions.loadData();
         elements.btnJournalSnapshotFiltered.textContent = `✅ Snapshotted ${count}!`;
         setTimeout(() => {
           elements.btnJournalSnapshotFiltered.innerHTML = origText;
@@ -1100,5 +1083,7 @@ export function initJournalTab() {
     });
   }
 }
+
+registerUiActions({ renderJournal });
 
 

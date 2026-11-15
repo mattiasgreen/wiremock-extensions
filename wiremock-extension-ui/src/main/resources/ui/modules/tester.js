@@ -2,8 +2,9 @@
  * HTTP Tester UI controller and execution history manager.
  * Manages headers key-value editor, JSON formatting, and response inspect panes.
  */
-import { state } from './state.js';
+import { state, uiActions } from './state.js';
 import { elements, escapeHtml, formatBytes } from './dom.js';
+import { normalizeJsonPayload } from './base64.js';
 import { highlightJson, highlightPayload, formatXml, formatPayload, detectFormat } from './highlighter.js';
 import {
   discoverEmbeddedPayloads,
@@ -17,11 +18,9 @@ import {
   pushViewportLayer,
   createPayloadComponent
 } from './payload-lens.js';
-import { openStubEditor } from './lifecycle.js';
 import { setRoute, toBase64, fromBase64, activateTab } from './router.js';
-import { generateCurl, sendStubToTester } from './stubs.js';
+import { generateCurl, getStubUrl } from './stub-catalog.js';
 import { dispatchRequest } from './dispatcher.js';
-import { loadJournal } from './app-loader.js';
 import { doFetch } from './api.js';
 import { syncCasualCapabilityBanner } from './capabilities.js';
 import {
@@ -1114,7 +1113,7 @@ export async function executeTesterRequest() {
     }
     saveTesterHistoryItem(historyItem);
 
-    loadJournal();
+    if (uiActions.loadJournal) uiActions.loadJournal();
   } catch (err) {
     displayResponseResult('ERROR', err.message, 0, [], 'Dispatch error: ' + err.message);
     showSettlementBanner(`❌ Error: ${err.message}`, 'status-error');
@@ -1473,4 +1472,125 @@ export function initTesterTab() {
       }
     });
   }
+}
+
+export function sendStubToTester(stub, switchTab = true) {
+  if (!stub) return;
+  state.selectedStubId = stub.id;
+
+  document.querySelectorAll('.stub-card').forEach(el => {
+    const id = el.getAttribute('data-stub-id') || (el.dataset && el.dataset.stubId);
+    if (id === stub.id) {
+      el.classList.add('selected');
+    } else {
+      el.classList.remove('selected');
+    }
+  });
+
+  const method = (stub.request && stub.request.method) || 'GET';
+  const example = stub.metadata && stub.metadata.exampleRequest;
+
+  const path = example && example.path ? example.path : getStubUrl(stub.request);
+  const isCasual = path.startsWith('/__casual/services/') || Boolean(stub.metadata && stub.metadata.protocol === 'casual');
+
+  if (isCasual) {
+    const casualService = (stub.metadata && stub.metadata.service)
+      || (path.startsWith('/__casual/services/') ? path.substring('/__casual/services/'.length) : 'echoService');
+    const bufferType = (stub.metadata && stub.metadata.bufferType) || 'JSON';
+    let body = '';
+    if (example && example.body) {
+      body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
+    } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+      const bp = stub.request.bodyPatterns[0];
+      if (bp.equalToJson) {
+        const normalized = normalizeJsonPayload(bp.equalToJson);
+        body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
+      } else if (bp.equalTo) {
+        body = bp.equalTo;
+      }
+    }
+    populateCasualTester({
+      service: casualService,
+      payload: body,
+      bufferType,
+      switchTab
+    });
+    return;
+  }
+
+  const headerLines = [];
+
+  if (example && example.headers && Object.keys(example.headers).length > 0) {
+    for (const [k, v] of Object.entries(example.headers)) {
+      headerLines.push(`${k}: ${v}`);
+    }
+  } else if (stub.request && stub.request.headers) {
+    for (const [k, v] of Object.entries(stub.request.headers)) {
+      headerLines.push(`${k}: ${v.equalTo || v.matches || v.contains || Object.values(v)[0] || ''}`);
+    }
+  }
+
+  let body = '';
+  if (example && example.body) {
+    body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
+  } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
+    const bp = stub.request.bodyPatterns[0];
+    if (bp.equalToJson) {
+      const normalized = normalizeJsonPayload(bp.equalToJson);
+      body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
+    } else if (bp.equalTo) {
+      body = bp.equalTo;
+    } else if (bp.matchesJsonPath) {
+      const sampleObj = {};
+      stub.request.bodyPatterns.forEach(p => {
+        if (p.matchesJsonPath) {
+          const expr = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null
+            ? (p.matchesJsonPath.expression || '')
+            : String(p.matchesJsonPath);
+          const val = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null && p.matchesJsonPath.equalTo !== undefined
+            ? p.matchesJsonPath.equalTo
+            : (p.equalTo !== undefined ? p.equalTo : 'sample_value');
+          const match = expr.match(/\$\.([a-zA-Z0-9_.-]+)/);
+          if (match && match[1]) {
+            const parts = match[1].split('.');
+            let curr = sampleObj;
+            for (let i = 0; i < parts.length - 1; i++) {
+              if (!curr[parts[i]]) curr[parts[i]] = {};
+              curr = curr[parts[i]];
+            }
+            curr[parts[parts.length - 1]] = val;
+          }
+        }
+      });
+      body = Object.keys(sampleObj).length > 0 ? JSON.stringify(sampleObj, null, 2) : '{\n  \n}';
+    } else if (bp.contains) {
+      body = bp.contains;
+    }
+  } else if (['POST', 'PUT', 'PATCH'].includes(method)) {
+    body = '{\n  \n}';
+  }
+
+  if (elements.testerMethod) elements.testerMethod.value = method === 'ANY' ? 'GET' : method;
+  if (elements.testerUrl) elements.testerUrl.value = path;
+  if (elements.testerHeaders) elements.testerHeaders.value = headerLines.join('\n');
+  if (elements.testerBody) elements.testerBody.value = body;
+
+  state.contextStub = stub;
+  if (elements.testerContextBanner) {
+    elements.testerContextBanner.classList.remove('hidden');
+    if (elements.testerContextTitle) {
+      const stubDesc = stub.name ? `"${stub.name}" (${method} ${path})` : `${method} ${path}`;
+      elements.testerContextTitle.textContent = `Pre-filled from stub: ${stubDesc}`;
+    }
+  }
+
+  if (switchTab) {
+    activateTab('tab-tester', false);
+  }
+  setRoute('tester', {
+    m: method === 'ANY' ? 'GET' : method,
+    p: path,
+    h: headerLines.length ? toBase64(headerLines.join('\n')) : null,
+    b: body ? toBase64(body) : null
+  }, false);
 }

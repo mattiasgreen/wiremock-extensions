@@ -3,11 +3,6 @@ package com.github.mattiasgreen.wiremock.ui;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.mattiasgreen.wiremock.stateful.ast.AstModelDefinition;
-import com.github.mattiasgreen.wiremock.stateful.dsl.*;
-import com.github.mattiasgreen.wiremock.stateful.engine.StateEngine;
-import com.github.mattiasgreen.wiremock.stateful.extension.StatefulAdminEndpoint;
-import com.github.mattiasgreen.wiremock.stateful.extension.StatefulResponseTransformer;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.*;
@@ -16,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +24,6 @@ import org.junit.jupiter.api.TestInstance;
 public abstract class AbstractUiPlaywrightTest {
 
     protected static WireMockServer wireMockServer;
-    protected static StateEngine stateEngine;
     protected static Playwright playwright;
     protected static Browser browser;
     protected static BrowserContext context;
@@ -74,15 +67,12 @@ public abstract class AbstractUiPlaywrightTest {
         if (initialized) {
             return;
         }
-        stateEngine = new StateEngine();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
                         new UiAdminApiEndpoint(),
                         new StubLifecycleAdminEndpoint(new StubLifecycleService()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
-                        new StatefulAdminEndpoint(stateEngine),
-                        new StatefulResponseTransformer(stateEngine),
                         new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint(),
                         new com.github.mattiasgreen.wiremock.casual.CasualAdminEndpoint(),
                         new com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint()));
@@ -126,7 +116,6 @@ public abstract class AbstractUiPlaywrightTest {
                     && !response.url().contains("nonexistent")
                     && !response.url().contains("/__admin/tcp-netem/")
                     && !response.url().contains("/__admin/metrics/")
-                    && !response.url().contains("/__admin/stateful/")
                     && !response.url().contains("/__admin/async/")
                     && !response.url().contains("/__admin/journal/")
                     && !response.url().contains("/__admin/lifecycle/")) {
@@ -151,10 +140,6 @@ public abstract class AbstractUiPlaywrightTest {
     }
 
     protected static void resetDefaultStubs() {
-        if (stateEngine != null) {
-            stateEngine.clearAll();
-        }
-
         wireMockServer.resetAll();
         wireMockServer.stubFor(
                 get(urlEqualTo("/__admin/metrics/prometheus")).willReturn(ok("# HELP wiremock_requests_total\n")));
@@ -185,28 +170,6 @@ public abstract class AbstractUiPlaywrightTest {
                 .whenScenarioStateIs("OPEN")
                 .willSetStateTo("CLOSED")
                 .willReturn(okJson("{\"status\": \"CLOSED\"}")));
-    }
-
-    protected AstModelDefinition createCasesModel() {
-        return SimulatorModel.forEntity("cases")
-                .idPathParam("caseId")
-                .idPrefix("case-")
-                .onPost("/api/v1/cases")
-                .initialState(Map.of("status", "OPEN", "tasks", List.of()))
-                .respondWith(201, ResponseSource.entity())
-                .onGet("/api/v1/cases/{caseId}")
-                .respondWith(200, ResponseSource.entity())
-                .onPost("/api/v1/cases/{caseId}/tasks")
-                .mutate(Action.appendToList("tasks", Source.requestBodyWithGeneratedId("id", "task-")))
-                .respondWith(201, ResponseSource.entity())
-                .onPut("/api/v1/cases/{caseId}/close")
-                .require(
-                        Expr.list("tasks").allMatch(Expr.field("status").notEq("PENDING")),
-                        409,
-                        "Cannot close case: pending tasks exist")
-                .mutate(Action.setField("status", "CLOSED"))
-                .respondWith(200, ResponseSource.entity())
-                .build();
     }
 
     // =========================================================================

@@ -12,7 +12,6 @@ import { SEED_STUBS, SEED_DISABLED_STUBS } from './demo-fixtures-stubs.js';
 import { SEED_REQUESTS } from './demo-fixtures-journal.js';
 import {
   SEED_SCENARIOS,
-  SEED_STATEFUL_MODELS,
   SEED_NETEM_PROXIES,
   SEED_CASUAL_SERVICES,
   SEED_ASYNC_CONNECTIONS,
@@ -36,7 +35,6 @@ class InMemoryDemoBackend {
     this.stubs = JSON.parse(JSON.stringify([...SEED_STUBS, ...SEED_DISABLED_STUBS]));
     this.requests = JSON.parse(JSON.stringify(SEED_REQUESTS));
     this.scenarios = JSON.parse(JSON.stringify(SEED_SCENARIOS));
-    this.statefulModels = JSON.parse(JSON.stringify(SEED_STATEFUL_MODELS));
     this.netemProxies = JSON.parse(JSON.stringify(SEED_NETEM_PROXIES));
     this.casualServices = JSON.parse(JSON.stringify(SEED_CASUAL_SERVICES));
     this.asyncConnections = JSON.parse(JSON.stringify(SEED_ASYNC_CONNECTIONS));
@@ -70,7 +68,6 @@ class InMemoryDemoBackend {
     this.stubs = JSON.parse(JSON.stringify([...SEED_STUBS, ...SEED_DISABLED_STUBS]));
     this.requests = JSON.parse(JSON.stringify(SEED_REQUESTS));
     this.scenarios = JSON.parse(JSON.stringify(SEED_SCENARIOS));
-    this.statefulModels = JSON.parse(JSON.stringify(SEED_STATEFUL_MODELS));
     this.netemProxies = JSON.parse(JSON.stringify(SEED_NETEM_PROXIES));
     this.casualServices = JSON.parse(JSON.stringify(SEED_CASUAL_SERVICES));
   }
@@ -191,7 +188,7 @@ class InMemoryDemoBackend {
         let list = [...this.requests];
         const q = (searchParams.get('q') || '').trim();
         if (q) {
-          list = list.filter(r => matchesJournalEntry(r, q));
+          list = list.filter(r => matchesJournalEntry(r, q, ''));
         }
         if (searchParams.get('unmatched') === 'true') {
           list = list.filter(r => !r.wasMatched);
@@ -238,24 +235,7 @@ class InMemoryDemoBackend {
       return responseText(404, 'Scenario not found');
     }
 
-    // 5. Stateful Dynamic Rules
-    if (pathname === '/__admin/stateful/models') {
-      if (method === 'GET') {
-        return responseJson(200, this.statefulModels);
-      }
-    }
-
-    if (pathname === '/__admin/stateful/rules' && method === 'POST') {
-      const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
-      this.statefulModels.unshift(body);
-      return responseJson(200, body);
-    }
-
-    if (pathname.startsWith('/__admin/stateful/sessions/') && method === 'DELETE') {
-      return responseText(204, '');
-    }
-
-    // 6. NetEm Proxies
+    // 5. NetEm Proxies
     if (pathname === '/__admin/tcp-netem/proxies') {
       if (method === 'GET') {
         return responseJson(200, this.netemProxies);
@@ -294,25 +274,6 @@ class InMemoryDemoBackend {
           messagesPublished: 24,
           activeBrokers: 2
         });
-      }
-    }
-
-    if (pathname === '/__admin/async/journal') {
-      if (method === 'GET') {
-        return responseJson(200, {
-          journal: [
-            'KAFKA_CONSUME:orders.events:{"orderId":"ORD-KAFKA-8821"}',
-            'AMQP_CONSUME:payments.requests:{"payment":{"paymentId":"PAY-EUR-9921"}}',
-            'PUBLISH:payments.replies:{"transactionId":"TX-AMQP-992144"}',
-            'ASYNC_PROXY_ERROR:502:orders.faulty:Destination queue missing on remote broker'
-          ]
-        });
-      }
-    }
-
-    if (pathname === '/__admin/async/harvested' || pathname === '/__admin/async/stubs') {
-      if (method === 'GET') {
-        return responseJson(200, { count: 0, harvested: [] });
       }
     }
 
@@ -655,7 +616,7 @@ class InMemoryDemoBackend {
     }
 
     // 11. Project Snapshots & Mode
-    const projModeMatch = pathname.match(/^\/__admin\/projects\/([^/]+)\/mode$/);
+    const projModeMatch = pathname.match(/^\/__admin\/lifecycle\/projects\/([^/]+)\/mode$/);
     if (projModeMatch && method === 'POST') {
       const project = decodeURIComponent(projModeMatch[1]);
       const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
@@ -686,8 +647,31 @@ class InMemoryDemoBackend {
       });
     }
 
-    if (pathname.includes('/recordings/snapshot') || pathname.includes('/snapshot-filtered')) {
-      return responseJson(200, { totalRecorded: 1, snapshotted: 1, status: 'disabled', mappings: [] });
+    if (pathname === '/__admin/lifecycle/snapshots' && method === 'POST') {
+      const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+      const count = Array.isArray(body.requestIds)
+        ? this.requests.filter(r => body.requestIds.includes(r.id)).length
+        : 1;
+      return responseJson(200, {
+        totalRecorded: count,
+        snapshotted: count,
+        status: body.activate ? 'active' : 'disabled',
+        mappings: []
+      });
+    }
+
+    if (pathname === '/__admin/lifecycle/snapshot-template' && method === 'POST') {
+      const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : options.body || {};
+      const found = this.requests.find(r => r.id === body.requestId);
+      const req = (found && found.request) || {};
+      const res = (found && found.response) || {};
+      return responseJson(200, {
+        name: `[RECORDED ${req.method || 'GET'} ${res.status || 200}] ${req.url || '/'}`,
+        priority: 5,
+        request: { method: req.method || 'GET', url: req.url || '/' },
+        response: { status: res.status || 200, body: res.body || '' },
+        metadata: { source: 'recorded-proxy', project: body.project || 'Recorded Traffic', mode: 'static' }
+      });
     }
 
     // 12. Simulation Engine for HTTP Requests (e.g. /api/v1/...)

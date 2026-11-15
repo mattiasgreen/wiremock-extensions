@@ -167,13 +167,15 @@ class StubLifecycleAdminEndpointTest {
             // Snapshot recorded traffic for project "Warehouse"
             HttpResponse<String> snapRes = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(server.baseUrl() + "/__admin/projects/Warehouse/recordings/snapshot"))
-                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/snapshots"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString("{\"project\":\"Warehouse\"}"))
                             .build(),
                     HttpResponse.BodyHandlers.ofString());
 
             assertThat(snapRes.statusCode()).isEqualTo(200);
             JsonNode snapJson = objectMapper.readTree(snapRes.body());
+            assertThat(snapJson.get("project").asText()).isEqualTo("Warehouse");
             assertThat(snapJson.get("totalRecorded").asInt()).isEqualTo(1);
             assertThat(snapJson.get("status").asText()).isEqualTo("disabled");
 
@@ -193,7 +195,7 @@ class StubLifecycleAdminEndpointTest {
             // Now switch project "Warehouse" to STUBS mode!
             HttpResponse<String> modeRes = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(server.baseUrl() + "/__admin/projects/Warehouse/mode"))
+                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/projects/Warehouse/mode"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString("{\"mode\":\"stubs\"}"))
                             .build(),
@@ -283,7 +285,7 @@ class StubLifecycleAdminEndpointTest {
                     Map.of("requestIds", List.of(customerRequestId), "project", "CustomerDomain", "activate", false));
             HttpResponse<String> snapRes1 = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(server.baseUrl() + "/__admin/stubs/snapshot-filtered"))
+                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/snapshots"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(payload1))
                             .build(),
@@ -311,7 +313,7 @@ class StubLifecycleAdminEndpointTest {
                     Map.of("requestIds", List.of(invoiceRequestId), "project", "BillingDomain", "activate", true));
             HttpResponse<String> snapRes2 = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(server.baseUrl() + "/__admin/stubs/snapshot-filtered"))
+                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/snapshots"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(payload2))
                             .build(),
@@ -337,7 +339,7 @@ class StubLifecycleAdminEndpointTest {
 
     @Test
     @DisplayName(
-            "Should generate snapshot stub template via POST /stubs/snapshot-template with nested JSON and excluded fields")
+            "Should generate snapshot stub template via POST /lifecycle/snapshot-template with nested JSON and excluded fields")
     void shouldGenerateSnapshotStubTemplateWithNestedJsonAndExcludedFields() throws Exception {
         WireMockServer upstream =
                 new WireMockServer(WireMockConfiguration.options().dynamicPort());
@@ -377,12 +379,12 @@ class StubLifecycleAdminEndpointTest {
             assertThat(events).hasSize(1);
             String requestId = events.get(0).getId().toString();
 
-            // Call /__admin/stubs/snapshot-template
+            // Call /__admin/lifecycle/snapshot-template
             String templateReq = objectMapper.writeValueAsString(Map.of("requestId", requestId, "project", "Billing"));
 
             HttpResponse<String> templateRes = httpClient.send(
                     HttpRequest.newBuilder()
-                            .uri(URI.create(server.baseUrl() + "/__admin/stubs/snapshot-template"))
+                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/snapshot-template"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(templateReq))
                             .build(),
@@ -413,6 +415,64 @@ class StubLifecycleAdminEndpointTest {
 
             // Verify response body is formatted
             assertThat(stubNode.get("response").get("body").asText()).contains("\"invoiceId\" : \"INV-12345\"");
+        } finally {
+            upstream.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("Empty-body POST /lifecycle/snapshots defaults to _all and legacy routes return 404")
+    void shouldSupportEmptyBodySnapshotAndRejectLegacyRoutes() throws Exception {
+        WireMockServer upstream =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        upstream.start();
+
+        try {
+            upstream.stubFor(WireMock.get(urlEqualTo("/api/health-proxy"))
+                    .willReturn(aResponse().withStatus(200).withBody("{\"ok\":true}")));
+
+            server.stubFor(WireMock.get(urlEqualTo("/api/health-proxy"))
+                    .withMetadata(Map.of("project", "Core", "mode", "proxy"))
+                    .willReturn(aResponse().proxiedFrom(upstream.baseUrl())));
+
+            httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/api/health-proxy"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.discarding());
+
+            // Empty body snapshot defaults to _all and disabled status
+            HttpResponse<String> emptySnapRes = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/snapshots"))
+                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            assertThat(emptySnapRes.statusCode()).isEqualTo(200);
+            JsonNode emptySnapJson = objectMapper.readTree(emptySnapRes.body());
+            assertThat(emptySnapJson.get("project").asText()).isEqualTo("_all");
+            assertThat(emptySnapJson.get("status").asText()).isEqualTo("disabled");
+            assertThat(emptySnapJson.get("totalRecorded").asInt()).isEqualTo(1);
+
+            // Legacy endpoints must return 404
+            for (String legacyPath : List.of(
+                    "/__admin/projects/Warehouse/recordings/snapshot",
+                    "/__admin/stubs/snapshot-filtered",
+                    "/__admin/stubs/snapshot-template",
+                    "/__admin/projects/Warehouse/mode")) {
+                HttpResponse<String> legacyRes = httpClient.send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(server.baseUrl() + legacyPath))
+                                .header("Content-Type", "application/json")
+                                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertThat(legacyRes.statusCode())
+                        .as("Legacy route %s should return 404", legacyPath)
+                        .isEqualTo(404);
+            }
         } finally {
             upstream.stop();
         }

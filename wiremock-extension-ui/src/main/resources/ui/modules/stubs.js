@@ -2,194 +2,39 @@
  * Stubs master-detail viewer, filtering, project grouping, and cURL generator.
  * Handles search filtering, detail card rendering, and transfer to HTTP tester.
  */
-import { state } from './state.js';
+import { state, uiActions, registerUiActions } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
+import { detectFormat } from './highlighter.js';
+import { detectCharset, createPayloadComponent } from './payload-lens.js';
+import { setRoute, activateTab } from './router.js';
 import {
-  discoverEmbeddedPayloads,
-  renderFormattedWithNestedPreviews,
-  openPayloadLens,
-  formatCasualBufferDescriptor,
-  formatPayloadDescriptor,
-  detectCharset,
-  pushViewportLayer,
-  createPayloadComponent
-} from './payload-lens.js';
-import { setRoute, toBase64, activateTab } from './router.js';
-import { getStubProject } from './projects.js';
-import { isStubParked } from './stub-catalog.js';
+  stubCatalog,
+  getStubUrl,
+  generateCurl,
+  generateCreateStubCurl,
+  generateJavaStubFor,
+  getStubProject,
+  isStubParked
+} from './stub-catalog.js';
 import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
 import { handleStubCheckboxClick, updateBulkToolbar, handleSelectAllToggle } from './bulk-actions.js';
-import { normalizeStatefulModelsToStubs } from './dynamic-stubs.js';
-import { matchesStub } from './filter.js';
-import { normalizeJsonPayload } from './base64.js';
 import { exportStubs } from './import-export.js';
 import { updateFilterCounts } from './projects.js';
-import { loadData } from './app-loader.js';
-import { renderJournal } from './journal.js';
-import { populateCasualTester } from './tester.js';
+import { sendStubToTester } from './tester.js';
+
+export { getStubUrl, generateCurl, generateCreateStubCurl, generateJavaStubFor, sendStubToTester };
 
 let currentStubViewMode = 'rich';
 
-export function getStubUrl(req) {
-  if (!req) return '/';
-  return (
-    req.url ||
-    req.urlPath ||
-    req.urlPathTemplate ||
-    req.urlPattern ||
-    req.urlPathPattern ||
-    req.urlPathMatching ||
-    '/'
-  );
-}
-
-export function generateCurl(method, path, headers = {}, body = '') {
-  const origin = (state.targetConfig && state.targetConfig.fullUrl) ||
-    state.apiBaseUrl ||
-    (typeof window !== 'undefined' ? window.location.origin : '') ||
-    'http://localhost:8080';
-  const cleanPath = path || '/';
-  const fullUrl = cleanPath.startsWith('http') ? cleanPath : `${origin}${cleanPath.startsWith('/') ? '' : '/'}${cleanPath}`;
-  const parts = [`curl -X ${method || 'GET'} "${fullUrl}"`];
-  for (const [k, v] of Object.entries(headers)) {
-    if (v) parts.push(`-H "${k}: ${v}"`);
-  }
-  if (body && ['POST', 'PUT', 'PATCH', 'DELETE'].includes((method || 'GET').toUpperCase())) {
-    const escapedBody = String(body).replace(/"/g, '\\"');
-    parts.push(`-d "${escapedBody}"`);
-  }
-  return parts.join(' \\\n  ');
-}
-
-export function generateCreateStubCurl(stub) {
-  if (!stub) return '';
-  const origin = (state.targetConfig && state.targetConfig.fullUrl) ||
-    state.apiBaseUrl ||
-    (typeof window !== 'undefined' ? window.location.origin : '') ||
-    'http://localhost:8080';
-
-  const isDynamic = Boolean(stub.isDynamic);
-  const endpoint = isDynamic ? `${origin}/__admin/stateful/rules` : `${origin}/__admin/mappings`;
-  const payload = isDynamic ? (stub.rule || stub) : stub;
-  const jsonStr = JSON.stringify(payload, null, 2);
-
-  return [
-    `curl -X POST "${endpoint}" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  --data-binary @- << 'EOF'`,
-    jsonStr,
-    `EOF`
-  ].join('\n');
-}
-
-export function generateJavaStubFor(stub) {
-  if (!stub) return '';
-  const req = stub.request || {};
-  const res = stub.response || {};
-  const method = (req.method || 'ANY').toLowerCase();
-  const wmMethod = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'].includes(method) ? method : 'any';
-
-  let urlMatcher = `urlEqualTo("${(req.url || '/').replace(/"/g, '\\"')}")`;
-  if (req.urlPathTemplate) {
-    urlMatcher = `urlPathTemplate("${req.urlPathTemplate.replace(/"/g, '\\"')}")`;
-  } else if (req.urlPattern || req.urlPathPattern || req.urlPathMatching) {
-    const pat = req.urlPattern || req.urlPathPattern || req.urlPathMatching;
-    urlMatcher = `urlMatching("${pat.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
-  } else if (req.urlPath) {
-    urlMatcher = `urlPathEqualTo("${req.urlPath.replace(/"/g, '\\"')}")`;
-  }
-
-  const lines = [`stubFor(${wmMethod}(${urlMatcher})`];
-  if (stub.name) {
-    lines.push(`    .withName("${String(stub.name).replace(/"/g, '\\"')}")`);
-  }
-  if (stub.priority && stub.priority !== 5) {
-    lines.push(`    .atPriority(${stub.priority})`);
-  }
-  if (req.headers) {
-    for (const [k, v] of Object.entries(req.headers)) {
-      const val = v.equalTo || v.contains || v.matches || '';
-      const op = v.contains ? 'containing' : (v.matches ? 'matching' : 'equalTo');
-      if (val) {
-        lines.push(`    .withHeader("${k.replace(/"/g, '\\"')}", ${op}("${String(val).replace(/"/g, '\\"')}"))`);
-      }
-    }
-  }
-  if (req.bodyPatterns && req.bodyPatterns.length > 0) {
-    req.bodyPatterns.forEach(bp => {
-      if (bp.equalToJson) {
-        const jsonStr = typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson);
-        lines.push(`    .withRequestBody(equalToJson("${jsonStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}", true, true))`);
-      } else if (bp.contains) {
-        lines.push(`    .withRequestBody(containing("${String(bp.contains).replace(/"/g, '\\"')}"))`);
-      } else if (bp.matchesJsonPath) {
-        if (typeof bp.matchesJsonPath === 'object' && bp.matchesJsonPath !== null) {
-          const expr = bp.matchesJsonPath.expression || '';
-          const sub = bp.matchesJsonPath.equalTo !== undefined ? bp.matchesJsonPath.equalTo : bp.matchesJsonPath.contains;
-          if (sub !== undefined) {
-            lines.push(`    .withRequestBody(matchingJsonPath("${String(expr).replace(/"/g, '\\"')}", equalTo("${String(sub).replace(/"/g, '\\"')}")))`);
-          } else {
-            lines.push(`    .withRequestBody(matchingJsonPath("${String(expr).replace(/"/g, '\\"')}"))`);
-          }
-        } else if (bp.equalTo) {
-          lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}", equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}")))`);
-        } else {
-          lines.push(`    .withRequestBody(matchingJsonPath("${String(bp.matchesJsonPath).replace(/"/g, '\\"')}"))`);
-        }
-      } else if (bp.equalTo) {
-        lines.push(`    .withRequestBody(equalTo("${String(bp.equalTo).replace(/"/g, '\\"')}"))`);
-      }
-    });
-  }
-
-  if (res.proxyBaseUrl) {
-    lines.push(`    .willReturn(aResponse().proxiedFrom("${String(res.proxyBaseUrl).replace(/"/g, '\\"')}")));`);
-    return lines.join('\n');
-  }
-
-  const status = res.status || 200;
-  lines.push(`    .willReturn(aResponse()`);
-  lines.push(`        .withStatus(${status})`);
-  if (res.headers) {
-    for (const [k, v] of Object.entries(res.headers)) {
-      lines.push(`        .withHeader("${k.replace(/"/g, '\\"')}", "${String(v).replace(/"/g, '\\"')}")`);
-    }
-  }
-  const rawBody = res.jsonBody ? JSON.stringify(res.jsonBody) : (res.body || '');
-  if (rawBody) {
-    lines.push(`        .withBody("${String(rawBody).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n')}")`);
-  }
-  if (Array.isArray(res.transformers) && res.transformers.includes('response-template')) {
-    lines.push(`        .withTransformers("response-template")`);
-  }
-  lines.push(`    ));`);
-  return lines.join('\n');
-}
-
-import { stubCatalog } from './stub-catalog.js';
-
 export function getAllCatalogStubs() {
-  stubCatalog.setRawCollections({
-    mappings: state.currentStubs,
-    statefulModels: state.statefulModels
-  });
   return stubCatalog.getAll();
 }
 
 export function findCatalogStubById(id) {
-  stubCatalog.setRawCollections({
-    mappings: state.currentStubs,
-    statefulModels: state.statefulModels
-  });
   return stubCatalog.getById(id);
 }
 
 export function getVisibleCatalogStubs(searchQuery) {
-  stubCatalog.setRawCollections({
-    mappings: state.currentStubs,
-    statefulModels: state.statefulModels
-  });
   const filter = (searchQuery !== undefined ? searchQuery : (elements.searchBox && elements.searchBox.value || '')).trim();
   return stubCatalog.query({
     search: filter,
@@ -199,10 +44,6 @@ export function getVisibleCatalogStubs(searchQuery) {
 }
 
 export function getCatalogCounts(projectFilter = state.selectedProject) {
-  stubCatalog.setRawCollections({
-    mappings: state.currentStubs,
-    statefulModels: state.statefulModels
-  });
   return stubCatalog.getCounts(projectFilter);
 }
 
@@ -257,13 +98,12 @@ export function renderStubList() {
 
   elements.stubList.innerHTML = '';
   filtered.forEach(stub => {
-    const isDynamic = !!stub.isDynamic;
-    const isDisabled = !isDynamic && isStubParked(stub);
+    const isDisabled = isStubParked(stub);
     const isSelected = stub.id === state.selectedStubId;
     const isChecked = state.selectedStubIds.has(stub.id);
 
     const card = document.createElement('div');
-    card.className = `stub-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'stub-disabled' : ''} ${isDynamic ? 'stub-dynamic' : ''}`;
+    card.className = `stub-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'stub-disabled' : ''}`;
     card.setAttribute('data-stub-id', stub.id);
     card.setAttribute('data-testid', 'stub-card');
 
@@ -278,7 +118,7 @@ export function renderStubList() {
       ? (casualErrorHeader || (rawStatus >= 200 && rawStatus < 300 ? 'OK' : (rawStatus === 404 ? 'TPENOENT' : 'TPESVCFAIL')))
       : null;
     const name = stub.name || (isCasual ? `Casual ${casualState}` : (stub.response && stub.response.status ? `Status ${stub.response.status}` : 'Unnamed'));
-    const project = isDynamic ? (stub.metadata && stub.metadata.project) : getStubProject(stub);
+    const project = getStubProject(stub);
     const isProxy = (stub.response && !!stub.response.proxyBaseUrl) || (stub.metadata && stub.metadata.mode === 'proxy');
     const isTemplated = Boolean(stub.response && Array.isArray(stub.response.transformers) && stub.response.transformers.includes('response-template'));
     const statusCode = isProxy ? 'PROXY' : (isCasual ? casualState : rawStatus);
@@ -294,7 +134,6 @@ export function renderStubList() {
           <span class="stub-card-url" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
           <span class="stub-status-pill ${statusCls}">${escapeHtml(String(statusCode))}</span>
           ${isTemplated ? '<span class="status-badge badge-tpl" title="Uses WireMock response-template Handlebars transformer">TPL</span>' : ''}
-          ${isDynamic ? '<span class="status-badge badge-dynamic" title="In-memory Stateful AST simulation rule">🧠 STATEFUL</span>' : ''}
           ${isDisabled ? '<span class="status-badge badge-disabled">DISABLED</span>' : ''}
         </div>
         <div class="stub-card-bottom">
@@ -355,8 +194,7 @@ export function selectStub(stub, updateRoute = true) {
     return;
   }
 
-  const isDynamic = !!stub.isDynamic;
-  const isDisabled = !isDynamic && isStubParked(stub);
+  const isDisabled = isStubParked(stub);
   elements.stubDetailEmpty.classList.add('hidden');
   elements.stubDetailView.classList.remove('hidden');
 
@@ -380,113 +218,47 @@ export function selectStub(stub, updateRoute = true) {
   elements.detailStatus.textContent = status;
   elements.detailStatus.className = `card-value ${isProxy ? 'status-proxy' : (rawStatus >= 500 ? 'status-500' : (rawStatus >= 400 ? 'status-400' : 'status-200'))}`;
 
-  elements.detailPriority.textContent = stub.priority || (isDynamic ? 1 : 5);
-  elements.detailScenario.textContent = isDynamic
-    ? (stub.invariants && stub.invariants.length > 0 ? `${stub.invariants.length} Invariant Guard(s)` : 'Stateful Relational FSM')
-    : (stub.scenarioName
-      ? `${stub.scenarioName} [${stub.requiredScenarioState || 'Start'} -> ${stub.newScenarioState || 'Same'}]`
-      : 'None');
+  elements.detailPriority.textContent = stub.priority || 5;
+  elements.detailScenario.textContent = stub.scenarioName
+    ? `${stub.scenarioName} [${stub.requiredScenarioState || 'Start'} -> ${stub.newScenarioState || 'Same'}]`
+    : 'None';
 
   // Project card
   const detailProject = document.getElementById('detail-project');
   if (detailProject) {
-    const proj = isDynamic ? (stub.metadata && stub.metadata.project) : getStubProject(stub);
-    detailProject.textContent = proj;
+    detailProject.textContent = getStubProject(stub);
   }
 
   // Lifecycle state card
   const detailState = document.getElementById('detail-lifecycle-state');
   if (detailState) {
-    if (isDynamic) {
-      detailState.textContent = 'STATEFUL SIMULATION';
-      detailState.className = 'card-value text-dynamic';
-    } else {
-      detailState.textContent = isDisabled ? 'DISABLED' : 'ACTIVE';
-      detailState.className = `card-value ${isDisabled ? 'text-warning' : 'text-success'}`;
-    }
+    detailState.textContent = isDisabled ? 'DISABLED' : 'ACTIVE';
+    detailState.className = `card-value ${isDisabled ? 'text-warning' : 'text-success'}`;
   }
 
   // Toggle button label
   const btnToggle = document.getElementById('btn-toggle-stub');
   if (btnToggle) {
-    if (isDynamic) {
-      btnToggle.classList.add('hidden');
-    } else {
-      btnToggle.classList.remove('hidden');
-      btnToggle.removeAttribute('disabled');
-      btnToggle.classList.remove('cap-disabled');
-      btnToggle.textContent = isDisabled ? '🟢 Enable Stub' : '⏸️ Disable Stub';
-      btnToggle.className = `btn btn-small ${isDisabled ? 'btn-success' : 'btn-warning'}`;
-      btnToggle.title = isDisabled
-        ? 'Restore stub priority to active tier (<= 10)'
-        : 'Park stub at priority 100 (below active stubs and proxies)';
-    }
+    btnToggle.classList.remove('hidden');
+    btnToggle.removeAttribute('disabled');
+    btnToggle.classList.remove('cap-disabled');
+    btnToggle.textContent = isDisabled ? '🟢 Enable Stub' : '⏸️ Disable Stub';
+    btnToggle.className = `btn btn-small ${isDisabled ? 'btn-success' : 'btn-warning'}`;
+    btnToggle.title = isDisabled
+      ? 'Restore stub priority to active tier (<= 10)'
+      : 'Park stub at priority 100 (below active stubs and proxies)';
   }
 
   // Edit / Clone buttons
   const btnEdit = document.getElementById('btn-edit-stub');
   const btnClone = document.getElementById('btn-clone-stub');
-  if (btnEdit) btnEdit.style.display = isDynamic ? 'none' : '';
-  if (btnClone) btnClone.style.display = isDynamic ? 'none' : '';
+  if (btnEdit) btnEdit.style.display = '';
+  if (btnClone) btnClone.style.display = '';
 
-  // Dynamic / Stateful Specification section
-  const statefulSection = elements.detailStatefulSection || document.getElementById('detail-stateful-section');
-  if (statefulSection) {
-    if (isDynamic) {
-      statefulSection.classList.remove('hidden');
-      const entityLabel = document.getElementById('stateful-entity-label');
-      const scopeLabel = document.getElementById('stateful-route-scope');
-      const invCount = document.getElementById('stateful-invariants-count');
-      const invList = document.getElementById('stateful-invariants-list');
-      const mutCount = document.getElementById('stateful-mutations-count');
-      const mutList = document.getElementById('stateful-mutations-list');
-
-      if (entityLabel) entityLabel.textContent = stub.entity || 'entity';
-      if (scopeLabel) scopeLabel.textContent = stub.urlRange || stub.request.urlPathTemplate;
-      if (invCount) invCount.textContent = stub.invariants ? stub.invariants.length : 0;
-      if (mutCount) mutCount.textContent = stub.mutations ? stub.mutations.length : 0;
-
-      if (invList) {
-        if (!stub.invariants || stub.invariants.length === 0) {
-          invList.innerHTML = '<span class="muted-text">No invariant guards (always accepted)</span>';
-        } else {
-          invList.innerHTML = stub.invariants.map(inv => {
-            const guardTitle = inv.name || inv.failMessage || 'Invariant Guard';
-            const rejectCode = inv.failStatus || inv.rejectStatusCode || 400;
-            return `
-            <div class="stateful-rule-item">
-              <div><strong>Guard:</strong> ${escapeHtml(guardTitle)}</div>
-              <div class="muted-text" style="font-size: 0.75rem;">Condition: <code>${escapeHtml(JSON.stringify(inv.condition))}</code> &rarr; Reject HTTP ${rejectCode}</div>
-            </div>
-          `;
-          }).join('');
-        }
-      }
-
-      if (mutList) {
-        if (!stub.mutations || stub.mutations.length === 0) {
-          mutList.innerHTML = '<span class="muted-text">Read-only (no state mutations)</span>';
-        } else {
-          mutList.innerHTML = stub.mutations.map(m => `
-            <div class="stateful-rule-item">
-              <div><strong>Action:</strong> <code>${escapeHtml(m.type)}</code></div>
-              <div class="muted-text" style="font-size: 0.75rem;">${escapeHtml(JSON.stringify(m))}</div>
-            </div>
-          `).join('');
-        }
-      }
-    } else {
-      statefulSection.classList.add('hidden');
-    }
-  }
-
-  const rawStubObj = isDynamic ? (stub.rule || stub) : stub;
-  const rawStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj, null, 2);
-  const compactStubJson = typeof rawStubObj === 'string' ? rawStubObj : JSON.stringify(rawStubObj);
+  const rawStubJson = typeof stub === 'string' ? stub : JSON.stringify(stub, null, 2);
 
   const resBody = (stub.response && stub.response.body) || '';
   const bodyFormat = resBody ? detectFormat(resBody).toUpperCase() : 'JSON';
-  const sizeKb = (new Blob([resBody || rawStubJson]).size / 1024).toFixed(1);
   const stubCharset = detectCharset(resBody, resHeaders);
   let normBuf = null;
   if (isCasual) {
@@ -506,10 +278,8 @@ export function selectStub(stub, updateRoute = true) {
 
   if (btnTopEdit) {
     btnTopEdit.style.display = 'inline-flex';
-    btnTopEdit.disabled = Boolean(isDynamic);
-    btnTopEdit.title = isDynamic
-      ? 'Dynamic stateful model rule — edit via the Stateful Model editor'
-      : 'Edit stub mapping in editor modal';
+    btnTopEdit.disabled = false;
+    btnTopEdit.title = 'Edit stub mapping in editor modal';
   }
 
   createPayloadComponent(null, {
@@ -520,7 +290,7 @@ export function selectStub(stub, updateRoute = true) {
     maximizeBtn: btnStubMaximize,
     copyBtn: btnStubCopy,
     editBtn: btnTopEdit,
-    onEdit: isDynamic ? null : () => openStubEditor(stub, false),
+    onEdit: () => openStubEditor(stub, false),
     readOnly: true,
     editable: false,
     readOnlyReason: "Read-only stub preview — click '✏️ Edit' in the stub header above to modify this stub",
@@ -536,147 +306,6 @@ export function selectStub(stub, updateRoute = true) {
   if (updateRoute) {
     setRoute('stubs', { stubId: stub.id });
   }
-}
-
-export function sendStubToTester(stub, switchTab = true) {
-  if (!stub) return;
-  state.selectedStubId = stub.id;
-
-  document.querySelectorAll('.stub-card').forEach(el => {
-    const id = el.getAttribute('data-stub-id') || (el.dataset && el.dataset.stubId);
-    if (id === stub.id) {
-      el.classList.add('selected');
-    } else {
-      el.classList.remove('selected');
-    }
-  });
-
-  const method = (stub.request && stub.request.method) || 'GET';
-  const example = stub.metadata && stub.metadata.exampleRequest;
-
-  let path = example && example.path ? example.path : getStubUrl(stub.request);
-  const isCasual = path.startsWith('/__casual/services/') || Boolean(stub.metadata && stub.metadata.protocol === 'casual');
-
-  if (isCasual) {
-    const casualService = (stub.metadata && stub.metadata.service)
-      || (path.startsWith('/__casual/services/') ? path.substring('/__casual/services/'.length) : 'echoService');
-    const bufferType = (stub.metadata && stub.metadata.bufferType) || 'JSON';
-    let body = '';
-    if (example && example.body) {
-      body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
-    } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
-      const bp = stub.request.bodyPatterns[0];
-      if (bp.equalToJson) {
-        const normalized = normalizeJsonPayload(bp.equalToJson);
-        body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
-      } else if (bp.equalTo) {
-        body = bp.equalTo;
-      }
-    }
-    populateCasualTester({
-      service: casualService,
-      payload: body,
-      bufferType,
-      switchTab
-    });
-    return;
-  }
-
-  if (stub.isDynamic) {
-    const idPrefix = (stub.model && stub.model.idPrefix) || (stub.entity ? stub.entity + '-' : 'item-');
-    path = path.replace(/\{([^}]+)\}/g, () => `${idPrefix}100`);
-  }
-
-  const headerLines = [];
-
-  if (stub.isDynamic) {
-    headerLines.push('X-Correlation-Id: test-scenario-1');
-    headerLines.push('Content-Type: application/json');
-  }
-
-  if (example && example.headers && Object.keys(example.headers).length > 0) {
-    for (const [k, v] of Object.entries(example.headers)) {
-      headerLines.push(`${k}: ${v}`);
-    }
-  } else if (stub.request && stub.request.headers) {
-    for (const [k, v] of Object.entries(stub.request.headers)) {
-      headerLines.push(`${k}: ${v.equalTo || v.matches || v.contains || Object.values(v)[0] || ''}`);
-    }
-  }
-
-  let body = '';
-  if (stub.isDynamic && ['POST', 'PUT', 'PATCH'].includes(method)) {
-    if (path.includes('/tasks')) {
-      body = JSON.stringify({ title: 'Verification Task', status: 'PENDING' }, null, 2);
-    } else if (path.includes('/items')) {
-      body = JSON.stringify({ sku: 'WIDGET-01', quantity: 2 }, null, 2);
-    } else if (path.includes('/close') || path.includes('/ship')) {
-      body = '{\n  \n}';
-    } else {
-      body = JSON.stringify({ title: 'Sample ' + (stub.entity || 'Item'), status: 'OPEN' }, null, 2);
-    }
-  } else if (example && example.body) {
-    body = typeof example.body === 'object' ? JSON.stringify(example.body, null, 2) : String(example.body);
-  } else if (stub.request && stub.request.bodyPatterns && stub.request.bodyPatterns.length > 0) {
-    const bp = stub.request.bodyPatterns[0];
-    if (bp.equalToJson) {
-      const normalized = normalizeJsonPayload(bp.equalToJson);
-      body = normalized !== null ? JSON.stringify(normalized, null, 2) : (typeof bp.equalToJson === 'string' ? bp.equalToJson : JSON.stringify(bp.equalToJson, null, 2));
-    } else if (bp.equalTo) {
-      body = bp.equalTo;
-    } else if (bp.matchesJsonPath) {
-      const sampleObj = {};
-      stub.request.bodyPatterns.forEach(p => {
-        if (p.matchesJsonPath) {
-          const expr = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null
-            ? (p.matchesJsonPath.expression || '')
-            : String(p.matchesJsonPath);
-          const val = typeof p.matchesJsonPath === 'object' && p.matchesJsonPath !== null && p.matchesJsonPath.equalTo !== undefined
-            ? p.matchesJsonPath.equalTo
-            : (p.equalTo !== undefined ? p.equalTo : 'sample_value');
-          const match = expr.match(/\$\.([a-zA-Z0-9_.-]+)/);
-          if (match && match[1]) {
-            const parts = match[1].split('.');
-            let curr = sampleObj;
-            for (let i = 0; i < parts.length - 1; i++) {
-              if (!curr[parts[i]]) curr[parts[i]] = {};
-              curr = curr[parts[i]];
-            }
-            curr[parts[parts.length - 1]] = val;
-          }
-        }
-      });
-      body = Object.keys(sampleObj).length > 0 ? JSON.stringify(sampleObj, null, 2) : '{\n  \n}';
-    } else if (bp.contains) {
-      body = bp.contains;
-    }
-  } else if (['POST', 'PUT', 'PATCH'].includes(method)) {
-    body = '{\n  \n}';
-  }
-
-  if (elements.testerMethod) elements.testerMethod.value = method === 'ANY' ? 'GET' : method;
-  if (elements.testerUrl) elements.testerUrl.value = path;
-  if (elements.testerHeaders) elements.testerHeaders.value = headerLines.join('\n');
-  if (elements.testerBody) elements.testerBody.value = body;
-
-  state.contextStub = stub;
-  if (elements.testerContextBanner) {
-    elements.testerContextBanner.classList.remove('hidden');
-    if (elements.testerContextTitle) {
-      const stubDesc = stub.name ? `"${stub.name}" (${method} ${path})` : `${method} ${path}`;
-      elements.testerContextTitle.textContent = `Pre-filled from stub: ${stubDesc}`;
-    }
-  }
-
-  if (switchTab) {
-    activateTab('tab-tester', false);
-  }
-  setRoute('tester', {
-    m: method === 'ANY' ? 'GET' : method,
-    p: path,
-    h: headerLines.length ? toBase64(headerLines.join('\n')) : null,
-    b: body ? toBase64(body) : null
-  }, false);
 }
 
 export function initStubsTab() {
@@ -695,7 +324,7 @@ export function initStubsTab() {
       updateBulkToolbar();
     });
   }
-  ['all', 'active', 'disabled', 'dynamic'].forEach(filter => {
+  ['all', 'active', 'disabled'].forEach(filter => {
     const btn = document.getElementById(`btn-filter-${filter}`);
     if (btn) {
       btn.addEventListener('click', () => {
@@ -719,12 +348,14 @@ export function initStubsTab() {
     });
   }
   if (elements.btnRefresh) {
-    elements.btnRefresh.addEventListener('click', loadData);
+    elements.btnRefresh.addEventListener('click', () => {
+      if (uiActions.loadData) uiActions.loadData();
+    });
   }
   if (elements.btnRefreshStubs) {
     elements.btnRefreshStubs.addEventListener('click', () => {
       elements.btnRefreshStubs.disabled = true;
-      loadData().finally(() => {
+      (uiActions.loadData ? uiActions.loadData() : Promise.resolve()).finally(() => {
         elements.btnRefreshStubs.disabled = false;
       });
     });
@@ -755,7 +386,7 @@ export function initStubsTab() {
           elements.journalFilterChipText.textContent = `Filtered by Stub: ${path}`;
         }
       }
-      renderJournal();
+      if (uiActions.renderJournal) uiActions.renderJournal();
       setRoute('journal', { q: path }, false);
     });
   }
@@ -807,3 +438,5 @@ export function initStubsTab() {
     });
   }
 }
+
+registerUiActions({ selectStub, renderStubList });

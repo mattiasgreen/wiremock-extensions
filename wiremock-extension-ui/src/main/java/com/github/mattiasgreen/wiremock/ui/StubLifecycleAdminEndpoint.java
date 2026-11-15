@@ -41,31 +41,72 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
         router.add(
                 RequestMethod.GET, "/lifecycle/status", (admin, serveEvent, pathParams) -> ok(Map.of("status", "UP")));
 
-        // Project Recording Snapshot: converts proxied journal traffic into parked (priority 100) stubs grouped to
-        // project
-        router.add(RequestMethod.POST, "/projects/{project}/recordings/snapshot", (admin, serveEvent, pathParams) -> {
-            String projectParam = pathParams.get("project");
-            String targetProject = projectParam != null ? URLDecoder.decode(projectParam, StandardCharsets.UTF_8) : "";
+        // Unified Recording Snapshot: converts journal traffic (by requestIds or project scope) into stubs
+        router.add(RequestMethod.POST, "/lifecycle/snapshots", (admin, serveEvent, pathParams) -> {
+            String body = serveEvent.getRequest().getBodyAsString();
+            if (body == null || body.isBlank()) {
+                StubLifecycleService.SnapshotCommand cmd = StubLifecycleService.SnapshotCommand.forProject(
+                        "_all", RecordedStubConverter.SnapshotOptions.defaults());
+                List<StubMapping> createdStubs = service.withAdmin(admin).snapshotRecordings(cmd);
+                return ok(Map.of(
+                        "project",
+                        "_all",
+                        "totalRecorded",
+                        createdStubs.size(),
+                        "status",
+                        "disabled",
+                        "mappings",
+                        createdStubs));
+            }
 
-            RecordedStubConverter.SnapshotOptions options =
-                    parseSnapshotOptions(serveEvent.getRequest().getBodyAsString());
-            StubLifecycleService.SnapshotCommand cmd =
-                    StubLifecycleService.SnapshotCommand.forProject(targetProject, options);
-            List<StubMapping> createdStubs = service.withAdmin(admin).snapshotRecordings(cmd);
+            try {
+                JsonNode root = objectMapper.readTree(body);
+                boolean activate = root.has("activate") && root.get("activate").asBoolean(false);
+                RecordedStubConverter.SnapshotOptions options = parseSnapshotOptions(root);
 
-            return ok(Map.of(
-                    "project",
-                    targetProject,
-                    "totalRecorded",
-                    createdStubs.size(),
-                    "status",
-                    "disabled",
-                    "mappings",
-                    createdStubs));
+                String targetProject;
+                StubLifecycleService.SnapshotCommand cmd;
+                if (root.hasNonNull("requestIds") && root.get("requestIds").isArray()) {
+                    Set<String> targetIds = new HashSet<>();
+                    for (JsonNode idNode : root.get("requestIds")) {
+                        targetIds.add(idNode.asText());
+                    }
+                    targetProject = "Recorded Traffic";
+                    if (root.hasNonNull("project")
+                            && !root.get("project").asText().isBlank()) {
+                        String p = root.get("project").asText().trim();
+                        if (!"*".equals(p) && !"_all".equalsIgnoreCase(p)) {
+                            targetProject = p;
+                        }
+                    }
+                    boolean onlyProxied =
+                            !root.has("onlyProxied") || root.get("onlyProxied").asBoolean(true);
+                    cmd = StubLifecycleService.SnapshotCommand.forRequests(
+                            targetIds, targetProject, activate, onlyProxied, options);
+                } else {
+                    String rawProject =
+                            root.hasNonNull("project") ? root.get("project").asText("") : "";
+                    targetProject = rawProject.isBlank() ? "_all" : rawProject.trim();
+                    cmd = StubLifecycleService.SnapshotCommand.forProject(targetProject, activate, options);
+                }
+
+                List<StubMapping> createdStubs = service.withAdmin(admin).snapshotRecordings(cmd);
+                return ok(Map.of(
+                        "project",
+                        targetProject,
+                        "totalRecorded",
+                        createdStubs.size(),
+                        "status",
+                        activate ? "active" : "disabled",
+                        "mappings",
+                        createdStubs));
+            } catch (IOException e) {
+                return badRequest("Failed to parse request JSON: " + e.getMessage());
+            }
         });
 
         // Generate Snapshot Stub Template: converts a single ServeEvent into an editable StubMapping definition
-        router.add(RequestMethod.POST, "/stubs/snapshot-template", (admin, serveEvent, pathParams) -> {
+        router.add(RequestMethod.POST, "/lifecycle/snapshot-template", (admin, serveEvent, pathParams) -> {
             String body = serveEvent.getRequest().getBodyAsString();
             if (body == null || body.isBlank()) return badRequest("Missing request body with requestId");
 
@@ -94,58 +135,8 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             return ok(stub.get());
         });
 
-        // Filtered Request Snapshot: converts specific ServeEvents into stubs
-        router.add(RequestMethod.POST, "/stubs/snapshot-filtered", (admin, serveEvent, pathParams) -> {
-            String body = serveEvent.getRequest().getBodyAsString();
-            Set<String> targetIds = new HashSet<>();
-            String targetProject = "Recorded Traffic";
-            boolean activate = false;
-            boolean onlyProxied = true;
-            RecordedStubConverter.SnapshotOptions options = RecordedStubConverter.SnapshotOptions.defaults();
-
-            if (body != null && !body.isBlank()) {
-                try {
-                    JsonNode root = objectMapper.readTree(body);
-                    if (root.has("requestIds") && root.get("requestIds").isArray()) {
-                        for (JsonNode idNode : root.get("requestIds")) {
-                            targetIds.add(idNode.asText());
-                        }
-                    }
-                    if (root.has("project") && !root.get("project").asText().isBlank()) {
-                        String p = root.get("project").asText();
-                        if (!"*".equals(p) && !"_all".equalsIgnoreCase(p)) {
-                            targetProject = p;
-                        }
-                    }
-                    if (root.has("activate")) {
-                        activate = root.get("activate").asBoolean(false);
-                    }
-                    if (root.has("onlyProxied")) {
-                        onlyProxied = root.get("onlyProxied").asBoolean(true);
-                    }
-                    options = parseSnapshotOptions(root);
-                } catch (IOException e) {
-                    return badRequest("Failed to parse request JSON: " + e.getMessage());
-                }
-            }
-
-            StubLifecycleService.SnapshotCommand cmd = StubLifecycleService.SnapshotCommand.forRequests(
-                    targetIds, targetProject, activate, onlyProxied, options);
-            List<StubMapping> createdStubs = service.withAdmin(admin).snapshotRecordings(cmd);
-
-            return ok(Map.of(
-                    "project",
-                    targetProject,
-                    "totalRecorded",
-                    createdStubs.size(),
-                    "status",
-                    activate ? "active" : "disabled",
-                    "mappings",
-                    createdStubs));
-        });
-
         // Project Mode Toggle: Switches a project (or _all) between "proxy" and "stubs" mode
-        router.add(RequestMethod.POST, "/projects/{project}/mode", (admin, serveEvent, pathParams) -> {
+        router.add(RequestMethod.POST, "/lifecycle/projects/{project}/mode", (admin, serveEvent, pathParams) -> {
             String projectParam = pathParams.get("project");
             String targetProject = projectParam != null ? URLDecoder.decode(projectParam, StandardCharsets.UTF_8) : "";
             if (targetProject.isBlank()) return badRequest("Project name is required");
@@ -174,18 +165,6 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
                 return badRequest(e.getMessage());
             }
         });
-    }
-
-    private RecordedStubConverter.SnapshotOptions parseSnapshotOptions(String body) {
-        if (body == null || body.isBlank()) {
-            return RecordedStubConverter.SnapshotOptions.defaults();
-        }
-        try {
-            JsonNode root = objectMapper.readTree(body);
-            return parseSnapshotOptions(root);
-        } catch (IOException ignored) {
-            return RecordedStubConverter.SnapshotOptions.defaults();
-        }
     }
 
     private RecordedStubConverter.SnapshotOptions parseSnapshotOptions(JsonNode root) {

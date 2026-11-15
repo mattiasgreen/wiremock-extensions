@@ -2,12 +2,11 @@
  * Multi-selection and bulk operations toolbar.
  * Native priority parking/deletion via /__admin/mappings/{id}.
  */
-import { state } from './state.js';
+import { state, uiActions } from './state.js';
 import { elements } from './dom.js';
 import { bulkStubs } from './api.js';
-import { loadData } from './app-loader.js';
+import { stubCatalog } from './stub-catalog.js';
 import { exportStubs } from './import-export.js';
-import { renderStubList, getVisibleCatalogStubs } from './stubs.js';
 
 export function updateBulkToolbar() {
   const bar = document.getElementById('bulk-actions-bar');
@@ -41,7 +40,12 @@ export function updateBulkToolbar() {
 }
 
 export function getCurrentlyVisibleStubs() {
-  return getVisibleCatalogStubs().filter(s => !s.isDynamic && !s._dynamic);
+  const search = (elements.searchBox && elements.searchBox.value) || '';
+  return stubCatalog.query({
+    search,
+    status: state.statusFilter,
+    project: state.selectedProject
+  });
 }
 
 export function handleSelectAllToggle(checked) {
@@ -51,7 +55,7 @@ export function handleSelectAllToggle(checked) {
   } else {
     visible.forEach(s => state.selectedStubIds.delete(s.id));
   }
-  renderStubList();
+  if (uiActions.renderStubList) uiActions.renderStubList();
   updateBulkToolbar();
 }
 
@@ -82,7 +86,7 @@ export function executeBulkAction(action) {
   return bulkStubs(action, ids)
     .then(() => {
       state.selectedStubIds.clear();
-      return loadData();
+      return uiActions.loadData ? uiActions.loadData() : Promise.resolve();
     })
     .catch(err => {
       alert(`Bulk ${action} failed: ${err.message}`);

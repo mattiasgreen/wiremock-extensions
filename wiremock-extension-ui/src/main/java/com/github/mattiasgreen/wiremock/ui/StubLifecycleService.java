@@ -42,6 +42,11 @@ public class StubLifecycleService {
             RecordedStubConverter.SnapshotOptions options) {
 
         public static SnapshotCommand forProject(String targetProject, RecordedStubConverter.SnapshotOptions options) {
+            return forProject(targetProject, false, options);
+        }
+
+        public static SnapshotCommand forProject(
+                String targetProject, boolean activate, RecordedStubConverter.SnapshotOptions options) {
             boolean all = isAllProjectsToken(targetProject);
             return new SnapshotCommand(
                     null,
@@ -49,7 +54,7 @@ public class StubLifecycleService {
                     all,
                     true,
                     true,
-                    false,
+                    activate,
                     options != null ? options : RecordedStubConverter.SnapshotOptions.defaults());
         }
 

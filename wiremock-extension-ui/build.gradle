@@ -1,14 +1,6 @@
-sourceSets {
-    main {
-        java {
-            srcDir rootProject.file('shared/traffic-support/src/main/java')
-        }
-    }
-}
-
 dependencies {
+    implementation project(':wiremock-extension-common')
     testImplementation project(':wiremock-extension-openapi')
-    testImplementation project(':wiremock-extension-stateful')
     testImplementation project(':wiremock-extension-tcp-netem')
     testImplementation project(':wiremock-extension-casual')
     testImplementation project(':wiremock-extension-async')
@@ -49,7 +41,7 @@ tasks.register('recordPitchDeckScreenshots', Test) {
 
 tasks.register('captureUiSnapshots', Test) {
     group = 'verification'
-    description = 'Generates visual screenshots of Web SPA and Native Desktop Swing for agentic UX inspection'
+    description = 'Generates visual screenshots of Web SPA for agentic UX inspection'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {
@@ -65,27 +57,18 @@ tasks.register('runProxy', JavaExec) {
     args = [project.findProperty('wiremock.url') ?: 'http://localhost:8080']
 }
 
-tasks.register('updateUiVersion') {
-    group = 'build'
-    description = 'Updates version and git hash in UI resources and static demo assets'
-
-    def uiDir = file('src/main/resources/ui')
-    def versionJsonFile = new File(uiDir, 'version.json')
-    def indexHtmlFile = new File(uiDir, 'index.html')
-    def demoBackendFile = new File(uiDir, 'modules/demo-backend.js')
-
-    inputs.property('version', project.version.toString())
-    outputs.files(versionJsonFile, indexHtmlFile, demoBackendFile)
+tasks.named('processResources') {
+    def ver = project.version.toString()
+    def repoDir = rootProject.projectDir
+    inputs.property('version', ver)
 
     doLast {
-        def ver = project.version.toString()
-
         def resolveGit = { List<String> gitArgs ->
             try {
                 def isWindows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
                 def cmd = isWindows ? (['cmd', '/c', 'git'] + gitArgs) : (['git'] + gitArgs)
-                def proc = new ProcessBuilder(cmd).directory(rootProject.projectDir).start()
-                def out = proc.inputStream.text.trim()
+                def proc = new ProcessBuilder(cmd).directory(repoDir).redirectErrorStream(true).start()
+                def out = proc.inputStream.getText('UTF-8').trim()
                 proc.waitFor()
                 return (proc.exitValue() == 0 && out && !out.contains('fatal')) ? out : null
             } catch (Exception ignored) {
@@ -110,54 +93,54 @@ tasks.register('updateUiVersion') {
         }
         if (!branch || branch == 'HEAD') branch = 'main'
 
-        // 3. Write / update version.json
+        // 3. Write / update version.json in build output
+        def versionJsonFile = new File(destinationDir, 'ui/version.json')
         def versionJsonContent = "{\n  \"version\": \"${ver}\",\n  \"commit\": \"${commit}\",\n  \"branch\": \"${branch}\"\n}\n"
-        if (!versionJsonFile.exists() || versionJsonFile.text != versionJsonContent) {
-            versionJsonFile.text = versionJsonContent
+        if (!versionJsonFile.exists() || versionJsonFile.getText('UTF-8') != versionJsonContent) {
+            versionJsonFile.parentFile.mkdirs()
+            versionJsonFile.write(versionJsonContent, 'UTF-8')
         }
 
-        // 4. Update index.html badge
+        // 4. Update index.html badge in build output
+        def indexHtmlFile = new File(destinationDir, 'ui/index.html')
         if (indexHtmlFile.exists()) {
-            def html = indexHtmlFile.text
+            def html = indexHtmlFile.getText('UTF-8')
+            def badgeHtml = "<span id=\"app-version-badge\" class=\"brand-version-badge\" title=\"WireMock Extensions v${ver} | Branch: ${branch} | Commit: ${commit}\">v${ver} (${branch}@${commit})</span>"
             def updatedHtml = html.replaceAll(
                 /<span id="app-version-badge" class="brand-version-badge"[^>]*>.*?<\/span>/,
-                "<span id=\"app-version-badge\" class=\"brand-version-badge\" title=\"WireMock Extensions v${ver} | Branch: ${branch} | Commit: ${commit}\">v${ver} (${branch}@${commit})</span>"
+                java.util.regex.Matcher.quoteReplacement(badgeHtml)
             )
             if (html != updatedHtml) {
-                indexHtmlFile.text = updatedHtml
+                indexHtmlFile.write(updatedHtml, 'UTF-8')
             }
         }
 
-        // 5. Update demo-backend.js mock version response
+        // 5. Update demo-backend.js mock version response in build output
+        def demoBackendFile = new File(destinationDir, 'ui/modules/demo-backend.js')
         if (demoBackendFile.exists()) {
-            def js = demoBackendFile.text
+            def js = demoBackendFile.getText('UTF-8')
             def updatedJs = js.replaceAll(
                 /(pathname === '\/__admin\/ui\/version'[\s\S]*?version:\s*')[^']+('[\s\S]*?branch:\s*')[^']+('[\s\S]*?commit:\s*')[^']+(')/,
-                "\$1${ver}\$2${branch}\$3${commit}\$4"
+                "\$1" + java.util.regex.Matcher.quoteReplacement(ver) + "\$2" + java.util.regex.Matcher.quoteReplacement(branch) + "\$3" + java.util.regex.Matcher.quoteReplacement(commit) + "\$4"
             )
             if (js != updatedJs) {
-                demoBackendFile.text = updatedJs
+                demoBackendFile.write(updatedJs, 'UTF-8')
             }
         }
     }
 }
 
-tasks.named('processResources') {
-    dependsOn 'updateUiVersion'
-}
-
 tasks.register('syncDemoSite', Copy) {
     group = 'documentation'
     description = 'Syncs single-source-of-truth UI assets into docs/site/demo for local static site preview'
-    dependsOn 'updateUiVersion'
-    from('src/main/resources/ui') {
+    dependsOn 'processResources'
+    from(new File(tasks.named('processResources').get().destinationDir, 'ui')) {
         exclude 'pitch/**'
     }
     into rootProject.file('docs/site/demo')
 }
 
 rootProject.tasks.matching { it.name.startsWith('spotless') }.configureEach {
-    mustRunAfter tasks.named('updateUiVersion')
     mustRunAfter tasks.named('syncDemoSite')
 }
 

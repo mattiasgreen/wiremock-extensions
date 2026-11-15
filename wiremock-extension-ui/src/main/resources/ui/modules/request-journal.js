@@ -2,7 +2,7 @@
  * Canonical domain model and stateful store for WireMock Request Journal entries.
  *
  * Encapsulates:
- * - Traffic verdict classification (proxied, bridged, stateful, templated stub, stub, proxy_error, unmatched).
+ * - Traffic verdict classification (proxied, bridged, templated stub, stub, proxy_error, unmatched).
  * - Request protocol detection (http, casual, kafka, amqp, async).
  * - Client-side filtering (search expression, verdict, protocol, unmatched-only, time window).
  * - Progressive virtual/lazy-scroll pagination window and fast lookup by request ID.
@@ -21,7 +21,6 @@ export function getHeader(headers, name) {
 /**
  * Classifies a WireMock ServeEvent into one of the core verdicts:
  * - 'proxy_error' (⚠️ PROXY_ERROR): 502 Bad Gateway or x-async-error failure
- * - 'stateful'    (🧠 STATEFUL): Handled by wiremock-extension-stateful AST engine
  * - 'unmatched'   (⚠️ UNMATCHED): No stub or proxy route matched (HTTP 404)
  * - 'proxied'     (🌐 PROXIED / 🔀 BRIDGED): Matched a proxyBaseUrl stub or async bridge
  * - 'stub'        (📌 STUB / 📌 STUB · TPL): Served offline by a static or templated stub
@@ -39,18 +38,6 @@ export function getRequestVerdict(req) {
       cssClass: 'pill-unmatched pill-proxy-error',
       stubDetail: `Proxy Error (502): ${errorMsg}`,
       tooltip: `Async or proxy forwarding failure (502 Bad Gateway): ${errorMsg}`
-    };
-  }
-  const isStateful = getHeader(resHeaders, 'x-wiremock-stateful') === 'true';
-  if (isStateful) {
-    const dynamicEntity = getHeader(resHeaders, 'x-wiremock-stateful-entity');
-    return {
-      key: 'stateful',
-      type: 'dynamic',
-      label: '🧠 STATEFUL',
-      cssClass: 'pill-matched pill-stateful',
-      stubDetail: `Stateful: ${dynamicEntity || 'Entity'}`,
-      tooltip: 'Simulated by in-memory AST stateful engine (wiremock-extension-stateful)'
     };
   }
   if (!req.wasMatched) {
@@ -197,9 +184,7 @@ export class RequestJournal {
         }
       }
       if (!filter) return true;
-      const rHeaders = (r.response && r.response.headers) || (r.responseDefinition && r.responseDefinition.headers) || {};
-      const statefulEntity = getHeader(rHeaders, 'x-wiremock-stateful-entity') || '';
-      return matchesJournalEntry(r, filter, statefulEntity, `${verdict.key} ${verdict.type} ${verdict.label} ${proto}`);
+      return matchesJournalEntry(r, filter, `${verdict.key} ${verdict.type} ${verdict.label} ${proto}`);
     });
     return this._lastFiltered;
   }

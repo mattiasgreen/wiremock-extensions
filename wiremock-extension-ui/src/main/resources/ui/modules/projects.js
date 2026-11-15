@@ -4,7 +4,6 @@
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { getCatalogCounts } from './stubs.js';
 import { setProjectMode, snapshotProjectRecordings } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
 import { stubCatalog, getStubProject, getStubApi, extractBaseSegment, getStubUrl, isStubParked, isProxyStub } from './stub-catalog.js';
@@ -12,10 +11,6 @@ import { stubCatalog, getStubProject, getStubApi, extractBaseSegment, getStubUrl
 export { getStubProject, getStubApi, extractBaseSegment };
 
 export function computeProjects() {
-  stubCatalog.setRawCollections({
-    mappings: state.currentStubs,
-    statefulModels: state.statefulModels
-  });
   return stubCatalog.getProjects();
 }
 
@@ -42,14 +37,12 @@ export function updateFilterCounts() {
   const countAll = document.getElementById('count-filter-all');
   const countActive = document.getElementById('count-filter-active');
   const countDisabled = document.getElementById('count-filter-disabled');
-  const countDynamic = document.getElementById('count-filter-dynamic');
 
-  const counts = getCatalogCounts(state.selectedProject);
+  const counts = stubCatalog.getCounts(state.selectedProject);
 
   if (countAll) countAll.textContent = counts.all;
   if (countActive) countActive.textContent = counts.active;
   if (countDisabled) countDisabled.textContent = counts.disabled;
-  if (countDynamic) countDynamic.textContent = counts.dynamic;
 
   updateProjectLifecycleBar();
 }

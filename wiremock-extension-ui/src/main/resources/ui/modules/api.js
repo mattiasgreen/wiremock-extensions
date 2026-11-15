@@ -5,7 +5,7 @@
 import { state } from './state.js';
 import { detectCapabilities } from './capabilities.js';
 import { demoBackend } from './demo-backend.js';
-import { PRIORITY_ACTIVE_PROXY, PRIORITY_ACTIVE_STUB, PRIORITY_PARKED, isProxyStub, isStubParked } from './stub-catalog.js';
+import { stubCatalog, PRIORITY_ACTIVE_PROXY, PRIORITY_ACTIVE_STUB, PRIORITY_PARKED, isProxyStub, isStubParked } from './stub-catalog.js';
 
 let onDemoFallbackHandler = null;
 
@@ -153,8 +153,6 @@ export function apiDelete(endpoint) {
 export function buildToggledStubPayload(stub, forceParked = null) {
   const payload = JSON.parse(JSON.stringify(stub || {}));
   delete payload._disabled;
-  delete payload._dynamic;
-  delete payload.isDynamic;
 
   const targetParked = forceParked !== null ? Boolean(forceParked) : !isStubParked(stub);
   const meta = payload.metadata && typeof payload.metadata === 'object' ? { ...payload.metadata } : {};
@@ -186,7 +184,7 @@ export function buildToggledStubPayload(stub, forceParked = null) {
 }
 
 async function resolveStubById(stubId) {
-  const cached = (state.currentStubs || []).find(s => s.id === stubId);
+  const cached = stubCatalog.getById(stubId);
   if (cached) return cached;
   return apiGet(`/__admin/mappings/${stubId}`);
 }
@@ -233,14 +231,6 @@ export async function bulkStubs(action, ids) {
 
 export function importMappings(payload) {
   return apiPost('/__admin/mappings/import', payload);
-}
-
-export function createStatefulModel(modelData) {
-  return apiPost('/__admin/stateful/rules', modelData);
-}
-
-export function deleteStatefulSession(correlationId) {
-  return apiDelete(`/__admin/stateful/sessions/${encodeURIComponent(correlationId)}`);
 }
 
 export function publishAsyncMessage(payload) {
@@ -320,15 +310,15 @@ export function inspectOpenApi(spec) {
 }
 
 export function snapshotProjectRecordings(project, excludedJsonPaths = null, useEqualToJson = false) {
-  const enc = encodeURIComponent(project || '*');
-  return apiPost(`/__admin/projects/${enc}/recordings/snapshot`, {
+  return apiPost('/__admin/lifecycle/snapshots', {
+    project: project || '_all',
     excludedJsonPaths,
     useEqualToJson
   });
 }
 
 export function snapshotFilteredRecordings(requestIds, project, activate = false, excludedJsonPaths = null, useEqualToJson = false) {
-  return apiPost('/__admin/stubs/snapshot-filtered', {
+  return apiPost('/__admin/lifecycle/snapshots', {
     requestIds,
     project,
     activate,
@@ -338,7 +328,7 @@ export function snapshotFilteredRecordings(requestIds, project, activate = false
 }
 
 export function getSnapshotStubTemplate(requestId, project = null, excludedJsonPaths = null, useEqualToJson = false) {
-  return apiPost('/__admin/stubs/snapshot-template', {
+  return apiPost('/__admin/lifecycle/snapshot-template', {
     requestId,
     project,
     excludedJsonPaths,
@@ -348,7 +338,7 @@ export function getSnapshotStubTemplate(requestId, project = null, excludedJsonP
 
 export function setProjectMode(project, mode) {
   const enc = encodeURIComponent(project);
-  return apiPost(`/__admin/projects/${enc}/mode`, { mode });
+  return apiPost(`/__admin/lifecycle/projects/${enc}/mode`, { mode });
 }
 
 export { detectCapabilities, demoBackend };

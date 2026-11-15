@@ -472,8 +472,7 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
     }
 
     @Test
-    @DisplayName(
-            "Comprehensive Editing: Tester request validation, pattern sub-editor, dynamic AST editor, and inline maximize")
+    @DisplayName("Comprehensive Editing: Tester request validation, pattern sub-editor, and inline maximize")
     void testComprehensiveUiEditingDeepeningAndSecondaryInputs() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#tester");
         page.waitForSelector("#tab-tester:not(.hidden)");
@@ -525,26 +524,6 @@ public class UiPayloadEditorPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-close-editor-modal").click();
         page.waitForSelector(
                 "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
-
-        // 4. Dynamic Model AST Editor: Open modal and verify dual layer & maximize
-        page.locator("#btn-create-dynamic-stub").click();
-        page.waitForSelector("#dynamic-stub-modal:not(.hidden)");
-
-        Locator dynamicAstMax = page.locator("#btn-dynamic-model-maximize");
-        assertThat(dynamicAstMax.isVisible()).isTrue();
-        Locator dynamicAstToggle = page.locator("#dynamic-model-mode-toggle");
-        assertThat(dynamicAstToggle.isVisible()).isTrue();
-
-        dynamicAstMax.click();
-        page.waitForSelector("#modal-payload-lens:not(.hidden)");
-        assertThat(page.locator("#payload-lens-title").innerText()).contains("Stateful Model AST");
-        page.locator("#btn-close-payload-lens").click();
-        page.waitForSelector(
-                "#modal-payload-lens", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
-
-        page.locator("#btn-cancel-dynamic").click();
-        page.waitForSelector(
-                "#dynamic-stub-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
     }
 
     @Test
