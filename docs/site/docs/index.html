@@ -42,7 +42,6 @@
       <h4>Extension Modules</h4>
       <ul>
         <li><a href="#ext-ui">WireMock Console UI</a></li>
-        <li><a href="#ext-stateful">Stateful AST Engine</a></li>
         <li><a href="#ext-netem">TCP NetEm Chaos</a></li>
         <li><a href="#ext-openapi">OpenAPI Ingestion</a></li>
         <li><a href="#ext-casual">Casual (XATMI) Gateway</a></li>
@@ -92,14 +91,14 @@
                 <td>Includes all endpoints + local dev runner</td>
               </tr>
               <tr>
-                <td><strong><code>wiremock-extension-ui</code></strong></td>
-                <td>Embedded Vanilla JS web console with stubs viewer, scenario DAG, and tester.</td>
-                <td><code>/__admin/ui/</code> (Static assets)</td>
+                <td><strong><code>wiremock-extension-common</code></strong></td>
+                <td>Shared traffic classification, boolean query evaluation, indexed journal lookup, and telemetry SPI contracts.</td>
+                <td>Shared Core SPI</td>
               </tr>
               <tr>
-                <td><strong><code>wiremock-extension-stateful</code></strong></td>
-                <td>In-memory dynamic AST simulation with correlation-id session isolation.</td>
-                <td><code>/__admin/stateful/models</code> + Filter</td>
+                <td><strong><code>wiremock-extension-ui</code></strong></td>
+                <td>Embedded Vanilla JS web console with stubs viewer, scenario DAG, async queue explorer, request journal, and Multi-Protocol Tester.</td>
+                <td><code>/__admin/ui/</code> &amp; <code>/__admin/lifecycle/*</code></td>
               </tr>
               <tr>
                 <td><strong><code>wiremock-extension-tcp-netem</code></strong></td>
@@ -198,28 +197,11 @@ testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-
             <li><strong>Scenario DAG Visualizer</strong>: Renders complex multi-step scenario transitions as interactive directed acyclic graphs with reset controls.</li>
             <li><strong>Request Journal</strong>: Inspect captured requests with payload diffs, match explanations, inline Base64 JSON decoding (<code>[Raw]</code> / <code>[Decoded]</code> toggles), and one-click cURL export.</li>
             <li><strong>Snapshot Recording</strong>: Snapshot authentic proxied requests directly into offline static stubs with exact request body matching (<code>equalToJson</code>, <code>equalTo</code>, <code>binaryEqualTo</code>) to prevent collisions.</li>
-            <li><strong>HTTP Tester</strong>: Execute test requests against stubs with real-time response rendering and execution timers.</li>
+            <li><strong>Multi-Protocol Tester</strong>: Execute HTTP, Casual, Kafka, and AMQP test requests against stubs with real-time response rendering and execution timers.</li>
           </ul>
           <p>
-            <strong>Headless Console Proxy</strong>: The UI can also run in decoupled standalone mode (<code>java WireMockConsoleProxy.java</code>) to control remote WireMock instances in staging clusters without installing anything on the remote host.
+            <strong>Headless Console Proxy</strong>: The UI can also run in decoupled standalone mode (<code>java wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java</code> or <code>./wiremock-cli/bin/wm proxy</code>) to control remote WireMock instances in staging clusters without installing anything on the remote host.
           </p>
-        </div>
-
-        <!-- Stateful Extension -->
-        <div id="ext-stateful" class="card" style="margin-bottom: 2rem;">
-          <h3>⚡ Stateful AST Engine (`wiremock-extension-stateful`)</h3>
-          <p>
-            Solves parallel test collision pitfalls. Standard WireMock scenarios mutate global singleton state. When tests execute concurrently in parallel CI workers, they overwrite each other's scenario states.
-          </p>
-          <p style="margin-top: 0.5rem;">
-            <code>wiremock-extension-stateful</code> introduces an in-memory Abstract Syntax Tree (AST) evaluator with <code>X-Correlation-Id</code> session partitioning. Each test worker gets its own isolated state world.
-          </p>
-          <pre class="code-block"><code><span class="comment">// Define model with type-safe Java DSL:</span>
-StateModel model = StateModel.named(<span class="str">"CaseManagement"</span>)
-    .initialState(<span class="str">"DRAFT"</span>)
-    .transition(<span class="str">"SUBMIT"</span>, <span class="str">"DRAFT"</span>, <span class="str">"PENDING_REVIEW"</span>)
-    .transition(<span class="str">"APPROVE"</span>, <span class="str">"PENDING_REVIEW"</span>, <span class="str">"APPROVED"</span>)
-    .invariant(<span class="str">"NoPendingTasks"</span>, expr -&gt; expr.collection(<span class="str">"tasks"</span>).noneMatch(t -&gt; t.is(<span class="str">"PENDING"</span>)));</code></pre>
         </div>
 
         <!-- NetEm Extension -->
@@ -321,16 +303,6 @@ POST http://localhost:8080/__admin/mappings
                   <td>Returns broker health, active sinks, connection lease counters, and consumed/published metrics.</td>
                 </tr>
                 <tr>
-                  <td><code>GET</code></td>
-                  <td><code>/__admin/async/journal</code></td>
-                  <td>Returns recent in-process async event strings (<code>CONSUME</code>, <code>PUBLISH</code>, <code>PROXY_FORWARD</code>, <code>ASYNC_PROXY_ERROR</code>).</td>
-                </tr>
-                <tr>
-                  <td><code>GET</code></td>
-                  <td><code>/__admin/async/harvested</code></td>
-                  <td>Returns transient wire messages harvested by the proxy bridge before snapshotting. <i>(Note: All registered async stubs are standard WireMock stubs queried via <code>GET /__admin/mappings</code>)</i>.</td>
-                </tr>
-                <tr>
                   <td><code>POST</code></td>
                   <td><code>/__admin/async/publish</code></td>
                   <td>Injects a synthetic outbound message into a destination queue or topic for test harness coordination.</td>
@@ -343,6 +315,9 @@ POST http://localhost:8080/__admin/mappings
               </tbody>
             </table>
           </div>
+          <p style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.92rem;">
+            All async mocks and proxy bridge rules are registered as standard WireMock <code>StubMapping</code> entries tagged under <code>metadata.async</code> inside WireMock's core <code>StubStore</code> (<code>/__admin/mappings</code>), and every consumed, published, or bridged exchange is recorded directly in the unified Request Journal (<code>/__admin/requests</code>).
+          </p>
 
           <h4 style="margin-top: 1.25rem;">Example 1: Inbound Kafka Event Mock Stub</h4>
           <pre class="code-block"><code>{
@@ -482,7 +457,7 @@ POST http://localhost:8080/__admin/mappings
           <div class="card">
             <h3>Flake-Free Parallel CI Pipelines</h3>
             <p>
-              By passing <code>X-Correlation-Id: ${testRunId}</code> on all HTTP requests, 50 parallel test runners can mutate stateful workflows against a single shared WireMock server without race conditions or state collisions.
+              By parameterizing native WireMock scenarios by correlation or entity ID (e.g. <code>CaseLifecycle-${caseId}</code>) and filtering journal lookups via <code>X-Correlation-Id</code>, 50 parallel test runners execute multi-step workflows against a single shared WireMock server without race conditions or state collisions.
             </p>
           </div>
           <div class="card">

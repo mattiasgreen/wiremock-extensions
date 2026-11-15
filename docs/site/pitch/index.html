@@ -534,21 +534,21 @@
         <h1 class="slide-title" id="slide1Title">WireMock Extended</h1>
         <h2 class="slide-subtitle">
           The production-grade, zero-cloud API simulation studio for JVM &amp; Standalone.<br>
-          Embedded Web UI, instant OpenAPI mocks, &amp; flake-free stateful workflows.
+          Embedded Web UI, instant OpenAPI mocks, &amp; flake-free scenario workflows.
         </h2>
 
         <div class="grid-4" style="margin-top: 1.5rem;">
           <div class="card">
             <h3>🖥️ Embedded UI</h3>
-            <p>Pure Vanilla ES modules, zero NPM dependencies. Stub explorer, scenario DAG, and HTTP tester.</p>
+            <p>Pure Vanilla ES modules, zero NPM dependencies. Stub explorer, scenario DAG, and Multi-Protocol Tester.</p>
           </div>
           <div class="card">
             <h3>📑 OpenAPI Synthesis</h3>
             <p>Instant stub generation from OAS 3.0/3.1 specs with live proxy traffic snapshotting.</p>
           </div>
           <div class="card">
-            <h3>⚡ Dynamic State AST</h3>
-            <p>RCE-safe sealed AST engine with <code>X-Correlation-Id</code> isolation to end CI flakes.</p>
+            <h3>🗜️ Adaptive Zstd Journal</h3>
+            <p>Zstandard dictionary compression with structural clustering and JVM anti-OOM guard.</p>
           </div>
           <div class="card">
             <h3>📊 Observability</h3>
@@ -597,7 +597,7 @@
           <div>
             <div class="card" style="margin-bottom: 1rem;">
               <h3>📦 All-in-One Meta Bundle (<code>wiremock-extension-bundle</code>)</h3>
-              <p>Automatic SPI auto-discovery for WireMock Standalone. Drop a single JAR onto the classpath and immediately unlock UI, metrics, logging, OpenAPI, and stateful simulation.</p>
+              <p>Automatic SPI auto-discovery for WireMock Standalone. Drop a single JAR onto the classpath and immediately unlock UI, metrics, logging, OpenAPI, L4 NetEm, Casual XATMI, Async brokers, and Zstd request journaling.</p>
             </div>
             <div class="card">
               <h3>🧩 Pick &amp; Choose Modularity</h3>
@@ -608,13 +608,14 @@
             <h3>⚡ SPI Extension Factory Topology</h3>
             <pre class="code-block"><code><span class="comment">// 100% Standard WireMock Extension SPI</span>
 wiremock-extension-bundle
+ ├── wiremock-extension-common        <span class="comment">(Shared SPI)</span>
  ├── wiremock-extension-json-logging  <span class="comment">(MDC filter)</span>
  ├── wiremock-extension-otel          <span class="comment">(Prometheus)</span>
  ├── wiremock-extension-openapi       <span class="comment">(OAS 3.0/3.1)</span>
- ├── wiremock-extension-stateful      <span class="comment">(AST engine)</span>
  ├── wiremock-extension-tcp-netem     <span class="comment">(L4 chaos)</span>
  ├── wiremock-extension-casual        <span class="comment">(XATMI / 2PC)</span>
  ├── wiremock-extension-async         <span class="comment">(Kafka/Queues Beta)</span>
+ ├── wiremock-extension-journal       <span class="comment">(Zstd journal)</span>
  └── wiremock-extension-ui            <span class="comment">(Vanilla SPA)</span></code></pre>
           </div>
         </div>
@@ -634,11 +635,11 @@ wiremock-extension-bundle
           <div>
             <div class="card" style="margin-bottom: 0.75rem;">
               <h3>🔍 Instant Stubs Explorer &amp; Filter</h3>
-              <p>Real-time fuzzy search by path, method, and tags. Filter by Active, Disabled, and Dynamic stubs with project-level lifecycle grouping.</p>
+              <p>Real-time fuzzy search by path, method, and tags. Filter by Active, Parked (<code>priority >= 100</code>), and Offline-Guard stubs with project-level lifecycle grouping.</p>
             </div>
             <div class="card" style="margin-bottom: 0.75rem;">
-              <h3>🚀 Integrated HTTP Tester</h3>
-              <p>Execute live API requests right inside the browser with syntax-highlighted responses, header inspectors, and execution timers.</p>
+              <h3>🚀 Integrated Multi-Protocol Tester</h3>
+              <p>Execute live HTTP, Casual, Kafka, and AMQP requests right inside the browser with syntax-highlighted responses, header inspectors, and execution timers.</p>
             </div>
             <div class="card">
               <h3>🔀 Scenario DAG Visualizer</h3>
@@ -677,7 +678,7 @@ wiremock-extension-bundle
             </div>
             <div class="card">
               <h3>📷 Traffic Snapshot &amp; Offline Flip</h3>
-              <p>One click captures proxied traffic into <code>DISABLED</code> stubs. Flip project mode to <code>STUBS MODE</code> to sever upstream dependencies and run fully offline!</p>
+              <p>One click captures proxied traffic via <code>POST /__admin/lifecycle/snapshots</code>. Flip project mode (<code>POST /__admin/lifecycle/projects/{project}/mode</code>) to sever upstream dependencies and run offline!</p>
             </div>
           </div>
           <div class="media-card">
@@ -693,37 +694,37 @@ wiremock-extension-bundle
         </div>
       </section>
 
-      <!-- Slide 6: Deep Dive: AST-Driven Stateful Simulation -->
+      <!-- Slide 6: Deep Dive: Parallel-Safe Scenarios & Clean Test-Double Boundaries -->
       <section class="slide" data-slide="6">
-        <div class="slide-badge emerald">Breakthrough Technology</div>
-        <h1 class="slide-title">Dynamic AST Stateful Simulation</h1>
-        <h2 class="slide-subtitle">Solves combinatorial state explosion &amp; parallel CI collisions via <code>X-Correlation-Id</code>.</h2>
+        <div class="slide-badge emerald">Zero-Flake Concurrency</div>
+        <h1 class="slide-title">Parallel-Safe Scenarios &amp; Crossing Line Discipline</h1>
+        <h2 class="slide-subtitle">Zero CI collisions via parameterized scenario names and clean test-double boundaries.</h2>
 
         <div class="grid-2">
           <div>
             <div class="card" style="margin-bottom: 0.75rem;">
-              <h3>🛡️ 100% RCE-Safe Sealed AST</h3>
-              <p>Java 21 sealed interfaces (<code>AstExpression</code>, <code>AstMutation</code>). Zero arbitrary code execution risk, unlike JavaScript or Groovy scripting.</p>
+              <h3>🔀 Parameterized Native Scenarios</h3>
+              <p>Scope WireMock scenarios cleanly (e.g. <code>CaseLifecycle-${caseId}</code>) via <code>/__admin/scenarios</code> and inspect transitions live in the UI DAG.</p>
             </div>
             <div class="card" style="margin-bottom: 0.75rem;">
-              <h3>📦 In-Memory Collection Primitives</h3>
-              <p>Append items, mutate lists, enforce cross-entity invariants (e.g. <i>"Cannot close case while child tasks are pending"</i>).</p>
+              <h3>⚡ Templating &amp; Java Extensions</h3>
+              <p>Echo request values statelessly with Handlebars <code>response-template</code>, or use plain Java <code>ResponseTransformerV2</code> / provider Testcontainers for relational invariants.</p>
             </div>
             <div class="card">
-              <h3>🔒 Multi-Tenant Correlation Isolation</h3>
-              <p>State is scoped to <code>X-Correlation-Id</code>. 100 parallel tests can run against the same WireMock instance without collision!</p>
+              <h3>🗜️ Zstd Request Journal &amp; Correlation Filtering</h3>
+              <p>Capture high-volume multi-protocol traffic with adaptive Zstandard compression, resolved caller source IPs, and 1-click <code>X-Correlation-Id</code> filtering.</p>
             </div>
           </div>
           <div class="media-card">
-            <img src="../assets/demo-stateful-simulation.gif" alt="Stateful Simulation Demo" onerror="this.src='../assets/screenshot-http-tester.png'">
+            <img src="../assets/screenshot-http-tester.png" alt="Multi-Protocol Tester & Scenario Inspection">
             <div class="media-caption">
-              <span>Stateful AST Engine • Invariant Tracing</span>
+              <span>Parameterized Scenarios • Zstd Request Journal</span>
             </div>
           </div>
         </div>
 
         <div class="speaker-note-content" hidden>
-          This is where WireMock Extended truly outperforms everything else on the market. Standard WireMock scenarios cannot model dynamic collections like adding an arbitrary number of items to a cart. With our AST engine, you model domain invariants cleanly in Java, and each test session gets its own isolated memory bucket.
+          Instead of embedding a custom query database inside mock configuration, we follow The Crossing Line principle: scope native WireMock scenarios by entity or correlation ID for parallel safety, use Handlebars templating for lightweight dynamics, and drop into plain Java extensions or provider Testcontainers when rich domain invariants are required.
         </div>
       </section>
 
@@ -812,12 +813,12 @@ wiremock_request_duration_seconds_sum 0.84</code></pre>
                 <td class="check">Yes (Live Proxy + Snap)</td>
               </tr>
               <tr>
-                <td><strong>Stateful Parallel Isolation</strong></td>
+                <td><strong>Correlation-Isolated Scenarios</strong></td>
                 <td class="cross">No (Global Collision)</td>
                 <td class="partial">Manual Scenarios</td>
                 <td class="cross">No</td>
                 <td class="partial">Partial</td>
-                <td class="check">Yes (X-Correlation-Id AST)</td>
+                <td class="check">Yes (Parameterized ID + DAG UI)</td>
               </tr>
               <tr>
                 <td><strong>JVM / JUnit Embedding</strong></td>
@@ -889,7 +890,7 @@ testImplementation <span class="str">'io.github.mattiasgreen:wiremock-extension-
             <h3>🗺️ Near-Term Roadmap</h3>
             <ul>
               <li><strong>OpenAPI Contract Validation</strong>: Rejection of non-conforming requests.</li>
-              <li><strong>Stub Persistence</strong>: Storing disabled states and session snapshots to disk.</li>
+              <li><strong>Portable Simulation Bundles</strong>: Export/import clustered scenario &amp; stub portfolios.</li>
               <li><strong>Visual Stub Form Builder</strong>: No-code stub authoring in the web UI.</li>
               <li><strong>Identity Provider Mock Preset</strong>: Mock OAuth2 / OIDC JWKS token generator.</li>
             </ul>

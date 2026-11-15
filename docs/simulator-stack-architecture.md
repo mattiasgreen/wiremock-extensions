@@ -41,7 +41,7 @@ By embedding these capabilities directly into WireMock via modern Java 21 featur
 │   │   REST / HTTP     │  │   State Machine   │  │   Network Chaos  │   │
 │   │   (WireMock Core  │  │ (wiremock-        │  │ (Virtual-Thread  │   │
 │   │   + OpenAPI)      │  │  extension-       │  │  Toxiproxy Proxy │   │
-│   │                   │  │  stateful AST)    │  │  + L7 Faults)    │   │
+│   │                   │  │  Scenarios + DSL) │  │  + L7 Faults)    │   │
 │   └─────────┬─────────┘  └─────────┬─────────┘  └────────┬─────────┘   │
 │             │                      │                     │             │
 │             ▼                      ▼                     ▼             │
@@ -112,7 +112,7 @@ All 7 standard Toxiproxy toxics can be implemented natively:
 
 WireMock includes basic webhook support (`org.wiremock.webhooks.Webhooks`), but in modern enterprise architectures, webhooks must be:
 1. **Synthesized automatically from OpenAPI 3.0 / 3.1 specifications**.
-2. **Triggered by stateful state-machine transitions**.
+2. **Triggered by native scenario state transitions**.
 3. **Auditable with an Outbox Journal and manual re-triggering**.
 
 ### 1. OpenAPI 3.0/3.1 `callbacks` Ingestion
@@ -141,18 +141,16 @@ OpenAPI explicitly supports asynchronous callbacks via the `callbacks` object:
   - An HTTP stub responding with `202 Accepted`.
   - An automatic Post-Serve Webhook action sending a generated synthetic payload to `{{jsonPath request.body '$.callbackUrl'}}` after a configurable delay (e.g., 500ms).
 
-### 2. Stateful Event-Triggered Webhooks
-In `wiremock-extension-stateful`, workflows often require async callbacks upon state changes:
+### 2. Scenario & ServeEvent-Triggered Webhooks
+Async webhooks can be emitted from native WireMock `ServeEventListener` hooks (including when Scenario transitions advance state):
 ```java
-// Java AST DSL:
-model.on(post("/api/v1/loans/apply"))
-     .mutate(applyForLoan())
-     .webhook(
-         post("https://client-service/webhooks/loan-decision")
-             .delayMs(1500)
-             .body("{\"loanId\": \"${state.loanId}\", \"status\": \"APPROVED\"}")
-     )
-     .respond(json("{\"status\": \"PENDING\"}").status(202));
+// Native WireMock ServeEventListener / ResponseDefinitionTransformerV2 webhook hook:
+stubFor(post("/api/v1/loans/apply")
+    .inScenario("LoanLifecycle-" + correlationId)
+    .whenScenarioStateIs("Started")
+    .willSetStateTo("APPLIED")
+    .withMetadata(Map.of("webhookCallback", "https://client-service/webhooks/loan-decision"))
+    .willReturn(aResponse().withStatus(202).withBody("{\"status\": \"PENDING\"}")));
 ```
 
 ### 3. Webhook Outbox Journal in Web UI
@@ -186,7 +184,7 @@ In real systems, HTTP and events are tightly coupled:
 1. **HTTP -> Event**:
    - Calling `POST /api/v1/orders` returns `201 Created` and automatically publishes an `OrderPlaced` event to channel `orders.created`.
 2. **Event -> HTTP / Webhook**:
-   - Publishing an event `PaymentSettled` triggers an outbound webhook or advances a stateful workflow in `wiremock-extension-stateful`.
+   - Publishing an event `PaymentSettled` triggers an outbound webhook or advances a scenario / test double workflow.
 
 ### AsyncAPI Spec Ingestion (`POST /__admin/asyncapi/import`)
 - Ingests `asyncapi.yaml` (2.x and 3.x).
@@ -245,7 +243,6 @@ To keep the suite decoupled, modular, and adhering to our zero-NPM constraint:
 | :--- | :--- | :--- |
 | **`wiremock-extension-chaos`** | In-process TCP proxy with Virtual Threads + Toxiproxy REST API + WireMock L7 chaos filters. | Standard Java 21 `java.net`, WireMock core (no external proxy libs). |
 | **`wiremock-extension-asyncapi`** | AsyncAPI spec parser, WebSocket / SSE endpoints, in-memory topic broker, HTTP-to-event bridge. | Jackson YAML, WireMock core. |
-| **`wiremock-extension-stateful`** | AST dynamic state simulation (already exists; gains webhook & async action support). | WireMock core. |
 | **`wiremock-extension-ui`** | Single-page console with new tabs for Chaos, Events, and Webhooks Outbox. | Pure Vanilla JS / CSS (Zero NPM). |
 | **`wiremock-extension-bundle`** | Meta-jar packaging all extensions into a single drop-in standalone server. | All subprojects. |
 
@@ -260,7 +257,7 @@ To keep the suite decoupled, modular, and adhering to our zero-NPM constraint:
 2. **Phase 2: Enhanced Webhooks & OpenAPI Callbacks**:
    - Implement OpenAPI `callbacks` parser in `wiremock-extension-openapi`.
    - Implement Webhook Outbox store and Admin API (`/__admin/webhooks/outbox`).
-   - Add `Action.webhook(...)` to `wiremock-extension-stateful` AST.
+   - Connect native WireMock `ServeEventListener` hooks / scenario metadata to trigger scheduled webhook callbacks *(replacing the retired AST `Action.webhook` concept per ADR 0027)*.
 3. **Phase 3: AsyncAPI Spec Ingestion & Event Simulation (`wiremock-extension-asyncapi`)**:
    - Implement `AsyncApiParser` for 2.x and 3.x specifications.
    - Implement in-memory topic broker + WebSocket / SSE streaming endpoints.

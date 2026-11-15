@@ -2,11 +2,11 @@
 
 > ### 🎯 Core Mission & Progressive Simulation Value Proposition
 >
-> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and stateful databases) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
+> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and async messaging) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
 >
 > ```mermaid
 > flowchart LR
->     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Stubs + Stateful AST)"]
+>     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Native Stubs + Scenarios)"]
 >     B -->|"Deterministic Codegen + AI Synthesis"| C["Stage 3: Domain Simulation SDK<br/>(Type-Safe Java 21 Records, Builders & Replayable Scenarios)"]
 > ```
 
@@ -26,21 +26,21 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | :--- | :--- | :--- |
 | **`wiremock-extension-json-logging`** | Single-line structured JSON logging for standard/verbose mode with automatic MDC header extraction (`x_correlation_id`, `x_tenant_id`) and runtime Logback log level Admin API (`/__admin/logging/levels`, `LOG_LEVEL`). | [Module README](wiremock-extension-json-logging/README.md) |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics recording (`wiremock_requests_total`, latency histogram) with a Prometheus scrape route (`/__admin/metrics/prometheus`). | [Module README](wiremock-extension-otel/README.md) |
+| **`wiremock-extension-common`** | Shared traffic verdict classification, boolean query parsing, indexed journal lookup, and telemetry SPI contracts shared across WireMock extensions. | Root rules (`AGENTS.md`) |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
-| **`wiremock-extension-stateful`** *(Experimental / Alpha)* | In-memory dynamic stateful API simulation prototype with type-safe Java DSL, 100% RCE-safe AST evaluation, and multi-tenant `X-Correlation-Id` isolation to prevent parallel test collision. See [Module README](wiremock-extension-stateful/README.md) for architectural trade-offs and Crossing Line guidance. | [Module README](wiremock-extension-stateful/README.md) |
 | **`wiremock-extension-tcp-netem`** | In-process Layer 4 TCP network emulator & fault injector (Toxiproxy re-implementation in Java 21 Virtual Threads) with dual-ingress architecture and zero blast-radius correlation-id scoping. | [Module README](wiremock-extension-tcp-netem/README.md) |
 | **`wiremock-extension-casual`** | In-process Casual (XATMI / Tuxedo) Domain Gateway for simulating distributed transaction and legacy RPC architectures with transparent proxying and failure injection. | [Module README](wiremock-extension-casual/README.md) |
 | **`wiremock-extension-async`** *(Beta)* | In-process Kafka Netty wire sink, AMQP/queue bridge, synthetic journal mediation, and HTTP async triggers. | [Module README](wiremock-extension-async/README.md) |
 | **`wiremock-extension-journal`** *(Beta)* | High-density memory-bounded request journal powered by adaptive Zstandard dictionary compression, dynamic structural clustering, and JVM headroom anti-OOM guard. | [Module README](wiremock-extension-journal/README.md) |
-| **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, and interactive HTTP tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
+| **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, async queue explorer, and unified Multi-Protocol Tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
 | **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
-| **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating stateful scenario modeling, parallel case collision pitfalls, best-practice isolated scenarios, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
+| **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating isolated native scenario modeling (`CaseLifecycle-<caseId>`), parallel case collision pitfalls, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
 
 ## Quick Preview
 
-| Overview Tour | OpenAPI Spec Import & Testing | Dynamic Stateful Simulation |
-| :--- | :--- | :--- |
-| ![WireMock Console Overview](docs/images/demo-ui-tour.gif) | ![OpenAPI Spec Import Workflow](docs/images/demo-openapi-import.gif) | ![Dynamic Stateful Simulation](docs/images/demo-stateful-simulation.gif) |
+| Overview Tour | OpenAPI Spec Import & Testing |
+| :--- | :--- |
+| ![WireMock Console Overview](docs/images/demo-ui-tour.gif) | ![OpenAPI Spec Import Workflow](docs/images/demo-openapi-import.gif) |
 
 ### 🎥 End-to-End Progressive Simulation Tour (WebM)
 
@@ -235,12 +235,6 @@ Each extension can be used independently without pulling in the others:
   ```
   See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
 
-- **Dynamic Stateful Simulation Only**:
-  ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-stateful:1.7.0'
-  ```
-  See [wiremock-extension-stateful/README.md](wiremock-extension-stateful/README.md) for details.
-
 - **L4 TCP Network Emulation & Chaos Only**:
   ```groovy
   implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.7.0'
@@ -324,20 +318,20 @@ To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, and Proj
    - Paste an OpenAPI specification containing an upstream path (e.g. `/api/v1/live-catalog`).
    - Set the Upstream Base URL to `http://localhost:8089` and set the Project Name to `Catalog Service`.
    - Click **Import as Live Proxies**.
-5. **Live Test via HTTP Tester**:
+5. **Live Test via Multi-Protocol Tester**:
    - Select the newly imported proxy stub (`[GET] /api/v1/live-catalog`).
-   - Click **⚡ Test Stub** to load it into the HTTP Tester.
+   - Click **⚡ Test Stub** to load it into the Multi-Protocol Tester.
    - Click **Send Request**. The request is proxied through WireMock to the upstream service (`8089`) returning live upstream data!
-6. **Snapshot Traffic into Disabled Stubs**:
+6. **Snapshot Traffic into Parked Stubs**:
    - Return to the **Stubs** tab and select the `Catalog Service` project filter.
    - The **Project Lifecycle Bar** displays `LIVE PROXY`.
-   - Click **📷 Snapshot Live Traffic**. The proxied traffic from the Request Journal is captured and parked as a `DISABLED` stub.
-   - Click the **Disabled Stubs** filter pill to inspect the captured authentic response.
+   - Click **📷 Snapshot Live Traffic**. The proxied traffic from the Request Journal is captured and parked (`priority >= 100`) as a replay stub.
+   - Click the **Parked** filter pill to inspect the captured authentic response.
 7. **Switch to Stubs Mode & Go Offline**:
    - In the Project Lifecycle Bar, click **Switch to Stubs Mode**.
-   - The project mode badge flips to `STUBS MODE` (proxy stubs are disabled, recorded stubs are activated).
+   - The project mode badge flips to `STUBS MODE` (proxy stubs are parked at `priority >= 100`, recorded stubs are activated).
    - Terminate the upstream service (Ctrl+C on port `8089`).
-   - Re-send the request in the HTTP Tester: it is now served completely offline from the recorded stub!
+   - Re-send the request in the Multi-Protocol Tester: it is now served completely offline from the recorded stub!
 
 ### 6. Zero-Build Consumer Runner
 
@@ -417,7 +411,7 @@ The suite is expanding into a **zero-sprawl Simulator Stack** running entirely i
 
 * **🪝 Asynchronous Callbacks & Webhooks (`wiremock-extension-webhooks`)**:
   * Automatic OpenAPI 3.0/3.1 `callbacks` parsing: synthesizes `202 Accepted` stubs paired with asynchronous webhook deliveries to dynamic URLs like `{{jsonPath request.body '$.callbackUrl'}}`.
-  * Stateful workflow triggers: emit out-of-band callbacks upon state transitions in `wiremock-extension-stateful`.
+  * Native Scenario workflow triggers: emit out-of-band callbacks upon WireMock scenario transitions or Java `ServeEventListener` hooks.
   * Webhook Outbox Journal: UI audit log tracking dispatched callbacks, target endpoints, delivery status, retries, and an interactive "Trigger / Replay Now" button.
 
 ### 2. Embedded Control Plane & Web UI Authoring

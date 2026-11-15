@@ -39,7 +39,7 @@ Never format code that still has failing tests or static defects:
 
 1. **Conventional Commits**:
    - Format: `feat(scope): concise title`, `fix(scope): ...`, `docs(scope): ...`, `refactor(scope): ...`, `test(scope): ...`, `chore(scope): ...`
-   - Scopes: `cli`, `ui`, `casual`, `netem`, `stateful`, `openapi`, `otel`, `logging`, `bundle`, `examples`, `build`, `workflow`
+   - Scopes: `cli`, `ui`, `casual`, `netem`, `async`, `journal`, `common`, `openapi`, `otel`, `logging`, `bundle`, `examples`, `build`, `workflow`
 2. **Inviolable Invariant**:
    - **NEVER** edit or view `CHANGELOG.md` or `gradle.properties` version (managed automatically by `release-please`).
 3. **Push to Remote**:

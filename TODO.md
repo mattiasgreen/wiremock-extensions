@@ -16,8 +16,8 @@ Comprehensive review of project structure, code style, architecture, and enginee
 | **Air-Gapped Self-Containment** | Embedded UI assets are local; requires explicit test contract guaranteeing zero remote/CDN calls. | 100% self-contained, verifiable offline execution for strict enterprise/defense networks. | **P1** | Pending |
 | **Distributed Tracing (W3C)** | OpenTelemetry metrics and W3C distributed tracing with server spans, OTLP export, and log correlation. | Distributed Tracing with W3C `traceparent` context extraction, Server Spans, and OTLP export. | **P1** | **Completed** |
 | **Packaging & Distribution** | Local development runner (`StandaloneDevServer`) and subproject library JARs. | Maven Central publishing, Standalone Fat JAR distribution, and Docker image. | **P1** | Pending |
-| **Interactive Demo (GH Pages)**| README contains animated GIFs; no live web sandbox. | Static interactive browser demo on GitHub Pages with simulated Admin API responses. | **P2** | Pending |
-| **CI / CD Pipeline** | Minimal `ci.yml`; lacks Spotless check, Gradle build caching, and headless Playwright OS dependencies. | Full matrix/verification pipeline with `spotlessCheck`, headless test runner, and caching. | **P2** | *Deferred* |
+| **Interactive Demo (GH Pages)**| Static interactive browser demo on GitHub Pages with simulated Admin API responses, assembled on build by `pages.yml` from `wiremock-extension-ui/src/main/resources/ui/`. | Static interactive browser demo on GitHub Pages with simulated Admin API responses. | **P2** | **Completed** |
+| **CI / CD Pipeline** | Full verification pipeline in `.github/workflows/ci.yml` with `spotlessCheck`, Gradle build caching, Playwright OS dependencies, and `quarkusIntegrationTest`. | Full matrix/verification pipeline with `spotlessCheck`, headless test runner, and caching. | **P2** | **Completed** |
 | **Extension Robustness** | Precompiled `Pattern` constants in `HeaderNormalizer.java`; instance-scoped tracing registry. | Instance-scoped metrics and tracing registries with test isolation. | **P2** | **Completed** |
 | **Automated Demo Videos** | Manual animated GIFs in `docs/images` with palette limitations and repository bloat risk. | Headless Playwright WebM video recordings starting at frame 0 (no in-video slides/HUD), self-contained E2E flows, and agent-gated local execution via `git log` review. | **P2** | Planned |
 
@@ -107,25 +107,25 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [x] Full Playwright headless browser test suite (`UiPlaywrightTest`) passed with zero regressions.
 
 - [x] **2.5. Stub Lifecycle Management & Ad-Hoc Stub Creation**
-  - [x] Resolved 404 error when editing stubs by providing unified `PUT /stubs/{id}` in `StubLifecycleAdminEndpoint` supporting active stubs, disabled stubs, and upsert fallback.
+  - [x] ~~Resolved 404 error when editing stubs by providing unified `PUT /stubs/{id}` in `StubLifecycleAdminEndpoint` supporting active stubs, disabled stubs, and upsert fallback.~~ *(Retired per [ADR 0026](docs/adr/0026-native-priority-tiers-for-stub-parking-and-project-modes.md): superseded by native `/__admin/mappings/{id}` priority tiers)*
   - [x] Added ad-hoc stub creation button (`➕ New` / `#btn-create-stub`) in UI header with clean modal defaults.
-  - [x] Added Playwright integration test Scenario 12 verifying active editing, disabled editing without 404, and ad-hoc creation.
+  - [x] Added Playwright integration test Scenario 12 verifying active editing, parking/re-enabling via native priority tiers, and ad-hoc creation.
 
 - [x] **2.6. UI/UX Audit Overhaul & Progressive Simulation Workflows**
-  - [x] Remove 2.5 MB of pitch deck GIF/PNG bloat from `wiremock-extension-ui/src/main/resources/ui/pitch/` and deduplicate `docs/site/demo/` from Git.
-  - [x] **Verdict Taxonomy Unification (`PROXIED` / `STUB` / `STATEFUL` / `UNMATCHED`)**:
-    - [x] Distinguish `🌐 PROXIED` (forwarded via `proxyBaseUrl`), `📌 STUB` (local static or `STUB · TPL` Handlebars mapping), `🧠 STATEFUL` (AST stateful engine, replacing ambiguous `"DYNAMIC"` label), and `⚠️ UNMATCHED` (HTTP 404) across Request Journal badges, filter pills, and Stubs Catalog filters.
+  - [x] Remove 2.5 MB of pitch deck GIF/PNG bloat from `wiremock-extension-ui/src/main/resources/ui/pitch/` and deduplicate `docs/site/demo/` from Git (gitignored; assembled at build time by `.github/workflows/pages.yml`).
+  - [x] **Verdict Taxonomy Unification (`PROXIED` / `STUB` / `UNMATCHED`)** *(legacy `STATEFUL` verdict retired per [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md))*:
+    - [x] Distinguish `🌐 PROXIED` (forwarded via `proxyBaseUrl`), `📌 STUB` (local static or `STUB · TPL` Handlebars mapping), and `⚠️ UNMATCHED` (HTTP 404) across Request Journal badges, filter pills, and Stubs Catalog filters.
   - [x] **End-to-End Request Journal Triage, Harvesting & Level-1 Java Codegen**:
     - [x] Add `🚀 Replay in Tester` (`.btn-journal-to-tester`), `📋 Copy cURL` (`.btn-journal-copy-curl`), and `☕ Copy Java` (`#btn-copy-java` / `.btn-journal-copy-java` generating `stubFor(...)` DSL) on Stubs and Journal entries.
     - [x] On `⚠️ UNMATCHED` entries: replace `📸 Freeze Stub` (which would freeze a 404) with `➕ Create Stub from Request` (`.btn-create-stub-from-req`, opens Stub Editor pre-populated with incoming method, URL, and body pattern, defaulting response to `200 OK`) and display an Unmatched Diagnostic banner.
     - [x] On `🌐 PROXIED` entries: display target upstream origin and `📸 Freeze Stub`.
-    - [x] On `📌 STUB` / `🧠 STATEFUL` entries: add `🔗 Inspect Stub` link to jump directly to the matched mapping, and render `X-Correlation-Id` as a 1-click session filter chip (`.btn-journal-filter-corr`).
+    - [x] On `📌 STUB` entries: add `🔗 Inspect Stub` link to jump directly to the matched mapping, and render `X-Correlation-Id` as a 1-click session filter chip (`.btn-journal-filter-corr`).
   - [ ] **Zero-Bloat Request Matcher Builder & Handlebars Token Inserter**:
     - [ ] Two-way synced Form $\leftrightarrow$ Raw JSON editor with a generic repeatable matcher row builder (`Header`, `Query`, `Cookie`, `Body` $\times$ `equalTo`, `contains`, `matches`, `equalToJson`, `matchesJsonPath`).
     - [ ] 1-click Handlebars token bar (`{{request.pathSegments.[1]}}`, `{{request.query.id}}`, `{{jsonPath request.body '$.id'}}`, `{{randomValue type='UUID'}}`) that automatically enables `"transformers": ["response-template"]`.
-  - [x] **Service-Scoped Proxy Bootstrapper & Generic Stateful CRUD Generator**:
+  - [x] **Service-Scoped Proxy Bootstrapper**:
     - [x] Allow creating a service-scoped `proxyBaseUrl` route directly from `➕ New` (`🌐 Live Service Proxy (ERP System)` preset + `#editor-proxy-url` field) without requiring an OpenAPI specification.
-    - [ ] Replace hardcoded domain templates in `dynamic-stubs.js` with a parameterized CRUD Entity Generator and add a Live Entity State Inspector & Reset view per `X-Correlation-Id`.
+    - [x] ~~Replace hardcoded domain templates in `dynamic-stubs.js` with a parameterized CRUD Entity Generator and add a Live Entity State Inspector & Reset view per `X-Correlation-Id`.~~ *(Retired per [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md) in favor of native `/__admin/scenarios` and Java `ResponseTransformerV2` / Testcontainers)*
 
 ---
 
@@ -158,23 +158,20 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [ ] Perform asset audit confirming zero outbound CDN requests, external web fonts, or remote analytic beacons.
   - [ ] Add an automated Playwright network interception test in `UiPlaywrightTest` verifying 100% of network requests remain strictly within `/__admin/ui/*` and `/__admin/*`.
 
-- [ ] **4.3. Interactive GitHub Pages Demo & Documentation Hub**
-  - [ ] Build a zero-dependency static documentation and landing page hosted on GitHub Pages with simulated Admin API responses to allow instant evaluation of the UI, scenario DAG visualizer, and HTTP tester without running Java.
+- [x] **4.3. Interactive GitHub Pages Demo & Documentation Hub**
+  - [x] Build a zero-dependency static documentation and landing page hosted on GitHub Pages with simulated Admin API responses to allow instant evaluation of the UI, scenario DAG visualizer, and Multi-Protocol Tester without running Java (assembled on demand into gitignored `docs/site/demo/` by `.github/workflows/pages.yml`).
 
 ---
 
 ### Architecture Decoupling & Storage Persistence
 
 - [x] **5.1. UI Feature Discovery Handshake & Graceful Degradation**
-  - [x] Implement remote capability probing across Core, Lifecycle, Stateful, NetEm, and Metrics endpoints.
+  - [x] Implement remote capability probing across Core, Lifecycle, Async, NetEm, and Metrics endpoints.
   - [x] Automatic UI degradation and visual capability matrix in Target Server modal.
 
-- [ ] **5.2. Decouple Domain Lifecycle from UI Presentation**
-  - [ ] Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module or merge with stateful domain logic, keeping `wiremock-extension-ui` purely presentation-focused.
+- [x] ~~**5.2. Decouple Domain Lifecycle from UI Presentation** — Extract `StubLifecycleAdminEndpoint` and `DisabledStubStore` into a dedicated core/lifecycle module or merge with stateful domain logic, keeping `wiremock-extension-ui` purely presentation-focused.~~ *(Superseded per [ADR 0026](docs/adr/0026-native-priority-tiers-for-stub-parking-and-project-modes.md) and [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md): `DisabledStubStore` eliminated, `StubLifecycleService` operates statelessly over native `/__admin/mappings/{id}` priority tiers, and `wiremock-extension-stateful` retired)*
 
-- [ ] **5.3. File-Backed Persistence for Disabled Stubs & Stateful Sessions**
-  - [ ] Persist disabled stubs to WireMock mapping JSON files using `"metadata": { "disabled": true }` or a dedicated `.disabled/` store across server restarts.
-  - [ ] Allow stateful simulation sessions to be serialized/deserialized to JSON for bug reporting and replay.
+- [x] ~~**5.3. File-Backed Persistence for Disabled Stubs & Stateful Sessions** — Persist disabled stubs to WireMock mapping JSON files or `.disabled/` stores and serialize stateful AST sessions to JSON.~~ *(Superseded per [ADR 0026](docs/adr/0026-native-priority-tiers-for-stub-parking-and-project-modes.md) and [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md): parked stubs (`priority >= 100`) persist directly as standard WireMock mapping JSON files)*
 
 ---
 
@@ -189,9 +186,9 @@ Comprehensive review of project structure, code style, architecture, and enginee
 - [ ] **6.3. Zero-Dependency Realistic Mock Data Templating Helpers**
   - [ ] Introduce Handlebars helpers (`{{random.uuid}}`, `{{random.email}}`, `{{random.dateTime}}`, `{{random.name}}`).
 
-- [ ] **6.4. Per-Correlation Stateful Session Visualizer & Form Builder**
+- [ ] **6.4. Visual Stub Form Builder**
   - [ ] Visual form editor in Web UI for crafting stubs and matchers without writing raw JSON.
-  - [ ] Inspect stateful entity graphs registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.
+  - [x] ~~Inspect stateful entity graphs registered via `wiremock-extension-stateful` under specific `X-Correlation-Id` sessions in the Scenarios tab.~~ *(Retired per [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md); inspect parameterized native scenarios via `/__admin/scenarios` DAG visualizer)*
 
 ---
 
@@ -205,7 +202,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 
 - [ ] **7.2. Webhook Outbox & OpenAPI Callbacks (`wiremock-extension-webhooks`)**
   - [ ] Automatically synthesize callback stubs returning `202 Accepted` paired with async webhook dispatches targeting `{{jsonPath request.body '$.callbackUrl'}}`.
-  - [ ] Support `Action.webhook(...)` in stateful AST transitions.
+  - [x] ~~Support `Action.webhook(...)` in stateful AST transitions.~~ *(Retired per [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md))*
   - [ ] Webhook Outbox Journal in UI for auditing and replaying dispatches.
 
 ---
@@ -224,9 +221,8 @@ Comprehensive review of project structure, code style, architecture, and enginee
   - [x] Defer code formatting (`spotlessApply`) and static analysis (`spotbugsMain`, `check`) exclusively to pre-commit / pre-push gates.
   - [x] Leverage zero-rebuild disk asset hot-reloading for Vanilla JS / CSS tuning rather than repetitive screenshot capture runs.
 
-<<<<<<< HEAD
 - [x] **8.3. Hierarchical Agent Instructions, Skills & Subagent Delegation**
-  - [x] Refactor root `AGENTS.md` and add module-scoped `AGENTS.md` files (`ui`, `casual`, `tcp-netem`, `stateful`, `openapi`) plus on-demand `.agents/skills/` runbooks.
+  - [x] Refactor root `AGENTS.md` and add module-scoped `AGENTS.md` files (`ui`, `casual`, `tcp-netem`, `async`, `journal`, `openapi`) plus on-demand `.agents/skills/` runbooks.
   - [x] Utilize concurrent subagents for independent tasks (e.g. documentation/spec authoring running in parallel with test verification).
 
 ---
@@ -234,7 +230,7 @@ Comprehensive review of project structure, code style, architecture, and enginee
 ### High-Scale Journal Architecture (Server-Side Paginated API & Hybrid Fallback)
 
 - [x] **9.1. Server-Side Lightweight Journal Endpoint (`UiAdminApiEndpoint`)**
-  - [x] Implement `GET /__admin/ui/api/requests` supporting query params: `limit`, `q` (server-side boolean AND / OR search), `verdict` (`all`, `proxied`, `stateful`, `stub`, `unmatched`), `status`, and `unmatched` (boolean).
+  - [x] Implement `GET /__admin/ui/api/requests` supporting query params: `limit`, `q` (server-side boolean AND / OR search), `verdict` (`all`, `proxied`, `stub`, `unmatched`), `status`, and `unmatched` (boolean).
   - [x] Return metadata envelope: `{ total, filtered, limit, requests: [...] }`.
   - [ ] **Lightweight Metadata Serialization**: Strip heavy request/response bodies from list results to shrink multi-thousand event payloads from 50MB+ down to <100KB JSON.
 - [ ] **9.2. On-Demand Lazy Detail Fetching**
@@ -270,8 +266,8 @@ Comprehensive review of project structure, code style, architecture, and enginee
 Enable teams testing against 10+ downstream dependencies (ERP System, CRM System, Billing Platform, Risk Engine, Legacy ESB) to progress from live proxied integration tests to contract-verified, domain-driven Java Simulation SDKs—so the exact same BDD/Cucumber/JUnit test executes unmodified as **fully integrated**, **hybrid**, or **fully simulated**.
 
 - [ ] **11.1. Declarative Suite-Level Topology Instrumentation (`beforeAll`)**
-  - [ ] Provide fluent Java test harness builders allowing integration tests to configure the desired hybrid topology declaratively in `beforeAll()` (e.g. `WireMockSimulation.configure().withProxy("erp-system").withStub("billing").withStateful("crm")`).
-  - [ ] Synchronize suite configuration with `/__admin/projects/{service}/mode` so the Web UI reflects the test suite's topology.
+  - [ ] Provide fluent Java test harness builders allowing integration tests to configure the desired hybrid topology declaratively in `beforeAll()` (e.g. `WireMockSimulation.configure().withProxy("erp-system").withStub("billing").withScenario("crm")`).
+  - [ ] Synchronize suite configuration with `/__admin/lifecycle/projects/{service}/mode` so the Web UI reflects the test suite's topology.
 
 - [ ] **11.2. Level 1 — Deterministic Codegen (`stubFor()`, Model DTOs & Property Builders)**
   - [x] **UI `☕ Copy Java stubFor()` Action**: Generate idiomatic WireMock Java DSL snippets directly from any Stub or recorded Journal entry.
@@ -282,7 +278,7 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
 
 - [ ] **11.3. Level 2 — Semantic Domain Builders & Scenario Orchestration (GenAI / Agent-Assisted Synthesis)**
   - [ ] Elevate property-level builders (`withStatus("BLOCKED").withReasonCode("R-409")`) into high-level domain-intent methods (`org.crm.sdk.test.customer.CustomerBuilder.aCustomer().isVip()`, `.isBlockedDueToRisk()`, `.hasUpsellRecommendation()`).
-  - [ ] **Multi-Trace Scenario Synthesis**: Analyze and diff multiple recorded `X-Correlation-Id` journal traces (e.g., happy-path checkout vs. ERP business-rule rejection) alongside OpenAPI descriptions using an Agentic / GenAI synthesis workflow to generate cohesive scenario setup helpers that orchestrate multi-endpoint WireMock stubs, stateful AST rules, and L4/L7 fault expectations behind a single domain verb.
+  - [ ] **Multi-Trace Scenario Synthesis**: Analyze and diff multiple recorded `X-Correlation-Id` journal traces (e.g., happy-path checkout vs. ERP business-rule rejection) alongside OpenAPI descriptions using an Agentic / GenAI synthesis workflow to generate cohesive scenario setup helpers that orchestrate multi-endpoint WireMock stubs, native scenarios, Java `ResponseTransformerV2` doubles, and L4/L7 fault expectations behind a single domain verb.
 
 ---
 
@@ -306,7 +302,7 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
   - [ ] One-Click Simulation Bundle Export: Export the clustered session into a portable, self-contained `.json` or `.zip` **Simulation Bundle** containing:
     - Captured stubs and proxy mappings.
     - Full request/response payload fixtures.
-    - Stateful AST transitions and Casual 2PC outcomes.
+    - Native scenario transitions and Casual 2PC outcomes.
   - [ ] Offline Test Replay Loader: Provide `WireMockSimulation.loadBundle("simulations/loan-origination.json")` allowing developers to commit bundles under `src/test/resources/simulations/` and execute entire multi-tier enterprise integration suites 100% offline in CI without downstream live services.
 
 ---
@@ -327,13 +323,9 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
 
 ---
 
-### Dynamic Stateful Simulation & Invariant Enforcement (Priority)
+### Dynamic Stateful Simulation & Invariant Enforcement (Retired per ADR 0027)
 
-- [ ] **16.1. Banking Domain Stateful FSM Simulation (`wiremock-extension-stateful`)**
-  - [ ] Maintain in-memory entity state machine for Banking Case (`DRAFT` $\rightarrow$ `OFFER_GENERATED` $\rightarrow$ `SETTLED`).
-  - [ ] Guard invariant rejection: Reject duplicate purchases with HTTP 409 Conflict ("Case already completed/settled"), reject settlement before offer with HTTP 400.
-  - [ ] Dynamic state variables: Track customer credit line and fee deductions dynamically across HTTP and Casual 2PC calls.
-  - [ ] Multi-tenant isolation: Support parallel test execution across distinct customer/case IDs (`CUST-42`, `CUST-99`) with isolated in-memory AST states.
+- [x] ~~**16.1. Banking Domain Stateful FSM Simulation (`wiremock-extension-stateful`)** — In-memory AST entity state machine (`DRAFT` $\rightarrow$ `OFFER_GENERATED` $\rightarrow$ `SETTLED`), duplicate-purchase invariant rejection, and multi-tenant AST state isolation.~~ *(Retired per [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md); isolated multi-tenant case lifecycle modeling is demonstrated via parameterized native WireMock scenarios `"CaseLifecycle-" + caseId` in `wiremock-examples` `CaseLifecycleStubs`)*
 - [ ] **16.2. Distributed Correlation & Idempotency Key Tracing**
   - [ ] Propagate `X-Correlation-Id` / idempotency key across Customer Portal $\rightarrow$ HTTP Case API $\rightarrow$ HTTP CRM API $\rightarrow$ Casual 2PC Billing.
   - [ ] Support retry reconciliation for in-doubt 2PC transactions (`XA_HEURHAZ`) using the correlation ID as an idempotency key.
@@ -361,10 +353,7 @@ Enable teams testing against 10+ downstream dependencies (ERP System, CRM System
 
 ### Advanced Observability & Telemetry Governance
 
-- [ ] **17.1. AST Evaluation & Stateful Engine Metrics**
-  - [ ] Deferred until DSL operators and stateful simulation usage patterns stabilize.
-  - [ ] Counters for `wiremock_ast_evaluations_total{status="success|syntax_error|runtime_error"}`.
-  - [ ] Histograms for AST expression execution duration and multi-tenant entity count gauges.
+- [x] ~~**17.1. AST Evaluation & Stateful Engine Metrics** (`wiremock_ast_evaluations_total`, expression histograms)~~ *(Retired per [ADR 0027](docs/adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md))*
 
 - [ ] **17.2. High-Cardinality Defense for OpenAPI & Dynamic Paths**
   - [ ] Normalize parametrized route templates (`/api/orders/{id}`) from OpenAPI specs in metric attributes to prevent Prometheus cardinality explosions.

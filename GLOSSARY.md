@@ -1,6 +1,6 @@
 # wiremock-extensions
 
-Production extensions and developer tooling for WireMock Standalone, providing protocol mediation (Casual XATMI, OpenAPI), stateful simulation, L4/L7 network emulation, observability, and an embedded Web UI and CLI.
+Production extensions and developer tooling for WireMock Standalone, providing protocol mediation (Casual XATMI, Async Kafka/AMQP, OpenAPI), native Scenario workflows, L4/L7 network emulation, adaptive Zstd journaling, and an embedded Web UI and CLI.
 
 ## Language
 
@@ -131,11 +131,11 @@ _Avoid_: casual peek helper, rollback inspector, queue snooper
 ### Web Console & Developer UI
 
 **Stub Catalog**:
-An in-process module that aggregates active stubs, disabled stubs, and synthesized dynamic stateful stubs, managing project ownership derivation, multi-token boolean query evaluation, and selection state without leaking internal list mutation across caller boundaries.
+An in-process module that partitions standard WireMock mappings into active (`priority < 100`), parked (`priority >= 100`), and `offline-guard` (`priority 50`, `metadata.role === "offline-guard"`) views, managing project ownership derivation, multi-token boolean query evaluation, and selection state without leaking internal list mutation across caller boundaries.
 _Avoid_: stub state bag, stub cache, stub list manager
 
 **Stub Lifecycle Service**:
-A domain module managing the state lifecycle of WireMock stubs (`enable`, `disable`, `toggle`, `upsert`, `delete`, `bulkApply`, `switchProjectMode`) across active admin and parked disabled stores, as well as deduplicated serve event snapshot conversions.
+A stateless domain module managing native WireMock mapping priority tiers (`5` active stub, `10` active proxy, `50` `offline-guard`, `>= 100` parked via `metadata.previousPriority`), `switchProjectMode` (`POST /__admin/lifecycle/projects/{project}/mode`), and deduplicated serve-event snapshot conversions (`POST /__admin/lifecycle/snapshots`, `POST /__admin/lifecycle/snapshot-template`) directly on standard `/__admin/mappings/{id}` records.
 _Avoid_: disabled stub store manager, lifecycle helper, recording converter
 
 **UI Static Asset Resolver**:
@@ -171,7 +171,7 @@ The structural metadata recorded when unnesting an inner payload (`JSON_STRING`,
 _Avoid_: escape mode, encoding flag, wrapper type
 
 **Canonical Payload Surface**:
-The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and HTTP/Casual Testers), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
+The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and Unified Multi-Protocol Tester), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
 _Avoid_: code box, custom textarea, raw editor pane
 
 **Unified Payload Component**:
@@ -187,7 +187,7 @@ The capability within the Unified Payload Component to click `[ ✏️ Edit ]` o
 _Avoid_: nested edit popup, inline string unescaper, sub-editor modal
 
 **Root Document Session**:
-The top-scope state descriptor (`{ rootText, editable, readOnlyReason, onUpdateRoot, context }`) owned by a console surface (such as a WireMock Stub JSON in the Stub Editor, a Request Body in the HTTP/Casual Tester, or an immutable payload in the Request Journal / Stub Catalog) and propagated down through every recursive child node and across any Fullscreen Maximized Viewport layer. Permanent save/discard actions apply strictly to the Root Document at the top-level surface, whereas `[ ✓ Apply ]` on any header level performs a transient in-memory update to the Root Document.
+The top-scope state descriptor (`{ rootText, editable, readOnlyReason, onUpdateRoot, context }`) owned by a console surface (such as a WireMock Stub JSON in the Stub Editor, a Request Body in the Unified Multi-Protocol Tester, or an immutable payload in the Request Journal / Stub Catalog) and propagated down through every recursive child node and across any Fullscreen Maximized Viewport layer. Permanent save/discard actions apply strictly to the Root Document at the top-level surface, whereas `[ ✓ Apply ]` on any header level performs a transient in-memory update to the Root Document.
 _Avoid_: modal state bag, local textarea state, nested save callback
 
 **Hierarchical In-Line Editing**:
@@ -199,7 +199,7 @@ A zero-dependency editor component coupling a foreground `<textarea>` (configure
 _Avoid_: fake code editor, syntax textarea, custom input box
 
 **Code Input Editor Adapter**:
-A reusable adapter at the Canonical Payload Surface seam that equips native textareas (such as Stateful AST rules, OpenAPI specifications, and WireMock JSON bundle imports) with Dual-Layer syntax highlighting, format prettifying, live error diagnostics, and fullscreen maximize capabilities.
+A reusable adapter at the Canonical Payload Surface seam that equips native textareas (such as OpenAPI specifications, WireMock Scenario definitions, and JSON bundle imports) with Dual-Layer syntax highlighting, format prettifying, live error diagnostics, and fullscreen maximize capabilities.
 _Avoid_: textarea wrapper, editor helper, code enhancer
 
 **Editor Experience Mode**:

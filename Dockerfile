@@ -4,7 +4,7 @@
 FROM eclipse-temurin:21-jre-alpine
 
 LABEL org.opencontainers.image.title="wiremock-extensions-standalone" \
-      org.opencontainers.image.description="WireMock Standalone bundled with complete extension suite (JSON Logging, Otel, OpenAPI, Stateful, TCP NetEm, Casual Gateway, and UI)" \
+      org.opencontainers.image.description="WireMock Standalone bundled with complete extension suite (JSON Logging, Otel, OpenAPI, TCP NetEm, Casual Gateway, Async, Journal, and UI)" \
       org.opencontainers.image.url="https://github.com/mattiasgreen/wiremock-extensions" \
       org.opencontainers.image.authors="Mattias Green"
 

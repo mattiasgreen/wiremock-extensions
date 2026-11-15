@@ -6,11 +6,11 @@
 
 > ### 🎯 Core Mission & Progressive Simulation Value Proposition
 >
-> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and stateful databases) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
+> **Empower teams testing complex distributed systems** (combining modern HTTP REST, legacy Casual/Tuxedo RPCs, raw TCP, and async messaging) to run the **exact same integration suite** across three progressive fidelity stages: **fully live**, **hybrid**, and **100% offline simulation**—with zero test code changes.
 >
 > ```mermaid
 > flowchart LR
->     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Stubs + Stateful AST)"]
+>     A["Stage 1: Live WireMock Proxy<br/>(HTTP REST + Casual XATMI / 2PC)"] -->|"1-Click Session Snapshot"| B["Stage 2: Hybrid & Offline Simulation<br/>(Zero Upstream Dependencies, Native Stubs + Scenarios)"]
 >     B -->|"Deterministic Codegen + AI Synthesis"| C["Stage 3: Domain Simulation SDK<br/>(Type-Safe Java 21 Records, Builders & Replayable Scenarios)"]
 > ```
 
@@ -22,10 +22,10 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │                          WireMock Ecosystem                            │
 ├─────────────────┬───────────────────┬──────────────────────────────────┤
-│ Stub Mappings   │ Request Journal   │ Stateful Simulations (FSM / Ast) │
+│ Stub Mappings   │ Request Journal   │ Native Scenarios (FSM)           │
 │ - Matcher Spec  │ - ServeEvents     │ - Scenario State Machine         │
-│ - Response Spec │ - Match Verdicts  │ - Dynamic Entity Graph           │
-│ - Lifecycle     │ - Latency & Diffs │ - Mutation Actions & Guards      │
+│ - Response Spec │ - Match Verdicts  │ - Correlation-Scoped Names       │
+│ - Priority Tier │ - Latency & Diffs │ - Transition Guards & Reset      │
 └─────────────────┴───────────────────┴──────────────────────────────────┘
 ```
 
@@ -34,7 +34,7 @@
 #### A. Stub Mapping (`Stub`)
 - **Identity**: Globally unique UUID string (`id`).
 - **Name**: Optional human-readable descriptor (`name`).
-- **Status**: Lifecycle state: `ACTIVE` or `DISABLED` (disabled stubs remain registered in the engine but are bypass-inhibited from request matching).
+- **Status**: Native priority-tier lifecycle state: `ACTIVE` (`priority < 100`, defaulting to `5` for local stubs, `10` for live proxies, and `50` for optional `offline-guard` catch-alls) or `PARKED` (`priority >= 100`, preserving `metadata.previousPriority` for reversible mode flips).
 - **Request Matcher**: Predicate rules matching HTTP method, absolute URL path / regex, query parameters, headers, and request body patterns.
 - **Response Definition**: HTTP status code (default `200`), response headers dictionary, and payload (static JSON/text or dynamic template).
 - **Metadata**: Key-value metadata tags (e.g. project name, author, synthesized from OpenAPI flag).
@@ -43,35 +43,28 @@
 - **Identity**: Globally unique UUID string (`id`).
 - **Timestamp**: High-resolution ISO-8601 or millisecond epoch of request arrival.
 - **Incoming Request**: HTTP method, complete URL path with query string, complete headers (including `X-Correlation-Id`, `X-Forwarded-For`, `X-Real-IP`), resolved caller source IP (`sourceIp`), cached async reverse-DNS hostname (`sourceHost`), and captured body payload.
-- **Traffic Verdict**: Categorized into one of four mutually exclusive execution outcomes:
+- **Traffic Verdict**: Categorized into one of three mutually exclusive execution outcomes:
   - **`PROXIED`**: `wasMatched == true` and served via a `proxyBaseUrl` route (forwarded to a live upstream service such as an ERP System, CRM System, or Billing Platform).
   - **`STUB`**: `wasMatched == true` and served locally from a static or Handlebars-templated (`response-template`) WireMock mapping with zero upstream network calls.
-  - **`STATEFUL`**: Served in-process by the `wiremock-extension-stateful` AST engine with entity mutations and invariant guard evaluation.
   - **`UNMATCHED`**: `wasMatched == false` (HTTP 404); captures the nearest stub candidate and distance score for diagnostic diffing.
 - **Response Definition**: Served status code, headers, and body.
 - **Timing**: Serve duration / latency in milliseconds.
 
 #### C. Finite State Machine Scenario (`Scenario`)
-- **Identity**: Unique scenario name string (`name`).
+- **Identity**: Unique scenario name string (`name`, optionally scoped with an entity or correlation ID such as `CaseLifecycle-<caseId>` for parallel test isolation).
 - **Current State**: Active state identifier (defaults to initial state `"Started"`).
 - **Possible States**: Enumerated set of valid state string identifiers.
 - **Transitions**: Governed by stub executions configured with `whenScenarioStateIs` and `willSetStateTo`.
-
-#### D. Stateful Entity Simulator (`SimulatorModel`)
-- **Entity Collection**: Plural entity identifier (e.g., `cases`, `orders`, `customers`).
-- **Identity Scheme**: Path parameter token and generated ID prefix, isolated per parallel test via `X-Correlation-Id`.
-- **Live Entity State Graph**: In-memory JSON dictionary representing current state of created instances.
-- **Mutations & Guards**: State transitions governed by expressions (e.g., `tasks.allMatch(status != PENDING)`).
 
 ---
 
 ## 2. Core Functional Capabilities
 
 1. **Service-Scoped Exploration & Gradual Hybrid Simulation**: Search by text and boolean expressions (`AND`, `OR`) across URL, method, name, headers, body patterns, and metadata. Group stubs and proxy routes by remote service (`metadata.project`, e.g., `erp-system`, `crm-service`, `billing-platform`). Switch individual services between `LIVE PROXY` and `STUBS MODE` so manual testers and runtime-parameterized BDD/JUnit suites can run fully integrated, hybrid, or fully simulated without modifying test code.
-2. **Lifecycle Manipulation**: Toggle active/disabled state without destroying mappings. Add new stubs or catch-all proxy routes from templates. Duplicate existing stubs. Delete stubs with user assurance.
-3. **Ad-Hoc Request Replay (HTTP Tester)**: Execute arbitrary HTTP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`, `X-Correlation-Id`). Record and navigate execution history.
-4. **Traffic Observability, Harvesting & Triage (Request Journal)**: Live stream of served traffic clearly badged as `PROXIED`, `STUB`, `STATEFUL`, or `UNMATCHED`. Server-side isolation of unmatched traffic (`?unmatched=true`), configurable journal fetch limit, and progressive/lazy DOM rendering. Snapshot `PROXIED` responses into offline service stubs; promote `UNMATCHED` 404 requests directly into the Stub Editor (`Create Stub from Request`); replay any entry in the HTTP Tester; export as cURL or Java `stubFor()` DSL.
-5. **Stateful Scenario & Entity Inspection**: Live visual inspection of FSM scenario states and `STATEFUL` AST entity graphs per `X-Correlation-Id`, with 1-click state reset.
+2. **Lifecycle Manipulation**: Toggle active/parked state (`priority` tiers on `/__admin/mappings/{id}`) without destroying mappings. Add new stubs or catch-all proxy routes from templates. Duplicate existing stubs. Delete stubs with user assurance.
+3. **Ad-Hoc Request Replay (Multi-Protocol Tester)**: Execute arbitrary HTTP, Casual, Kafka, or AMQP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`, `X-Correlation-Id`). Record and navigate execution history.
+4. **Traffic Observability, Harvesting & Triage (Request Journal)**: Live stream of served traffic clearly badged as `PROXIED`, `STUB`, or `UNMATCHED`. Server-side isolation of unmatched traffic (`?unmatched=true`), configurable journal fetch limit, and progressive/lazy DOM rendering. Snapshot `PROXIED` responses into offline service stubs (`/__admin/lifecycle/snapshots`, `/__admin/lifecycle/snapshot-template`); promote `UNMATCHED` 404 requests directly into the Stub Editor (`Create Stub from Request`); replay any entry in the Multi-Protocol Tester; export as cURL or Java `stubFor()` DSL.
+5. **Native Scenario Inspection**: Live visual inspection of FSM scenario states and DAG transitions via `/__admin/scenarios`, with 1-click state reset.
 6. **Contract Ingestion & SDK Bootstrapping**: Ingest OpenAPI 3.0 / 3.1 definitions (as synthetic stubs or live proxies) and combine contracts with harvested Journal traffic to bootstrap typed Java `TestDataBuilder`s and domain-level simulation SDKs.
 
 ---
@@ -81,32 +74,31 @@
 These stories define the **inviolable acceptance criteria** for any client frontend (Web, Desktop, CLI, Mobile).
 
 ### Story 1: Explore and Filter Stubs (Deep Free-Text & Boolean Expressions)
-- **Given** registered stubs: `[GET /api/cases, ACTIVE]`, `[POST /api/cases, ACTIVE, header: X-Correlation-Id: CORR-1234]`, and `[GET /health, DISABLED]`.
+- **Given** registered stubs: `[GET /api/cases, ACTIVE (priority 5)]`, `[POST /api/cases, ACTIVE, header: X-Correlation-Id: CORR-1234]`, and `[GET /health, PARKED (priority 100)]`.
 - **When** the user searches for text `"cases"`.
 - **Then** only `/api/cases` stubs are visible.
 - **When** the user filters by correlation ID or header matcher `"CORR-1234"`.
 - **Then** only the `POST /api/cases` stub with that correlation ID is displayed.
 - **When** the user filters using boolean expressions `"cases AND CORR-1234"` or `"health OR CORR-1234"`.
 - **Then** the catalog evaluates the boolean predicate across both shallow and deep attributes (headers, body patterns, metadata).
-- **When** the user filters by status `"Disabled"`.
+- **When** the user filters by status `"Parked"`.
 - **Then** only `/health` is visible.
 - **When** the user clears the search filter and selects status `"All"`.
 - **Then** all three stubs are visible.
 
 ### Story 2: Stub Lifecycle Toggle & Deletion
-- **Given** an active stub `[GET /api/cases]`.
-- **When** the user toggles the stub to disabled.
-- **Then** the stub's status immediately updates to `DISABLED`.
-- **And** requests matching `GET /api/cases` return unmatched (`404`).
+- **Given** an active stub `[GET /api/cases]` (`priority 5`).
+- **When** the user toggles the stub to parked (`priority >= 100`).
+- **Then** the stub's priority tier updates to parked (`priority >= 100`) without deletion, yielding precedence to active stubs or an `offline-guard` (`priority 50`).
 - **When** the user toggles the stub back to active.
-- **Then** the stub returns `200 OK` on incoming traffic.
+- **Then** its original active priority tier is restored (`priority < 100`) and it matches incoming traffic at top precedence.
 - **When** the user deletes the stub with confirmation.
 - **Then** the stub is permanently removed from the catalog.
 
 ### Story 3: Traffic Journal Replay to Tester
 - **Given** an incoming request `POST /api/cases` with body `{"title":"Urgent Bug"}` has been served and logged.
 - **When** the user inspects that journal entry and triggers "Send in Tester".
-- **Then** the HTTP Tester view activates immediately.
+- **Then** the Multi-Protocol Tester view activates immediately.
 - **And** method is set to `POST`, URL to `/api/cases`, and body contains `{"title":"Urgent Bug"}`.
 - **When** the user modifies the title to `"Resolved Bug"` and triggers "Send Request".
 - **Then** the request is dispatched, response status is recorded, and entry is appended to Tester History.
@@ -148,21 +140,21 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **And** the navbar indicator displays `Target: https://gateway.corp:8443/test-envs/env1/wiremock (proxied)`.
 - **When** the browser refreshes stubs or dispatches test requests.
 - **Then** requests remain relative to the console origin while injecting `X-Forwarded-Host`, `X-Forwarded-Proto`, and `X-Forwarded-Prefix` headers to avoid browser CORS restrictions.
-- **When** the user copies a cURL command from any stub mapping or the HTTP Tester.
+- **When** the user copies a cURL command from any stub mapping or the Multi-Protocol Tester.
 - **Then** the copied command uses the authentic remote upstream base URL (`https://gateway.corp:8443/test-envs/env1/wiremock`) without proxy routing headers.
 
 ### Story 9: Remote WireMock Capability Detection & Graceful Degradation
 - **Given** the Web Console is pointing to a remote WireMock instance (e.g. standard vanilla WireMock lacking custom extensions).
 - **When** the console loads or connects to the remote target.
-- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/lifecycle/status` for snapshot recording and project mode flipping), Stateful Simulation (`/__admin/stateful/models`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
+- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/lifecycle/status` for snapshot recording and project mode flipping), Async Messaging (`/__admin/async/status`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
 - **And** features backed by missing extensions gracefully degrade with visual hints (`.cap-disabled`) and descriptive tooltips rather than vanishing from the UI:
   - TCP NetEm tab (`#nav-tab-netem`) is styled as `.cap-disabled` with a tooltip indicating missing `wiremock-extension-tcp-netem`.
+  - Async Queues tab (`#nav-tab-queues`) is styled as `.cap-disabled` when `wiremock-extension-async` is absent.
   - Metrics link (`#link-metrics`) is styled as `.cap-disabled`.
-  - Dynamic stub controls (`#btn-create-dynamic-stub`, `#btn-filter-dynamic`) are styled as `.cap-disabled`.
   - Recording snapshot & project mode controls (`#btn-project-snapshot`, `#btn-project-mode-toggle`, `#btn-journal-snapshot-filtered`) are styled as `.cap-disabled` when `/__admin/lifecycle/status` is unavailable, while native priority-tier stub parking (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk enable/disable via `/__admin/mappings/{id}`) remains enabled even on vanilla WireMock.
-  - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational with zero console exceptions.
+  - Core WireMock features (Stubs Catalog, Request Journal, Multi-Protocol Tester, Scenarios) remain 100% operational with zero console exceptions.
 - **When** the user opens the Target Server modal (`#btn-target-host`).
-- **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing the active ratio (e.g. `1/5 active (Degraded)` or `All 5 extensions active`) and clear `Active` / `Not Installed` status badges for each capability.
+- **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing active capability counts (e.g. `Degraded` vs `All extensions active`) and clear `Active` / `Not Installed` status badges for each capability.
 
 ### Story 10: High-Volume Request Journal Lazy Rendering, Custom Limit, and Server-Side Unmatched Filtering
 - **Given** WireMock has recorded thousands of events in the Request Journal, with isolated unmatched requests buried among high-volume traffic.
@@ -221,7 +213,7 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** an unsupported frame or connection drop occurs.
 - **Then** the gateway fails fast and closes the TCP channel immediately (`ctx.close()`) to avoid client-side hangs.
 
-### Story 15: Persistent Local Browser Headers in HTTP Tester
+### Story 15: Persistent Local Browser Headers in Multi-Protocol Tester
 - **Given** an engineer is testing services requiring mandatory corporate headers (`X-Correlation-Id`, `X-Tenant-Id`, `Authorization`).
 - **When** the user configures local persistent headers in the tester and enables them.
 - **Then** the headers are stored exclusively in browser `localStorage` and never transmitted to or stored in server-side stub files.
@@ -232,10 +224,10 @@ These stories define the **inviolable acceptance criteria** for any client front
 
 ### Story 16: Nested JSON/XML Payload Unnesting, Character Encoding Detection, and Stacked Lens Round-Tripping
 - **Given** an API request or response payload contains escaped or encoded nested structures (e.g., escaped JSON inside JSON, XML inside an escaped JSON string, JSON inside XML CDATA, or Base64-encoded UTF-8 and single-byte non-UTF-8 payloads like ISO-8859-1 or KOI8-R).
-- **When** inspecting traffic in the Stub Catalog, Request Journal, HTTP Tester, or Casual Tester.
+- **When** inspecting traffic in the Stub Catalog, Request Journal, or Multi-Protocol Tester (`http`, `casual`, `kafka`, `amqp`).
 - **Then** the engine automatically detects document syntax and character encoding (from XML prologs like `<?xml version="1.0" encoding="ISO-8859-1"?>`, `X-Casual-Charset`, or `Content-Type`), displaying concise descriptors (`JSON · 0.4 KB`, `XML · ISO-8859-1 · 0.2 KB`, `BASE64 · XML · KOI8-R · 0.3 KB`, `FIELDED · JSON · ISO-8859-1 · 0.4 KB`).
 - **And** the viewer auto-unnests embedded payloads inline by default with format badges and `Edit` / `Copy` actions.
-- **When** viewing or editing payloads in the Stub Editor (Response Body, Request Matcher, or Raw Stub JSON), HTTP Tester, or Casual Tester.
+- **When** viewing or editing payloads in the Stub Editor (Response Body, Request Matcher, or Raw Stub JSON) or Multi-Protocol Tester.
 - **Then** clicking `Edit` on any nested payload node activates an in-line, compact editor directly within the folded structure without separate detached viewports or modal stacking.
 - **When** the user modifies the nested payload and clicks "Apply".
 - **Then** the cascading engine executes **pure surgical in-place substitution** (direct JSON string literal replacement, XML CDATA slice substitution, or Base64 re-encoding) up the payload tree to the Root Document:

@@ -22,7 +22,7 @@ Always prioritize defects and security before formatting polish:
   ```bash
   ./gradlew :wiremock-extension-casual:quarkusIntegrationTest -q --console=plain
   ```
-- **If `wiremock-extension-ui` static assets were modified**: Verify `syncDemoSite` keeps the static demo in sync without committing duplicate files if excluded by `.gitignore`.
+- **If `wiremock-extension-ui` static assets were modified**: Verify edits were made exclusively in `wiremock-extension-ui/src/main/resources/ui/`; `docs/site/demo/` is gitignored and assembled at build time by `.github/workflows/pages.yml` (never committed).
 
 ## 2. Comprehensive Documentation & GitHub Pages Review
 During release preparation, perform a thorough documentation audit across the repo and documentation sites:
@@ -35,8 +35,8 @@ During release preparation, perform a thorough documentation audit across the re
    - **Dependency Coordinates**: Ensure Maven/Gradle dependency coordinates and standalone CLI execution snippets reference the target/latest published version.
 3. **Functional Specs & Architectural Plans**:
    - Confirm `docs/spec/functional-specification.md`, `docs/spec/platform-bindings.md`, and progressive simulation specs accurately reflect current system behavior.
-4. **Static Demo Synchronization**:
-   - If `wiremock-extension-ui` static assets or capabilities were updated, run `./gradlew :wiremock-extension-ui:syncDemoSite` to keep `docs/site/demo/` synchronized without manual copying.
+4. **Static Demo Isolation**:
+   - Author UI assets exclusively in `wiremock-extension-ui/src/main/resources/ui/`. `docs/site/demo/` is gitignored and built dynamically by `.github/workflows/pages.yml` — never manually copy or commit files under `docs/site/demo/`.
 
 ## 3. Release-Please & Versioning Rules
 - **Conventional Commits**: Always use `feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`, `refactor(scope): ...`, `docs(scope): ...`, or `test(scope): ...`.

@@ -13,7 +13,7 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
 | **`wiremock-extension-json-logging`** | Single-line JSON traffic logging with corporate header MDC propagation (`x-correlation-id`, `x-tenant-id`) and runtime Logback level control (`/__admin/logging/levels`, `LOG_LEVEL`). | `RequestFilterV2` (`MdcRequestFilter`), `ServeEventListener` (`JsonLoggingListener`), `AdminApiExtension` (`LoggingAdminEndpoint`) | Root rules |
 | **`wiremock-extension-otel`** | In-process OpenTelemetry metrics & W3C trace spans + Prometheus scrape route (`/__admin/metrics/prometheus`). | `ServeEventListener` (`OtelMetricsListener`), `AdminApiExtension` (`PrometheusAdminEndpoint`) | Root rules |
 | **`wiremock-extension-openapi`** | OpenAPI 3.0/3.1 YAML/JSON ingestion, request/response example synthesis, and live proxy route generation. | `AdminApiExtension` (`OpenApiAdminEndpoint`) | [`openapi/AGENTS.md`](wiremock-extension-openapi/AGENTS.md) |
-| **`wiremock-extension-stateful`** | In-memory dynamic stateful API simulation with AST evaluation and multi-tenant isolation. | `AdminApiExtension` (`StatefulAdminEndpoint`), `ResponseTransformerV2` | [`stateful/AGENTS.md`](wiremock-extension-stateful/AGENTS.md) |
+| **`wiremock-extension-common`** | Shared traffic classification, boolean query evaluation, indexed journal lookup, and telemetry SPI contracts. | Shared extension SPI & traffic/journal utilities | Root rules |
 | **`wiremock-extension-tcp-netem`** | In-process Java 21 virtual-thread L4 TCP network emulation, Toxiproxy v2 REST API, and L7 chaos interceptor. | `AdminApiExtension` (`TcpNetEmAdminEndpoint`), `ServeEventListener` (`NetEmStubListener`) | [`tcp-netem/AGENTS.md`](wiremock-extension-tcp-netem/AGENTS.md) |
 | **`wiremock-extension-casual`** | In-process Netty XATMI / Casual protocol TCP gateway, L7 proxy recording, and 2PC/XA transaction participant/forwarding. | `CasualWireMockGateway`, `se.laz.casual.*` standalone client/server | [`casual/AGENTS.md`](wiremock-extension-casual/AGENTS.md) |
 | **`wiremock-extension-async`** | In-process Kafka Netty wire sink, AMQP/queue bridge, synthetic journal mediation, and HTTP async triggers (Beta). | `AdminApiExtension` (`AsyncAdminEndpoint`), `ServeEventListener` (`AsyncMessagePublishingListener`) | [`async/AGENTS.md`](wiremock-extension-async/AGENTS.md) |
@@ -54,8 +54,8 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - UI Static Contract & ES6 Unit Tests: `./gradlew :wiremock-extension-ui:test --tests "UiAssetAndContractTest" --tests "UiModuleUnitTest" -q --console=plain`
   - UI Targeted Playwright Scenario: `./gradlew :wiremock-extension-ui:test --tests "Ui*PlaywrightTest.testMethodName" -q --console=plain`
   - Developer CLI & Proxy: `./gradlew :wiremock-cli:test --tests "WireMockCliTest.shouldEvaluateStubExpressions" -q --console=plain`
-  - Instant CLI Run (0s compile): `./wiremock-cli/bin/wm info` or `java wiremock-cli/WireMockCli.java stubs`
-  - Instant Console Proxy Run (0s compile): `./wiremock-cli/bin/wm proxy` or `java wiremock-cli/WireMockConsoleProxy.java`
+  - Instant CLI Run (0s compile): `./wiremock-cli/bin/wm info` or `java wiremock-cli/src/main/java/com/github/mattiasgreen/wiremock/cli/WireMockCli.java stubs`
+  - Instant Console Proxy Run (0s compile): `./wiremock-cli/bin/wm proxy` or `java wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/WireMockConsoleProxy.java`
 - **Pre-Commit Verification & Gate (Ordered: Semantics -> Polish)**:
   1. **Defects & Tests First**: Verify bytecode correctness and static defects before touching source formatting:
      ```bash

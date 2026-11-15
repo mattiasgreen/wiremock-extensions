@@ -7,8 +7,8 @@ This document captures the critical review of `wiremock-extensions` across `main
 ## Part 1: Architectural Trajectory & Critical Review
 
 ### 1.1 Where We Are Heading (Main + Parallel Feature Branches)
-- **`main` (`7ecf9ff`)**: Includes 9 subprojects (`json-logging`, `otel`, `openapi`, `stateful`, `tcp-netem`, `casual`, `ui`, `bundle`, `examples`), in-browser headless ES module unit tests (`UiModuleUnitTest`), high-volume journal lazy rendering, deep boolean search, and the in-process Netty XATMI/Casual gateway (`wiremock-extension-casual`) with a 3-node Quarkus 2PC/MitM integration test suite (`quarkusTest`).
-- **`wiremock_ui_ux_audit` (`fae6d07` - incoming)**: Introduces the Progressive Simulation Lifecycle (Ad-hoc $\rightarrow$ Traffic Harvesting $\rightarrow$ SDK Synthesis), 4-verdict journal taxonomy (`STUB`, `PROXIED`, `UNMATCHED`, `CHAOS`), `syncDemoSite` asset deduplication, and architectural guardrails for scaling the zero-build Vanilla ES6 UI beyond 8,000 LOC.
+- **Modular Subproject Suite**: Subprojects cover `common`, `json-logging`, `otel`, `openapi`, `tcp-netem`, `casual`, `async`, `journal`, `ui`, `cli`, `bundle`, and `examples` (with `stateful` retired per [ADR 0027](adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md) and `DisabledStubStore` replaced by native priority tiers per [ADR 0026](adr/0026-native-priority-tiers-for-stub-parking-and-project-modes.md)).
+- **`wiremock_ui_ux_audit` (`fae6d07` - incoming)**: Introduces the Progressive Simulation Lifecycle (Ad-hoc $\rightarrow$ Traffic Harvesting $\rightarrow$ SDK Synthesis), 3-verdict journal taxonomy (`STUB`, `PROXIED`, `UNMATCHED`), build-time `pages.yml` demo assembly (replacing `syncDemoSite`), and architectural guardrails for scaling the zero-build Vanilla ES6 UI beyond 8,000 LOC.
 - **Roadmap Horizon (`TODO.md`)**: Automated WebM video tours via GitHub Release assets, AsyncAPI/WebSockets (`wiremock-extension-asyncapi`), Webhook Outbox (`wiremock-extension-webhooks`), and OpenAPI schema validation.
 
 ### 1.2 Root-Cause Bottlenecks Discovered During Baseline Benchmarking
@@ -16,8 +16,8 @@ This document captures the critical review of `wiremock-extensions` across `main
    - Only `wiremock-extension-json-logging` had a `src/test/resources/logback-test.xml`. All 8 other modules defaulted Logback to `<root level="DEBUG">`, causing Jetty and Netty to format and stream **305,582 lines (66.96 MB)** of `DEBUG` logs during `UiPlaywrightTest` alone (~95 MB of XML + ~95 MB of HTML reports = **~190 MB of disk I/O per run**).
 2. **`UiSnapshotCaptureTest` (`@Tag("ui-snapshot")`) Running Inside Standard `./gradlew test`**:
    - Root `build.gradle` only excluded `'recording', 'pitch-deck'`, so every `./gradlew test` run also launched an extra Playwright browser and captured 8 full-page PNG screenshots.
-3. **Flaky Race Condition & Missing Store Reset in `UiPlaywrightTest`**:
-   - `DisabledStubStore.clear()` was never called in `resetDefaultStubs()`, and `testOpenApiPostE2EWorkflow` waited on `#stubs-count-label` (present statically in `index.html`) instead of `#stub-list[data-state='ready']`, causing intermittent `expected: 2, but was: 8` failures.
+3. **Historical Flaky Race Condition in `UiPlaywrightTest` (Prior to ADR 0026 Priority Tiers)**:
+   - Prior to migrating stub parking to native priority tiers (`DisabledStubStore` removal per ADR 0026), missing store reset and waiting on `#stubs-count-label` instead of `#stub-list[data-state='ready']` caused intermittent `expected: 2, but was: 8` failures.
 4. **Stale DOM ID Lookup in `modules/dom.js`**:
    - Our new static contract check in `UiAssetAndContractTest` (`testStaticEsModuleImportsAndDomSelectorContracts`, running in `62ms`) immediately caught a stale `document.getElementById('btn-refresh')` reference in `modules/dom.js` (`btn-refresh-stubs` in `index.html`).
 5. **Monolithic Root `AGENTS.md` & 94 KB `UiPlaywrightTest.java`**:
@@ -37,13 +37,13 @@ This document captures the critical review of `wiremock-extensions` across `main
      - [`UiStubsAndLifecyclePlaywrightTest`](../wiremock-extension-ui/src/test/java/com/github/mattiasgreen/wiremock/ui/UiStubsAndLifecyclePlaywrightTest.java)
      - [`UiJournalAndTesterPlaywrightTest`](../wiremock-extension-ui/src/test/java/com/github/mattiasgreen/wiremock/ui/UiJournalAndTesterPlaywrightTest.java)
      - [`UiOpenApiPlaywrightTest`](../wiremock-extension-ui/src/test/java/com/github/mattiasgreen/wiremock/ui/UiOpenApiPlaywrightTest.java)
-     - [`UiScenariosAndStatefulPlaywrightTest`](../wiremock-extension-ui/src/test/java/com/github/mattiasgreen/wiremock/ui/UiScenariosAndStatefulPlaywrightTest.java)
+     - Scenario DAG & target-host Playwright suite (`UiScenarios*PlaywrightTest`)
    - Shared a single JVM-wide Chromium `Browser` instance across all 4 domain suites, `UiModuleUnitTest`, and `UiNetEmPlaywrightTest`.
 3. **Static ES6 Module & DOM ID Contract Gate (< 0.3s)**:
    - Added `testStaticEsModuleImportsAndDomSelectorContracts()` to [`UiAssetAndContractTest`](../wiremock-extension-ui/src/test/java/com/github/mattiasgreen/wiremock/ui/UiAssetAndContractTest.java) verifying that all relative ES6 `import` specifiers resolve on disk, no external CDN scripts exist, and all `getElementById` calls in `modules/dom.js` match `index.html`.
 4. **Hierarchical `AGENTS.md`, On-Demand `.agents/skills/`, & `.agents/hooks.json`**:
    - Slimmed root [`AGENTS.md`](../AGENTS.md) to 72 lines (~950 tokens, covering all 9 modules).
-   - Created scoped `AGENTS.md` guides in `wiremock-extension-ui`, `wiremock-extension-casual`, `wiremock-extension-tcp-netem`, `wiremock-extension-stateful`, and `wiremock-extension-openapi`.
+   - Created scoped `AGENTS.md` guides in `wiremock-extension-ui`, `wiremock-extension-casual`, `wiremock-extension-tcp-netem`, `wiremock-extension-async`, `wiremock-extension-journal`, and `wiremock-extension-openapi`.
    - Extracted 4 progressive-disclosure workspace skills under `.agents/skills/`: `ux-audit-and-snapshots`, `pr-and-release-prep`, `demo-video-recording`, and `casual-upstream-sync`.
    - Added configurable `PreToolUse` credential guard hook in [`.agents/hooks.json`](../.agents/hooks.json) and [`.agents/scripts/pre-command-guard.ps1`](../.agents/scripts/pre-command-guard.ps1).
 
