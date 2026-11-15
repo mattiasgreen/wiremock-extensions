@@ -37,9 +37,9 @@ The UI must guide and support teams as they migrate remote dependencies—**grad
 │    {{jsonPath}}) and request matchers for lightweight dynamic variation.                │
 │                                          │                                              │
 │                                          ▼                                              │
-│  Stage 4: Simulate Stateful Behavior & Faults (L4 NetEm + L7 + Stateful AST)            │
-│    Simulate ERP business rule exceptions, stateful entity lifecycles ([🧠 STATEFUL]),   │
-│    and L4 TCP outages/throttling—all isolated per parallel test via X-Correlation-Id.   │
+│  Stage 4: Simulate Chaos, Network Faults & Multi-Step Scenarios (L4 NetEm + Scenarios)  │
+│    Simulate L4 TCP outages/throttling, Casual 2PC heuristics, and isolated Native       │
+│    Scenarios (/__admin/scenarios)—all partitioned per parallel test via X-Correlation-Id│
 │                                          │                                              │
 │                                          ▼                                              │
 │  Stage 5: Bootstrap the Producer Simulation SDK (TestDataBuilders + BDD/JUnit DSL)      │
@@ -53,18 +53,17 @@ The UI must guide and support teams as they migrate remote dependencies—**grad
 
 ## 2. Canonical Taxonomy & Traffic Verdicts
 
-Ambiguous labels create cognitive friction. Across all views (Stubs Catalog, Request Journal, HTTP Tester, Scenarios), the UI must use this exact, terse vocabulary:
+Ambiguous labels create cognitive friction. Across all views (Stubs Catalog, Request Journal, Multi-Protocol Tester, Scenarios), the UI must use this exact, terse vocabulary:
 
 ### 2.1 Request Journal & Stub Verdict Badges
 
-Every served request in the Request Journal—and every rule in the Stubs Catalog—belongs to one of **four mutually exclusive verdicts**:
+Every served request in the Request Journal—and every rule in the Stubs Catalog—belongs to one of **three mutually exclusive verdicts**:
 
 | Badge | CSS / Token | Tooltip (`title`) | Runtime Meaning |
 | :--- | :--- | :--- | :--- |
 | **`🌐 PROXIED`** | `#3B82F6` (Sapphire Blue) | *"Forwarded over the network to the live upstream service via proxyBaseUrl."* | WireMock matched a proxy route and talked to the live remote system (e.g., ERP or CRM). |
 | **`📌 STUB`** *(or `STUB · TPL`)* | `#10B981` (Emerald Green) | *"Served locally by a WireMock stub mapping (static or Handlebars template). Zero upstream network calls."* | WireMock answered in-process from a declarative stub. Append `· TPL` when `response-template` transformer is active. |
-| **`🧠 STATEFUL`** | `#8B5CF6` (Violet / Indigo) | *"Served locally by the in-memory Stateful AST engine with entity state mutations and invariant guards."* | Handled by `wiremock-extension-stateful` (replaces the ambiguous `"DYNAMIC"` label). |
-| **`⚠️ UNMATCHED`** | `#F59E0B` (Amber) / `#EF4444` (Red) | *"No matching stub, stateful rule, or proxy route found (HTTP 404)."* | WireMock did not know how to handle the request; requires a new stub or proxy route. |
+| **`⚠️ UNMATCHED`** | `#F59E0B` (Amber) / `#EF4444` (Red) | *"No matching stub, scenario transition, or proxy route found (HTTP 404)."* | WireMock did not know how to handle the request; requires a new stub or proxy route. |
 
 ### 2.2 Service (`Project`) Grouping & Hybrid Mode
 * What WireMock metadata stores as `metadata.project` represents an **Upstream / Remote Service** (e.g., `erp-system`, `crm-service`, `billing-platform`, `notification-gateway`).
@@ -80,9 +79,9 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 1. **Bootstrap Proxy**: User imports an OpenAPI spec in **Live Proxy Mode** *or* creates a quick catch-all/prefix **Proxy Route** (`➕ New` $\rightarrow$ Proxy Template, e.g., `/erp/api/.*` $\rightarrow$ `https://erp-test.internal`) for a remote service when no OpenAPI spec exists.
 2. **Observe Live Traffic**: User runs manual click-testing or a BDD test. Calls appear in the Request Journal badged as **`🌐 PROXIED`** with the target upstream origin visible.
 3. **Harvest**:
-   * *Single Call*: User clicks **`📸 Snapshot Stub`** on a `PROXIED` journal entry to save that authentic response as a `DISABLED` stub under that service.
-   * *Whole Service*: User selects the service in the Stubs sidebar and clicks **`📸 Snapshot`** in the Service Lifecycle Bar to capture all deduplicated `PROXIED` calls into `DISABLED` stubs.
-4. **Go Offline**: User clicks **`🟣 Switch to Stubs`**. Proxy routes for that service are disabled, harvested static stubs are enabled, and subsequent test runs execute offline (`📌 STUB`).
+   * *Single Call*: User clicks **`📸 Snapshot Stub`** on a `PROXIED` journal entry to save that authentic response as a parked (`priority >= 100`) stub under that service.
+   * *Whole Service*: User selects the service in the Stubs sidebar and clicks **`📸 Snapshot`** in the Service Lifecycle Bar to capture all deduplicated `PROXIED` calls into parked (`priority >= 100`) stubs.
+4. **Go Offline**: User clicks **`🟣 Switch to Stubs`**. Proxy routes for that service are parked (`priority >= 100`), harvested static stubs are promoted (`priority < 100`), and subsequent test runs execute offline (`📌 STUB`).
 
 ### Workflow B: Unmatched Request Triage (`UNMATCHED 404` $\rightarrow$ Working Stub)
 1. **Identify**: User filters Request Journal by **`⚠️ Unmatched`** (or spots the amber/red `UNMATCHED` pill).
@@ -90,12 +89,12 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 3. **Synthesize Stub (Never "Snapshot" a 404!)**:
    * On an `UNMATCHED` row, `📸 Snapshot Stub` must **not** blindly save the 404 error as a stub.
    * Instead, clicking **`➕ Create Stub from Request`** opens the **Stub Editor Modal** pre-populated with the captured request's `method`, `url`, `headers`, and `bodyPatterns`, with the response defaulted to `200 OK` for immediate editing and activation.
-4. **Verify**: Clicking **`🚀 Replay in Tester`** loads the exact captured request into the HTTP Tester to confirm the new stub responds with `200 OK`.
+4. **Verify**: Clicking **`🚀 Replay in Tester`** loads the exact captured request into the Multi-Protocol Tester to confirm the new stub responds with `200 OK`.
 
 ### Workflow C: Matched Stub & Correlation-ID Session Debugging (`Journal` $\leftrightarrow$ `Stub` $\leftrightarrow$ `Tester`)
 1. **Bidirectional Navigation**:
    * From a **Stub** in the Stubs tab: Clicking **`📜 View in Journal`** switches to the Request Journal filtered to that stub's URL/ID.
-   * From a **`📌 STUB`** or **`🧠 STATEFUL`** entry in the Request Journal: Clicking the matched stub name (**`🔗 Inspect Stub`**) jumps directly to the Stubs tab with that mapping selected.
+   * From a **`📌 STUB`** entry in the Request Journal: Clicking the matched stub name (**`🔗 Inspect Stub`**) jumps directly to the Stubs tab with that mapping selected.
 2. **Correlation-ID Lens (`X-Correlation-Id`)**:
    * Parallel JUnit/Cucumber tests isolate state and chaos using `X-Correlation-Id`.
    * Whenever a request in the Journal carries `X-Correlation-Id`, display it as a clickable chip so the engineer can filter the entire Journal (and NetEm transfer log) to that single test execution's trace in one click.
@@ -112,8 +111,8 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 * **Toolbar Ceiling**: A panel header or card header may contain **at most 1 Primary CTA** (solid accent fill) and **at most 2–3 compact Secondary buttons**. Secondary utility actions (`Import`, `Export`, `Refresh`) should use compact icon+label buttons with clear visual grouping.
 * **Contextual Action Placement**: Actions that mutate or export a specific item (`⚡ Test`, `✏️ Edit`, `🧬 Clone`, `⏸️ Disable`, `🗑️ Delete`) belong inside the **Detail Inspector header** of the selected item, never duplicated across every row of a dense list.
 * **Persistent vs. Full-Width Workspace**:
-  * `Stubs` and `HTTP Tester` share the persistent left `#sidebar-stubs` catalog so developers can click through stubs and immediately fire requests in the Tester.
-  * `Request Journal`, `Scenarios`, and `TCP NetEm` collapse `#sidebar-stubs` to claim 100% horizontal viewport width for wide tables and DAG visualizations.
+  * `Stubs` and `Multi-Protocol Tester` share the persistent left `#sidebar-stubs` catalog so developers can click through stubs and immediately fire requests in the Tester.
+  * `Request Journal`, `Scenarios`, `TCP NetEm`, and `Queues` collapse `#sidebar-stubs` to claim 100% horizontal viewport width for wide tables and DAG visualizations.
 
 ### 4.2 Non-Blocking Sensory Feedback
 * **No Blocking `alert()` for Routine Confirmations**: Never use native browser `alert()` for success confirmations (e.g., after taking a traffic snapshot). Use inline button state transitions (`📸 Snapshot` $\rightarrow$ `✅ Captured 4 Stubs!`) or a non-blocking toast notification. Reserve `confirm()` strictly for destructive operations (`Delete Stub`, `Clear Journal`, `Reset Scenarios`).
@@ -123,13 +122,13 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 
 ## 5. Scalable Zero-Build Vanilla ES6 Architecture
 
-To scale `wiremock-extension-ui` to 8,000+ lines of code (adding Matcher Builders, Live Stateful Session Inspectors, AsyncAPI Event Streams, and SDK Codegen Previews) **without** introducing `npm`, Webpack, Vite, or React, all frontend code must follow these architectural invariants:
+To scale `wiremock-extension-ui` to 8,000+ lines of code (adding Matcher Builders, Async Destination Explorers, Multi-Protocol Testers, and SDK Codegen Previews) **without** introducing `npm`, Webpack, Vite, or React, all frontend code must follow these architectural invariants:
 
 ### 5.1 Native ES Module Boundaries (`src/main/resources/ui/modules/`)
 * Keep modules strictly single-responsibility and domain-scoped:
   * **Core Infrastructure**: `state.js` (reactive state + URL sync), `dom.js` (cached static selectors + HTML escaping), `api.js` (fetch wrapper + proxy header injection), `router.js` (hash deep-linking), `capabilities.js` (remote feature probing & graceful degradation).
-  * **Feature Verticals**: `stubs.js`, `lifecycle.js`, `projects.js`, `journal.js`, `tester.js`, `scenarios.js`, `dynamic-stubs.js`, `netem.js`, `openapi.js`, `import-export.js`, `bulk-actions.js`.
-* **Single Source of Truth for Static Demo**: `wiremock-extension-ui/src/main/resources/ui/` is the **only** directory where UI files are authored. Never commit duplicated copies of UI scripts into `docs/site/demo/` (use the Gradle `syncDemoSite` task or CI artifact assembly).
+  * **Feature Verticals**: `stub-catalog.js`, `stubs.js`, `lifecycle.js`, `projects.js`, `journal.js`, `request-journal.js`, `tester.js`, `scenarios.js`, `queues.js`, `netem.js`, `openapi.js`, `import-export.js`, `bulk-actions.js`, `dispatcher.js`.
+* **Single Source of Truth for Static Demo**: `wiremock-extension-ui/src/main/resources/ui/` is the **only** directory where UI files are authored. Never commit duplicated copies of UI scripts into `docs/site/demo/` (it is gitignored and assembled at CI build time by `.github/workflows/pages.yml`).
 * **Zero Marketing Assets in Classpath**: Never store documentation GIFs, pitch decks, or Playwright reference PNGs under `src/main/resources/ui/`. Keep them in `docs/` so the production JAR remains `< 200 KB`.
 
 ### 5.2 DOM Rendering & Event Delegation

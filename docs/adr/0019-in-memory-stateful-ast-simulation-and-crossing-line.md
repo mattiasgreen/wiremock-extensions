@@ -4,7 +4,7 @@ Date: 2026-11-07
 
 ## Status
 
-Accepted
+Superseded by [ADR 0027](0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md)
 
 ## Context
 

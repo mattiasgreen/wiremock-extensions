@@ -15,7 +15,7 @@ Previously, disabling or parking a stub removed the mapping from WireMock's acti
 2. **Eliminate `DisabledStubStore` and Shadow Stub CRUD Endpoints**:
    - Remove `DisabledStubStore` and all `/__admin/stubs/*` shadow CRUD routes.
    - All single-stub toggles, edits, deletions, and bulk operations dispatch directly to standard `/__admin/mappings/{id}` (`PUT` / `DELETE`), enabling full toggle and filter support even against vanilla WireMock targets.
-   - `StubLifecycleAdminEndpoint` exposes `GET /__admin/lifecycle/status` (`{"status":"UP"}`) solely to gate server-side recording snapshotting (`/recordings/snapshot`, `/stubs/snapshot-filtered`, `/stubs/snapshot-template`) and stateless `POST /__admin/projects/{project}/mode` flipping via `StubLifecycleService`.
+   - `StubLifecycleAdminEndpoint` exposes `GET /__admin/lifecycle/status` (`{"status":"UP"}`) solely to gate server-side recording snapshotting (`POST /__admin/lifecycle/snapshots`, `POST /__admin/lifecycle/snapshot-template`) and stateless `POST /__admin/lifecycle/projects/{project}/mode` flipping via `StubLifecycleService`.
 
 3. **Casual & CLI Alignment**:
    - `WireMockStoreAdapter.getActiveStubMappings()` excludes `priority >= 100` natively from Casual TCP gateway routing without querying any HTTP UI extension endpoints.

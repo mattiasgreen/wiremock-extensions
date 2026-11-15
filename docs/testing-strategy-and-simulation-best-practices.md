@@ -94,7 +94,7 @@ Across the Wire Boundary (Level 3), external dependencies vary across three orth
 1. **No-op / Fire-and-Forget**: Receives an event or notification, responds immediately with `200/202`, and discards the payload. (Meszaros: *Null Object Double*).
 2. **Static & Templated Stubs**: Returns canned responses or Handlebars-templated values matching URL patterns or query parameters. (Meszaros: *Test Stub*).
 3. **Dynamic CRUD**: In-memory resource simulation supporting Create, Read, Update, and Delete across a test suite without database persistence. (Meszaros: *Fake Object*).
-4. **Finite State Machine (FSM)**: Evaluates preconditions and guards before permitting state transitions (e.g. *Cannot close case while tasks are pending*). Powered by `wiremock-extension-stateful` with multi-tenant session isolation.
+4. **Finite State Machine (FSM)**: Evaluates transition guards before permitting state changes (e.g. *Cannot close case while tasks are pending*). Modeled cleanly via parameterized native WireMock Scenarios (`"CaseLifecycle-" + caseId`) for protocol choreography, or provider-owned code doubles (`ResponseTransformerV2` / Testcontainers) when relational invariants apply.
 
 ### Dimension B: Interaction Flow
 1. **Synchronous Request-Reply**: Standard HTTP REST, gRPC, or Casual XATMI `tpcall`.
@@ -246,20 +246,20 @@ In mock servers, this creates an ad-hoc, informally specified, bug-ridden relati
    - Use WireMock at Level 3 for what it does best: injecting wire-level faults (latency, timeouts, HTTP 503s, TCP reset) and verifying corporate header propagation (`x-correlation-id`, `x-tenant-id`), while delegating complex domain logic to the authentic double.
 
 > [!NOTE]
-> **Status of `wiremock-extension-stateful`**: The AST-driven stateful engine in this repository is maintained as an **experimental alpha prototype** for exploring zero-overhead distributed test setups where Docker containers are prohibited. Teams should favor native WireMock Scenarios or provider Testcontainers for production integration test suites.
+> **Retirement of `wiremock-extension-stateful` ([ADR 0027](adr/0027-retire-stateful-ast-extension-in-favor-of-native-scenarios-and-code-doubles.md))**: Following *The Crossing Line* principle above, the experimental AST stateful engine was retired in favor of parameterized native WireMock Scenarios (`"CaseLifecycle-" + caseId`), Handlebars response templating, plain Java `ResponseTransformerV2` extensions, and provider Testcontainers.
 
 ---
 
 ## 5. Responsibility & Ownership Matrix
 
-Grounded in **Freeman & Pryce's** rule (*"Don't mock types you don't own"*) and **Robinson & Fowler's** *Consumer-Driven Contracts*, clear boundaries between producers, consumers, test frameworks, and the simulation stack prevent duplication and contract drift:
+Ground in mind: **Freeman & Pryce's** rule (*"Don't mock types you don't own"*) and **Robinson & Fowler's** *Consumer-Driven Contracts* prevent duplication and contract drift:
 
 | Role | Primary Responsibility | Grounding Literature | Key Deliverables |
 | :--- | :--- | :--- | :--- |
 | **Producer Team** | Contract Parity, Schemas & Domain Tooling | Freeman & Pryce (*GOOS*);<br>Robinson & Fowler (*CDC*) | • OpenAPI 3.0/3.1 & AsyncAPI specifications.<br>• Production Client SDK (`service-client.jar`).<br>• **Companion TestKit** (`service-testkit.jar`) with Data Builders & Fixtures.<br>• Ready-made **Cucumber / BDD Step Definitions**.<br>• Validated WireMock stub packs published to artifact repository. |
 | **Consumer Team** | Application Logic & Scenario Expectations | Kent Beck (*TDD*);<br>Dan North (*BDD*) | • Defining BDD feature files and scenario expectations.<br>• Writing integration tests against Producer TestKit / stubs.<br>• Maintaining consumer-side contract tests against producer specs. |
 | **BDD Test Driver** (JUnit / Cucumber / Playwright) | Scenario Orchestration & Timeline Progression | Gojko Adzic (*SBE*);<br>Meszaros (*Self-Shunting*) | • Driving the test lifecycle.<br>• Triggering async callbacks and state transitions via Producer TestKit.<br>• Executing assertions across consumer state. |
-| **Simulation Platform** (`wiremock-extensions`) | Protocol Fidelity & Execution Engine | Michael Feathers (*Wire Seam*);<br>Casey Rosenthal (*Chaos*) | • Wire-level transport (HTTP/1.1, HTTP/2, Netty Casual XATMI, Toxiproxy L4).<br>• Request Journal with compound boolean filtering (`AND`, `OR`) and datetime range windows.<br>• 1-Click filtered stub snapshotting (`📸 Snapshot Filtered Proxied`).<br>• In-memory Stateful AST engine with session isolation.<br>• L4/L7 Network Emulation (NetEm) for chaos and resilience testing.<br>• Web Console UI (`/__admin/ui`) for developer exploration and debugging. |
+| **Simulation Platform** (`wiremock-extensions`) | Protocol Fidelity & Execution Engine | Michael Feathers (*Wire Seam*);<br>Casey Rosenthal (*Chaos*) | • Wire-level transport (HTTP/1.1, HTTP/2, Netty Casual XATMI, Kafka/AMQP, Toxiproxy L4).<br>• Request Journal with compound boolean filtering (`AND`, `OR`) and datetime range windows.<br>• 1-Click filtered stub snapshotting (`POST /__admin/lifecycle/snapshots`).<br>• Native Scenario FSM workflows (`/__admin/scenarios`) with parameterized correlation scoping.<br>• L4/L7 Network Emulation (NetEm) for chaos and resilience testing.<br>• Web Console UI (`/__admin/ui`) for developer exploration and debugging. |
 
 ---
 
@@ -323,7 +323,7 @@ The failure modes of integration testing are well-cataloged in foundational lite
 * **The Smell**: Executing parallel integration test suites against a single shared WireMock instance with global state mutations, where Test A alters a stub that Test B depends upon.
 * **Why It Fails**:
   - **Meszaros** identifies this as **Inter-Test Contamination** (an *Erratic Test* smell), leading to test suites that pass when run sequentially but fail in parallel.
-* **The Antidote**: Leverage WireMock Extensions' **Session Isolation (`X-Correlation-Id`)**. Stateful models, journal queries, and stub overrides are partitioned by correlation ID, guaranteeing fresh, isolated fixtures for concurrent test executions within a single process.
+* **The Antidote**: Leverage WireMock Extensions' **Correlation Isolation (`X-Correlation-Id`)**. Parameterized scenario names (`"CaseLifecycle-" + correlationId`), journal queries, and stub overrides are partitioned by correlation/entity ID, guaranteeing fresh, isolated fixtures for concurrent test executions within a single process.
 
 ---
 
@@ -392,7 +392,7 @@ The strategies and execution boundaries defined in this guide are not ad-hoc heu
 * **[xUnit Test Patterns: Refactoring Test Code (2007)](http://xunitpatterns.com/)**:
   - **Configurable Test Double**: WireMock acts as an out-of-process Configurable Test Double capable of simulating various response scenarios.
   - **Self-Shunting & Callback Sensing**: When testing async workflows (Archetype 3), the BDD driver acts as the stimulus agent, matching Meszaros's self-shunting pattern where the test actively orchestrates the collaborators.
-  - **Fresh Fixtures vs. Shared Fixtures**: Meszaros warns against shared mutable state causing test leakage. WireMock Extensions addresses this via **Session Isolation (`X-Correlation-Id`)**, partitioning stateful AST models so parallel tests run against fresh, isolated state within the same process.
+  - **Fresh Fixtures vs. Shared Fixtures**: Meszaros warns against shared mutable state causing test leakage. WireMock Extensions addresses this via **Correlation Isolation (`X-Correlation-Id`)**, partitioning parameterized scenario names (`"CaseLifecycle-" + caseId`) and correlation-matched stub overrides so parallel tests run against fresh, isolated state within the same process.
 
 ### 7.5. Michael Feathers: The Wire Seam & Characterization Tests
 * **[Working Effectively with Legacy Code (2004)](https://www.oreilly.com/library/view/working-effectively-with/0131177052/)**:

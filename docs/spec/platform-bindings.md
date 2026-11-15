@@ -14,13 +14,13 @@
 | **Connect / Refresh Trigger**| `#btn-connect` | `"btn-connect"` | Trigger to refresh all datasets. |
 | **Navigation Tab: Stubs** | `#nav-tab-stubs` | `"nav-tab-stubs"` / tab 0 | Switch to Stubs Catalog. |
 | **Navigation Tab: Journal** | `#nav-tab-journal` | `"nav-tab-journal"` / tab 1 | Switch to Traffic Journal. |
-| **Navigation Tab: Tester** | `#nav-tab-tester` | `"nav-tab-tester"` / tab 2 | Switch to HTTP Request Tester. |
+| **Navigation Tab: Tester** | `#nav-tab-tester` | `"nav-tab-tester"` / tab 2 | Switch to Unified Multi-Protocol Tester (`http`, `kafka`, `amqp`, `casual`). |
 | **Navigation Tab: Scenarios**| `#nav-tab-scenarios` | `"nav-tab-scenarios"` / tab 3 | Switch to FSM Scenarios Inspector. |
 | **Stubs Filter Input** | `#search-box` | `"search-box"` | Case-insensitive text filter. |
-| **Stubs Status Filter** | `#status-filter` | `"status-filter"` | Status filter dropdown (`All`, `Active`, `Disabled`). |
+| **Stubs Status Filter** | `#status-filter` | `"status-filter"` | Status filter dropdown (`All`, `Active`, `Parked`). |
 | **Stubs Table / Grid** | `#stub-table` | `"stub-table"` | Table view with columns: Status, Method, URL, Name. |
 | **Stub Details Panel** | `#stub-details` | `"stub-details"` | Formatted JSON editor/viewer of selected stub mapping. |
-| **Stub Toggle Action** | `#btn-toggle-stub` | `"btn-toggle-stub"` | Toggles active/disabled state without deletion. |
+| **Stub Toggle Action** | `#btn-toggle-stub` | `"btn-toggle-stub"` | Toggles active/parked priority tier (`priority >= 100`) without deletion. |
 | **Stub Delete Action** | `#btn-delete-stub` | `"btn-delete-stub"` | Deletes selected stub mapping. |
 | **Stub Test in Tester** | `#btn-test-stub` | `"btn-test-stub"` | Pre-populates tester with stub method & URL. |
 | **Stub Copy cURL** | `#btn-copy-curl` | `"btn-copy-curl"` | Copies valid `curl` command to system clipboard to create this stub mapping via `POST /__admin/mappings` using multi-line JSON with `<< 'EOF'`. |
@@ -30,11 +30,11 @@
 | **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, caller source, protocol, operation, target/url, status, resolution/verdict, duration. |
 | **Journal Source Cell** | `td.journal-source-cell` | `"journal-source-cell"` | Displays resolved caller short hostname (or IP) with compact IP subline and clickable source filter chip (`.btn-journal-filter-source`). |
 | **Journal Source Detail** | `div.journal-source-detail` | `"journal-source-detail"` | Expanded `Source Caller` section showing resolved FQDN, effective source IP, and 1-click filter button. |
-| **Journal Verdict Pills** | `#btn-journal-verdict-all`, `-proxied`, `-stub`, `-stateful`, `-unmatched` | `"journal-verdict-filter"` | Filter pills for the 4 core verdicts (`🌐 PROXIED`, `📌 STUB`, `🧠 STATEFUL`, `⚠️ UNMATCHED`). |
+| **Journal Verdict Pills** | `#btn-journal-verdict-all`, `-proxied`, `-stub`, `-unmatched` | `"journal-verdict-filter"` | Filter pills for the 3 core verdicts (`🌐 PROXIED`, `📌 STUB`, `⚠️ UNMATCHED`). |
 | **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (3-second interval). |
 | **Journal Limit Input** | `#journal-limit-input` | `"journal-limit-input"` | Configurable volume limit number input (positive integer, default 100). |
 | **Journal Clear Action** | `#btn-clear-journal` | `"btn-clear-journal"` | Clears recorded requests via `DELETE /__admin/requests`. |
-| **Journal Resolution Badge** | `.pill-matched`, `.pill-stub`, `.pill-stubbed`, `.pill-proxied`, `.pill-stateful`, `.pill-unmatched` | `"journal-resolution"` | Verdict badge (`🌐 PROXIED`, `📌 STUB` / `TPL`, `🧠 STATEFUL`, `⚠️ UNMATCHED`). |
+| **Journal Resolution Badge** | `.pill-matched`, `.pill-stub`, `.pill-stubbed`, `.pill-proxied`, `.pill-unmatched` | `"journal-resolution"` | Verdict badge (`🌐 PROXIED`, `📌 STUB` / `TPL`, `⚠️ UNMATCHED`). |
 | **Journal Replay Action** | `.btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
 | **Journal Copy cURL** | `.btn-journal-copy-curl` | `"btn-journal-copy-curl"` | Copies captured request as `curl` to system clipboard. |
 | **Journal Copy Java** | `.btn-journal-copy-java` | `"btn-journal-copy-java"` | Copies captured request/response pair as WireMock Java `stubFor(...)` snippet. |
@@ -68,6 +68,7 @@
 | **Top-Level Viewer Badge (Tester Request)** | `#tester-request-top-pill` | `"tester-request-top-pill"` | Composite request descriptor badge (includes Casual buffer type when `proto=casual`, e.g. `FIELDED · JSON · ISO-8859-1 · 0.4 KB`). |
 | **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
 | **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
+| **Navigation Tab: Queues** | `#nav-tab-queues` | `"nav-tab-queues"` / tab 5 | Switch to Async Destinations & Queues explorer (`metadata.async`). |
 | **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |
 | **NetEm Active Toxics Stat** | `#netem-stat-active-toxics` | `"netem-stat-active-toxics"` | Metric counter for active toxic impairments. |
 | **NetEm Preset: 3G** | `#btn-preset-3g` | `"btn-preset-3g"` | Applies 3G Mobile preset (300ms latency, 64KB/s bandwidth). |
@@ -92,7 +93,7 @@
 | **Project Lifecycle Bar** | `#project-lifecycle-bar` | `"project-lifecycle-bar"` | Active project lifecycle toolbar displayed when proxy stubs exist. |
 | **Project Mode Badge** | `#project-mode-badge` | `"project-mode-badge"` | Indicates active simulation mode (`LIVE PROXY` or `STUBS MODE`). |
 | **Project Mode Toggle** | `#btn-project-mode-toggle` | `"btn-project-mode-toggle"` | Toggles service/all between live proxy and recorded offline stubs. |
-| **Project Snapshot** | `#btn-project-snapshot` | `"btn-project-snapshot"` | Captures live proxied traffic into disabled stubs for the project. |
+| **Project Snapshot** | `#btn-project-snapshot` | `"btn-project-snapshot"` | Captures live proxied traffic into parked replay stubs (`priority >= 100`) for the project. |
 | **Casual Protocol Badge** | `.http-badge.badge-CASUAL` | `"badge-casual"` | Method column pill distinguishing Casual XATMI calls (`CASUAL`). |
 | **Casual Status Badge** | `.status-badge.status-casual-ok`, `.status-casual-err` | `"status-casual"` | Native Casual outcome status (`OK`, `TPESVCFAIL`, `TPENOENT`). |
 
@@ -102,13 +103,14 @@
 
 | Capability | HTTP Method | Route | Payload |
 | :--- | :--- | :--- | :--- |
-| **List Stubs (Active & Parked)** | `GET` | `/__admin/mappings` | None (priority `>= 100` denotes parked/disabled; `5` active stub; `10` active proxy; `50` optional `offline-guard` catch-all) |
+| **List Stubs (Active & Parked)** | `GET` | `/__admin/mappings` | None (priority `>= 100` denotes parked stubs; `5` active stub; `10` active proxy; `50` optional `offline-guard` catch-all) |
 | **Create Stub** | `POST` | `/__admin/mappings` | Stub JSON definition |
 | **Update / Park / Activate Stub** | `PUT` | `/__admin/mappings/{id}` | Stub JSON definition (sets `priority` and `metadata.previousPriority`) |
 | **Probe Lifecycle Service** | `GET` | `/__admin/lifecycle/status` | None (`{"status":"UP"}`) |
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
-| **Snapshot Project Traffic** | `POST` | `/__admin/projects/{project}/recordings/snapshot` | None |
-| **Toggle Project Mode** | `POST` | `/__admin/projects/{project}/mode` | `{"mode": "stubs" \| "proxy"}` |
+| **Snapshot Traffic** | `POST` | `/__admin/lifecycle/snapshots` | Filtered / project-scoped snapshot specification |
+| **Synthesize Template Stub** | `POST` | `/__admin/lifecycle/snapshot-template` | Serve-event template synthesis payload |
+| **Toggle Project Mode** | `POST` | `/__admin/lifecycle/projects/{project}/mode` | `{"mode": "stubs" \| "proxy"}` |
 | **Fetch Journal** | `GET` | `/__admin/ui/api/requests?q={query}&limit={limit}` (fallback `/__admin/requests`) | Server-side enriched journal entries with `sourceIp`, `sourceHost`, verdict, and boolean search (`src:`, `ip:`, `host:`). |
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
@@ -121,7 +123,6 @@
 | **Fetch NetEm Journal**| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
 | **Clear NetEm Journal**| `DELETE` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
 | **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
-| **Probe Stateful API** | `GET` | `/__admin/stateful/models` | None |
 | **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
 
 ---
@@ -135,7 +136,7 @@
 
 | Abstract Semantic Action / View | CLI Command / Invocation | Description |
 | :--- | :--- | :--- |
-| **Probe Instance Capabilities** | `wm info [-s <url>]` | Probes core WireMock version and extension matrix (`tcp-netem`, `stateful`, `otel`, `ui`). |
+| **Probe Instance Capabilities** | `wm info [-s <url>]` | Probes core WireMock version and extension matrix (`tcp-netem`, `otel`, `ui`). |
 | **List & Search Stubs** | `wm stubs [expr] [--json]` | Displays formatted stubs catalog or JSON. Supports boolean expressions (`"GET and /cases"`, `"status=disabled"`). |
 | **Stream Request Journal** | `wm tail [-f] [-u] [-n <N>] [-q <expr>]` | Live streams incoming requests with caller source (`IP`/`host`), status badges, latency, `src:`/`ip:`/`host:` filtering, and near-miss diagnostics on 404s. |
 | **Inspect Network Toxics** | `wm toxics [--json]` | Inspects active L4 TCP proxies and toxics; outputs clean fallback notice if `tcp-netem` is not installed. |

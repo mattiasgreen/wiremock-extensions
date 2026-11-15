@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WireMock Extended — Production API Simulation Studio</title>
-  <meta name="description" content="Production-grade, zero-cloud API simulation studio for WireMock. Embedded Web Console, OpenAPI stub synthesis, correlation-isolated stateful simulation, and TCP network emulation.">
+  <meta name="description" content="Production-grade, zero-cloud API simulation studio for WireMock. Embedded Web Console, OpenAPI stub synthesis, async Kafka/AMQP mediation, adaptive Zstd journaling, and TCP network emulation.">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body data-theme="dark">
@@ -43,7 +43,7 @@
       <h1>The Production API Simulation Studio<br>for WireMock Standalone</h1>
       <p class="hero-subtitle">
         Upgrade WireMock with an embedded web console, automatic OpenAPI mock generation,
-        deterministic correlation-isolated stateful workflows, and in-process L4 network chaos.
+        adaptive Zstd request journaling, async Kafka/AMQP mediation, and in-process L4 network chaos.
       </p>
       <div class="hero-cta">
         <a href="demo/" class="btn btn-primary" style="padding: 0.8rem 1.75rem; font-size: 1.05rem;">
@@ -98,7 +98,7 @@
       <div class="grid-3">
         <div class="card">
           <h3>🖥️ Embedded WireMock Console</h3>
-          <p>Pure Vanilla ES6 Single-Page App at <code>/__admin/ui/</code>. Real-time fuzzy stub search, scenario DAG visualizer, request journal, and ad-hoc HTTP tester. Zero NPM.</p>
+          <p>Pure Vanilla ES6 Single-Page App at <code>/__admin/ui/</code>. Real-time fuzzy stub search, scenario DAG visualizer, request journal, async queue explorer, and unified Multi-Protocol Tester. Zero NPM.</p>
           <ul style="margin-top: 0.75rem;">
             <li>Zero build tools / 0 NPM dependencies</li>
             <li>Interactive Scenario DAG state machines</li>
@@ -117,12 +117,12 @@
         </div>
 
         <div class="card">
-          <h3>⚡ Correlation-Isolated Stateful AST</h3>
-          <p>Model complex business rules (e.g. <i>"Cannot close case while child tasks are pending"</i>) in a 100% RCE-safe sealed AST engine with session isolation via <code>X-Correlation-Id</code>.</p>
+          <h3>🗜️ Adaptive Zstd Request Journal</h3>
+          <p>High-density, memory-bounded request journal powered by adaptive Zstandard dictionary compression, structural clustering, and real-time JVM headroom anti-OOM protection.</p>
           <ul style="margin-top: 0.75rem;">
-            <li>No parallel CI test collisions</li>
-            <li>In-memory collection &amp; relation primitives</li>
-            <li>Zero Groovy/JS arbitrary execution risk</li>
+            <li>Zstd dictionary-trained traffic retention</li>
+            <li>Real-time JVM heap pressure guard</li>
+            <li>Parallel-safe native Scenarios (<code>CaseLifecycle-&lt;id&gt;</code>)</li>
           </ul>
         </div>
 
@@ -302,12 +302,12 @@ http://localhost:8080/__admin/async/status</code></pre>
               <td class="check">Yes (Live Proxy + Snap)</td>
             </tr>
             <tr>
-              <td><strong>Stateful Parallel Isolation</strong></td>
+              <td><strong>Correlation-Isolated Scenarios</strong></td>
               <td class="cross">No (Global Collision)</td>
               <td class="partial">Manual Scenarios</td>
               <td class="cross">No</td>
               <td class="partial">Partial</td>
-              <td class="check">Yes (X-Correlation-Id AST)</td>
+              <td class="check">Yes (Parameterized ID + DAG UI)</td>
             </tr>
             <tr>
               <td><strong>In-Process L4 Network Chaos</strong></td>
