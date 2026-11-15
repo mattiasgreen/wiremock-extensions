@@ -33,6 +33,53 @@ jobs:
         run: |
           mkdir -p docs/site/demo
           cp -r wiremock-extension-ui/src/main/resources/ui/* docs/site/demo/
+          VER=$(grep -E '^version=' gradle.properties | head -n1 | cut -d= -f2 | tr -d '\r\n ')
+          BRANCH="${GITHUB_REF_NAME:-main}"
+          COMMIT=$(git rev-parse --short HEAD)
+          export VER BRANCH COMMIT
+          python3 - <<'PYEOF'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          ver = os.environ["VER"]
+          branch = os.environ["BRANCH"]
+          commit = os.environ["COMMIT"]
+
+          demo_dir = Path("docs/site/demo")
+          (demo_dir / "version.json").write_text(
+              json.dumps({"version": ver, "commit": commit, "branch": branch}, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          index_path = demo_dir / "index.html"
+          if index_path.exists():
+              html = index_path.read_text(encoding="utf-8")
+              badge = (
+                  f'<span id="app-version-badge" class="brand-version-badge" '
+                  f'title="WireMock Extensions v{ver} | Branch: {branch} | Commit: {commit}">'
+                  f'v{ver} ({branch}@{commit})</span>'
+              )
+              updated_html = re.sub(
+                  r'<span id="app-version-badge" class="brand-version-badge"[^>]*>.*?</span>',
+                  lambda _m: badge,
+                  html,
+                  count=1,
+              )
+              index_path.write_text(updated_html, encoding="utf-8")
+
+          demo_backend_path = demo_dir / "modules/demo-backend.js"
+          if demo_backend_path.exists():
+              js = demo_backend_path.read_text(encoding="utf-8")
+              updated_js = re.sub(
+                  r"(pathname === '/__admin/ui/version'[\s\S]*?version:\s*')[^']+('[\s\S]*?branch:\s*')[^']+('[\s\S]*?commit:\s*')[^']+(')",
+                  lambda m: f"{m.group(1)}{ver}{m.group(2)}{branch}{m.group(3)}{commit}{m.group(4)}",
+                  js,
+                  count=1,
+              )
+              demo_backend_path.write_text(updated_js, encoding="utf-8")
+          PYEOF
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
