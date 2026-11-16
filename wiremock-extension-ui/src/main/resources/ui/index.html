@@ -180,13 +180,23 @@
               <div class="detail-actions">
                 <button id="btn-test-stub" data-testid="btn-test-stub" class="btn btn-small btn-primary" title="Open and test this stub in the HTTP Tester">⚡ Test Stub</button>
                 <button id="btn-edit-stub" data-testid="btn-edit-stub" class="btn btn-small" title="Edit this stub mapping configuration">✏️ Edit</button>
-                <button id="btn-clone-stub" data-testid="btn-clone-stub" class="btn btn-small" title="Duplicate this stub mapping">📄 Duplicate</button>
                 <button id="btn-toggle-stub" data-testid="btn-toggle-stub" class="btn btn-small btn-warning" title="Toggle active/disabled state">⏸️ Disable Stub</button>
-                <button id="btn-delete-stub" data-testid="btn-delete-stub" class="btn btn-small btn-danger" title="Permanently delete this stub">🗑️ Delete</button>
                 <button id="btn-view-stub-in-journal" data-testid="btn-view-stub-in-journal" class="btn btn-small" title="Search for this stub in Request Journal">🔍 View in Journal</button>
-                <button id="btn-copy-curl" data-testid="btn-copy-curl" class="btn btn-small" title="Copy as cURL command to create this stub mapping">📋 Copy cURL</button>
-                <button id="btn-copy-java" data-testid="btn-copy-java" class="btn btn-small" title="Copy as WireMock Java stubFor() DSL snippet">☕ Copy Java</button>
-                <button id="btn-copy-json" data-testid="btn-copy-json" class="btn btn-small" title="Copy stub mapping JSON">📋 Copy JSON</button>
+                <div class="action-dropdown">
+                  <button type="button" id="btn-stub-copy-menu" data-testid="btn-stub-copy-menu" class="btn btn-small" aria-expanded="false" aria-haspopup="true" title="Copy stub as cURL, Java DSL, or JSON">📋 Copy ▾</button>
+                  <div id="stub-copy-menu" class="dropdown-menu hidden" role="menu">
+                    <button type="button" id="btn-copy-curl" data-testid="btn-copy-curl" class="dropdown-item" role="menuitem" title="Copy as cURL command to create this stub mapping">📋 Copy cURL</button>
+                    <button type="button" id="btn-copy-java" data-testid="btn-copy-java" class="dropdown-item" role="menuitem" title="Copy as WireMock Java stubFor() DSL snippet">☕ Copy Java</button>
+                    <button type="button" id="btn-copy-json" data-testid="btn-copy-json" class="dropdown-item" role="menuitem" title="Copy stub mapping JSON">📋 Copy JSON</button>
+                  </div>
+                </div>
+                <div class="action-dropdown">
+                  <button type="button" id="btn-stub-more-menu" data-testid="btn-stub-more-menu" class="btn btn-small" aria-expanded="false" aria-haspopup="true" title="More stub actions">••• More ▾</button>
+                  <div id="stub-more-menu" class="dropdown-menu hidden" role="menu">
+                    <button type="button" id="btn-clone-stub" data-testid="btn-clone-stub" class="dropdown-item" role="menuitem" title="Duplicate this stub mapping">📄 Duplicate</button>
+                    <button type="button" id="btn-delete-stub" data-testid="btn-delete-stub" class="dropdown-item dropdown-item-danger" role="menuitem" title="Permanently delete this stub">🗑️ Delete</button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -224,12 +234,11 @@
                     <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted, indented">🎨 Rich</button>
                     <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
                   </div>
-                  <button type="button" id="btn-top-stub-edit" class="btn-payload-maximize btn-nested-edit" title="Edit stub mapping in editor modal">✏️ Edit</button>
                   <button type="button" id="btn-stub-copy" class="btn btn-tiny" title="Copy stub mapping JSON">📋 Copy</button>
-                  <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
+                  <button type="button" id="btn-stub-maximize" class="btn-payload-maximize" title="Open Stub JSON in Document Workspace">⛶ Open in Workspace</button>
                 </div>
               </div>
-              <pre id="stub-json-viewer" data-testid="stub-json-viewer" class="code-block"></pre>
+              <div id="stub-json-viewer" data-testid="stub-json-viewer" class="polyglot-viewer-host code-block"></div>
             </div>
           </div>
         </section>
@@ -406,71 +415,68 @@
               <div class="tester-split-workbench">
                 <!-- Request Builder Panel -->
                 <div class="tester-request-panel" data-testid="tester-request-panel">
-                <!-- HTTP Address Bar -->
-                <div class="tester-url-bar tester-proto-bar" id="tester-bar-http" data-testid="tester-bar-http">
-                  <select id="tester-method" data-testid="tester-method" class="tester-method-select">
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="PATCH">PATCH</option>
-                    <option value="DELETE">DELETE</option>
-                    <option value="HEAD">HEAD</option>
-                    <option value="OPTIONS">OPTIONS</option>
-                  </select>
-                  <input type="text" id="tester-url" data-testid="tester-url" placeholder="/api/v1/..." value="/api/v1/users" autocomplete="off">
+                <!-- Shared Protocol Address Row -->
+                <div class="tester-address-row">
+                  <!-- HTTP Address Bar -->
+                  <div class="tester-url-bar tester-proto-bar" id="tester-bar-http" data-testid="tester-bar-http">
+                    <select id="tester-method" data-testid="tester-method" class="tester-method-select">
+                      <option value="GET">GET</option>
+                      <option value="POST">POST</option>
+                      <option value="PUT">PUT</option>
+                      <option value="PATCH">PATCH</option>
+                      <option value="DELETE">DELETE</option>
+                      <option value="HEAD">HEAD</option>
+                      <option value="OPTIONS">OPTIONS</option>
+                    </select>
+                    <input type="text" id="tester-url" data-testid="tester-url" placeholder="/api/v1/..." value="/api/v1/users" autocomplete="off">
+                  </div>
+
+                  <!-- Kafka Address Bar -->
+                  <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-kafka" data-testid="tester-bar-kafka">
+                    <span class="http-badge badge-produce" style="padding: 7px 11px; font-weight: 700;">PRODUCE</span>
+                    <input type="text" id="tester-kafka-topic" data-testid="tester-kafka-topic" placeholder="Topic name (e.g. orders.events)" value="orders.events" autocomplete="off" style="flex: 2;">
+                    <input type="text" id="tester-kafka-key" data-testid="tester-kafka-key" placeholder="Key (e.g. ORD-101)" value="ORD-101" autocomplete="off" style="flex: 1;">
+                    <input type="number" id="tester-kafka-partition" data-testid="tester-kafka-partition" placeholder="Partition (opt)" style="width: 100px;" autocomplete="off">
+                  </div>
+
+                  <!-- AMQP Address Bar -->
+                  <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-amqp" data-testid="tester-bar-amqp">
+                    <span class="http-badge badge-publish" style="padding: 7px 11px; font-weight: 700;">PUBLISH</span>
+                    <input type="text" id="tester-amqp-dest" data-testid="tester-amqp-dest" placeholder="Queue / Destination (e.g. orders.inbound)" value="orders.inbound" autocomplete="off" style="flex: 2;">
+                    <input type="text" id="tester-amqp-correlation" data-testid="tester-amqp-correlation" placeholder="Correlation ID (e.g. corr-101)" value="test-corr-101" autocomplete="off" style="flex: 1;">
+                    <input type="text" id="tester-amqp-reply-to" data-testid="tester-amqp-reply-to" placeholder="Reply-To queue (opt)" autocomplete="off" style="flex: 1;">
+                  </div>
+
+                  <!-- Casual Address Bar in Unified Tester -->
+                  <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-casual" data-testid="tester-bar-casual">
+                    <span class="http-badge badge-call" style="padding: 7px 11px; font-weight: 700;">CALL</span>
+                    <div class="casual-target-group" style="display:flex; gap:4px; align-items:center;">
+                      <span class="muted-text text-small" style="font-weight:600;">TCP:</span>
+                      <input type="text" id="tester-casual-host" data-testid="tester-casual-host" placeholder="127.0.0.1" value="127.0.0.1" style="width:100px;" autocomplete="off" title="Casual domain host">
+                      <span class="muted-text text-small">:</span>
+                      <input type="number" id="tester-casual-port" data-testid="tester-casual-port" placeholder="7772" value="7772" style="width:74px;" autocomplete="off" title="Casual domain port">
+                    </div>
+                    <input type="text" id="tester-casual-service" data-testid="tester-casual-service" placeholder="Service name (e.g. echoService, billing/charge)..." value="echoService" autocomplete="off" style="flex:2;">
+                    <select id="tester-casual-buffer" data-testid="tester-casual-buffer" class="tester-method-select" style="min-width:90px;" title="Casual Buffer Type">
+                      <option value="JSON">JSON</option>
+                      <option value="CSTRING">CSTRING</option>
+                      <option value="FIELDED">FIELDED</option>
+                      <option value="X_OCTET">X_OCTET</option>
+                    </select>
+                  </div>
+
                   <button id="btn-tester-send" data-testid="btn-tester-send" class="btn btn-primary" title="Send Request (Ctrl+Enter)">🚀 Send</button>
                 </div>
 
-                <!-- Kafka Address Bar -->
-                <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-kafka" data-testid="tester-bar-kafka">
-                  <span class="http-badge badge-produce" style="padding: 7px 11px; font-weight: 700;">PRODUCE</span>
-                  <input type="text" id="tester-kafka-topic" data-testid="tester-kafka-topic" placeholder="Topic name (e.g. orders.events)" value="orders.events" autocomplete="off" style="flex: 2;">
-                  <input type="text" id="tester-kafka-key" data-testid="tester-kafka-key" placeholder="Key (e.g. ORD-101)" value="ORD-101" autocomplete="off" style="flex: 1;">
-                  <input type="number" id="tester-kafka-partition" data-testid="tester-kafka-partition" placeholder="Partition (opt)" style="width: 100px;" autocomplete="off">
-                  <button id="btn-tester-send-kafka" data-testid="btn-tester-send-kafka" class="btn btn-primary" title="Produce Kafka Message (Ctrl+Enter)">🚀 Produce Message</button>
-                </div>
-
-                <!-- AMQP Address Bar -->
-                <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-amqp" data-testid="tester-bar-amqp">
-                  <span class="http-badge badge-publish" style="padding: 7px 11px; font-weight: 700;">PUBLISH</span>
-                  <input type="text" id="tester-amqp-dest" data-testid="tester-amqp-dest" placeholder="Queue / Destination (e.g. orders.inbound)" value="orders.inbound" autocomplete="off" style="flex: 2;">
-                  <input type="text" id="tester-amqp-correlation" data-testid="tester-amqp-correlation" placeholder="Correlation ID (e.g. corr-101)" value="test-corr-101" autocomplete="off" style="flex: 1;">
-                  <input type="text" id="tester-amqp-reply-to" data-testid="tester-amqp-reply-to" placeholder="Reply-To queue (opt)" autocomplete="off" style="flex: 1;">
-                  <button id="btn-tester-send-amqp" data-testid="btn-tester-send-amqp" class="btn btn-primary" title="Publish AMQP Message (Ctrl+Enter)">🚀 Publish Message</button>
-                </div>
-
-                <!-- Casual Address Bar in Unified Tester -->
-                <div class="tester-url-bar tester-proto-bar hidden" id="tester-bar-casual" data-testid="tester-bar-casual">
-                  <span class="http-badge badge-call" style="padding: 7px 11px; font-weight: 700;">CALL</span>
-                  <div class="casual-target-group" style="display:flex; gap:4px; align-items:center;">
-                    <span class="muted-text text-small" style="font-weight:600;">TCP:</span>
-                    <input type="text" id="tester-casual-host" data-testid="tester-casual-host" placeholder="127.0.0.1" value="127.0.0.1" style="width:100px;" autocomplete="off" title="Casual domain host">
-                    <span class="muted-text text-small">:</span>
-                    <input type="number" id="tester-casual-port" data-testid="tester-casual-port" placeholder="7772" value="7772" style="width:74px;" autocomplete="off" title="Casual domain port">
-                  </div>
-                  <input type="text" id="tester-casual-service" data-testid="tester-casual-service" placeholder="Service name (e.g. echoService, billing/charge)..." value="echoService" autocomplete="off" style="flex:2;">
-                  <select id="tester-casual-buffer" data-testid="tester-casual-buffer" class="tester-method-select" style="min-width:90px;" title="Casual Buffer Type">
-                    <option value="JSON">JSON</option>
-                    <option value="CSTRING">CSTRING</option>
-                    <option value="FIELDED">FIELDED</option>
-                    <option value="X_OCTET">X_OCTET</option>
-                  </select>
-                  <button id="btn-tester-send-casual" data-testid="btn-tester-send-casual" class="btn btn-primary" title="Execute Casual Service Call (Ctrl+Enter)">🔌 Execute tpcall</button>
-                </div>
-
                 <div class="tester-subcontrols">
-                  <!-- HTTP Headers Section -->
-                  <div class="tester-section" id="tester-section-headers-http">
+                  <!-- Unified Headers Section -->
+                  <div class="tester-section" id="tester-headers-section" data-testid="tester-headers-section">
                     <div class="tester-section-header">
-                      <span>Request Headers</span>
-                      <div class="preset-badges">
-                        <span class="preset-badge" id="btn-preset-json" title="Add Content-Type: application/json">+ JSON</span>
-                        <span class="preset-badge" id="btn-preset-bearer" title="Add Authorization: Bearer token">+ Bearer</span>
-                        <span class="preset-badge" id="btn-preset-accept" title="Add Accept: application/json">+ Accept</span>
-                      </div>
+                      <span id="tester-headers-label">Request Headers</span>
+                      <div class="preset-badges" id="tester-header-presets" data-testid="tester-header-presets"></div>
                     </div>
 
-                    <!-- Local Storage Persistent Corporate Headers -->
+                    <!-- Local Storage Persistent Corporate Headers (HTTP only) -->
                     <div id="tester-local-headers-container" class="tester-local-headers-container" data-testid="tester-local-headers-container">
                       <div class="tester-local-headers-bar">
                         <div class="local-headers-title-group">
@@ -493,41 +499,6 @@
                     <textarea id="tester-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;Accept: application/json"></textarea>
                   </div>
 
-                  <!-- Kafka Headers Section -->
-                  <div class="tester-section hidden" id="tester-section-headers-kafka" data-testid="tester-section-headers-kafka">
-                    <div class="tester-section-header">
-                      <span>Record Headers (Key: Value)</span>
-                      <div class="preset-badges">
-                        <span class="preset-badge" id="btn-preset-kafka-corr" title="Add x-correlation-id header">+ Correlation ID</span>
-                        <span class="preset-badge" id="btn-preset-kafka-tenant" title="Add x-tenant-id header">+ Tenant</span>
-                      </div>
-                    </div>
-                    <textarea id="tester-kafka-headers" class="code-input" rows="3" placeholder="x-tenant-id: acme-corp&#10;x-correlation-id: corr-kafka-01"></textarea>
-                  </div>
-
-                  <!-- AMQP Headers Section -->
-                  <div class="tester-section hidden" id="tester-section-headers-amqp" data-testid="tester-section-headers-amqp">
-                    <div class="tester-section-header">
-                      <span>Application Properties</span>
-                      <div class="preset-badges">
-                        <span class="preset-badge" id="btn-preset-amqp-tenant" title="Add tenant property">+ Tenant</span>
-                        <span class="preset-badge" id="btn-preset-amqp-reply" title="Add reply property">+ Reply Type</span>
-                      </div>
-                    </div>
-                    <textarea id="tester-amqp-headers" class="code-input" rows="3" placeholder="tenant: acme-retail&#10;env: staging"></textarea>
-                  </div>
-
-                  <!-- Casual Headers Section in Unified Tester -->
-                  <div class="tester-section hidden" id="tester-section-headers-casual" data-testid="tester-section-headers-casual">
-                    <div class="tester-section-header">
-                      <span>Call Flags & Headers</span>
-                      <div class="preset-badges">
-                        <span class="preset-badge" id="btn-tester-casual-preset-tx" title="Add X-Casual-Transaction-State header">+ TX State</span>
-                      </div>
-                    </div>
-                    <textarea id="tester-casual-headers" class="code-input" rows="3" placeholder="Content-Type: application/json&#10;X-Casual-Service: echoService&#10;X-Casual-Buffer-Type: JSON"></textarea>
-                  </div>
-
                   <!-- Shared Request Body / Payload Section -->
                   <div class="tester-section" id="tester-body-section">
                     <div class="tester-section-header">
@@ -535,13 +506,12 @@
                         <span id="tester-body-label">Request Body</span>
                         <span class="preview-pill-group" id="tester-request-top-pill-group" style="display: none;">
                           <span class="preview-pill-badge" id="tester-request-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
-                          <button type="button" id="btn-tester-request-maximize" class="btn-payload-maximize" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
                         </span>
                       </div>
-                      <div class="preset-badges" style="display: flex; gap: 6px; align-items: center;">
+                      <div class="preset-badges" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                         <div class="editor-mode-toggle" id="tester-body-mode-toggle" data-testid="tester-body-mode-toggle">
-                          <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
-                          <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
+                          <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Formatted polyglot tree view">🎨 Rich</button>
+                          <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Raw wire syntax view">📝 Raw</button>
                         </div>
                         <span id="tester-casual-payload-controls" class="hidden" style="display: inline-flex; gap: 6px; align-items: center;">
                           <select id="tester-casual-encoding" data-testid="tester-casual-encoding" class="preset-badge" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-primary); padding: 2px 6px; font-size: 0.75rem; border-radius: 4px;" title="Payload format encoding">
@@ -552,11 +522,11 @@
                           <input type="file" id="tester-casual-file-input" style="display: none;">
                           <button type="button" id="btn-tester-upload-file" class="btn btn-small" title="Load file into payload">📁 File</button>
                         </span>
-                        <button type="button" id="btn-tester-format-json" class="btn btn-small" title="Prettify JSON">Format JSON</button>
+                        <button type="button" id="btn-tester-edit-workspace" data-testid="btn-tester-edit-workspace" class="btn btn-tiny btn-secondary" title="Edit payload in Document Workspace">✏️ Edit / Workspace</button>
+                        <button type="button" id="btn-tester-copy-request" data-testid="btn-tester-copy-request" class="btn btn-tiny" title="Copy request payload">📋 Copy</button>
                       </div>
                     </div>
-                    <textarea id="tester-body" class="code-input" rows="6" placeholder='{"key": "value"}'></textarea>
-                    <div id="tester-body-embedded-bar" data-testid="tester-body-embedded-bar" class="hidden"></div>
+                    <div id="tester-request-viewer" class="polyglot-viewer-host code-block" data-testid="tester-request-viewer"></div>
                   </div>
                 </div>
 
@@ -610,8 +580,8 @@
                       <pre id="tester-response-headers" class="code-block-mini">(no headers yet)</pre>
                     </div>
                     <div class="code-viewer-container" style="flex: 1;">
-                      <div class="headers-section-label" style="display: flex; align-items: center; justify-content: space-between;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
+                      <div class="headers-section-label" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                           <span>Response Body</span>
                           <span class="preview-pill-group" id="tester-top-pill-group" style="display: none;">
                             <span class="preview-pill-badge" id="tester-top-pill" role="button" tabindex="0" title="Click to collapse">JSON</span>
@@ -619,12 +589,11 @@
                               <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted tree">🎨 Rich</button>
                               <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped raw representation">📝 Raw</button>
                             </div>
-                            <button type="button" id="btn-tester-response-edit" class="btn btn-tiny btn-viewer-inline-edit" disabled title="Received response payload is read-only">✏️ Edit</button>
-                            <button type="button" id="btn-tester-response-maximize" class="btn-payload-maximize" title="Maximize Response in Fullscreen Viewport">⛶ Maximize</button>
+                            <button type="button" id="btn-tester-response-maximize" class="btn-payload-maximize" title="Open Response in Document Workspace">⛶ Open in Workspace</button>
                           </span>
                         </div>
                       </div>
-                      <pre id="tester-response-body" class="code-block">(no response yet - press Send)</pre>
+                      <div id="tester-response-body" class="polyglot-viewer-host code-block" data-testid="tester-response-body">(no response yet - press Send)</div>
                     </div>
                   </div>
 
@@ -640,7 +609,7 @@
                     </div>
                     <div class="code-viewer-container" style="flex: 1;">
                       <div class="headers-section-label">Sent Request Body</div>
-                      <pre id="tester-sent-body" class="code-block">(empty body)</pre>
+                      <div id="tester-sent-body" class="polyglot-viewer-host code-block">(empty body)</div>
                     </div>
                   </div>
                 </div>
@@ -857,14 +826,13 @@
 
             <div class="form-group" style="margin-top: 12px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <label for="openapi-spec-content">Or paste specification directly:</label>
+                <label>Or paste specification directly:</label>
                 <div style="display: flex; gap: 6px; align-items: center;">
                   <span class="payload-lint-pill hidden" id="openapi-spec-lint-pill"></span>
-                  <button type="button" id="btn-openapi-format-spec" class="btn btn-tiny" title="Format/Prettify Spec">✨ Format</button>
-                  <button type="button" id="btn-openapi-maximize-spec" class="btn-payload-maximize" title="Maximize OpenAPI Spec in Fullscreen Viewport">⛶ Maximize</button>
+                  <button type="button" id="btn-openapi-edit-workspace" class="btn btn-tiny btn-secondary" data-testid="btn-openapi-edit-workspace" title="Paste or edit OpenAPI specification in Document Workspace">✏️ Paste / Edit in Workspace</button>
                 </div>
               </div>
-              <textarea id="openapi-spec-content" class="code-input" rows="8" placeholder="openapi: 3.0.3&#10;info:&#10;  title: My API&#10;  version: 1.0.0&#10;paths:..."></textarea>
+              <div id="openapi-spec-viewer" class="polyglot-viewer-host code-block import-viewer-host" data-testid="openapi-spec-viewer"></div>
             </div>
 
             <div class="openapi-mode-selector" style="margin-top: 12px; display: flex; gap: 16px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);">
@@ -929,14 +897,13 @@
 
             <div class="form-group" style="margin-top: 12px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <label for="bundle-content">Or paste WireMock JSON bundle:</label>
+                <label>Or paste WireMock JSON bundle:</label>
                 <div style="display: flex; gap: 6px; align-items: center;">
                   <span class="payload-lint-pill hidden" id="bundle-content-lint-pill"></span>
-                  <button type="button" id="btn-bundle-format-json" class="btn btn-tiny" title="Format JSON Bundle">Format JSON</button>
-                  <button type="button" id="btn-bundle-maximize" class="btn-payload-maximize" title="Maximize Bundle in Fullscreen Viewport">⛶ Maximize</button>
+                  <button type="button" id="btn-bundle-edit-workspace" class="btn btn-tiny btn-secondary" data-testid="btn-bundle-edit-workspace" title="Paste or edit WireMock JSON bundle in Document Workspace">✏️ Paste / Edit in Workspace</button>
                 </div>
               </div>
-              <textarea id="bundle-content" class="code-input" rows="8" placeholder='{&#10;  "mappings": [&#10;    { "request": { "method": "GET", "url": "/example" }, "response": { "status": 200 } }&#10;  ]&#10;}'></textarea>
+              <div id="bundle-content-viewer" class="polyglot-viewer-host code-block import-viewer-host" data-testid="bundle-content-viewer"></div>
             </div>
 
             <div class="form-row" style="margin-top: 12px; display: flex; gap: 12px;">
@@ -957,7 +924,7 @@
             <div id="bundle-import-feedback" class="modal-feedback hidden"></div>
 
             <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 12px;">
-              <button type="button" class="btn btn-secondary" onclick="document.getElementById('openapi-modal').classList.add('hidden')">Cancel</button>
+              <button type="button" id="btn-cancel-bundle-import" class="btn btn-secondary">Cancel</button>
               <button id="btn-submit-bundle-import" class="btn btn-primary">📥 Import Stubs</button>
             </div>
           </div>
@@ -965,283 +932,143 @@
       </div>
     </div>
 
-    <!-- Stub Editor & Clone Modal -->
-    <div id="stub-editor-modal" class="modal-backdrop hidden" data-testid="stub-editor-modal">
-      <div class="modal-dialog modal-dialog-wide">
+    <!-- Unified Settings & Target Host Modal -->
+    <div id="modal-settings" class="modal-backdrop hidden" data-testid="modal-settings">
+      <div class="modal-dialog" style="max-width: 720px;">
         <div class="modal-header">
           <div class="modal-title-group">
-            <span class="modal-icon">✏️</span>
-            <h3 id="editor-modal-title">Edit Stub Mapping</h3>
+            <span class="modal-icon">⚙️</span>
+            <h3 id="settings-modal-title">Console Settings &amp; Target Host</h3>
           </div>
-          <button id="btn-close-editor-modal" class="btn btn-tiny modal-close-btn" title="Close modal">✕</button>
+          <button type="button" id="btn-close-settings-modal" class="btn btn-tiny modal-close-btn" data-testid="btn-close-settings-modal" title="Close modal">✕</button>
         </div>
-        <div class="modal-body">
-          <!-- Mode Switcher: Form vs Raw JSON -->
-          <div class="status-filter-pills editor-mode-pills" style="margin-bottom: 14px;" data-testid="editor-mode-pills">
-            <button type="button" class="filter-pill active" id="btn-editor-mode-form" data-testid="btn-editor-mode-form">📝 Form Mode</button>
-            <button type="button" class="filter-pill" id="btn-editor-mode-json" data-testid="btn-editor-mode-json">{ } Raw JSON</button>
-          </div>
-
-          <!-- Panel 1: Form Mode -->
-          <div id="editor-form-panel">
-          <!-- OpenAPI Bootstrap Banner (Primary way to bootstrap) -->
-          <div id="editor-openapi-banner" class="editor-openapi-banner" data-testid="editor-openapi-banner">
-            <div class="editor-openapi-banner-text">
-              <span class="banner-icon">💡</span>
-              <span><strong>Bootstrapping a full API?</strong> The primary way is to point to an OpenAPI spec to generate all stubs automatically.</span>
-            </div>
-            <button type="button" id="btn-editor-open-openapi" class="btn btn-tiny btn-secondary" title="Switch to OpenAPI Spec Import">📥 Import OpenAPI Spec</button>
-          </div>
-
-          <!-- Template / Example Selector -->
-          <div id="editor-template-group" class="form-group editor-template-group" data-testid="editor-template-group">
-            <div class="template-label-row">
-              <label for="editor-template-select"><strong>Example Templates:</strong> <span class="muted-text">Choose an example to pre-fill configuration</span></label>
-            </div>
-            <div class="template-select-row">
-              <select id="editor-template-select" class="form-control" data-testid="editor-template-select">
-                <option value="custom">Blank / Custom Stub</option>
-                <option value="uri-get" selected>Matching URI only (GET /api/v1/items)</option>
-                <option value="body-contains">Matching Request Body ("body contains string X")</option>
-                <option value="body-json">Matching Request JSON Body (POST /api/v1/orders)</option>
-                <option value="url-pattern">Matching URL Regex Pattern (GET /api/v1/items/[0-9]+)</option>
-                <option value="error-response">Error Response (404 Not Found)</option>
-                <option value="proxy-route">🌐 Live Service Proxy Route (Forward to upstream ERP/CRM)</option>
-                <option value="offline-guard">🛡️ Offline Catch-All Guard (Priority 50 · 501)</option>
-              </select>
-              <button type="button" id="btn-apply-template" class="btn btn-tiny btn-secondary">Apply Example</button>
-            </div>
-          </div>
-
-          <div class="editor-section-header">Metadata &amp; Routing</div>
-          <div class="form-row" style="display: flex; gap: 12px;">
-            <div class="form-group" style="flex: 2;">
-              <label for="editor-name">Stub Name:</label>
-              <input type="text" id="editor-name" class="form-control" placeholder="Descriptive stub name...">
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label for="editor-priority">Priority (1 = highest, 100+ = disabled):</label>
-              <input type="number" id="editor-priority" class="form-control" value="5" min="1" max="999">
-            </div>
-          </div>
-
-          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
-            <div class="form-group" style="flex: 1;">
-              <label for="editor-project">Project / API Group:</label>
-              <input type="text" id="editor-project" class="form-control" placeholder="e.g. ERP System">
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label for="editor-tags">Tags (comma-separated):</label>
-              <input type="text" id="editor-tags" class="form-control" placeholder="e.g. inventory, v1, core">
-            </div>
-          </div>
-
-          <div class="editor-section-header" style="margin-top: 14px;">Request Matching</div>
-          <div class="form-row" style="display: flex; gap: 12px; margin-top: 6px;">
-            <div class="form-group" style="flex: 1;">
-              <label for="editor-method">HTTP Method:</label>
-              <select id="editor-method" class="form-control">
-                <option value="GET">GET</option>
-                <option value="POST">POST</option>
-                <option value="PUT">PUT</option>
-                <option value="DELETE">DELETE</option>
-                <option value="PATCH">PATCH</option>
-                <option value="HEAD">HEAD</option>
-                <option value="OPTIONS">OPTIONS</option>
-                <option value="ANY">ANY</option>
-              </select>
-            </div>
-            <div class="form-group" style="flex: 3;">
-              <label for="editor-url">URL / Path Pattern / Path Template:</label>
-              <input type="text" id="editor-url" class="form-control" placeholder="/api/v1/resource or /resource/{id}">
-            </div>
-          </div>
-
-          <div class="form-row" style="display: flex; gap: 12px; margin-top: 10px;">
-            <div class="form-group" style="flex: 1;">
-              <label for="editor-body-match-type">Request Body Matcher:</label>
-              <select id="editor-body-match-type" class="form-control" data-testid="editor-body-match-type">
-                <option value="none">None (Match any request body)</option>
-                <option value="contains">Body contains string ("contains")</option>
-                <option value="equalToJson">JSON match (equalToJson)</option>
-                <option value="equalTo">Exact string match (equalTo)</option>
-                <option value="matchesJsonPath">JSONPath expression (matchesJsonPath)</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="editor-body-match-container" class="form-group hidden" style="margin-top: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <label for="editor-body-match-pattern" id="editor-body-match-label">Expected Request Body Pattern:</label>
-                <span class="preview-pill-group" id="editor-pattern-top-pill-group" style="display: inline-flex;">
-                  <span class="preview-pill-badge" id="editor-pattern-top-pill" role="button" tabindex="0">JSON</span>
-                </span>
-              </div>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <div class="editor-mode-toggle" id="editor-pattern-mode-toggle" data-testid="editor-pattern-mode-toggle">
-                  <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
-                  <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
-                </div>
-                <button type="button" id="btn-editor-format-request-json" class="btn btn-tiny hidden" data-testid="btn-editor-format-request-json">Format JSON</button>
-                <button type="button" id="btn-editor-pattern-maximize" class="btn-payload-maximize" title="Maximize Pattern in Fullscreen Viewport">⛶ Maximize</button>
-              </div>
-            </div>
-            <textarea id="editor-body-match-pattern" class="code-input" rows="5" placeholder="Expected pattern or substring..."></textarea>
-            <div id="editor-pattern-embedded-bar" data-testid="editor-pattern-embedded-bar" class="hidden"></div>
-            <div id="editor-json-match-options" class="form-row hidden" style="display: flex; gap: 16px; margin-top: 6px; font-size: 0.85rem;" data-testid="editor-json-match-options">
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="editor-json-ignore-extra" data-testid="editor-json-ignore-extra" checked> Ignore extra elements (relaxed match)
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="editor-json-ignore-order" data-testid="editor-json-ignore-order" checked> Ignore array order
-              </label>
-            </div>
-          </div>
-
-          <div class="editor-section-header" style="margin-top: 14px;">Response Definition</div>
-          <div class="form-row" style="display: flex; gap: 12px; margin-top: 6px;">
-            <div class="form-group" style="flex: 1;">
-              <label for="editor-status">Status Code:</label>
-              <input type="number" id="editor-status" class="form-control" value="200">
-            </div>
-            <div class="form-group" style="flex: 2;">
-              <label for="editor-proxy-url">Proxy Base URL <span class="muted-text">(optional — forwards to live upstream)</span>:</label>
-              <input type="url" id="editor-proxy-url" data-testid="editor-proxy-url" class="form-control" placeholder="e.g. http://erp-system:8089 (leave empty for local stub)">
-            </div>
-          </div>
-
-          <div class="form-group" style="margin-top: 10px;">
-            <label for="editor-headers">Response Headers (key: value per line):</label>
-            <textarea id="editor-headers" class="code-input" rows="3" placeholder="Content-Type: application/json"></textarea>
-          </div>
-
-          <div class="form-group" style="margin-top: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <label for="editor-body">Response Body:</label>
-                <span class="preview-pill-group" id="editor-body-top-pill-group" style="display: inline-flex;">
-                  <span class="preview-pill-badge" id="editor-body-top-pill" role="button" tabindex="0">JSON</span>
-                </span>
-              </div>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <div class="editor-mode-toggle" id="editor-body-mode-toggle" data-testid="editor-body-mode-toggle">
-                  <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
-                  <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
-                </div>
-                <button type="button" id="btn-editor-format-json" class="btn btn-tiny">Format JSON</button>
-                <button type="button" id="btn-editor-body-maximize" class="btn-payload-maximize" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
-              </div>
-            </div>
-            <textarea id="editor-body" class="code-input" rows="7" placeholder="{ &quot;key&quot;: &quot;value&quot; }"></textarea>
-            <div id="editor-body-embedded-bar" data-testid="editor-body-embedded-bar" class="hidden"></div>
-          </div>
-          </div><!-- end #editor-form-panel -->
-
-          <!-- Panel 2: Raw JSON Mode -->
-          <div id="editor-json-panel" class="hidden" data-testid="editor-json-panel">
+        <div class="modal-tabs">
+          <button type="button" id="settings-tab-target" class="modal-tab active" data-testid="settings-tab-target">🎯 Target Host</button>
+          <button type="button" id="settings-tab-headers" class="modal-tab" data-testid="settings-tab-headers">🔒 Persistent Headers</button>
+          <button type="button" id="settings-tab-exclusions" class="modal-tab" data-testid="settings-tab-exclusions">🚫 JSON Exclusions</button>
+          <button type="button" id="settings-tab-sync" class="modal-tab" data-testid="settings-tab-sync">📋 Import / Export</button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px; gap: 10px;">
+          <!-- Tab 1: Target Host & Server Capabilities -->
+          <div id="settings-panel-target" class="settings-tab-panel">
+            <p class="modal-description" style="margin-bottom: 6px; font-size: 0.83rem; color: var(--text-muted);">
+              Point this console to any WireMock instance. Configuration is stored in the browser URL (<code>?wiremock=...&amp;strategy=...</code>).
+            </p>
             <div class="form-group">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <label for="editor-raw-json"><strong>WireMock Stub JSON:</strong> <span class="muted-text">Foldable polyglot tree &amp; in-line editor</span></label>
-                  <span class="preview-pill-group" id="editor-raw-top-pill-group" style="display: inline-flex;">
-                    <span class="preview-pill-badge" id="editor-raw-top-pill" role="button" tabindex="0" title="Click to collapse / expand">JSON</span>
-                  </span>
-                </div>
-                <div style="display: flex; gap: 6px; align-items: center;">
-                  <div class="editor-mode-toggle" id="editor-raw-mode-toggle" data-testid="editor-raw-mode-toggle">
-                    <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Unescaped, formatted polyglot tree">🎨 Rich</button>
-                    <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Wire-exact escaped syntax view">📝 Raw</button>
-                  </div>
-                  <button type="button" id="btn-editor-raw-inline-edit" class="btn btn-tiny btn-viewer-inline-edit" data-testid="btn-editor-raw-inline-edit" title="Edit top-level WireMock stub JSON in-line">✏️ Edit</button>
-                  <button type="button" id="btn-editor-raw-format-json" class="btn btn-tiny hidden" data-testid="btn-editor-raw-format-json" title="Format / indent JSON">✨ Format</button>
-                  <button type="button" id="btn-editor-raw-apply" class="btn btn-tiny btn-primary hidden" data-testid="btn-editor-raw-apply" title="Apply top-level JSON edits and return to Foldable Polyglot Viewer">✓ Apply</button>
-                  <button type="button" id="btn-editor-raw-cancel-edit" class="btn btn-tiny hidden" data-testid="btn-editor-raw-cancel-edit" title="Cancel top-level JSON edits">✕ Cancel</button>
-                  <button type="button" id="btn-editor-raw-copy" class="btn btn-tiny" data-testid="btn-editor-raw-copy" title="Copy root stub JSON">📋 Copy</button>
-                  <button type="button" id="btn-editor-raw-maximize" class="btn-payload-maximize" title="Maximize Stub JSON in Fullscreen Viewport">⛶ Maximize</button>
-                </div>
+              <label for="input-target-host"><strong>WireMock Target Base URL:</strong></label>
+              <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080 or https://gateway:8443/prefix" autocomplete="off" data-testid="input-target-host">
+              <div style="margin-top: 3px; font-size: 0.75rem; color: var(--text-muted);">
+                Supports full scheme, hostname, port, and gateway reverse-proxy path prefixes.
               </div>
-              <pre id="editor-raw-json-viewer" class="code-block" data-testid="editor-raw-json-viewer"></pre>
-              <textarea id="editor-raw-json" class="code-input" rows="20" style="font-family: monospace; font-size: 0.85rem; width: 100%; min-height: 380px;" placeholder="{ &quot;request&quot;: { ... }, &quot;response&quot;: { ... } }" data-testid="editor-raw-json"></textarea>
-              <div id="editor-raw-embedded-bar" data-testid="editor-raw-embedded-bar" class="hidden"></div>
-              <div id="editor-raw-json-error" class="text-error hidden" style="margin-top: 6px; font-size: 0.82rem;" data-testid="editor-raw-json-error"></div>
+            </div>
+
+            <div class="form-group" style="margin-top: 8px;">
+              <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.82rem;">Connection Strategy:</label>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
+                  <input type="radio" name="target-strategy" id="radio-strategy-proxy" value="proxy" checked style="margin-top: 2px;" data-testid="radio-strategy-proxy">
+                  <div>
+                    <div style="font-weight: 500; font-size: 0.82rem;">Proxy via Gateway Headers (CORS-free, Recommended)</div>
+                    <div style="font-size: 0.74rem; color: var(--text-muted);">
+                      Browser requests stay relative to console; forwarded upstream using <code>X-Forwarded-*</code> headers.
+                    </div>
+                  </div>
+                </label>
+                <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
+                  <input type="radio" name="target-strategy" id="radio-strategy-direct" value="direct" style="margin-top: 2px;" data-testid="radio-strategy-direct">
+                  <div>
+                    <div style="font-weight: 500; font-size: 0.82rem;">Direct Browser Request (CORS Required)</div>
+                    <div style="font-size: 0.74rem; color: var(--text-muted);">
+                      Browser sends cross-origin requests directly to target URL. Remote instance must have CORS enabled.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div id="target-capabilities-section" class="target-capabilities-section" style="margin-top: 8px;" data-testid="target-capabilities-section">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label style="font-weight: 600; font-size: 0.82rem; color: var(--text-main);">Detected Server Capabilities:</label>
+                <span id="target-capabilities-status" class="muted-text" style="font-size: 0.75rem;" data-testid="target-capabilities-status">Probing...</span>
+              </div>
+              <div id="target-capabilities-list" class="capabilities-grid" data-testid="target-capabilities-list">
+                <!-- Populated dynamically by renderTargetCapabilities -->
+              </div>
+            </div>
+
+            <div id="target-host-status" class="hidden" style="margin-top: 12px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
+          </div>
+
+          <!-- Tab 2: Persistent Headers -->
+          <div id="settings-panel-headers" class="settings-tab-panel hidden">
+            <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+              Headers stored exclusively in your browser's local storage. Applied automatically to HTTP Tester requests.
+            </p>
+            <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
+              💡 <strong>Dynamic macros supported:</strong> <code>{{uuid}}</code> (fresh UUIDv4), <code>{{now}}</code> (ISO timestamp), <code>{{timestamp}}</code> (epoch ms).
+            </div>
+            <div style="max-height: 240px; overflow-y: auto; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 4px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                <thead>
+                  <tr style="background: var(--bg-tertiary); text-align: left; color: var(--text-muted);">
+                    <th style="width: 36px; padding: 6px 8px; text-align: center;">On</th>
+                    <th style="padding: 6px 8px; width: 38%;">Header Name</th>
+                    <th style="padding: 6px 8px;">Value / Macro</th>
+                    <th style="width: 40px; padding: 6px 8px; text-align: center;"></th>
+                  </tr>
+                </thead>
+                <tbody id="local-headers-tbody" data-testid="local-headers-tbody">
+                  <!-- Dynamically populated rows -->
+                </tbody>
+              </table>
+            </div>
+            <button id="btn-add-local-header-row" type="button" class="btn btn-small" data-testid="btn-add-local-header-row">➕ Add Header</button>
+          </div>
+
+          <!-- Tab 3: JSON Exclusions -->
+          <div id="settings-panel-exclusions" class="settings-tab-panel hidden">
+            <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+              JSON paths and property keys omitted when snapshotting stubs from journal traffic.
+            </p>
+            <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
+              💡 Enter one JSONPath or property name per line (e.g. <code>$.CORRELATION_ID</code>, <code>$.REQUEST_TIMESTAMP</code>, <code>timestamp</code>, <code>xid</code>).
+            </div>
+            <textarea id="settings-excluded-paths" class="code-input" rows="8" placeholder="$.CORRELATION_ID&#10;$.REQUEST_TIMESTAMP&#10;timestamp&#10;transactionId&#10;executionId&#10;xid" spellcheck="false" style="font-family: monospace; font-size: 0.85rem;"></textarea>
+          </div>
+
+          <!-- Tab 4: Import / Export Preferences -->
+          <div id="settings-panel-sync" class="settings-tab-panel hidden">
+            <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
+              Share your persistent headers and JSON exclusion rules via clipboard copy-paste (zero file download or upload required).
+            </p>
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
+              <button type="button" id="btn-settings-copy-config" class="btn btn-small btn-primary" title="Copy full configuration to clipboard as JSON">📋 Copy Config to Clipboard</button>
+              <span id="settings-copy-feedback" class="text-success text-small hidden">✅ Copied to clipboard!</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label for="settings-import-json" style="font-size: 0.82rem; color: var(--text-muted);">Or paste configuration JSON below to import:</label>
+              <textarea id="settings-import-json" class="code-input" rows="7" placeholder='{"headers": [...], "excludedJsonPaths": [...]}' spellcheck="false" style="font-family: monospace; font-size: 0.82rem;"></textarea>
+              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+                <button type="button" id="btn-settings-apply-import" class="btn btn-small" title="Apply pasted JSON configuration">📥 Apply Pasted Config</button>
+              </div>
+              <div id="settings-import-feedback" class="modal-feedback hidden"></div>
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button id="btn-cancel-editor" class="btn btn-secondary">Cancel</button>
-          <button id="btn-save-editor" class="btn btn-primary">💾 Save Mapping</button>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
+            <button type="button" id="btn-demo-target-host" class="btn btn-secondary" data-testid="btn-demo-target-host" title="Switch to In-Browser Showcase Demo">✨ Demo Mode</button>
+            <button type="button" id="btn-reset-default-settings" class="btn btn-tiny btn-secondary hidden" title="Reset headers and exclusions to defaults">↺ Reset Defaults</button>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" id="btn-cancel-settings-modal" class="btn btn-secondary" data-testid="btn-cancel-settings-modal">Cancel</button>
+            <button type="button" id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>
+            <button type="button" id="btn-save-local-headers" class="btn btn-primary hidden" data-testid="btn-save-local-headers">💾 Save to Browser</button>
+          </div>
         </div>
       </div>
     </div>
-
-  <!-- Target Host Configuration Modal -->
-  <div id="target-host-modal" class="modal-overlay hidden" data-testid="target-host-modal">
-    <div class="modal-card" style="max-width: 580px;">
-      <div class="modal-header">
-        <h3>🎯 WireMock Target Server</h3>
-        <button id="btn-close-target-host" class="modal-close">&times;</button>
-      </div>
-      <div class="modal-body" style="padding: 16px 20px; gap: 8px;">
-        <p class="modal-description" style="margin-bottom: 6px; font-size: 0.83rem; color: var(--text-muted);">
-          Point this console to any WireMock instance. Configuration is stored in the browser URL (<code>?wiremock=...&amp;strategy=...</code>).
-        </p>
-        <div class="form-group">
-          <label for="input-target-host"><strong>WireMock Target Base URL:</strong></label>
-          <input type="text" id="input-target-host" class="form-control" placeholder="http://localhost:8080 or https://gateway:8443/prefix" autocomplete="off" data-testid="input-target-host">
-          <div style="margin-top: 3px; font-size: 0.75rem; color: var(--text-muted);">
-            Supports full scheme, hostname, port, and gateway reverse-proxy path prefixes.
-          </div>
-        </div>
-
-        <div class="form-group" style="margin-top: 6px;">
-          <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.82rem;">Connection Strategy:</label>
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
-              <input type="radio" name="target-strategy" id="radio-strategy-proxy" value="proxy" checked style="margin-top: 2px;" data-testid="radio-strategy-proxy">
-              <div>
-                <div style="font-weight: 500; font-size: 0.82rem;">Proxy via Gateway Headers (CORS-free, Recommended)</div>
-                <div style="font-size: 0.74rem; color: var(--text-muted);">
-                  Browser requests stay relative to console; forwarded upstream using <code>X-Forwarded-*</code> headers.
-                </div>
-              </div>
-            </label>
-            <label class="checkbox-label" style="align-items: flex-start; gap: 8px; cursor: pointer;">
-              <input type="radio" name="target-strategy" id="radio-strategy-direct" value="direct" style="margin-top: 2px;" data-testid="radio-strategy-direct">
-              <div>
-                <div style="font-weight: 500; font-size: 0.82rem;">Direct Browser Request (CORS Required)</div>
-                <div style="font-size: 0.74rem; color: var(--text-muted);">
-                  Browser sends cross-origin requests directly to target URL. Remote instance must have CORS enabled.
-                </div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div id="target-capabilities-section" class="target-capabilities-section" style="margin-top: 8px;" data-testid="target-capabilities-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <label style="font-weight: 600; font-size: 0.82rem; color: var(--text-main);">Detected Server Capabilities:</label>
-            <span id="target-capabilities-status" class="muted-text" style="font-size: 0.75rem;" data-testid="target-capabilities-status">Probing...</span>
-          </div>
-          <div id="target-capabilities-list" class="capabilities-grid" data-testid="target-capabilities-list">
-            <!-- Populated dynamically by renderTargetCapabilities -->
-          </div>
-        </div>
-
-        <div id="target-host-status" class="hidden" style="margin-top: 12px; font-size: 0.82rem; padding: 8px 10px; border-radius: 4px;"></div>
-      </div>
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; gap: 8px;">
-          <button id="btn-reset-target-host" class="btn btn-secondary" data-testid="btn-reset-target-host" title="Revert to same-origin relative URLs">Reset to (same-origin)</button>
-          <button id="btn-demo-target-host" class="btn btn-secondary" data-testid="btn-demo-target-host" title="Switch to In-Browser Showcase Demo">✨ Demo Mode</button>
-        </div>
-        <div style="display: flex; gap: 8px;">
-          <button id="btn-cancel-target-host" class="btn btn-secondary">Cancel</button>
-          <button id="btn-save-target-host" class="btn btn-primary" data-testid="btn-save-target-host">Connect</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- NetEm Add Toxic Modal -->
   <div id="netem-add-toxic-modal" class="modal-backdrop hidden" data-testid="netem-add-toxic-modal">
@@ -1313,176 +1140,66 @@
     </div>
   </div>
 
-  <!-- Manage Browser Preferences (Headers & JSON Path Exclusions) Modal -->
-  <div id="modal-local-headers" class="modal-backdrop hidden" data-testid="modal-local-headers">
-    <div class="modal-dialog" style="max-width: 720px;">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="modal-icon">⚙️</span>
-          <h3 id="settings-modal-title">Browser Preferences &amp; Exclusions</h3>
-        </div>
-        <button id="btn-close-local-headers-modal" class="btn btn-tiny modal-close-btn" data-testid="btn-close-local-headers-modal" title="Close modal">✕</button>
-      </div>
-      <div class="modal-tabs">
-        <button type="button" id="settings-tab-headers" class="modal-tab active">🔒 Persistent Headers</button>
-        <button type="button" id="settings-tab-exclusions" class="modal-tab">🚫 JSON Path Exclusions</button>
-        <button type="button" id="settings-tab-sync" class="modal-tab">📋 Copy / Paste Config</button>
-      </div>
-      <div class="modal-body">
-        <!-- Tab 1: Headers -->
-        <div id="settings-panel-headers" class="settings-tab-panel">
-          <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
-            Headers stored exclusively in your browser's local storage. Applied automatically to HTTP Tester requests.
-          </p>
-          <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
-            💡 <strong>Dynamic macros supported:</strong> <code>{{uuid}}</code> (fresh UUIDv4), <code>{{now}}</code> (ISO timestamp), <code>{{timestamp}}</code> (epoch ms).
-          </div>
-          <div style="max-height: 240px; overflow-y: auto; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 4px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-              <thead>
-                <tr style="background: var(--bg-tertiary); text-align: left; color: var(--text-muted);">
-                  <th style="width: 36px; padding: 6px 8px; text-align: center;">On</th>
-                  <th style="padding: 6px 8px; width: 38%;">Header Name</th>
-                  <th style="padding: 6px 8px;">Value / Macro</th>
-                  <th style="width: 40px; padding: 6px 8px; text-align: center;"></th>
-                </tr>
-              </thead>
-              <tbody id="local-headers-tbody" data-testid="local-headers-tbody">
-                <!-- Dynamically populated rows -->
-              </tbody>
-            </table>
-          </div>
-          <button id="btn-add-local-header-row" type="button" class="btn btn-small" data-testid="btn-add-local-header-row">➕ Add Header</button>
-        </div>
-
-        <!-- Tab 2: Exclusions -->
-        <div id="settings-panel-exclusions" class="settings-tab-panel hidden">
-          <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
-            JSON paths and property keys omitted when snapshotting stubs from journal traffic.
-          </p>
-          <div class="modal-hint-box" style="margin-bottom: 12px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-size: 0.8rem; color: var(--accent-color);">
-            💡 Enter one JSONPath or property name per line (e.g. <code>$.CORRELATION_ID</code>, <code>$.REQUEST_TIMESTAMP</code>, <code>timestamp</code>, <code>xid</code>).
-          </div>
-          <textarea id="settings-excluded-paths" class="code-input" rows="8" placeholder="$.CORRELATION_ID&#10;$.REQUEST_TIMESTAMP&#10;timestamp&#10;transactionId&#10;executionId&#10;xid" spellcheck="false" style="font-family: monospace; font-size: 0.85rem;"></textarea>
-        </div>
-
-        <!-- Tab 3: Copy / Paste Sync -->
-        <div id="settings-panel-sync" class="settings-tab-panel hidden">
-          <p class="modal-description" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted);">
-            Share your persistent headers and JSON exclusion rules via clipboard copy-paste (zero file download or upload required).
-          </p>
-          <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
-            <button type="button" id="btn-settings-copy-config" class="btn btn-small btn-primary" title="Copy full configuration to clipboard as JSON">📋 Copy Config to Clipboard</button>
-            <span id="settings-copy-feedback" class="text-success text-small hidden">✅ Copied to clipboard!</span>
-          </div>
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <label style="font-size: 0.82rem; color: var(--text-muted);">Or paste configuration JSON below to import:</label>
-            <textarea id="settings-import-json" class="code-input" rows="7" placeholder='{"headers": [...], "excludedJsonPaths": [...]}' spellcheck="false" style="font-family: monospace; font-size: 0.82rem;"></textarea>
-            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
-              <button type="button" id="btn-settings-apply-import" class="btn btn-small" title="Apply pasted JSON configuration">📥 Apply Pasted Config</button>
-            </div>
-            <div id="settings-import-feedback" class="modal-feedback hidden"></div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <button type="button" id="btn-reset-default-settings" class="btn btn-tiny btn-secondary" title="Reset headers and exclusions to defaults">↺ Reset Defaults</button>
-        <div style="display: flex; gap: 8px;">
-          <button id="btn-cancel-local-headers" class="btn btn-secondary" data-testid="btn-cancel-local-headers">Cancel</button>
-          <button id="btn-save-local-headers" class="btn btn-primary" data-testid="btn-save-local-headers">💾 Save to Browser</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: Maximized Viewport & Stacked Layers -->
-  <div id="modal-payload-lens" class="modal-backdrop hidden" data-testid="modal-payload-lens">
+  <!-- Unified Document Workspace Modal -->
+  <div id="modal-document-workspace" class="modal-backdrop fullscreen-viewport hidden" data-testid="modal-document-workspace">
     <div class="modal modal-large">
-      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: unset; padding: 6px 14px;">
-        <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">
-          <h2 id="payload-lens-title" style="margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 6px; white-space: nowrap;">
-            <span>⛶</span> Maximized Viewport
-          </h2>
-          <!-- Stacked Breadcrumb Trail -->
-          <div id="payload-lens-breadcrumbs" data-testid="payload-lens-breadcrumbs" class="payload-lens-breadcrumbs" style="display: inline-flex; align-items: center; margin: 0; padding: 0;"></div>
-          <span id="payload-lens-dirty-indicator" class="viewport-dirty-badge hidden" data-testid="payload-lens-dirty-indicator">● Unsaved Changes</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-          <button id="btn-lens-view-edit-toggle" data-testid="btn-lens-view-edit-toggle" class="btn btn-tiny btn-secondary hidden" title="Switch between View and Edit mode">✏️ Edit</button>
-          <button id="btn-close-payload-lens" data-testid="btn-close-payload-lens" class="btn-close" title="Close Viewport (Esc)">&times;</button>
-        </div>
-      </div>
-      <div class="modal-body" style="padding: 4px 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 0%;">
-        <!-- Viewer Container for formatted preview / read-only mode -->
-        <div id="payload-viewport-viewer-container" class="hidden"></div>
-
-        <!-- Editor Container for editable mode -->
-        <div id="payload-viewport-editor-container" class="hidden">
-          <!-- Embedded child payloads bar if the current payload itself has nested escaped payloads -->
-          <div id="payload-lens-nested-bar" data-testid="payload-lens-nested-bar" class="hidden" style="margin-bottom: 8px;"></div>
-
-          <!-- Editor Toolbar -->
-          <div class="payload-lens-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <div style="display: flex; gap: 6px; align-items: center;">
-              <button type="button" id="btn-lens-prettify" data-testid="btn-lens-prettify" class="btn btn-tiny btn-secondary" title="Format/Prettify Payload">✨ Prettify</button>
-              <button type="button" id="btn-lens-minify" data-testid="btn-lens-minify" class="btn btn-tiny btn-secondary" title="Minify Payload">Compact</button>
-              <span style="border-left: 1px solid var(--border-color); height: 16px; margin: 0 4px;"></span>
-              <button type="button" id="btn-lens-copy-raw" data-testid="btn-lens-copy-raw" class="btn btn-tiny btn-secondary" title="Copy raw escaped wire representation">📋 Copy Raw</button>
-              <button type="button" id="btn-lens-copy-formatted" data-testid="btn-lens-copy-formatted" class="btn btn-tiny btn-secondary" title="Copy formatted payload">✨ Copy Formatted</button>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted);">
-              <div class="editor-mode-toggle" id="payload-lens-mode-toggle" data-testid="payload-lens-mode-toggle">
-                <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Syntax Highlighted Dual-Layer Editor">🎨 Rich</button>
-                <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Plain Native Textarea">📝 Raw</button>
-              </div>
-              <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                <input type="checkbox" id="chk-lens-minify-on-save" data-testid="chk-lens-minify-on-save">
-                <span>Minify before re-escaping</span>
-              </label>
-            </div>
+      <div class="modal-header workspace-header">
+        <div class="workspace-header-left">
+          <h2 id="workspace-title" data-testid="workspace-title">Document Workspace</h2>
+          <span id="workspace-desc-pill" class="preview-pill-badge">JSON</span>
+          <span id="workspace-dirty-badge" class="viewport-dirty-badge hidden" data-testid="workspace-dirty-badge">● Unsaved Changes</span>
+          <div id="workspace-template-group" class="workspace-template-group hidden" data-testid="workspace-template-group">
+            <select id="workspace-template-select" class="form-control" data-testid="workspace-template-select" title="Select stub template"></select>
+            <button type="button" id="btn-workspace-open-openapi" class="btn btn-tiny btn-secondary" data-testid="btn-workspace-open-openapi" title="Import stubs from OpenAPI spec">📥 Import OpenAPI Spec</button>
           </div>
-
-          <!-- Lens Textarea Editor -->
-          <div class="code-editor-wrapper" style="position: relative; flex: 1 1 0%; display: flex; min-height: 0;">
-            <textarea id="payload-lens-editor" data-testid="payload-lens-editor" class="code-input" rows="18" spellcheck="false" style="font-family: monospace; font-size: 0.85rem; width: 100%; flex: 1 1 0%; resize: none;"></textarea>
+        </div>
+        <div class="workspace-header-right">
+          <div class="editor-mode-toggle" id="workspace-view-mode-toggle" data-testid="workspace-view-mode-toggle">
+            <button type="button" class="btn btn-tiny active btn-mode-rich" data-mode="rich" title="Formatted polyglot tree view">🎨 Rich</button>
+            <button type="button" class="btn btn-tiny btn-mode-raw" data-mode="raw" title="Raw wire syntax view">📝 Raw</button>
           </div>
+          <button type="button" id="btn-workspace-edit-root" class="btn btn-tiny btn-secondary" data-testid="btn-workspace-edit-root" title="Edit entire document in code editor">✏️ Edit Document</button>
+          <button type="button" id="btn-workspace-copy-doc" class="btn btn-tiny btn-secondary" data-testid="btn-workspace-copy-doc" title="Copy document to clipboard">📋 Copy</button>
+          <button type="button" id="btn-close-workspace" class="btn btn-tiny modal-close-btn" data-testid="btn-close-workspace" title="Close Workspace (Esc)">&times;</button>
+        </div>
+      </div>
 
-          <!-- Live Validation Error / Alert Box -->
-          <div id="payload-lens-validation-error" data-testid="payload-lens-validation-error" class="validation-error hidden" style="margin-top: 8px; padding: 6px 10px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; font-size: 0.82rem; color: #ef4444;"></div>
+      <div id="workspace-editor-subheader" class="workspace-subheader hidden" data-testid="workspace-editor-subheader">
+        <div id="workspace-breadcrumbs" class="payload-lens-breadcrumbs" data-testid="workspace-breadcrumbs"></div>
+        <div class="workspace-subheader-controls">
+          <span id="workspace-lint-pill" class="payload-lint-pill hidden" data-testid="workspace-lint-pill"></span>
+          <button type="button" id="btn-workspace-format" class="btn btn-tiny btn-secondary" data-testid="btn-workspace-format" title="Format / Prettify">✨ Prettify</button>
+          <button type="button" id="btn-workspace-minify" class="btn btn-tiny btn-secondary" data-testid="btn-workspace-minify" title="Compact / Minify">Compact</button>
+          <select id="workspace-wire-style-select" class="form-control workspace-wire-style-select hidden" data-testid="workspace-wire-style-select" title="Wire re-encoding style">
+            <option value="auto">Auto (Preserve wire style)</option>
+            <option value="compact">Compact (1-line)</option>
+            <option value="multiline">Pretty (Multi-line)</option>
+          </select>
+          <div class="editor-mode-toggle" id="workspace-engine-toggle" data-testid="workspace-engine-toggle">
+            <button type="button" id="btn-editor-engine-beta" class="btn btn-tiny active" data-engine="highlight-api" data-testid="btn-editor-engine-beta" title="Zero-DOM-bloat CSS Custom Highlight API editor">⚡ Rich Beta</button>
+            <button type="button" id="btn-editor-engine-legacy" class="btn btn-tiny" data-engine="legacy-duallayer" data-testid="btn-editor-engine-legacy" title="Legacy Dual-Layer textarea fallback">Legacy</button>
+          </div>
         </div>
       </div>
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; gap: 8px;">
-          <button type="button" id="btn-lens-force-apply" data-testid="btn-lens-force-apply" class="btn btn-small btn-danger hidden" title="Force apply invalid payload for negative testing">⚠️ Force Apply Unvalidated</button>
-        </div>
-        <div style="display: flex; gap: 8px;">
-          <button type="button" id="btn-cancel-payload-lens" data-testid="btn-cancel-payload-lens" class="btn btn-secondary">Close</button>
-          <button type="button" id="btn-lens-apply-parent" data-testid="btn-lens-apply-parent" class="btn btn-secondary" style="display: none;" title="Apply changes to immediate parent payload layer">Apply to Parent Layer</button>
-          <button type="button" id="btn-lens-save-root" data-testid="btn-lens-save-root" class="btn btn-primary" title="Save changes">💾 Save</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <!-- Modal: Unsaved Changes Confirmation Dialog -->
-  <div id="modal-unsaved-changes" class="modal-backdrop hidden" data-testid="modal-unsaved-changes" style="z-index: 1000;">
-    <div class="modal modal-dialog-confirm" style="max-width: 440px; margin: auto;">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="modal-icon">⚠️</span>
-          <h3>Unsaved Changes</h3>
+      <div class="modal-body workspace-body">
+        <div id="workspace-viewer-pane" class="workspace-viewer-pane" data-testid="workspace-viewer-pane" style="flex: 1; overflow: auto;"></div>
+        <div id="workspace-editor-pane" class="workspace-editor-pane hidden" data-testid="workspace-editor-pane">
+          <div id="workspace-code-editor-host" data-testid="workspace-code-editor-host" style="flex: 1; min-height: 0; display: flex;"></div>
+          <div id="workspace-validation-banner" class="validation-error hidden" data-testid="workspace-validation-banner"></div>
         </div>
-        <button id="btn-close-unsaved-modal" class="btn btn-tiny modal-close-btn" title="Cancel">&times;</button>
       </div>
-      <div class="modal-body" style="padding: 16px 20px;">
-        <p id="unsaved-changes-message" style="margin: 0; font-size: 0.9rem; color: var(--text-color);">
-          You have unsaved changes. Do you want to save them before closing?
-        </p>
-      </div>
-      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
-        <button id="btn-unsaved-cancel" class="btn btn-secondary" data-testid="btn-unsaved-cancel">Cancel</button>
-        <button id="btn-unsaved-discard" class="btn btn-danger" data-testid="btn-unsaved-discard">Discard Changes</button>
-        <button id="btn-unsaved-save" class="btn btn-primary" data-testid="btn-unsaved-save">Save Changes</button>
+
+      <div class="modal-footer workspace-footer">
+        <div class="workspace-footer-left">
+          <button type="button" id="btn-workspace-force-apply" class="btn btn-small btn-danger hidden" data-testid="btn-workspace-force-apply" title="Force apply invalid syntax for negative testing">⚠️ Apply Unvalidated</button>
+        </div>
+        <div class="workspace-footer-right">
+          <button type="button" id="btn-workspace-cancel" class="btn btn-secondary" data-testid="btn-workspace-cancel">Close</button>
+          <button type="button" id="btn-workspace-save" class="btn btn-primary hidden" data-testid="btn-workspace-save">💾 Save</button>
+          <button type="button" id="btn-workspace-cancel-section" class="btn btn-secondary hidden" data-testid="btn-workspace-cancel-section">← Back to Viewer</button>
+          <button type="button" id="btn-workspace-apply-section" class="btn btn-primary hidden" data-testid="btn-workspace-apply-section">✓ Apply Section</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1578,27 +1295,28 @@
     </div>
   </div>
 
-  <!-- Modal: Purge Queue Confirmation -->
-  <div id="modal-queues-purge" class="modal-backdrop hidden" data-testid="modal-queues-purge" style="z-index: 1000;">
-    <div class="modal modal-dialog-confirm" style="max-width: 440px; margin: auto;">
+  <!-- Modal: Confirmation Dialog -->
+  <div id="modal-confirm" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" data-testid="modal-confirm" style="z-index: 2100;">
+    <div class="modal-dialog modal-dialog-confirm" style="max-width: 440px; margin: auto;">
       <div class="modal-header">
         <div class="modal-title-group">
-          <span class="modal-icon">⚠️</span>
-          <h3>Purge Destination</h3>
+          <h3 id="confirm-modal-title">Confirm</h3>
         </div>
-        <button id="btn-cancel-queues-purge" class="btn btn-tiny modal-close-btn" title="Cancel">&times;</button>
+        <button type="button" id="btn-close-confirm-modal" class="btn btn-tiny modal-close-btn" title="Close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body" style="padding: 16px 20px;">
-        <p style="margin: 0; font-size: 0.9rem; color: var(--text-color);">
-          Are you sure you want to purge all messages from <strong id="queues-purge-target-name"></strong>? This action cannot be undone.
-        </p>
+        <p id="confirm-modal-message" style="margin: 0; font-size: 0.9rem; color: var(--text-main); white-space: pre-wrap;"></p>
       </div>
-      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
-        <button id="btn-cancel-queues-purge" class="btn btn-secondary" data-testid="btn-cancel-queues-purge">Cancel</button>
-        <button id="btn-confirm-queues-purge" class="btn btn-danger" data-testid="btn-confirm-queues-purge">Purge All Messages</button>
+      <div class="modal-footer">
+        <button type="button" id="btn-confirm-cancel" class="btn btn-secondary" data-testid="btn-confirm-cancel">Cancel</button>
+        <button type="button" id="btn-confirm-secondary" class="btn btn-secondary hidden" data-testid="btn-confirm-secondary"></button>
+        <button type="button" id="btn-confirm-accept" class="btn btn-primary" data-testid="btn-confirm-accept">Confirm</button>
       </div>
     </div>
   </div>
+
+  <!-- Non-blocking Toast Notifications Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <script type="module" src="app.js"></script>
 </body>

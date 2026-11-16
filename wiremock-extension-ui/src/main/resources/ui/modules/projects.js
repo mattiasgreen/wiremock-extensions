@@ -4,6 +4,7 @@
  */
 import { state } from './state.js';
 import { elements } from './dom.js';
+import { showToast } from './dialog.js';
 import { setProjectMode, snapshotProjectRecordings } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
 import { stubCatalog, getStubProject, getStubApi, extractBaseSegment, getStubUrl, isStubParked, isProxyStub } from './stub-catalog.js';
@@ -105,7 +106,7 @@ export function setupProjectLifecycleBar(loadDataFn) {
         await setProjectMode(targetProject, targetMode);
         if (loadDataFn) await loadDataFn();
       } catch (err) {
-        alert('Failed to switch project mode: ' + err.message);
+        showToast('Failed to switch project mode: ' + err.message, { type: 'error' });
       } finally {
         if (elements.btnProjectModeToggle) elements.btnProjectModeToggle.disabled = false;
       }
@@ -120,9 +121,9 @@ export function setupProjectLifecycleBar(loadDataFn) {
         elements.btnProjectSnapshot.textContent = 'Capturing...';
         const res = await snapshotProjectRecordings(targetProject, loadExcludedJsonPaths());
         if (loadDataFn) await loadDataFn();
-        alert(`Snapshot complete! Captured ${res.totalRecorded || 0} stubs in disabled state for review.`);
+        showToast(`Snapshot complete! Captured ${res.totalRecorded || 0} stubs in disabled state for review.`, { type: 'success' });
       } catch (err) {
-        alert('Failed to snapshot project recordings: ' + err.message);
+        showToast('Failed to snapshot project recordings: ' + err.message, { type: 'error' });
       } finally {
         if (elements.btnProjectSnapshot) {
           elements.btnProjectSnapshot.disabled = false;

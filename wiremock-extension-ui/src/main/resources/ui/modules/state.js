@@ -10,7 +10,9 @@ export const uiActions = {
   renderStubList: null,
   renderJournal: null,
   loadData: null,
-  loadJournal: null
+  loadJournal: null,
+  setTesterRequestPayload: null,
+  renderLocalHeaderChips: null
 };
 
 export function registerUiActions(partial) {
@@ -141,6 +143,7 @@ export const state = {
   apiBaseUrl: initialTarget,
   targetConfig: parseTargetUrl(initialTarget),
   connectionStrategy: initialStrategy,
+  demoMode: false,
   get currentStubs() {
     return stubCatalog.getAll();
   },

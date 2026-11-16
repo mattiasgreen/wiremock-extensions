@@ -4,16 +4,32 @@
  */
 import { state, uiActions } from './state.js';
 import { elements } from './dom.js';
+import { confirmDialog, showToast } from './dialog.js';
 import { bulkStubs } from './api.js';
 import { stubCatalog } from './stub-catalog.js';
 import { exportStubs } from './import-export.js';
+
+export function getCurrentlyVisibleStubs() {
+  const search = (elements.searchBox && elements.searchBox.value) || '';
+  return stubCatalog.query({
+    search,
+    status: state.statusFilter,
+    project: state.selectedProject
+  });
+}
+
+export function getVisibleSelectedStubIds() {
+  const visible = getCurrentlyVisibleStubs();
+  return visible.filter(s => state.selectedStubIds.has(s.id)).map(s => s.id);
+}
 
 export function updateBulkToolbar() {
   const bar = document.getElementById('bulk-actions-bar');
   const countEl = document.getElementById('bulk-selected-count');
   const selectAllChk = document.getElementById('chk-select-all');
 
-  const count = state.selectedStubIds.size;
+  const visibleSelectedIds = getVisibleSelectedStubIds();
+  const count = visibleSelectedIds.length;
   if (!bar) return;
 
   if (count > 0) {
@@ -23,7 +39,6 @@ export function updateBulkToolbar() {
     bar.classList.add('hidden');
   }
 
-  // Update master checkbox state
   if (selectAllChk) {
     const allVisible = getCurrentlyVisibleStubs();
     if (allVisible.length > 0 && allVisible.every(s => state.selectedStubIds.has(s.id))) {
@@ -37,15 +52,6 @@ export function updateBulkToolbar() {
       selectAllChk.indeterminate = false;
     }
   }
-}
-
-export function getCurrentlyVisibleStubs() {
-  const search = (elements.searchBox && elements.searchBox.value) || '';
-  return stubCatalog.query({
-    search,
-    status: state.statusFilter,
-    project: state.selectedProject
-  });
 }
 
 export function handleSelectAllToggle(checked) {
@@ -68,27 +74,36 @@ export function handleStubCheckboxClick(stubId, isChecked) {
   updateBulkToolbar();
 }
 
-export function executeBulkAction(action) {
-  const ids = Array.from(state.selectedStubIds);
+export async function executeBulkAction(action) {
+  const ids = getVisibleSelectedStubIds();
   if (ids.length === 0) return;
 
   if (action === 'export') {
-    exportStubs('selected');
+    exportStubs('selected', ids);
     return;
   }
 
   if (action === 'delete') {
-    if (!confirm(`Are you sure you want to permanently delete ${ids.length} selected stubs?`)) {
+    const outcome = await confirmDialog({
+      title: 'Delete Selected Stubs',
+      message: `Are you sure you want to permanently delete ${ids.length} selected stub(s)?`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      danger: true
+    });
+    if (outcome !== 'confirm') {
       return;
     }
   }
 
-  return bulkStubs(action, ids)
-    .then(() => {
-      state.selectedStubIds.clear();
-      return uiActions.loadData ? uiActions.loadData() : Promise.resolve();
-    })
-    .catch(err => {
-      alert(`Bulk ${action} failed: ${err.message}`);
-    });
+  try {
+    await bulkStubs(action, ids);
+    ids.forEach(id => state.selectedStubIds.delete(id));
+    if (uiActions.loadData) {
+      await uiActions.loadData();
+    }
+    showToast(`Bulk ${action}: updated ${ids.length} stub(s)`, { type: 'success' });
+  } catch (err) {
+    showToast(`Bulk ${action} failed: ${err.message}`, { type: 'error' });
+  }
 }

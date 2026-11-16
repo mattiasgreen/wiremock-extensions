@@ -8,15 +8,11 @@
  */
 import { state } from './state.js';
 import { escapeHtml, formatBytes } from './dom.js';
+import { confirmDialog, showToast } from './dialog.js';
 import { evaluateQuery, extractSearchableText } from './filter.js';
-import {
-  openPayloadLens,
-  detectFormat,
-  detectCharset,
-  discoverEmbeddedPayloads,
-  renderFormattedWithNestedPreviews
-} from './payload-lens.js';
-import { highlightPayload, formatPayload } from './highlighter.js';
+import { renderPolyglotTreeHtml, collectSegmentsAndNodes } from './polyglot-viewer.js';
+import { openDocumentWorkspace } from './document-workspace.js';
+import { detectFormat } from './highlighter.js';
 import {
   fetchAsyncDestinations as fetchDestinations,
   fetchAsyncMessages as fetchMessages,
@@ -210,37 +206,9 @@ export function buildMessageDrawerHtml(msg) {
   `).join('');
 
   const rawPayload = msg.payload || '';
-  const discovered = rawPayload ? discoverEmbeddedPayloads(rawPayload) : [];
-  let payloadHtml = '';
-
-  if (rawPayload) {
-    if (discovered.length > 0) {
-      payloadHtml = renderFormattedWithNestedPreviews(
-        rawPayload,
-        discovered,
-        `queue_msg_${msg.id}`,
-        async (newPayload) => {
-          const currentDest = (state.queuesDestinations || []).find(d => d.id === state.queuesSelectedDestinationId);
-          if (currentDest) {
-            const updatedMsg = { ...msg, payload: newPayload };
-            await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
-            await refreshQueues();
-          }
-        },
-        null,
-        rawPayload,
-        {
-          editable: true,
-          readOnlyReason: 'Use "Open in Polyglot Lens" or "Edit & Re-publish" to modify',
-          context: 'queue-message'
-        }
-      );
-    } else {
-      payloadHtml = highlightPayload(formatPayload(rawPayload));
-    }
-  } else {
-    payloadHtml = '<span style="color: var(--text-muted);">(empty)</span>';
-  }
+  const payloadHtml = rawPayload
+    ? renderPolyglotTreeHtml(rawPayload, { mode: 'rich', editable: false, headers: msg.headers || null })
+    : '<span style="color: var(--text-muted);">(empty)</span>';
 
   return `
     <tr class="queues-drawer-row" data-drawer-for="${safeId}" data-testid="queues-drawer-row">
@@ -253,7 +221,7 @@ export function buildMessageDrawerHtml(msg) {
               ${msg.replyTo ? `<span style="margin-left: 12px; font-size: 0.8rem;">Reply-To: <code>${escapeHtml(msg.replyTo)}</code></span>` : ''}
             </div>
             <div style="display: flex; gap: 8px;">
-              <button type="button" class="btn btn-small btn-primary btn-drawer-lens" data-msg-id="${safeId}" data-testid="btn-drawer-lens">🔍 Open in Polyglot Lens</button>
+              <button type="button" class="btn btn-small btn-primary btn-drawer-lens" data-msg-id="${safeId}" data-testid="btn-drawer-lens">🔍 Open in Workspace</button>
               <button type="button" class="btn btn-small btn-secondary btn-drawer-edit" data-msg-id="${safeId}" data-testid="btn-drawer-edit">✏️ Edit & Re-publish</button>
               <button type="button" class="btn btn-small btn-danger btn-drawer-delete" data-msg-id="${safeId}" data-testid="btn-drawer-delete">🗑️ Delete</button>
             </div>
@@ -268,7 +236,7 @@ export function buildMessageDrawerHtml(msg) {
 
           <div>
             <div style="font-size: 0.78rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">Payload Preview</div>
-            <pre class="code-block code-block-payload" style="margin: 0; padding: 12px 16px; background: rgba(0,0,0,0.3); border-radius: 4px; max-height: 280px; overflow-y: auto; font-size: 0.82rem; font-family: monospace;"><code>${payloadHtml}</code></pre>
+            <div class="code-block code-block-payload" data-msg-id="${safeId}" style="margin: 0; padding: 12px 16px; background: rgba(0,0,0,0.3); border-radius: 4px; max-height: 280px; overflow-y: auto; font-size: 0.82rem; font-family: monospace;">${payloadHtml}</div>
           </div>
         </div>
       </td>
@@ -533,35 +501,26 @@ export function initQueues() {
     });
   }
 
-  // Purge Modal Wires
+  // Purge Destination Confirmation
   const btnPurge = document.getElementById('btn-queues-purge');
-  const modalPurge = document.getElementById('modal-queues-purge');
-  const btnCancelPurge = document.getElementById('btn-cancel-queues-purge');
-  const btnConfirmPurge = document.getElementById('btn-confirm-queues-purge');
-
-  if (btnPurge && modalPurge) {
-    btnPurge.addEventListener('click', () => {
+  if (btnPurge) {
+    btnPurge.addEventListener('click', async () => {
       const currentDest = (state.queuesDestinations || []).find(d => d.id === state.queuesSelectedDestinationId);
       if (!currentDest) return;
-      const nameEl = document.getElementById('queues-purge-target-name');
-      if (nameEl) nameEl.textContent = `${currentDest.name} (${currentDest.protocol.toUpperCase()})`;
-      modalPurge.classList.remove('hidden');
-    });
-  }
-
-  if (btnCancelPurge && modalPurge) {
-    btnCancelPurge.addEventListener('click', () => {
-      modalPurge.classList.add('hidden');
-    });
-  }
-
-  if (btnConfirmPurge && modalPurge) {
-    btnConfirmPurge.addEventListener('click', async () => {
-      const currentDest = (state.queuesDestinations || []).find(d => d.id === state.queuesSelectedDestinationId);
-      if (currentDest) {
+      const outcome = await confirmDialog({
+        title: 'Purge Destination',
+        message: `Are you sure you want to permanently purge all messages from ${currentDest.name} (${currentDest.protocol.toUpperCase()})?`,
+        confirmLabel: 'Purge All Messages',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (outcome !== 'confirm') return;
+      try {
         await purgeDestination(currentDest.protocol, currentDest.name);
-        modalPurge.classList.add('hidden');
         await refreshQueues();
+        showToast(`Purged destination ${currentDest.name}`, { type: 'success' });
+      } catch (err) {
+        showToast('Failed to purge destination: ' + err.message, { type: 'error' });
       }
     });
   }
@@ -716,51 +675,137 @@ export function initQueues() {
     });
   }
 
-  // Messages Table Click Delegation (Expand / Lens / Delete / Edit)
+  // Messages Table Click Delegation (Expand / Workspace / Delete / Edit)
   const tbody = document.getElementById('queues-messages-tbody');
   if (tbody) {
     tbody.addEventListener('click', async e => {
-      const msgId = e.target.dataset.msgId || (e.target.closest('[data-msg-id]') && e.target.closest('[data-msg-id]').dataset.msgId);
-      const currentDest = (state.queuesDestinations || []).find(d => d.id === state.queuesSelectedDestinationId);
-      if (!currentDest) return;
-
-      // Lens Action Button (Viewer Mode as requested)
-      if (e.target.closest('.btn-msg-lens') || e.target.closest('.btn-drawer-lens')) {
-        const msg = state.queuesMessages.find(m => m.id === msgId);
-        if (msg) {
-          openPayloadLens(
-            msg.payload,
-            null,
-            async (newPayload) => {
-              // Compensating Edit / In-Place Update (ADR 0025)
-              const updatedMsg = { ...msg, payload: newPayload };
-              await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
-              await refreshQueues();
-            },
-            null,
-            'viewer',
-            { editable: true, context: 'queue-message' }
-          );
+      const nestedToggleBtn = e.target.closest('.btn-nested-toggle');
+      if (nestedToggleBtn) {
+        e.stopPropagation();
+        const block = nestedToggleBtn.closest('.nested-payload-block');
+        if (block) {
+          const isCollapsed = block.classList.toggle('collapsed');
+          const body = block.querySelector(':scope > .nested-payload-body');
+          if (body) body.classList.toggle('hidden', isCollapsed);
+          nestedToggleBtn.textContent = isCollapsed ? '▸' : '▾';
+          nestedToggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
         }
         return;
       }
 
-      // Edit & Re-Publish Action Button (Editor Mode)
+      const msgId = e.target.dataset.msgId
+        || (e.target.closest('[data-msg-id]') && e.target.closest('[data-msg-id]').dataset.msgId)
+        || (e.target.closest('[data-drawer-for]') && e.target.closest('[data-drawer-for]').getAttribute('data-drawer-for'));
+      const currentDest = (state.queuesDestinations || []).find(d => d.id === state.queuesSelectedDestinationId);
+      if (!currentDest) return;
+
+      const nestedCopyBtn = e.target.closest('.btn-nested-copy');
+      if (nestedCopyBtn) {
+        e.stopPropagation();
+        const msg = state.queuesMessages.find(m => m.id === msgId);
+        const block = nestedCopyBtn.closest('.nested-payload-block');
+        if (msg) {
+          const nodeId = nestedCopyBtn.getAttribute('data-node-id');
+          const collected = collectSegmentsAndNodes(msg.payload || '', 5, msg.headers || null);
+          const chain = nodeId ? collected.nodeMap.get(nodeId) : null;
+          const node = chain && chain.length > 0 ? chain[chain.length - 1] : null;
+          const copyText = node
+            ? (node.unescapedValue ?? node.formattedValue ?? '')
+            : (block && block.querySelector('.nested-payload-code')?.textContent) || '';
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(copyText).catch(() => {});
+          }
+          nestedCopyBtn.textContent = '✅ Copied!';
+          showToast('Payload copied to clipboard', { type: 'success' });
+          setTimeout(() => { nestedCopyBtn.textContent = '📋 Copy'; }, 1500);
+        }
+        return;
+      }
+
+      const nestedOpenBtn = e.target.closest('.btn-nested-open-workspace');
+      if (nestedOpenBtn) {
+        e.stopPropagation();
+        const msg = state.queuesMessages.find(m => m.id === msgId);
+        const block = nestedOpenBtn.closest('.nested-payload-block');
+        if (msg) {
+          openDocumentWorkspace({
+            title: `Queue Message: ${msg.id}`,
+            text: msg.payload || '',
+            format: detectFormat(msg.payload || ''),
+            headers: msg.headers || null,
+            editable: true,
+            saveLabel: '💾 Update Message',
+            initialSectionPath: block ? block.getAttribute('data-node-path') : null,
+            onCommit: async (newPayload) => {
+              try {
+                const updatedMsg = { ...msg, payload: newPayload };
+                await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
+                await refreshQueues();
+                showToast('Message updated', { type: 'success' });
+                return true;
+              } catch (err) {
+                showToast('Failed to update message: ' + err.message, { type: 'error' });
+                return false;
+              }
+            }
+          });
+        }
+        return;
+      }
+
+      // Workspace Viewer Action Button (Viewer Mode)
+      if (e.target.closest('.btn-msg-lens') || e.target.closest('.btn-drawer-lens') || e.target.closest('.btn-lens-message')) {
+        const msg = state.queuesMessages.find(m => m.id === msgId);
+        if (msg) {
+          openDocumentWorkspace({
+            title: `Queue Message: ${msg.id}`,
+            text: msg.payload || '',
+            format: detectFormat(msg.payload || ''),
+            headers: msg.headers || null,
+            editable: true,
+            saveLabel: '💾 Update Message',
+            onCommit: async (newPayload) => {
+              try {
+                const updatedMsg = { ...msg, payload: newPayload };
+                await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
+                await refreshQueues();
+                showToast('Message updated', { type: 'success' });
+                return true;
+              } catch (err) {
+                showToast('Failed to update message: ' + err.message, { type: 'error' });
+                return false;
+              }
+            }
+          });
+        }
+        return;
+      }
+
+      // Edit & Re-Publish Action Button (Starts directly in Section Editor)
       if (e.target.closest('.btn-drawer-edit')) {
         const msg = state.queuesMessages.find(m => m.id === msgId);
         if (msg) {
-          openPayloadLens(
-            msg.payload,
-            null,
-            async (newPayload) => {
-              const updatedMsg = { ...msg, id: 'copy-' + Date.now(), payload: newPayload };
-              await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
-              await refreshQueues();
-            },
-            null,
-            'editor',
-            { editable: true, context: 'compensating-edit' }
-          );
+          openDocumentWorkspace({
+            title: `Edit & Re-Publish Message: ${msg.id}`,
+            text: msg.payload || '',
+            format: detectFormat(msg.payload || ''),
+            headers: msg.headers || null,
+            editable: true,
+            startInEditor: true,
+            saveLabel: '🚀 Re-Publish Message',
+            onCommit: async (newPayload) => {
+              try {
+                const updatedMsg = { ...msg, id: 'copy-' + Date.now(), payload: newPayload };
+                await publishMessage(currentDest.protocol, currentDest.name, updatedMsg);
+                await refreshQueues();
+                showToast('Message re-published', { type: 'success' });
+                return true;
+              } catch (err) {
+                showToast('Failed to re-publish message: ' + err.message, { type: 'error' });
+                return false;
+              }
+            }
+          });
         }
         return;
       }

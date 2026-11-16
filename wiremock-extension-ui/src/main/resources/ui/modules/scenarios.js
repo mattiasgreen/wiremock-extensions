@@ -4,6 +4,7 @@
  */
 import { state } from './state.js';
 import { elements, escapeHtml } from './dom.js';
+import { confirmDialog, showToast } from './dialog.js';
 import { getStubUrl } from './stub-catalog.js';
 import { sendStubToTester } from './tester.js';
 
@@ -202,8 +203,11 @@ export function attachScenarioEventListeners() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ state: targetState })
         })
-        .then(() => { if (loadScenariosFn) loadScenariosFn(); })
-        .catch(err => alert('Failed to set scenario state: ' + err.message))
+        .then(() => {
+          if (loadScenariosFn) loadScenariosFn();
+          showToast(`Scenario state set to "${targetState}"`, { type: 'success' });
+        })
+        .catch(err => showToast('Failed to set scenario state: ' + err.message, { type: 'error' }))
         .finally(() => { btn.disabled = false; });
       }
     });
@@ -219,8 +223,11 @@ export function attachScenarioEventListeners() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ state: 'Started' })
         })
-        .then(() => { if (loadScenariosFn) loadScenariosFn(); })
-        .catch(err => alert('Failed to reset scenario: ' + err.message))
+        .then(() => {
+          if (loadScenariosFn) loadScenariosFn();
+          showToast(`Reset scenario "${scenarioName}"`, { type: 'success' });
+        })
+        .catch(err => showToast('Failed to reset scenario: ' + err.message, { type: 'error' }))
         .finally(() => { btn.disabled = false; });
       }
     });
@@ -249,15 +256,22 @@ export function initScenariosTab() {
     });
   }
   if (elements.btnResetScenarios) {
-    elements.btnResetScenarios.addEventListener('click', () => {
-      if (confirm('Reset all scenarios to their Started state?')) {
-        if (doFetchFn) {
-          doFetchFn('/__admin/scenarios/reset', { method: 'POST' })
-            .then(() => {
-              if (loadScenariosFn) loadScenariosFn();
-            })
-            .catch(err => console.warn('Could not reset scenarios', err));
-        }
+    elements.btnResetScenarios.addEventListener('click', async () => {
+      const outcome = await confirmDialog({
+        title: 'Reset Scenarios',
+        message: 'Reset all scenarios to their Started state?',
+        confirmLabel: 'Reset All',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (outcome !== 'confirm') return;
+      if (doFetchFn) {
+        doFetchFn('/__admin/scenarios/reset', { method: 'POST' })
+          .then(() => {
+            if (loadScenariosFn) loadScenariosFn();
+            showToast('All scenarios reset to Started state', { type: 'success' });
+          })
+          .catch(err => showToast('Failed to reset scenarios: ' + err.message, { type: 'error' }));
       }
     });
   }

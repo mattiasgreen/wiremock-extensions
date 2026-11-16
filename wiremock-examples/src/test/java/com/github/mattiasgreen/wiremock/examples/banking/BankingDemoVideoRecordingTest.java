@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
-import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
@@ -167,7 +166,6 @@ class BankingDemoVideoRecordingTest {
         page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
         page.waitForTimeout(600);
 
-        page.onceDialog(Dialog::accept);
         cursor.glideAndClick(page.locator("#btn-project-snapshot"));
         page.waitForFunction("() => document.getElementById('btn-filter-disabled')?.textContent.includes('7')");
         page.waitForTimeout(800);
@@ -187,8 +185,9 @@ class BankingDemoVideoRecordingTest {
         // Reset journal before offline run
         cursor.glideAndClick(page.locator("#nav-tab-journal"));
         page.waitForSelector("#tab-journal.active");
-        page.onceDialog(Dialog::accept);
         cursor.glideAndClick(page.locator("#btn-reset-journal"));
+        page.waitForSelector("#modal-confirm:not(.hidden)");
+        cursor.glideAndClick(page.locator("#btn-confirm-accept"));
         page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 0");
         page.waitForTimeout(600);
 

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
-import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
@@ -153,7 +152,6 @@ class BankingProgressiveSimulationPlaywrightTest {
         consolePage.waitForSelector("#tab-stub-detail.active");
         consolePage.waitForSelector("#project-lifecycle-bar:not(.hidden)");
 
-        consolePage.onceDialog(Dialog::accept);
         consolePage.locator("#btn-project-snapshot").click();
 
         // Wait for snapshot to complete by checking disabled filter count
@@ -180,8 +178,9 @@ class BankingProgressiveSimulationPlaywrightTest {
         // Clear Request Journal before Run 2
         consolePage.locator("#nav-tab-journal").click();
         consolePage.waitForSelector("#tab-journal.active");
-        consolePage.onceDialog(Dialog::accept);
         consolePage.locator("#btn-reset-journal").click();
+        consolePage.waitForSelector("#modal-confirm:not(.hidden)");
+        consolePage.locator("#btn-confirm-accept").click();
         consolePage.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 0");
 
         // 6. Stop Upstream Server B completely -> Replay full 10-step scenario in Customer Portal (Tab 1)

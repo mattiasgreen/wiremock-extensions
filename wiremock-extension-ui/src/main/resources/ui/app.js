@@ -2,30 +2,58 @@
  * WireMock Console UI - Application Entry Point (ES Module).
  * Pure Vanilla JS, zero NPM dependencies.
  *
- * Re-exports core API & utilities for test automation compatibility:
- * loadMappings, executeTesterRequest, highlightJson, generateCurl, parseHash.
+ * Composition root wiring route handlers, feature initializers, and test exports.
  */
 
-import { state, setTargetUrlInLocation, getWireMockUri } from './modules/state.js';
+import { state, getWireMockUri } from './modules/state.js';
 import { elements } from './modules/dom.js';
-import { highlightJson } from './modules/highlighter.js';
+import { initDialogSystem } from './modules/dialog.js';
+import {
+  highlightJson,
+  formatPayload,
+  formatXml,
+  minifyXml,
+  highlightXml,
+  highlightPayload,
+  detectFormat,
+  validatePayload
+} from './modules/highlighter.js';
+import {
+  discoverEmbeddedPayloads,
+  applyNestedPathEdit,
+  spliceEmbeddedPayloadEdit,
+  buildPolyglotSegments
+} from './modules/polyglot-ast.js';
+import {
+  mountCodeEditor,
+  getEditorEngine,
+  setEditorEngine,
+  isHighlightApiSupported
+} from './modules/code-editor.js';
+import {
+  mountPolyglotViewer,
+  renderPolyglotTreeHtml
+} from './modules/polyglot-viewer.js';
+import {
+  initDocumentWorkspace,
+  openDocumentWorkspace,
+  closeDocumentWorkspace,
+  isWorkspaceOpen,
+  isWorkspaceDirty,
+  getWorkspaceRootText
+} from './modules/document-workspace.js';
 import {
   parseHash,
   setRoute,
   activateTab,
   applyRouteFromUrl,
-  registerRouteHandlers,
-  toBase64,
-  fromBase64
+  registerRouteHandlers
 } from './modules/router.js';
 import {
-  getStubUrl,
   generateCurl,
-  generateCreateStubCurl,
   generateJavaStubFor,
   renderStubList,
   selectStub,
-  sendStubToTester,
   getAllCatalogStubs,
   findCatalogStubById,
   initStubsTab
@@ -33,84 +61,40 @@ import {
 import {
   getRequestVerdict,
   renderJournal,
-  setupJournalAutoRefresh,
   registerJournalLoader,
-  getFilteredProxiedRequests,
   initJournalTab
 } from './modules/journal.js';
 import {
-  renderScenarios,
   registerScenarioFetchers,
   initScenariosTab
 } from './modules/scenarios.js';
 import {
-  appendHeader,
-  parseHeadersInput,
-  updateTesterRoute,
-  setInspectorTab,
-  clearTesterHistory,
-  renderTesterResponse,
-  initTesterHistoryCollapse,
-  setTesterHistoryCollapsed,
-  toggleTesterHistory,
+  applyTesterRouteParams,
+  getTesterBody,
+  setTesterBody,
+  buildTesterShareLink,
   renderLocalHeaderChips,
-  switchTesterProtocol,
-  applyQuickTemplate,
   executeTesterRequest,
   initTesterTab
 } from './modules/tester.js';
 import {
-  openLocalHeadersModal,
-  closeLocalHeadersModal,
+  openSettingsModal,
+  closeSettingsModal,
   switchSettingsTab,
-  addLocalHeaderRow,
-  saveSettingsFromModal,
-  copySettingsConfigToClipboard,
-  applyPastedSettingsFromModal,
-  resetDefaultSettingsInModal,
-  setLocalHeadersEnabled,
-  loadExcludedJsonPaths,
   updateTargetHostDisplay,
   initTargetConnectionModal
 } from './modules/settings.js';
 import { setupOpenApiModal } from './modules/openapi.js';
-import {
-  renderProjectSelector,
-  updateFilterCounts,
-  setupProjectLifecycleBar
-} from './modules/projects.js';
-import {
-  handleToggleStub,
-  handleDeleteStub,
-  openStubEditor,
-  closeStubEditor,
-  saveStubEditor,
-  applyStubTemplate,
-  updateBodyMatchLabel,
-  setEditorMode,
-  formatRawEditorJson,
-  formatRequestBodyJson,
-  formatResponseBodyJson,
-  initStubLifecycleHandlers
-} from './modules/lifecycle.js';
-import {
-  exportStubs,
-  handleBundleImport,
-  openImportModal,
-  closeImportModal,
-  switchImportTab
-} from './modules/import-export.js';
-import {
-  handleSelectAllToggle,
-  executeBulkAction,
-  updateBulkToolbar
-} from './modules/bulk-actions.js';
+import { setupProjectLifecycleBar } from './modules/projects.js';
+import { initStubLifecycleHandlers } from './modules/lifecycle.js';
+import { exportStubs, initBundleImport } from './modules/import-export.js';
+import { getVisibleSelectedStubIds } from './modules/bulk-actions.js';
 import {
   doFetch,
-  apiGet,
   registerDemoFallbackHandler,
-  snapshotFilteredRecordings,
-  demoBackend
+  enableDemoMode,
+  disableDemoMode,
+  isDemoModeActive
 } from './modules/api.js';
 import {
   loadMappings,
@@ -133,35 +117,11 @@ import {
   renderTargetCapabilities,
   applyCapabilityVisibility
 } from './modules/capabilities.js';
-import {
-  initPayloadLensModal,
-  openPayloadLens,
-  closePayloadLens,
-  discoverEmbeddedPayloads,
-  validatePayload,
-  applyNestedPayloadEdit,
-  cascadeLensStackToRoot,
-  renderPayloadViewer,
-  attachDualLayerEditor,
-  pushViewportLayer,
-  popViewportLayer,
-  getActiveViewportLayer,
-  viewportStack
-} from './modules/payload-lens.js';
-import {
-  formatPayload,
-  formatXml,
-  minifyXml,
-  highlightXml,
-  highlightPayload,
-  detectFormat
-} from './modules/highlighter.js';
 
 export function getAllStubs() {
   return getAllCatalogStubs();
 }
 
-// Exported public API for test suite and external scripts
 export {
   loadMappings,
   executeTesterRequest,
@@ -177,26 +137,38 @@ export {
   applyCapabilityVisibility,
   getWireMockUri,
   updateTargetHostDisplay,
-  initPayloadLensModal,
-  openPayloadLens,
-  closePayloadLens,
+  openDocumentWorkspace,
+  closeDocumentWorkspace,
+  isWorkspaceOpen,
+  isWorkspaceDirty,
+  getWorkspaceRootText,
+  openSettingsModal,
+  closeSettingsModal,
+  switchSettingsTab,
+  getTesterBody,
+  setTesterBody,
+  buildTesterShareLink,
+  getVisibleSelectedStubIds,
+  enableDemoMode,
+  disableDemoMode,
+  isDemoModeActive,
   discoverEmbeddedPayloads,
   validatePayload,
-  applyNestedPayloadEdit,
-  cascadeLensStackToRoot,
-  renderPayloadViewer,
-  attachDualLayerEditor,
-  pushViewportLayer,
-  popViewportLayer,
-  getActiveViewportLayer,
-  viewportStack,
+  applyNestedPathEdit,
+  spliceEmbeddedPayloadEdit,
+  buildPolyglotSegments,
+  mountCodeEditor,
+  getEditorEngine,
+  setEditorEngine,
+  isHighlightApiSupported,
+  mountPolyglotViewer,
+  renderPolyglotTreeHtml,
   formatPayload,
   formatXml,
   minifyXml,
   highlightXml,
   highlightPayload,
   detectFormat,
-  demoBackend,
   initQueues,
   refreshQueues,
   filterDestinations,
@@ -214,7 +186,10 @@ if (window.location.pathname && !window.location.pathname.endsWith('/')) {
 registerDemoFallbackHandler(updateTargetHostDisplay);
 registerJournalLoader(loadJournal);
 registerScenarioFetchers({ doFetch, loadScenarios });
+initDialogSystem();
+initDocumentWorkspace();
 setupOpenApiModal();
+initBundleImport();
 setupProjectLifecycleBar(loadData);
 
 // Feature module initializers
@@ -223,10 +198,9 @@ initStubLifecycleHandlers();
 initJournalTab();
 initTesterTab();
 initScenariosTab();
-initTargetConnectionModal({ loadData, loadVersionInfo });
+initTargetConnectionModal({ loadData, loadVersionInfo, onHeadersChanged: renderLocalHeaderChips });
 initNetEmTab();
 initQueues();
-initPayloadLensModal();
 
 registerRouteHandlers({
   applyStubs: (params) => {
@@ -260,33 +234,7 @@ registerRouteHandlers({
     }
   },
   applyTester: (params, forcedProto = null) => {
-    const proto = forcedProto || params.get('proto');
-    if (proto) {
-      switchTesterProtocol(proto, false);
-    }
-    if (proto === 'casual') {
-      const s = params.get('s');
-      if (s && elements.testerCasualService) elements.testerCasualService.value = s;
-      const buf = params.get('b');
-      if (buf && elements.testerCasualBuffer) elements.testerCasualBuffer.value = buf;
-      const p = params.get('p');
-      if (p && elements.testerBody) {
-        elements.testerBody.value = fromBase64(p);
-        if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
-      }
-      return;
-    }
-    const m = params.get('m');
-    if (m && elements.testerMethod) elements.testerMethod.value = m;
-    const p = params.get('p');
-    if (p && elements.testerUrl) elements.testerUrl.value = p;
-    const h = params.get('h');
-    if (h && elements.testerHeaders) elements.testerHeaders.value = fromBase64(h);
-    const b = params.get('b');
-    if (b && elements.testerBody) {
-      elements.testerBody.value = fromBase64(b);
-      if (elements.testerBody._dualLayer) elements.testerBody._dualLayer.refresh();
-    }
+    applyTesterRouteParams(params, forcedProto);
   },
   applyNetEm: () => {
     activateNetEm();

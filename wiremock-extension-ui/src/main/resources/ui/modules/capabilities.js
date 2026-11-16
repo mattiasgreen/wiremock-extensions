@@ -197,10 +197,10 @@ export function applyCapabilityVisibility() {
 export function syncCasualCapabilityBanner() {
   const caps = state.capabilities;
   const isCasualActive = (state.testerProtocol || 'http') === 'casual';
-  if (elements.btnTesterSendCasual) {
+  if (elements.btnTesterSend) {
     applyControlState(
-      elements.btnTesterSendCasual,
-      caps.casual,
+      elements.btnTesterSend,
+      isCasualActive ? caps.casual : true,
       'Casual Tester requires wiremock-extension-casual (/__admin/casual/config)'
     );
   }
