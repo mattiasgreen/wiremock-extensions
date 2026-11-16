@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,8 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         openOpenApiModal();
 
-        assertThat(page.locator("#openapi-spec-content").isVisible()).isTrue();
+        assertThat(page.locator("#openapi-spec-viewer").isVisible()).isTrue();
+        assertThat(page.locator("#btn-openapi-edit-workspace").isVisible()).isTrue();
         assertThat(page.locator("#btn-submit-openapi-import").isVisible()).isTrue();
 
         String spec =
@@ -83,7 +83,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
                                     example: STK-882
                 """;
 
-        page.locator("#openapi-spec-content").fill(spec);
+        setOpenApiSpecViaWorkspace(spec);
         page.locator("#btn-submit-openapi-import").click();
 
         page.waitForSelector(".modal-feedback.success");
@@ -107,8 +107,10 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/warehouse/stock/STK-882?notify=true");
         assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
         assertThat(page.locator("#tester-headers").inputValue()).contains("X-Warehouse-Region: EU-NORTH");
-        assertThat(page.locator("#tester-body").inputValue()).contains("\"warehouseId\" : \"WH-12\"");
-        assertThat(page.locator("#tester-body").inputValue()).contains("\"capacity\" : 500");
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("\"warehouseId\"");
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("\"WH-12\"");
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("\"capacity\"");
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("500");
 
         page.locator("#btn-tester-send").click();
         page.waitForSelector("#tester-response-status:has-text('201')");
@@ -130,8 +132,8 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             if (page.locator(".stub-card").count() > 0) {
                 page.locator("#chk-select-all").click();
                 page.waitForSelector("#bulk-actions-bar:not(.hidden)");
-                page.onceDialog(Dialog::accept);
                 page.locator("#btn-bulk-delete").click();
+                acceptConfirmModal();
                 page.waitForSelector(".stub-list .empty-state");
                 assertThat(page.locator(".stub-card").count()).isEqualTo(0);
             }
@@ -206,7 +208,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
                                         example: CONFIRMED
                     """;
 
-            page.locator("#openapi-spec-content").fill(openApiYaml);
+            setOpenApiSpecViaWorkspace(openApiYaml);
             page.locator("#btn-submit-openapi-import").click();
             page.waitForSelector(".modal-feedback.success");
             waitForOpenApiModalClosed();
@@ -234,7 +236,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
             assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/catalog/orders");
             assertThat(page.locator("#tester-headers").inputValue()).contains("Content-Type: application/json");
-            assertThat(page.locator("#tester-body").inputValue()).contains("PROD-778");
+            assertThat(page.locator("#tester-request-viewer").textContent()).contains("PROD-778");
             assertThat(page.locator("#tester-context-banner").isVisible()).isTrue();
 
             page.locator("#btn-tester-send").click();
@@ -338,7 +340,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
                               description: Ok
                     """;
 
-            page.locator("#openapi-spec-content").fill(specYaml);
+            setOpenApiSpecViaWorkspace(specYaml);
             page.locator("#btn-submit-openapi-import").click();
 
             waitForOpenApiModalClosed();
@@ -364,8 +366,8 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
             assertThat(page.locator("#project-mode-badge").textContent()).contains("LIVE PROXY");
 
-            page.onceDialog(dialog -> dialog.accept());
             page.locator("#btn-project-snapshot").click();
+            page.waitForSelector("#toast-container .toast-item:has-text('Snapshot complete!')");
 
             page.waitForSelector("#btn-filter-disabled");
             page.locator("#btn-filter-disabled").click();

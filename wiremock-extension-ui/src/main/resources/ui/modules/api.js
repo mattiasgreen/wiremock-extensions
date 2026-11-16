@@ -1,23 +1,73 @@
 /**
  * Pure WireMock Admin API client.
- * Zero DOM dependencies and zero circular UI imports.
+ * Zero DOM dependencies, zero XHR fallback, and lazy on-demand Demo Mode loading.
  */
 import { state } from './state.js';
 import { detectCapabilities } from './capabilities.js';
-import { demoBackend } from './demo-backend.js';
-import { stubCatalog, PRIORITY_ACTIVE_PROXY, PRIORITY_ACTIVE_STUB, PRIORITY_PARKED, isProxyStub, isStubParked } from './stub-catalog.js';
+import {
+  stubCatalog,
+  PRIORITY_ACTIVE_PROXY,
+  PRIORITY_ACTIVE_STUB,
+  PRIORITY_PARKED,
+  isProxyStub,
+  isStubParked
+} from './stub-catalog.js';
 
-let onDemoFallbackHandler = null;
+let demoBackendInstance = null;
+let demoLoadPromise = null;
+let startupDemoPromise = null;
+let onDemoActivated = null;
 
-export function registerDemoFallbackHandler(fn) {
-  onDemoFallbackHandler = typeof fn === 'function' ? fn : null;
+export function registerDemoFallbackHandler(cb) {
+  onDemoActivated = typeof cb === 'function' ? cb : null;
 }
 
-function activateDemoFallback() {
-  demoBackend.setDemoMode(true);
-  if (onDemoFallbackHandler) {
-    onDemoFallbackHandler();
+export function isExplicitDemoStartup() {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search || '');
+  if (params.get('demo') === 'true' || params.get('demo') === '1') return true;
+  if (params.get('demo') === 'false') return false;
+  if (window.location.protocol === 'file:') return true;
+  if (window.location.hostname && window.location.hostname.endsWith('github.io')) {
+    return !(params.get('wiremock') || params.get('target'));
   }
+  return false;
+}
+
+async function loadDemoBackendModule() {
+  if (demoBackendInstance) return demoBackendInstance;
+  if (!demoLoadPromise) {
+    demoLoadPromise = import('./demo-backend.js')
+      .then(mod => {
+        demoBackendInstance = mod.demoBackend;
+        return demoBackendInstance;
+      })
+      .finally(() => {
+        demoLoadPromise = null;
+      });
+  }
+  return demoLoadPromise;
+}
+
+export async function enableDemoMode() {
+  const instance = await loadDemoBackendModule();
+  instance.setDemoMode(true);
+  state.demoMode = true;
+  if (typeof onDemoActivated === 'function') {
+    onDemoActivated();
+  }
+  return instance;
+}
+
+export function disableDemoMode() {
+  if (demoBackendInstance) {
+    demoBackendInstance.setDemoMode(false);
+  }
+  state.demoMode = false;
+}
+
+export function isDemoModeActive() {
+  return Boolean(state.demoMode || (demoBackendInstance && demoBackendInstance.isDemoMode()));
 }
 
 export function apiUrl(endpoint) {
@@ -32,11 +82,30 @@ export function apiUrl(endpoint) {
   return clean;
 }
 
-export function doFetch(url, options = {}) {
-  if (demoBackend.isDemoMode()) {
-    return demoBackend.handleRequest(url, options);
-  }
+export async function doFetch(url, options = {}) {
   const isTargetingRemote = Boolean(state.targetConfig);
+
+  if (!demoBackendInstance) {
+    if (!isTargetingRemote && isExplicitDemoStartup()) {
+      if (!startupDemoPromise) {
+        startupDemoPromise = enableDemoMode().finally(() => {
+          startupDemoPromise = null;
+        });
+      }
+      await startupDemoPromise;
+    } else if (state.demoMode) {
+      await loadDemoBackendModule();
+    }
+  }
+
+  const isAbsoluteExternal = typeof url === 'string' &&
+    (url.startsWith('http://') || url.startsWith('https://')) &&
+    (typeof window === 'undefined' || !window.location || !url.startsWith(window.location.origin));
+
+  if (isDemoModeActive() && demoBackendInstance && !isTargetingRemote && !isAbsoluteExternal) {
+    return demoBackendInstance.handleRequest(url, options);
+  }
+
   const targetUrl = apiUrl(url);
   const headers = Object.assign({}, options.headers || {});
   if (state.connectionStrategy === 'proxy' && state.targetConfig) {
@@ -47,70 +116,7 @@ export function doFetch(url, options = {}) {
     }
   }
   const fetchOptions = Object.assign({}, options, { headers });
-
-  if (typeof fetch !== 'undefined') {
-    return fetch(targetUrl, fetchOptions)
-      .then(res => {
-        if (!isTargetingRemote && !state.targetConfig && res.status === 404 && url === '/__admin/mappings') {
-          activateDemoFallback();
-          return demoBackend.handleRequest(url, options);
-        }
-        return res;
-      })
-      .catch(err => {
-        if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
-          activateDemoFallback();
-          return demoBackend.handleRequest(url, options);
-        }
-        throw err;
-      });
-  }
-  return new Promise((resolve, reject) => {
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open(fetchOptions.method || 'GET', targetUrl);
-      if (fetchOptions.headers) {
-        Object.entries(fetchOptions.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-      }
-      xhr.onload = () => {
-        if (!isTargetingRemote && !state.targetConfig && xhr.status === 404 && url === '/__admin/mappings') {
-          activateDemoFallback();
-          return resolve(demoBackend.handleRequest(url, options));
-        }
-        const respHeaders = {
-          forEach(cb) {
-            const raw = xhr.getAllResponseHeaders() || '';
-            raw.trim().split(/[\r\n]+/).forEach(line => {
-              const parts = line.split(': ');
-              if (parts.length >= 2) cb(parts.slice(1).join(': '), parts[0]);
-            });
-          }
-        };
-        resolve({
-          status: xhr.status,
-          statusText: xhr.statusText,
-          headers: respHeaders,
-          text: () => Promise.resolve(xhr.responseText),
-          json: () => Promise.resolve(JSON.parse(xhr.responseText)),
-          ok: xhr.status >= 200 && xhr.status < 300
-        });
-      };
-      xhr.onerror = () => {
-        if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
-          activateDemoFallback();
-          return resolve(demoBackend.handleRequest(url, options));
-        }
-        reject(new Error('Network error from ' + targetUrl));
-      };
-      xhr.send(fetchOptions.body || null);
-    } catch (err) {
-      if (!isTargetingRemote && !state.targetConfig && (url.startsWith('/__admin/') || url.startsWith('/api/'))) {
-        activateDemoFallback();
-        return resolve(demoBackend.handleRequest(url, options));
-      }
-      reject(err);
-    }
-  });
+  return fetch(targetUrl, fetchOptions);
 }
 
 export function apiGet(endpoint) {
@@ -341,4 +347,4 @@ export function setProjectMode(project, mode) {
   return apiPost(`/__admin/lifecycle/projects/${enc}/mode`, { mode });
 }
 
-export { detectCapabilities, demoBackend };
+export { detectCapabilities };

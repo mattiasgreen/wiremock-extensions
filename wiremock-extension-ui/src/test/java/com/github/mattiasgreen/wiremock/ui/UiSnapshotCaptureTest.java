@@ -156,18 +156,18 @@ public class UiSnapshotCaptureTest {
             page.waitForTimeout(500);
             page.screenshot(new Page.ScreenshotOptions().setPath(webOutputDir.resolve("04-scenarios-view.png")));
 
-            // 5. Target Server Modal View
+            // 5. Merged Settings Modal View (Target Host tab)
             page.locator("#btn-target-host").click();
-            page.waitForSelector("#target-host-modal:not(.hidden)");
+            page.waitForSelector("#modal-settings:not(.hidden)");
             page.waitForTimeout(300);
             page.screenshot(new Page.ScreenshotOptions().setPath(webOutputDir.resolve("05-target-host-modal.png")));
-            page.locator("#btn-close-target-host").click();
+            page.locator("#btn-close-settings-modal").click();
             page.waitForSelector(
-                    "#target-host-modal",
+                    "#modal-settings",
                     new Page.WaitForSelectorOptions()
                             .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
 
-            // 6. HTTP Tester with Truncated Payload Preview chip
+            // 6. HTTP Tester with Polyglot Nested Payload Block
             String innerXml =
                     "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>ACC-7788</account><balance>9400.50</balance></soap:Body></soap:Envelope>";
             String middleJson = com.github.tomakehurst.wiremock.common.Json.write(
@@ -186,20 +186,22 @@ public class UiSnapshotCaptureTest {
             page.locator("#tester-url").fill("/api/v1/nested-banking");
             page.locator("#btn-tester-send").click();
             page.waitForSelector("#tester-response-status:has-text('200')");
-            page.waitForSelector("#tester-response-body .truncated-payload-preview");
+            page.waitForSelector("#tester-response-body .nested-payload-block");
             page.waitForTimeout(300);
             page.screenshot(
                     new Page.ScreenshotOptions().setPath(webOutputDir.resolve("06-nested-payload-preview.png")));
 
-            // 7. Stacked Nested Payload Lens Modal View
-            page.locator("#tester-response-body .btn-lens-open-pill").first().click();
-            page.waitForSelector("#modal-payload-lens:not(.hidden)");
+            // 7. Unified Document Workspace Modal View
+            page.locator("#tester-response-body .btn-nested-open-workspace")
+                    .first()
+                    .click();
+            page.waitForSelector("#modal-document-workspace:not(.hidden)");
             page.waitForTimeout(300);
             page.screenshot(
                     new Page.ScreenshotOptions().setPath(webOutputDir.resolve("07-nested-payload-lens-modal.png")));
-            page.locator("#btn-close-payload-lens").click();
+            page.locator("#btn-close-workspace").click();
             page.waitForSelector(
-                    "#modal-payload-lens",
+                    "#modal-document-workspace",
                     new Page.WaitForSelectorOptions()
                             .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
 

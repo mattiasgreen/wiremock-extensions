@@ -147,12 +147,19 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
         cdp.send("Profiler.enable");
         cdp.send("Profiler.start");
 
-        // 1. Fill payload
+        // 1. Populate ~30KB payload via Document Workspace & Prettify
         page.locator("#tester-method").selectOption("POST");
-        page.locator("#tester-body").fill(largeJson);
+        page.locator("#btn-tester-edit-workspace").click();
+        waitForStubEditorOpen();
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent(largeJson);
 
-        // 2. Format JSON
-        page.locator("#btn-tester-format-json").click();
+        // 2. Prettify inside Document Workspace & Apply
+        page.locator("#btn-workspace-format").click();
+        saveStubWorkspaceAndWaitClosed();
 
         // 3. Mock response
         wireMockServer.stubFor(any(urlEqualTo("/perf-test"))

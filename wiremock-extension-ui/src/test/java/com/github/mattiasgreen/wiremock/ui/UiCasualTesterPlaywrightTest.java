@@ -63,14 +63,22 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         // Verify target port prefilled and form controls inside unified tester
         page.locator("#tester-casual-port").fill(String.valueOf(casualGateway.getPort()));
         page.locator("#tester-casual-service").fill("echoService");
-        page.locator("#tester-body").fill("{\"testMessage\": \"Hello from Playwright\"}");
 
-        // Test Format JSON
-        page.locator("#btn-tester-format-json").click();
-        assertThat(page.locator("#tester-body").inputValue()).contains("  \"testMessage\": \"Hello from Playwright\"");
+        // Edit & Format JSON via Document Workspace
+        page.locator("#btn-tester-edit-workspace").click();
+        waitForStubEditorOpen();
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent("{\"testMessage\": \"Hello from Playwright\"}");
+        page.locator("#btn-workspace-format").click();
+        assertThat(getCodeEditorContent()).contains("  \"testMessage\": \"Hello from Playwright\"");
+        saveStubWorkspaceAndWaitClosed();
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("Hello from Playwright");
 
         // Execute tpcall
-        page.locator("#btn-tester-send-casual").click();
+        page.locator("#btn-tester-send").click();
 
         page.waitForSelector("#tester-response-status:has-text('OK')");
         Locator statusEl = page.locator("#tester-response-status");
@@ -114,8 +122,7 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
         // Test Preset badges
         page.locator("#btn-tester-casual-preset-tx").click();
-        assertThat(page.locator("#tester-casual-headers").inputValue())
-                .contains("X-Casual-Transaction-State: TX_ACTIVE");
+        assertThat(page.locator("#tester-headers").inputValue()).contains("X-Casual-Transaction-State: TX_ACTIVE");
 
         // Verify history item recorded
         Locator historyItems = page.locator("#tester-history-list .history-item");
@@ -126,7 +133,7 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
         // Test unmatched service call
         page.locator("#tester-casual-service").fill("unstubbedService");
-        page.locator("#btn-tester-send-casual").click();
+        page.locator("#btn-tester-send").click();
 
         page.waitForSelector("#tester-response-status:has-text('TPENOENT')");
         assertThat(page.locator("#tester-response-status").textContent()).contains("TPENOENT (6)");
@@ -160,9 +167,9 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#tester-casual-buffer").selectOption("X_OCTET");
 
         page.locator("#tester-casual-encoding").selectOption("hex");
-        page.locator("#tester-body").fill("01 02 03 04");
+        setTesterRequestBodyViaWorkspace("01 02 03 04");
 
-        page.locator("#btn-tester-send-casual").click();
+        page.locator("#btn-tester-send").click();
 
         page.waitForSelector("#tester-response-status:has-text('OK')");
         assertThat(page.locator("#tester-response-status").textContent()).contains("OK (0)");
@@ -248,11 +255,11 @@ public class UiCasualTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector("#tab-tester.active");
             page.waitForSelector("#btn-tester-proto-casual.active");
             assertThat(page.locator("#tester-casual-service").inputValue()).isEqualTo("upstreamEcho");
-            assertThat(page.locator("#tester-body").inputValue()).contains("\"clientCall\": 1");
-            assertThat(page.locator("#tester-casual-headers").inputValue()).contains("X-Casual-Service: upstreamEcho");
+            assertThat(page.locator("#tester-request-viewer").textContent()).contains("\"clientCall\": 1");
+            assertThat(page.locator("#tester-headers").inputValue()).contains("X-Casual-Service: upstreamEcho");
 
             // 5. Send replayed request from Unified Tester
-            page.locator("#btn-tester-send-casual").click();
+            page.locator("#btn-tester-send").click();
 
             // 6. Verify response in Unified Tester is received from upstream
             page.waitForSelector("#tester-response-status:has-text('OK')");

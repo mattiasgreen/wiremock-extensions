@@ -94,8 +94,18 @@ public class UiAssetAndContractTest {
         assertThat(html).contains("id=\"nav-tab-netem\"");
         assertThat(html).contains("id=\"tab-netem\"");
         assertThat(html).contains("id=\"netem-journal-table\"");
-        assertThat(html).contains("id=\"payload-lens-mode-toggle\"");
-        assertThat(html).contains("id=\"btn-lens-view-edit-toggle\"");
+        assertThat(html).contains("id=\"modal-document-workspace\"");
+        assertThat(html).contains("id=\"workspace-code-editor-host\"");
+        assertThat(html).contains("id=\"modal-settings\"");
+        assertThat(html).contains("id=\"modal-confirm\"");
+        assertThat(html).contains("id=\"toast-container\"");
+        assertThat(html).doesNotContain("id=\"payload-lens-mode-toggle\"");
+        assertThat(html).doesNotContain("id=\"btn-lens-view-edit-toggle\"");
+        assertThat(html).doesNotContain("id=\"stub-editor-modal\"");
+        assertThat(html).doesNotContain("id=\"modal-payload-lens\"");
+        assertThat(html).doesNotContain("id=\"modal-unsaved-changes\"");
+        assertThat(html).doesNotContain("id=\"target-host-modal\"");
+        assertThat(html).doesNotContain("id=\"modal-queues-purge\"");
     }
 
     @Test
@@ -136,7 +146,14 @@ public class UiAssetAndContractTest {
         assertThat(jsResp.body()).contains("highlightJson");
         assertThat(jsResp.body()).contains("generateCurl");
         assertThat(jsResp.body()).contains("parseHash");
-        assertThat(jsResp.body()).contains("attachDualLayerEditor");
+        assertThat(jsResp.body()).contains("openDocumentWorkspace");
+        assertThat(jsResp.body()).contains("mountCodeEditor");
+        assertThat(jsResp.body()).contains("mountPolyglotViewer");
+        assertThat(jsResp.body()).contains("enableDemoMode");
+        assertThat(jsResp.body()).contains("buildTesterShareLink");
+        assertThat(jsResp.body()).contains("getVisibleSelectedStubIds");
+        assertThat(jsResp.body()).contains("openSettingsModal");
+        assertThat(jsResp.body()).doesNotContain("attachDualLayerEditor");
         assertThat(jsResp.headers().firstValue("Cache-Control")).isPresent();
 
         HttpRequest cssReq = HttpRequest.newBuilder()
@@ -147,6 +164,8 @@ public class UiAssetAndContractTest {
         assertThat(cssResp.statusCode()).isEqualTo(200);
         assertThat(cssResp.headers().firstValue("Content-Type").get()).contains("text/css");
         assertThat(cssResp.body()).contains(":root");
+        assertThat(cssResp.body()).contains("::highlight(wm-hl-key)");
+        assertThat(cssResp.body()).contains(".code-editor-surface");
         assertThat(cssResp.body()).contains(".dual-layer-editor-wrapper");
         assertThat(cssResp.body()).contains(".mode-rich");
         assertThat(cssResp.body()).contains(".mode-raw");
@@ -391,75 +410,98 @@ public class UiAssetAndContractTest {
     }
 
     @Test
-    void testNoEsModuleImportCyclesInvolvingStubsJs() throws Exception {
-        Path modulesDir = Path.of("src/main/resources/ui/modules");
-        assertThat(Files.isDirectory(modulesDir)).isTrue();
+    void testStaticGuardNoBlockingDialogsNoStaticDemoImportsAndNoImportCycles() throws Exception {
+        Path uiRoot = Path.of("src/main/resources/ui");
+        assertThat(Files.isDirectory(uiRoot)).isTrue();
 
-        Map<String, Set<String>> graph = new HashMap<>();
+        Pattern blockingDialogCall = Pattern.compile("\\b(?:alert|confirm)\\s*\\(");
         Pattern sideEffectImport = Pattern.compile("(?m)^\\s*import\\s+['\"](\\.[^'\"]+)['\"]");
 
-        try (Stream<Path> paths = Files.list(modulesDir)) {
-            List<Path> moduleFiles =
-                    paths.filter(p -> p.toString().endsWith(".js")).toList();
-            assertThat(moduleFiles).isNotEmpty();
+        Map<String, Set<String>> graph = new HashMap<>();
 
-            for (Path jsFile : moduleFiles) {
-                String name = jsFile.getFileName().toString();
+        try (Stream<Path> paths = Files.walk(uiRoot)) {
+            List<Path> jsFiles = paths.filter(p -> p.toString().endsWith(".js")).toList();
+            assertThat(jsFiles).isNotEmpty();
+
+            for (Path jsFile : jsFiles) {
+                String relPath = uiRoot.relativize(jsFile).toString().replace('\\', '/');
                 String content = Files.readString(jsFile, StandardCharsets.UTF_8);
-                Set<String> imports = new LinkedHashSet<>();
 
+                // 1. ZERO alert( or confirm( calls anywhere in UI JS
+                Matcher dialogMatcher = blockingDialogCall.matcher(content);
+                assertThat(dialogMatcher.find())
+                        .as("UI JS file %s must not call blocking alert() or confirm()", relPath)
+                        .isFalse();
+
+                // 2. Collect static imports & check ZERO static imports of demo-backend.js
+                Set<String> imports = new LinkedHashSet<>();
                 Matcher m = ES_IMPORT_PATTERN.matcher(content);
                 while (m.find()) {
-                    Path resolved = jsFile.getParent().resolve(m.group(1)).normalize();
-                    if (resolved.getParent() != null && resolved.getParent().equals(modulesDir)) {
-                        imports.add(resolved.getFileName().toString());
-                    }
+                    String target = m.group(1);
+                    Path resolved = jsFile.getParent().resolve(target).normalize();
+                    String resolvedRel = uiRoot.relativize(resolved).toString().replace('\\', '/');
+                    assertThat(resolvedRel)
+                            .as("Static import of demo-backend.js is forbidden in %s", relPath)
+                            .isNotEqualTo("modules/demo-backend.js");
+                    imports.add(resolvedRel);
                 }
                 Matcher sideMatcher = sideEffectImport.matcher(content);
                 while (sideMatcher.find()) {
-                    Path resolved =
-                            jsFile.getParent().resolve(sideMatcher.group(1)).normalize();
-                    if (resolved.getParent() != null && resolved.getParent().equals(modulesDir)) {
-                        imports.add(resolved.getFileName().toString());
-                    }
+                    String target = sideMatcher.group(1);
+                    Path resolved = jsFile.getParent().resolve(target).normalize();
+                    String resolvedRel = uiRoot.relativize(resolved).toString().replace('\\', '/');
+                    assertThat(resolvedRel)
+                            .as("Static side-effect import of demo-backend.js is forbidden in %s", relPath)
+                            .isNotEqualTo("modules/demo-backend.js");
+                    imports.add(resolvedRel);
                 }
-                graph.put(name, imports);
+
+                // Any mention of demo-backend.js outside itself is allowed ONLY in modules/api.js (lazy dynamic import)
+                if (!"modules/demo-backend.js".equals(relPath) && content.contains("demo-backend.js")) {
+                    assertThat(relPath)
+                            .as("Only modules/api.js may lazily import demo-backend.js, found in %s", relPath)
+                            .isEqualTo("modules/api.js");
+                    assertThat(content).contains("import('./demo-backend.js')");
+                }
+
+                graph.put(relPath, imports);
             }
         }
 
-        assertThat(graph).containsKey("stubs.js");
+        assertThat(graph).containsKey("app.js");
+        assertThat(graph).containsKey("modules/stubs.js");
 
-        // BFS from every dependency of stubs.js verifying stubs.js is never reachable again
-        Map<String, String> parent = new HashMap<>();
-        Set<String> visited = new HashSet<>();
-        Deque<String> queue = new ArrayDeque<>();
-
-        for (String dep : graph.getOrDefault("stubs.js", Set.of())) {
-            assertThat(dep).as("stubs.js must not self-import").isNotEqualTo("stubs.js");
-            parent.put(dep, "stubs.js");
-            visited.add(dep);
-            queue.add(dep);
-        }
-
-        while (!queue.isEmpty()) {
-            String current = queue.poll();
-            for (String next : graph.getOrDefault(current, Set.of())) {
-                if ("stubs.js".equals(next)) {
-                    List<String> cycle = new ArrayList<>();
-                    cycle.add("stubs.js");
-                    String cursor = current;
-                    while (cursor != null) {
-                        cycle.add(0, cursor);
-                        cursor = parent.get(cursor);
-                    }
-                    org.assertj.core.api.Assertions.fail(
-                            "Detected circular ES6 import involving stubs.js: " + String.join(" -> ", cycle));
-                }
-                if (visited.add(next)) {
-                    parent.put(next, current);
-                    queue.add(next);
-                }
+        // 3. ZERO import cycles across ALL modules (3-color DFS: 0 = unvisited, 1 = visiting, 2 = done)
+        Map<String, Integer> color = new HashMap<>();
+        Deque<String> stack = new ArrayDeque<>();
+        for (String node : graph.keySet()) {
+            if (color.getOrDefault(node, 0) == 0) {
+                detectCycleDfs(node, graph, color, stack);
             }
         }
+    }
+
+    private static void detectCycleDfs(
+            String node, Map<String, Set<String>> graph, Map<String, Integer> color, Deque<String> stack) {
+        color.put(node, 1);
+        stack.push(node);
+        for (String next : graph.getOrDefault(node, Set.of())) {
+            int nextColor = color.getOrDefault(next, 0);
+            if (nextColor == 1) {
+                List<String> cycle = new ArrayList<>();
+                cycle.add(next);
+                for (String s : stack) {
+                    cycle.add(0, s);
+                    if (s.equals(next)) {
+                        break;
+                    }
+                }
+                org.assertj.core.api.Assertions.fail("Detected circular ES6 import: " + String.join(" -> ", cycle));
+            } else if (nextColor == 0) {
+                detectCycleDfs(next, graph, color, stack);
+            }
+        }
+        stack.pop();
+        color.put(node, 2);
     }
 }

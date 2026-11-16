@@ -57,6 +57,14 @@ tasks.register('runProxy', JavaExec) {
     args = [project.findProperty('wiremock.url') ?: 'http://localhost:8080']
 }
 
+tasks.register('generateDemoSnapshot', JavaExec) {
+    group = 'documentation'
+    description = 'Generates demo-snapshot.js from a live in-process WireMockServer'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.github.mattiasgreen.wiremock.ui.DemoSnapshotGenerator'
+    args = [project.file('src/main/resources/ui/modules/demo-snapshot.js').absolutePath]
+}
+
 tasks.named('processResources') {
     def ver = project.version.toString()
     def repoDir = rootProject.projectDir

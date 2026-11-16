@@ -49,28 +49,30 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
+        page.waitForSelector("#settings-panel-target:not(.hidden)");
 
         String targetUrl = wireMockServer.baseUrl();
         page.locator("#input-target-host").fill(targetUrl);
         page.locator("#btn-save-target-host").click();
 
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         assertThat(page.locator("#target-host-label").textContent()).contains(targetUrl);
         assertThat(page.title()).isEqualTo("WMC - " + targetUrl);
         assertThat(page.url()).contains("wiremock=" + URLEncoder.encode(targetUrl, StandardCharsets.UTF_8));
 
         page.waitForSelector(".stub-card");
         page.locator(".stub-card").first().click();
+        openStubCopyMenu();
         page.locator("#btn-copy-curl").click();
         assertThat(page.locator("#btn-copy-curl").textContent()).contains("Copied");
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
         page.locator("#btn-reset-target-host").click();
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         assertThat(page.locator("#target-host-label").textContent()).isEqualTo("Target: (same-origin)");
         assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
         assertThat(page.url()).doesNotContain("wiremock=");
@@ -100,19 +102,19 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         assertThat(page.title()).isEqualTo("WMC - " + remoteUrl);
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
         String remoteUrl2 = "http://mock-env2.corp.internal:9090";
         page.locator("#input-target-host").fill(remoteUrl2);
         page.locator("#btn-save-target-host").click();
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         assertThat(page.title()).isEqualTo("WMC - " + remoteUrl2);
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
         page.locator("#btn-reset-target-host").click();
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         assertThat(page.title()).isEqualTo("WMC - " + wireMockServer.baseUrl());
 
         assertThat(pageErrors).isEmpty();
@@ -121,7 +123,7 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
 
     @Test
     @DisplayName(
-            "Scenario 26: Target server modal configures base URL, strategy, updates browser query params and cURL")
+            "Scenario 26: Settings modal Target tab configures base URL, strategy, updates browser query params and cURL")
     void testTargetHostModalAndStrategyConfiguration() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
         page.waitForSelector("#stub-list");
@@ -129,40 +131,41 @@ public class UiScenariosAndStatefulPlaywrightTest extends AbstractUiPlaywrightTe
         assertThat(page.locator("#target-host-label").textContent()).contains("(same-origin)");
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
 
         page.locator("#input-target-host").fill("https://gateway.corp:8443/test-envs/env1/wiremock");
         page.locator("#radio-strategy-proxy").check();
         page.locator("#btn-save-target-host").click();
 
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
         assertThat(page.locator("#target-host-label").textContent())
                 .contains("https://gateway.corp:8443/test-envs/env1/wiremock (proxied)");
         assertThat(page.url()).contains("wiremock=https%3A%2F%2Fgateway.corp%3A8443%2Ftest-envs%2Fenv1%2Fwiremock");
 
         page.locator(".stub-card").first().click();
+        openStubCopyMenu();
         page.locator("#btn-copy-curl").click();
         String copiedCurl = (String) page.evaluate("() => navigator.clipboard.readText()");
         assertThat(copiedCurl).contains("https://gateway.corp:8443/test-envs/env1/wiremock");
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
         page.locator("#radio-strategy-direct").check();
         page.locator("#btn-save-target-host").click();
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
         assertThat(page.locator("#target-host-label").textContent())
                 .contains("https://gateway.corp:8443/test-envs/env1/wiremock (direct)");
         assertThat(page.url()).contains("strategy=direct");
 
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
         page.locator("#btn-reset-target-host").click();
         page.waitForSelector(
-                "#target-host-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-settings", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
 
         page.waitForSelector("#target-host-label:has-text('(same-origin)')");
         assertThat(page.locator("#target-host-label").textContent()).contains("(same-origin)");

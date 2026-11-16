@@ -39,7 +39,7 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         }
         """
                         .trim();
-        page.locator("#tester-body").fill(initialPayload);
+        setTesterRequestBodyViaWorkspace(initialPayload);
         page.locator("#btn-tester-send").click();
 
         // Expect 404 since no stub matches yet
@@ -55,94 +55,101 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(orderRow.isVisible()).isTrue();
         orderRow.click(); // Expand row detail
 
-        // Step 4: Locate Request Body in Journal and maximize in Fullscreen Viewport
+        // Step 4: Locate Request Body in Journal and open in Document Workspace
         page.waitForSelector(".btn-journal-maximize[data-type='req']");
         Locator btnJournalMax =
                 page.locator(".btn-journal-maximize[data-type='req']").first();
         btnJournalMax.click();
 
-        // Verify Fullscreen Maximized Viewport opened
-        Locator viewportModal = page.locator("#modal-payload-lens");
-        assertThat(viewportModal.isVisible()).isTrue();
-        assertThat(viewportModal.getAttribute("class")).contains("fullscreen-viewport");
+        // Verify Document Workspace opened fullscreen
+        Locator workspaceModal = page.locator("#modal-document-workspace");
+        assertThat(workspaceModal.isVisible()).isTrue();
+        assertThat(workspaceModal.getAttribute("class")).contains("fullscreen-viewport");
 
-        Locator viewportTitle = page.locator("#payload-lens-title");
-        assertThat(viewportTitle.textContent()).contains("Journal Request");
+        Locator workspaceTitle = page.locator("#workspace-title");
+        assertThat(workspaceTitle.textContent()).contains("Journal Request");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("ORD-999");
 
-        Locator viewportEditor = page.locator("#payload-lens-editor");
-        assertThat(viewportEditor.inputValue()).contains("ORD-999");
-
-        // Step 5: Close Viewport and click top-level "Create Stub from Request" on the journal row
-        page.locator("#btn-close-payload-lens").click();
-        assertThat(viewportModal.getAttribute("class")).contains("hidden");
+        // Step 5: Close Workspace and click top-level "Create Stub from Request" on the journal row
+        page.locator("#btn-close-workspace").click();
+        assertThat(workspaceModal.getAttribute("class")).contains("hidden");
 
         page.locator(".btn-create-stub-from-req").first().click();
 
-        // Stub Editor modal opens
-        Locator stubEditorModal = page.locator("#stub-editor-modal");
-        assertThat(stubEditorModal.isVisible()).isTrue();
+        // Document Workspace opens pre-filled from unmatched request
+        waitForStubEditorOpen();
+        assertThat(workspaceTitle.textContent()).contains("Create Stub from Journal Request");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("/api/v2/orders");
 
-        Locator editorNameInput = page.locator("#editor-name");
-        editorNameInput.fill("Chained Order Invoice Stub");
+        // Step 6: Enter Root Section Editor, modify name + status + response body, verify dirty tracking
+        page.locator("#btn-workspace-edit-root").click();
+        page.waitForSelector("#workspace-editor-pane:not(.hidden)");
 
-        page.locator("#editor-status").fill("200");
-
-        Locator editorUrlInput = page.locator("#editor-url");
-        assertThat(editorUrlInput.inputValue()).isEqualTo("/api/v2/orders");
-
-        // Step 6: Maximize Stub Response Body in Fullscreen Viewport and test dirty tracking
-        Locator btnBodyMax = page.locator("#btn-editor-body-maximize");
-        btnBodyMax.click();
-
-        // Viewport opens in Stub Editor context
-        assertThat(viewportModal.isVisible()).isTrue();
-        assertThat(page.locator("#payload-lens-title").textContent()).contains("Stub Response Body");
-
-        // Dirty badge should initially be hidden
-        Locator dirtyBadge = page.locator("#payload-lens-dirty-indicator");
+        Locator dirtyBadge = page.locator("#workspace-dirty-badge");
         assertThat(dirtyBadge.getAttribute("class")).contains("hidden");
 
-        // Modify content in the viewport
-        String updatedResponseBody =
+        String updatedStubJson =
                 """
-        {
-          "status": "CONFIRMED",
-          "invoiceXml": "<invoice id=\\"999\\"><status>APPROVED</status></invoice>"
-        }
-        """
+                {
+                  "name": "Chained Order Invoice Stub",
+                  "priority": 5,
+                  "request": {
+                    "method": "POST",
+                    "url": "/api/v2/orders"
+                  },
+                  "response": {
+                    "status": 200,
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "jsonBody": {
+                      "status": "CONFIRMED",
+                      "invoiceXml": "<invoice id=\\"999\\"><status>APPROVED</status></invoice>"
+                    }
+                  }
+                }
+                """
                         .trim();
-        viewportEditor.fill(updatedResponseBody);
+        setCodeEditorContent(updatedStubJson);
 
         // Dirty badge should now be visible
         assertThat(dirtyBadge.isVisible()).isTrue();
         assertThat(dirtyBadge.textContent()).contains("Unsaved Changes");
 
-        // Step 7: Press Escape key -> Unsaved Changes confirmation prompt appears
+        // Step 7: Press Escape key while dirty in SECTION_EDITOR -> #modal-confirm opens
         page.keyboard().press("Escape");
 
-        Locator unsavedModal = page.locator("#modal-unsaved-changes");
-        assertThat(unsavedModal.isVisible()).isTrue();
+        Locator confirmModal = page.locator("#modal-confirm");
+        assertThat(confirmModal.isVisible()).isTrue();
+        assertThat(page.locator("#confirm-modal-title").textContent()).contains("Discard Section Changes");
 
-        // Test Cancel: viewport remains open and dirty
-        page.locator("#btn-unsaved-cancel").click();
-        assertThat(unsavedModal.getAttribute("class")).contains("hidden");
-        assertThat(viewportModal.isVisible()).isTrue();
+        // Cancel keep editing: workspace remains in SECTION_EDITOR and dirty
+        page.locator("#btn-confirm-cancel").click();
+        assertThat(confirmModal.getAttribute("class")).contains("hidden");
+        assertThat(workspaceModal.isVisible()).isTrue();
         assertThat(dirtyBadge.isVisible()).isTrue();
 
-        // Press Escape again and click Save
+        // Apply Section -> returns to DOCUMENT_VIEWER with updated content and dirty badge
+        page.locator("#btn-workspace-apply-section").click();
+        page.waitForSelector("#workspace-viewer-pane:not(.hidden)");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("APPROVED");
+        assertThat(dirtyBadge.isVisible()).isTrue();
+
+        // Press Escape in dirty DOCUMENT_VIEWER -> #modal-confirm prompts Save / Discard / Cancel; click Save!
         page.keyboard().press("Escape");
-        assertThat(unsavedModal.isVisible()).isTrue();
-        page.locator("#btn-unsaved-save").click();
+        assertThat(confirmModal.isVisible()).isTrue();
+        assertThat(page.locator("#confirm-modal-title").textContent()).contains("Unsaved Changes");
+        page.locator("#btn-confirm-accept").click();
 
-        // Both modals close and changes are saved back into the Stub Editor
-        assertThat(unsavedModal.getAttribute("class")).contains("hidden");
-        assertThat(viewportModal.getAttribute("class")).contains("hidden");
-
-        Locator editorBody = page.locator("#editor-body");
-        assertThat(editorBody.inputValue()).contains("APPROVED");
-
-        // Step 8: Save stub mapping to WireMock
-        saveStubEditorAndWaitClosed();
+        // Both modals close and stub mapping is committed to WireMock
+        page.waitForSelector(
+                "#modal-confirm",
+                new com.microsoft.playwright.Page.WaitForSelectorOptions()
+                        .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
+        page.waitForSelector(
+                "#modal-document-workspace",
+                new com.microsoft.playwright.Page.WaitForSelectorOptions()
+                        .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
 
         // Step 9: Verify stub appears in Stubs catalog
         openStubsTab();
@@ -157,13 +164,13 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
 
         // Maximize stub mapping from detail view and verify clean Escape closes immediately
         page.locator("#btn-stub-maximize").click();
-        assertThat(viewportModal.isVisible()).isTrue();
-        assertThat(page.locator("#payload-lens-title").textContent()).contains("Chained Order Invoice Stub");
+        assertThat(workspaceModal.isVisible()).isTrue();
+        assertThat(page.locator("#workspace-title").textContent()).contains("Chained Order Invoice Stub");
 
         // Not dirty, so pressing Escape closes without prompt
         page.keyboard().press("Escape");
-        assertThat(unsavedModal.getAttribute("class")).contains("hidden");
-        assertThat(viewportModal.getAttribute("class")).contains("hidden");
+        assertThat(confirmModal.getAttribute("class")).contains("hidden");
+        assertThat(workspaceModal.getAttribute("class")).contains("hidden");
 
         // Step 10: Re-run in HTTP Tester and verify matching mock response
         openTesterTab();
@@ -176,14 +183,14 @@ public class UiChainedWorkflowPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(testerResponseBody.textContent()).contains("APPROVED");
         assertThat(testerResponseBody.textContent()).contains("invoiceXml");
 
-        // Step 11: Maximize Tester Response Body in Fullscreen Viewport
+        // Step 11: Maximize Tester Response Body in Document Workspace
         page.locator("#btn-tester-response-maximize").click();
-        assertThat(viewportModal.isVisible()).isTrue();
-        assertThat(page.locator("#payload-lens-title").textContent()).contains("Tester Response");
+        assertThat(workspaceModal.isVisible()).isTrue();
+        assertThat(page.locator("#workspace-title").textContent()).contains("Tester Response");
 
         // Press Escape to dismiss cleanly
         page.keyboard().press("Escape");
-        assertThat(viewportModal.getAttribute("class")).contains("hidden");
+        assertThat(workspaceModal.getAttribute("class")).contains("hidden");
 
         // Step 12: Ensure zero browser console errors and page errors throughout entire journey
         assertThat(pageErrors).as("Zero uncaught page errors").isEmpty();
