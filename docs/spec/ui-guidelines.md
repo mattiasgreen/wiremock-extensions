@@ -88,19 +88,19 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 2. **Diagnose**: Expanding the row displays the incoming request alongside **Near-Miss Diagnostic Feedback** (closest stub candidate and which matcher failed: URL, Method, Header, or Body).
 3. **Synthesize Stub (Never "Snapshot" a 404!)**:
    * On an `UNMATCHED` row, `📸 Snapshot Stub` must **not** blindly save the 404 error as a stub.
-   * Instead, clicking **`➕ Create Stub from Request`** opens the **Stub Editor Modal** pre-populated with the captured request's `method`, `url`, `headers`, and `bodyPatterns`, with the response defaulted to `200 OK` for immediate editing and activation.
+   * Instead, clicking **`➕ Create Stub from Request`** opens the **Unified Document Workspace** (`#modal-document-workspace`) pre-populated with the captured request's `method`, `url`, and `bodyPatterns`, with the response defaulted to `200 OK` for immediate viewer inspection, section editing, and activation.
 4. **Verify**: Clicking **`🚀 Replay in Tester`** loads the exact captured request into the Multi-Protocol Tester to confirm the new stub responds with `200 OK`.
 
 ### Workflow C: Matched Stub & Correlation-ID Session Debugging (`Journal` $\leftrightarrow$ `Stub` $\leftrightarrow$ `Tester`)
 1. **Bidirectional Navigation**:
-   * From a **Stub** in the Stubs tab: Clicking **`📜 View in Journal`** switches to the Request Journal filtered to that stub's URL/ID.
+   * From a **Stub** in the Stubs tab: Clicking **`🔍 View in Journal`** switches to the Request Journal filtered to that stub's URL/ID.
    * From a **`📌 STUB`** entry in the Request Journal: Clicking the matched stub name (**`🔗 Inspect Stub`**) jumps directly to the Stubs tab with that mapping selected.
 2. **Correlation-ID Lens (`X-Correlation-Id`)**:
    * Parallel JUnit/Cucumber tests isolate state and chaos using `X-Correlation-Id`.
    * Whenever a request in the Journal carries `X-Correlation-Id`, display it as a clickable chip so the engineer can filter the entire Journal (and NetEm transfer log) to that single test execution's trace in one click.
 
 ### Workflow D: Bridging From UI to Code (`TestDataBuilder` & SDK Extraction)
-1. **Level 1 (Immediate Code Export)**: From any Stub or Journal entry, developers can copy not just `📋 Copy cURL` and `📋 Copy JSON`, but **`☕ Copy Java stubFor()`** (and DTO / `TestDataBuilder` snippets) to paste directly into JUnit/Cucumber tests.
+1. **Level 1 (Immediate Code Export)**: From any Stub (`📋 Copy ▾` dropdown `#btn-stub-copy-menu`) or Journal entry, developers can copy not just `📋 Copy cURL` and `📋 Copy JSON`, but **`☕ Copy Java`** (`stubFor()`) snippets to paste directly into JUnit/Cucumber tests.
 2. **Level 2 (SDK Bootstrapping)**: Exporting a service's harvested stubs alongside its OpenAPI contract feeds into the Simulation SDK generator (`Model DTOs` + semantic `TestDataBuilder`s + runtime-parameterized `*ServiceMock`).
 
 ---
@@ -108,30 +108,34 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 ## 4. Layout, Action Budget & Sensory Feedback Rules
 
 ### 4.1 Action Budget (Preventing "Button Soup")
-* **Toolbar Ceiling**: A panel header or card header may contain **at most 1 Primary CTA** (solid accent fill) and **at most 2–3 compact Secondary buttons**. Secondary utility actions (`Import`, `Export`, `Refresh`) should use compact icon+label buttons with clear visual grouping.
-* **Contextual Action Placement**: Actions that mutate or export a specific item (`⚡ Test`, `✏️ Edit`, `🧬 Clone`, `⏸️ Disable`, `🗑️ Delete`) belong inside the **Detail Inspector header** of the selected item, never duplicated across every row of a dense list.
+* **Toolbar Ceiling**: A panel header or card header may contain **at most 1 Primary CTA** (solid accent fill) and **at most 2–3 compact Secondary buttons**. Secondary utility actions (`Import`, `Export`, `Refresh`) should use compact icon+label buttons with clear visual grouping. In Stub Detail, export actions live inside `#btn-stub-copy-menu` (`Copy cURL` / `Copy Java` / `Copy JSON`) and secondary lifecycle actions (`Duplicate`, `Delete`) live inside `#btn-stub-more-menu`.
+* **Contextual Action Placement**: Actions that mutate or export a specific item (`⚡ Test`, `✏️ Edit`, `⏸️ Disable`, `📄 Duplicate`, `🗑️ Delete`) belong inside the **Detail Inspector header** of the selected item, never duplicated across every row of a dense list. Bulk selection actions (`Enable`, `Disable`, `Export`, `Delete`) operate strictly on currently visible filtered stubs (`getVisibleSelectedStubIds`).
+* **Unified Chrome Modals & Discoverable Tabs**:
+  * Configuration lives in a single 4-tab Settings modal (`#modal-settings`: Target Host, Persistent Headers, Snapshot Exclusions, Config Sync), and all document inspection/editing converges in the fullscreen Document Workspace (`#modal-document-workspace`).
+  * Extension tabs (`TCP NetEm`, `Queues & Topics`) stay visible in the navbar even against vanilla WireMock for discoverability, degrading gracefully with `.cap-disabled` and informative banners/tooltips when unsupported.
 * **Persistent vs. Full-Width Workspace**:
   * `Stubs` and `Multi-Protocol Tester` share the persistent left `#sidebar-stubs` catalog so developers can click through stubs and immediately fire requests in the Tester.
   * `Request Journal`, `Scenarios`, `TCP NetEm`, and `Queues` collapse `#sidebar-stubs` to claim 100% horizontal viewport width for wide tables and DAG visualizations.
 
 ### 4.2 Non-Blocking Sensory Feedback
-* **No Blocking `alert()` for Routine Confirmations**: Never use native browser `alert()` for success confirmations (e.g., after taking a traffic snapshot). Use inline button state transitions (`📸 Snapshot` $\rightarrow$ `✅ Captured 4 Stubs!`) or a non-blocking toast notification. Reserve `confirm()` strictly for destructive operations (`Delete Stub`, `Clear Journal`, `Reset Scenarios`).
+* **Zero Native `window.alert()` / `window.confirm()` Calls**: Never block the browser thread with native `alert()` or `confirm()` dialogs. Use non-blocking toast notifications (`showToast` -> `#toast-container`) or inline button state transitions (`✅ Copied!`), and use the Promise-based confirmation modal (`confirmDialog` -> `#modal-confirm`) for destructive operations (`Delete Stub`, `Clear Journal`, `Reset Scenarios`, `Purge Destination`) and unsaved-edit prompts.
 * **Clipboard Assurance**: Every copy button must flash `✅ Copied!` for 1500ms before restoring its label.
 
 ---
 
 ## 5. Scalable Zero-Build Vanilla ES6 Architecture
 
-To scale `wiremock-extension-ui` to 8,000+ lines of code (adding Matcher Builders, Async Destination Explorers, Multi-Protocol Testers, and SDK Codegen Previews) **without** introducing `npm`, Webpack, Vite, or React, all frontend code must follow these architectural invariants:
+To scale `wiremock-extension-ui` without introducing `npm`, Webpack, Vite, or React, all frontend code must follow these architectural invariants:
 
 ### 5.1 Native ES Module Boundaries (`src/main/resources/ui/modules/`)
 * Keep modules strictly single-responsibility and domain-scoped:
-  * **Core Infrastructure**: `state.js` (reactive state + URL sync), `dom.js` (cached static selectors + HTML escaping), `api.js` (fetch wrapper + proxy header injection), `router.js` (hash deep-linking), `capabilities.js` (remote feature probing & graceful degradation).
-  * **Feature Verticals**: `stub-catalog.js`, `stubs.js`, `lifecycle.js`, `projects.js`, `journal.js`, `request-journal.js`, `tester.js`, `scenarios.js`, `queues.js`, `netem.js`, `openapi.js`, `import-export.js`, `bulk-actions.js`, `dispatcher.js`.
+  * **Core Infrastructure**: `state.js` (reactive state + URL sync), `dom.js` (cached static selectors + HTML escaping), `api.js` (pure `fetch` wrapper + proxy header injection + explicit dynamic Demo Mode loader), `router.js` (hash deep-linking), `capabilities.js` (remote feature probing & graceful degradation), `dialog.js` (`showToast`, `confirmDialog`), `settings.js` (4-tab `#modal-settings`).
+  * **Polyglot & Workspace Editor Stack**: `charset-codec.js` (charset detection & Base64 codec for `UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`, `US-ASCII`), `pseudo-json.js` (Java `Map.toString()` `{k=v}` KV parser/formatter), `highlighter.js` (formatters, validators, syntax highlighters, and `tokenizeOffsets`), `polyglot-ast.js` (exact `[start, end]` span discovery + `applyNestedPathEdit` splicing), `polyglot-viewer.js` (read-only/editable foldable tree renderer with zero disabled Edit buttons), `code-editor.js` (default `highlight-api` `<pre contenteditable="plaintext-only">` + `CSS.highlights` with hot-swappable `legacy-duallayer` fallback), `document-workspace.js` (unified `#modal-document-workspace` viewer-first controller).
+  * **Feature Verticals**: `stub-catalog.js`, `stubs.js`, `lifecycle.js`, `projects.js`, `journal.js`, `request-journal.js`, `tester.js` (`PROTOCOL_ADAPTERS` registry), `scenarios.js`, `queues.js`, `netem.js`, `openapi.js`, `import-export.js`, `bulk-actions.js`, `dispatcher.js`, `app-loader.js`, `filter.js`, `base64.js`, and lazy Demo Mode (`demo-backend.js` + live-generated `demo-snapshot.js`).
 * **Single Source of Truth for Static Demo**: `wiremock-extension-ui/src/main/resources/ui/` is the **only** directory where UI files are authored. Never commit duplicated copies of UI scripts into `docs/site/demo/` (it is gitignored and assembled at CI build time by `.github/workflows/pages.yml`).
 * **Zero Marketing Assets in Classpath**: Never store documentation GIFs, pitch decks, or Playwright reference PNGs under `src/main/resources/ui/`. Keep them in `docs/` so the production JAR remains `< 200 KB`.
 
 ### 5.2 DOM Rendering & Event Delegation
-* **Container-Level Event Delegation**: Instead of attaching hundreds of individual `.addEventListener()` callbacks inside `.forEach()` loops after every `innerHTML` render (which leaks closures and slows down large catalogs), attach a single delegated click/change listener on the stable parent container (e.g., `#stub-list`, `#journal-list`) using `e.target.closest('[data-action]')`.
+* **Container-Level Event Delegation**: Instead of attaching hundreds of individual `.addEventListener()` callbacks inside `.forEach()` loops after every `innerHTML` render (which leaks closures and slows down large catalogs), attach a single delegated click/change listener on the stable parent container (e.g., `#journal-list`, `#queues-messages-tbody`, and inside `polyglot-viewer.js`).
 * **XSS-Safe Template Literals**: Always wrap dynamic user/network strings (`url`, `name`, header values, query params) in `escapeHtml(...)` from `dom.js` before interpolating into HTML strings.
-* **Two-Way Form $\leftrightarrow$ JSON Synchronization**: For complex editors (like the Stub Editor & Matcher Builder), treat the standard WireMock JSON mapping object as the canonical data model; form rows read from and mutate that JSON structure directly rather than maintaining parallel disconnected form state.
+* **Viewer-First Unified Document Workspace & Span-Exact Splicing**: All structured document editing (`Stubs`, `Tester`, `OpenAPI`, `Bundles`, `Queues`) routes through `#modal-document-workspace`: opening first in `PolyglotViewer` (`DOCUMENT_VIEWER`), transitioning into focused `CodeEditor` (`SECTION_EDITOR`) on `✏️ Edit Document` / `✏️ Edit Section`, and splicing leaf edits back via exact `[start, end]` character spans (`applyNestedPathEdit`) while preserving compact vs. multi-line wire style and surrounding formatting before root `💾 Save`.

@@ -10,92 +10,76 @@
 
 | Abstract Semantic Component | Web Selector (HTML / CSS) | Desktop Swing Name (`component.setName`) | Target Capability / Role |
 | :--- | :--- | :--- | :--- |
-| **Server Connection URL** | `#server-url` | `"server-url"` | Input field for WireMock base URL (`http://localhost:8080`). |
-| **Connect / Refresh Trigger**| `#btn-connect` | `"btn-connect"` | Trigger to refresh all datasets. |
 | **Navigation Tab: Stubs** | `#nav-tab-stubs` | `"nav-tab-stubs"` / tab 0 | Switch to Stubs Catalog. |
 | **Navigation Tab: Journal** | `#nav-tab-journal` | `"nav-tab-journal"` / tab 1 | Switch to Traffic Journal. |
 | **Navigation Tab: Tester** | `#nav-tab-tester` | `"nav-tab-tester"` / tab 2 | Switch to Unified Multi-Protocol Tester (`http`, `kafka`, `amqp`, `casual`). |
 | **Navigation Tab: Scenarios**| `#nav-tab-scenarios` | `"nav-tab-scenarios"` / tab 3 | Switch to FSM Scenarios Inspector. |
-| **Stubs Filter Input** | `#search-box` | `"search-box"` | Case-insensitive text filter. |
-| **Stubs Status Filter** | `#status-filter` | `"status-filter"` | Status filter dropdown (`All`, `Active`, `Parked`). |
-| **Stubs Table / Grid** | `#stub-table` | `"stub-table"` | Table view with columns: Status, Method, URL, Name. |
-| **Stub Details Panel** | `#stub-details` | `"stub-details"` | Formatted JSON editor/viewer of selected stub mapping. |
-| **Stub Toggle Action** | `#btn-toggle-stub` | `"btn-toggle-stub"` | Toggles active/parked priority tier (`priority >= 100`) without deletion. |
-| **Stub Delete Action** | `#btn-delete-stub` | `"btn-delete-stub"` | Deletes selected stub mapping. |
-| **Stub Test in Tester** | `#btn-test-stub` | `"btn-test-stub"` | Pre-populates tester with stub method & URL. |
-| **Stub Copy cURL** | `#btn-copy-curl` | `"btn-copy-curl"` | Copies valid `curl` command to system clipboard to create this stub mapping via `POST /__admin/mappings` using multi-line JSON with `<< 'EOF'`. |
-| **Stub Copy Java** | `#btn-copy-java` | `"btn-copy-java"` | Copies WireMock Java `stubFor(...)` DSL snippet to system clipboard. |
-| **Stub Copy JSON** | `#btn-copy-json` | `"btn-copy-json"` | Copies raw mapping JSON to system clipboard. |
-| **Stub Editor Proxy URL** | `#editor-proxy-url` | `"editor-proxy-url"` | Optional `proxyBaseUrl` upstream target input in Stub Editor modal. |
-| **Journal Table** | `#journal-table` | `"journal-table"` | Table view of served requests with timestamp, caller source, protocol, operation, target/url, status, resolution/verdict, duration. |
+| **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console (visible even when `.cap-disabled`). |
+| **Navigation Tab: Queues** | `#nav-tab-queues` | `"nav-tab-queues"` / tab 5 | Switch to Async Destinations & Queues explorer (`metadata.async`; visible on vanilla WireMock). |
+| **Stubs Filter Input** | `#search-box` | `"search-box"` | Case-insensitive free-text and boolean (`AND`, `OR`) filter. |
+| **Stubs Project Filter** | `#project-filter-select` | `"project-filter-select"` | Project / upstream service filter dropdown. |
+| **Stubs Status Filter Pills** | `#btn-filter-all`, `#btn-filter-active`, `#btn-filter-disabled` | `"status-filter"` | Lifecycle filter pills (`All`, `Active`, `Disabled` / parked). |
+| **Stubs Catalog List** | `#stub-list` (`.stub-card`) | `"stub-list"` | Scrollable catalog of `.stub-card` mappings with selection checkboxes (`.stub-card-chk`). |
+| **Bulk Actions Bar** | `#bulk-actions-bar` (`#btn-bulk-enable`, `-disable`, `-export`, `-delete`) | `"bulk-actions-bar"` | Scoped strictly to visible selected stubs (`getVisibleSelectedStubIds`). |
+| **Stub Details Panel** | `#stub-detail-view`, `#stub-json-viewer` | `"stub-detail-view"` | Polyglot Tree Viewer (`Rich` / `Raw` via `#stub-viewer-mode-toggle`) of selected stub mapping. |
+| **Stub Primary Actions** | `#btn-test-stub`, `#btn-edit-stub`, `#btn-toggle-stub`, `#btn-view-stub-in-journal` | `"stub-primary-actions"` | Test in Tester, Edit in Document Workspace, toggle active/parked tier, or filter Journal by stub. |
+| **Stub Copy Dropdown Menu** | `#btn-stub-copy-menu`, `#stub-copy-menu` (`#btn-copy-curl`, `#btn-copy-java`, `#btn-copy-json`) | `"stub-copy-menu"` | Copies `POST /__admin/mappings` cURL heredoc (`<< 'EOF'`), Java `stubFor(...)` DSL, or raw JSON. |
+| **Stub More Dropdown Menu** | `#btn-stub-more-menu`, `#stub-more-menu` (`#btn-clone-stub`, `#btn-delete-stub`) | `"stub-more-menu"` | Duplicates stub in Document Workspace or permanently deletes with confirmation dialog. |
+| **Journal Table** | `#journal-table`, `#journal-list` | `"journal-table"` | Table view of served requests with timestamp, caller source, protocol, operation, target/url, status, resolution/verdict, duration. |
 | **Journal Source Cell** | `td.journal-source-cell` | `"journal-source-cell"` | Displays resolved caller short hostname (or IP) with compact IP subline and clickable source filter chip (`.btn-journal-filter-source`). |
-| **Journal Source Detail** | `div.journal-source-detail` | `"journal-source-detail"` | Expanded `Source Caller` section showing resolved FQDN, effective source IP, and 1-click filter button. |
+| **Journal Source Detail** | `div.journal-source-detail` | `"journal-source-detail"` | Expanded `Source Caller` section showing resolved FQDN and effective source IP. |
 | **Journal Verdict Pills** | `#btn-journal-verdict-all`, `-proxied`, `-stub`, `-unmatched` | `"journal-verdict-filter"` | Filter pills for the 3 core verdicts (`🌐 PROXIED`, `📌 STUB`, `⚠️ UNMATCHED`). |
+| **Journal Protocol Pills** | `#btn-journal-proto-all`, `-http`, `-kafka`, `-amqp`, `-casual` | `"journal-protocol-filter"` | Filter pills for captured protocol traffic. |
 | **Journal Auto-Refresh** | `#journal-auto-refresh` | `"journal-auto-refresh"` | Polling toggle checkbox (3-second interval). |
 | **Journal Limit Input** | `#journal-limit-input` | `"journal-limit-input"` | Configurable volume limit number input (positive integer, default 100). |
-| **Journal Clear Action** | `#btn-clear-journal` | `"btn-clear-journal"` | Clears recorded requests via `DELETE /__admin/requests`. |
-| **Journal Resolution Badge** | `.pill-matched`, `.pill-stub`, `.pill-stubbed`, `.pill-proxied`, `.pill-unmatched` | `"journal-resolution"` | Verdict badge (`🌐 PROXIED`, `📌 STUB` / `TPL`, `⚠️ UNMATCHED`). |
-| **Journal Replay Action** | `.btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates tester with captured request data. |
+| **Journal Clear Action** | `#btn-reset-journal` | `"btn-reset-journal"` | Clears recorded requests via `DELETE /__admin/requests` after `#modal-confirm`. |
+| **Journal Resolution Badge** | `.pill-matched`, `.pill-stub`, `.pill-stubbed`, `.pill-proxied`, `.pill-bridged`, `.pill-unmatched`, `.pill-proxy-error` | `"journal-resolution"` | Verdict badge (`🌐 PROXIED`, `🔀 BRIDGED`, `📌 STUB` / `TPL`, `⚠️ UNMATCHED`, `⚠️ PROXY_ERROR`). |
+| **Journal Replay Action** | `.btn-journal-to-tester` | `"btn-journal-to-tester"` | Pre-populates Multi-Protocol Tester with captured request data. |
 | **Journal Copy cURL** | `.btn-journal-copy-curl` | `"btn-journal-copy-curl"` | Copies captured request as `curl` to system clipboard. |
 | **Journal Copy Java** | `.btn-journal-copy-java` | `"btn-journal-copy-java"` | Copies captured request/response pair as WireMock Java `stubFor(...)` snippet. |
-| **Journal Create Stub** | `.btn-create-stub-from-req` | `"btn-create-stub-from-req"` | Opens Stub Editor pre-populated from an `⚠️ UNMATCHED` request. |
-| **Tester Method Selector** | `#tester-method` | `"tester-method"` | HTTP method dropdown (GET, POST, PUT, DELETE, PATCH). |
-| **Tester URL Path** | `#tester-url` | `"tester-url"` | URL path to dispatch against WireMock. |
-| **Tester Headers Editor** | `#tester-headers` | `"tester-headers"` | Multiline header editor (`Key: Value`). |
-| **Tester Body Editor** | `#tester-request-body` | `"tester-request-body"` | Request payload text area. |
-| **Tester Send Action** | `#tester-send-btn` | `"tester-send-btn"` | Dispatches request asynchronously. |
-| **Tester Status Result** | `#tester-response-status`| `"tester-response-status"`| Displays HTTP response status and latency in ms. |
-| **Tester Response Body** | `#tester-response-body` | `"tester-response-body"` | Formatted response body viewer. |
-| **Tester Persistent Headers Toggle** | `#tester-local-headers-toggle` | `"tester-local-headers-toggle"` | Checkbox enabling/disabling browser local persistent headers injection. |
-| **Manage Persistent Headers Action** | `#btn-manage-local-headers` | `"btn-manage-local-headers"` | Button triggering modal for configuring persistent local headers. |
+| **Journal Create Stub** | `.btn-create-stub-from-req` | `"btn-create-stub-from-req"` | Opens `#modal-document-workspace` pre-populated from an `⚠️ UNMATCHED` request. |
+| **Tester Protocol Picker** | `#tester-proto-picker` (`#btn-tester-proto-http`, `-kafka`, `-amqp`, `-casual`) | `"tester-proto-picker"` | Switches active `PROTOCOL_ADAPTERS` transport in the Unified Multi-Protocol Tester. |
+| **Tester Quick Templates** | `#tester-quick-templates` | `"tester-quick-templates"` | Loads curated HTTP, Kafka, AMQP, or Casual request templates. |
+| **Tester HTTP Address Bar** | `#tester-bar-http` (`#tester-method`, `#tester-url`) | `"tester-bar-http"` | HTTP method selector and target path input. |
+| **Tester Async / Casual Bars** | `#tester-bar-kafka`, `#tester-bar-amqp`, `#tester-bar-casual` | `"tester-proto-bars"` | Protocol-specific destination inputs (topic/key/partition, queue/corr/replyTo, host/port/service/buffer). |
+| **Tester Headers Editor** | `#tester-headers` | `"tester-headers"` | Shared multiline header editor (`Key: Value`) maintaining isolated per-protocol drafts. |
+| **Tester Payload Viewer** | `#tester-request-viewer`, `#btn-tester-edit-workspace` | `"tester-request-viewer"` | `PolyglotViewer` preview of request body + trigger to edit in `#modal-document-workspace`. |
+| **Tester Send Action** | `#btn-tester-send` | `"btn-tester-send"` | Single shared send button adapting label/behavior to active protocol adapter. |
+| **Tester Share Link** | `#btn-tester-share-link` | `"btn-tester-share-link"` | Encodes active protocol & parameters into clipboard share URL on click only. |
+| **Tester Status Result** | `#tester-response-status`| `"tester-response-status"`| Displays HTTP/Casual response status and latency (`#tester-response-time`). |
+| **Tester Response Body** | `#tester-response-body`, `#btn-tester-response-maximize` | `"tester-response-body"` | `PolyglotViewer` / Hex Dump / Raw response inspector with Workspace drill-down. |
+| **Tester Persistent Headers Toggle** | `#tester-local-headers-toggle` | `"tester-local-headers-toggle"` | Checkbox enabling/disabling browser local persistent headers injection (HTTP only). |
+| **Manage Persistent Headers Action** | `#btn-manage-local-headers`, `#btn-open-settings` | `"btn-manage-local-headers"` | Opens `#modal-settings` directly on the `Persistent Headers` tab (`#settings-tab-headers`). |
 | **Persistent Headers Count** | `#tester-local-headers-count` | `"tester-local-headers-count"` | Badge showing total number of active configured local persistent headers. |
-| **Persistent Headers Chips** | `#tester-local-headers-chips` | `"tester-local-headers-chips"` | Container displaying active persistent headers chips and override hints. |
-| **Modal: Persistent Headers** | `#modal-local-headers` | `"modal-local-headers"` | Dialog to add, edit, or delete browser `localStorage` headers. |
-| **Add Header Row Action** | `#btn-add-local-header-row` | `"btn-add-local-header-row"` | Button appending a new header key-value row inside modal. |
-| **Save Persistent Headers Action** | `#btn-save-local-headers` | `"btn-save-local-headers"` | Button committing configured headers to browser `localStorage`. |
-| **Tester Tab: Sent Request** | `#btn-tester-tab-request` | `"btn-tester-tab-request"` | Tab displaying the final resolved outgoing HTTP request and headers. |
-| **Tester Tab: Response Body** | `#btn-tester-tab-response` | `"btn-tester-tab-response"` | Tab displaying the received HTTP response body. |
-| **Tester Sent Headers View** | `#tester-sent-headers` | `"tester-sent-headers"` | Inspection pre element containing final resolved outgoing HTTP headers. |
-| **Payload Lens / Inline Editor** | `.payload-lens-inline-editor` | `"payload-lens-inline-editor"` | Compact in-line editor pane embedded directly within the folded polyglot tree structure. |
-| **Payload Lens Action Toolbar** | `.payload-lens-inline-toolbar` | `"payload-lens-inline-toolbar"` | In-line horizontal action bar containing Format, Apply, and Cancel controls. |
-| **Payload Lens Editor Textarea** | `.payload-lens-inline-input` | `"payload-lens-inline-input"` | Auto-resizing monospaced textarea for surgical leaf edits. |
-| **Payload Lens Format Action** | `.payload-lens-btn-format` | `"payload-lens-btn-format"` | Formats/pretty-prints the leaf payload within the inline editor. |
-| **Payload Lens Apply Action** | `.payload-lens-btn-apply` | `"payload-lens-btn-apply"` | Surgically replaces leaf content in-place and cascades byte-for-byte to the Root Document. |
-| **Payload Lens Cancel Action** | `.payload-lens-btn-cancel` | `"payload-lens-btn-cancel"` | Cancels leaf edit and restores tree view without mutating Root Document. |
-| **Root Document Dirty Indicator**| `.dirty-badge` / `#stub-editor-dirty-indicator` | `"stub-editor-dirty-indicator"` | Prominent pill indicating uncommitted in-memory edits awaiting root Save/Discard. |
-| **Top-Level Viewer Badge (Stub)** | `#stub-top-pill` | `"stub-top-pill"` | Badge presenting payload format, non-UTF-8 charset, and size (e.g. `XML · ISO-8859-1 · 0.2 KB`). |
-| **Top-Level Viewer Badge (Tester Response)** | `#tester-top-pill` | `"tester-top-pill"` | Badge presenting unified tester response format, charset, and size. |
-| **Top-Level Viewer Badge (Tester Request)** | `#tester-request-top-pill` | `"tester-request-top-pill"` | Composite request descriptor badge (includes Casual buffer type when `proto=casual`, e.g. `FIELDED · JSON · ISO-8859-1 · 0.4 KB`). |
-| **Scenarios Reset Action**| `#btn-reset-scenarios` | `"btn-reset-scenarios"` | Sends `POST /__admin/scenarios/reset`. |
-| **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console. |
-| **Navigation Tab: Queues** | `#nav-tab-queues` | `"nav-tab-queues"` / tab 5 | Switch to Async Destinations & Queues explorer (`metadata.async`). |
-| **NetEm Ingress Info** | `#netem-ingress-info` | `"netem-ingress-info"` | Displays active proxy name, listen port, and target port. |
-| **NetEm Active Toxics Stat** | `#netem-stat-active-toxics` | `"netem-stat-active-toxics"` | Metric counter for active toxic impairments. |
-| **NetEm Preset: 3G** | `#btn-preset-3g` | `"btn-preset-3g"` | Applies 3G Mobile preset (300ms latency, 64KB/s bandwidth). |
-| **NetEm Reset All** | `#btn-netem-reset-all` | `"btn-netem-reset-all"` | Clears all registered toxics on the active proxy. |
+| **Persistent Headers Chips** | `#tester-local-headers-chips` | `"tester-local-headers-chips"` | Container displaying active persistent headers chips and `(overridden)` hints. |
+| **Tester Tab: Sent Request** | `#btn-tester-tab-request` | `"btn-tester-tab-request"` | Tab displaying the final resolved outgoing request, headers, and `PolyglotViewer` body. |
+| **Tester Tab: Response Body** | `#btn-tester-tab-response` | `"btn-tester-tab-response"` | Tab displaying the received response body and headers. |
+| **Tester Sent Headers View** | `#tester-sent-headers` | `"tester-sent-headers"` | Inspection `<pre>` element containing final resolved outgoing headers. |
+| **Modal: Document Workspace** | `#modal-document-workspace` | `"modal-document-workspace"` | Fullscreen viewer-first workbench (`DOCUMENT_VIEWER` <-> `SECTION_EDITOR`) for Stubs, Tester, OpenAPI, Bundles, and Queues. |
+| **Workspace Mode & Panes** | `#workspace-viewer-pane`, `#workspace-editor-pane`, `#workspace-code-editor-host` | `"workspace-panes"` | Non-destructive `PolyglotViewer` tree (`#workspace-viewer-pane`) vs. focused `CodeEditor` host (`#workspace-code-editor-host`). |
+| **Workspace Editor Controls** | `#btn-workspace-edit-root`, `.btn-workspace-edit-section`, `#btn-workspace-apply-section`, `#btn-workspace-cancel-section`, `#btn-workspace-save` | `"workspace-actions"` | Enter root/section editor, splice span-exact edits back to viewer, or commit root changes. |
+| **Workspace Formatting & Wire Style** | `#workspace-breadcrumbs`, `#btn-workspace-format`, `#btn-workspace-minify`, `#workspace-wire-style-select`, `#workspace-validation-banner`, `#btn-workspace-force-apply` | `"workspace-toolbar"` | Ancestor breadcrumb trail, prettify/compact actions, `auto`/`compact`/`multiline` wire re-encoding, and validation diagnostics. |
+| **CodeEditor Engine Toggle** | `#workspace-engine-toggle` (`#btn-editor-engine-beta`, `#btn-editor-engine-legacy`) | `"workspace-engine-toggle"` | Hot-swaps between default `highlight-api` (`<pre contenteditable="plaintext-only">` + `CSS.highlights`) and `legacy-duallayer` (`<textarea>`). |
+| **Polyglot Tree Card Controls** | `.nested-payload-block`, `.btn-nested-toggle`, `.btn-nested-copy`, `.btn-nested-open-workspace`, `.btn-workspace-edit-section` | `"polyglot-tree"` | Foldable nested payload cards with single-delegated toggle, copy, and workspace/edit actions (never disabled Edit buttons). |
+| **Root Document Dirty Indicator** | `#workspace-dirty-badge` | `"workspace-dirty-badge"` | Prominent `.viewport-dirty-badge` indicating uncommitted in-memory edits awaiting root Save/Discard. |
+| **Top-Level Viewer Badges** | `#stub-top-pill`, `#tester-top-pill`, `#tester-request-top-pill`, `#workspace-desc-pill` | `"top-descriptor-pill"` | Format/charset/size badges (`XML · ISO-8859-1 · 0.2 KB`, `FIELDED · JSON · ISO-8859-1 · 0.4 KB`). |
+| **Scenarios Inspector & Reset** | `#scenarios-container`, `#btn-refresh-scenarios`, `#btn-reset-scenarios` | `"scenarios-container"` | Live FSM DAG pipeline cards and `POST /__admin/scenarios/reset` action. |
+| **NetEm Ingress & Stats** | `#netem-ingress-info`, `#netem-stat-active-toxics` | `"netem-ingress-info"` | Displays active proxy name/ports and active toxic impairment count. |
+| **NetEm Preset & Reset** | `#btn-preset-3g`, `#btn-netem-reset-all` | `"btn-preset-3g"` | Applies 3G Mobile preset (300ms latency, 64KB/s) or clears all registered toxics. |
 | **NetEm Add Toxic Modal** | `#netem-add-toxic-modal` | `"netem-add-toxic-modal"` | Modal dialog for creating customized toxic impairments. |
-| **NetEm Pattern Mode**    | `#netem-pattern-type-ascii` / `#netem-pattern-type-hex` | `"netem-pattern-type"` | Toggle between ASCII and Hex byte stream pattern modes. |
-| **NetEm Toxic Pattern**   | `#netem-toxic-pattern` | `"netem-toxic-pattern"` | Stream substring or raw Hex sequence pattern filter. |
-| **NetEm Toxic Client IP** | `#netem-toxic-client-ip`| `"netem-toxic-client-ip"`| Client socket IP or CIDR block filter (e.g. `10.0.0.0/8`). |
-| **NetEm Journal Table**   | `#netem-journal-table` | `"netem-journal-table"` | Table view of recorded network transfers and impairments. |
-| **NetEm Journal Filter**  | `#netem-journal-filter-corr` | `"netem-journal-filter-corr"` | Scope / target pattern search filter for the NetEm journal. |
-| **Target Host Trigger** | `#btn-target-host` | `"btn-target-host"` | Button opening Target Server configuration modal. |
-| **Target Host Label** | `#target-host-label` | `"target-host-label"` | Displays active remote target origin and proxy strategy. |
-| **Target Host Modal** | `#target-host-modal` | `"target-host-modal"` | Modal dialog for remote WireMock base URL and strategy. |
-| **Target Host Input** | `#input-target-host` | `"input-target-host"` | Input for remote base URL and path prefix. |
-| **Strategy Proxy Radio**| `#radio-strategy-proxy` | `"radio-strategy-proxy"` | Proxy via standard gateway headers (`X-Forwarded-*`). |
-| **Strategy Direct Radio**| `#radio-strategy-direct`| `"radio-strategy-direct"`| Cross-origin direct browser requests. |
-| **Reset Target Trigger**| `#btn-reset-target-host`| `"btn-reset-target-host"`| Resets target to same-origin and clears query params. |
-| **Capabilities Section** | `#target-capabilities-section` | `"target-capabilities-section"` | Container displaying detected extension matrix. |
-| **Capabilities Status**  | `#target-capabilities-status`  | `"target-capabilities-status"`  | Active count badge (e.g. `All 5 active` or `1/5 (Degraded)`). |
-| **Capabilities List**    | `#target-capabilities-list`    | `"target-capabilities-list"`    | Capability rows with `data-testid="cap-badge-{key}"`. |
+| **NetEm Pattern Mode** | `#btn-pattern-ascii`, `#btn-pattern-hex` | `"netem-pattern-mode"` | Toggle between ASCII and Hex byte stream pattern modes. |
+| **NetEm Toxic Pattern & IP** | `#netem-toxic-pattern`, `#netem-toxic-client-ip` | `"netem-toxic-pattern"` | Stream substring/Hex sequence filter and client socket IP/CIDR block filter. |
+| **NetEm Journal Table & Filter** | `#netem-journal-table`, `#netem-journal-filter-corr` | `"netem-journal-table"` | Table view of recorded network transfers and scope/target filter input. |
+| **Modal: Unified Settings** | `#modal-settings` | `"modal-settings"` | 4-tab modal (`#settings-tab-target`, `#settings-tab-headers`, `#settings-tab-exclusions`, `#settings-tab-sync`). |
+| **Settings Tabs & Panels** | `#settings-panel-target`, `#settings-panel-headers`, `#settings-panel-exclusions`, `#settings-panel-sync` | `"settings-panels"` | Target Host + Capabilities, Persistent Headers (`#local-headers-tbody`, `#btn-add-local-header-row`), Snapshot Exclusions (`#settings-excluded-paths`), Clipboard Sync (`#btn-settings-copy-config`, `#settings-import-json`). |
+| **Target Host Trigger & Label** | `#btn-target-host`, `#target-host-label`, `#demo-mode-badge` | `"btn-target-host"` | Opens `#modal-settings` (`target` tab) and displays active remote target origin/strategy or Demo Mode badge. |
+| **Target Host Controls** | `#input-target-host`, `#radio-strategy-proxy`, `#radio-strategy-direct`, `#btn-save-target-host`, `#btn-reset-target-host`, `#btn-demo-target-host` | `"target-host-controls"` | Remote WireMock URL, proxy vs. direct strategy, Connect, Reset to same-origin, or explicit Demo Mode activation. |
+| **Capabilities Matrix** | `#target-capabilities-section`, `#target-capabilities-status`, `#target-capabilities-list` (`[data-testid="cap-badge-{key}"]`) | `"target-capabilities-section"` | Extension capability matrix (`core`, `lifecycle`, `netem`, `metrics`, `casual`, `async`, `journal`). |
+| **Modal: Confirmation Dialog** | `#modal-confirm` (`#confirm-modal-title`, `#confirm-modal-message`, `#btn-confirm-accept`, `#btn-confirm-secondary`, `#btn-confirm-cancel`) | `"modal-confirm"` | Promise-based confirmation dialog (`confirmDialog`) replacing native `window.confirm()`. |
+| **Toast Notifications** | `#toast-container` (`.toast-item`, `.toast-message`, `.toast-close`) | `"toast-container"` | Non-blocking notification stack (`showToast`) replacing native `window.alert()`. |
 | **Site Header / Tab Title** | `document.title` / `<title>` | Window / Frame Title | Browser tab display identifying the active WireMock URI: `WMC - <wiremock-uri>`. |
-| **Project Lifecycle Bar** | `#project-lifecycle-bar` | `"project-lifecycle-bar"` | Active project lifecycle toolbar displayed when proxy stubs exist. |
-| **Project Mode Badge** | `#project-mode-badge` | `"project-mode-badge"` | Indicates active simulation mode (`LIVE PROXY` or `STUBS MODE`). |
-| **Project Mode Toggle** | `#btn-project-mode-toggle` | `"btn-project-mode-toggle"` | Toggles service/all between live proxy and recorded offline stubs. |
-| **Project Snapshot** | `#btn-project-snapshot` | `"btn-project-snapshot"` | Captures live proxied traffic into parked replay stubs (`priority >= 100`) for the project. |
-| **Casual Protocol Badge** | `.http-badge.badge-CASUAL` | `"badge-casual"` | Method column pill distinguishing Casual XATMI calls (`CASUAL`). |
-| **Casual Status Badge** | `.status-badge.status-casual-ok`, `.status-casual-err` | `"status-casual"` | Native Casual outcome status (`OK`, `TPESVCFAIL`, `TPENOENT`). |
+| **Project Lifecycle Bar** | `#project-lifecycle-bar`, `#project-mode-badge`, `#btn-project-mode-toggle`, `#btn-project-snapshot` | `"project-lifecycle-bar"` | Active project toolbar (`LIVE PROXY` / `STUBS MODE`) displayed when proxy stubs exist. |
+| **Casual Protocol & Status Badges** | `.http-badge.badge-CASUAL`, `.stub-status-pill.status-proxy`, `.card-value.status-proxy` | `"badge-casual"` | Distinguishes Casual XATMI calls (`CASUAL` / `OK` / `TPESVCFAIL` / `TPENOENT`) and proxy routes (`PROXY`). |
 
 ---
 
@@ -115,15 +99,23 @@
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
 | **Reset Scenarios** | `POST` | `/__admin/scenarios/reset` | None |
-| **Ingest OpenAPI** | `POST` | `/__admin/openapi/import` | OpenAPI YAML/JSON or file path |
+| **Ingest OpenAPI** | `POST` | `/__admin/openapi/import` | OpenAPI YAML/JSON spec and synthesis/proxy options |
+| **Inspect OpenAPI** | `POST` | `/__admin/openapi/inspect` | OpenAPI YAML/JSON spec metadata inspection (`{"spec": "..."}`) |
+| **Import Mappings Bundle** | `POST` | `/__admin/mappings/import` | Bulk WireMock JSON bundle import |
 | **List NetEm Proxies** | `GET` | `/__admin/tcp-netem/proxies` | None |
 | **Add NetEm Toxic** | `POST` | `/__admin/tcp-netem/proxies/{name}/toxics` | Toxic JSON definition |
 | **Delete NetEm Toxic** | `DELETE` | `/__admin/tcp-netem/proxies/{name}/toxics/{toxic}` | None |
 | **Apply NetEm Preset** | `POST` | `/__admin/tcp-netem/proxies/{name}/presets/{preset}` | None |
-| **Fetch NetEm Journal**| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
-| **Clear NetEm Journal**| `DELETE` | `/__admin/tcp-netem/proxies/{name}/journal` | None |
+| **Fetch NetEm Journal**| `GET` | `/__admin/tcp-netem/journal` | Optional `?limit`, `?scope`, `?impaired` query params |
+| **Clear NetEm Journal**| `DELETE` | `/__admin/tcp-netem/journal` | None |
 | **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
 | **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
+| **Probe UI Version** | `GET` | `/__admin/ui/version` | Version, branch, and commit metadata JSON |
+| **Probe Casual Gateway** | `GET` | `/__admin/casual/config` | Casual gateway port and status |
+| **Execute Casual Call** | `POST` | `/__admin/casual/call` | Service name, bufferType, payload, headers, optional host/port |
+| **Probe Async Messaging** | `GET` | `/__admin/async/status` | Async engine status, Kafka sink port, broker count |
+| **Publish / Inspect Async** | `GET`/`POST`/`DELETE` | `/__admin/async/{publish,destinations,connections}` | Async queue publishing, destination inspection/purge, broker connections |
+| **Probe Compressed Journal** | `GET` | `/__admin/journal/stats` | Zstd journal compression and JVM memory metrics |
 
 ---
 

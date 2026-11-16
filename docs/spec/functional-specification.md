@@ -63,7 +63,7 @@
 1. **Service-Scoped Exploration & Gradual Hybrid Simulation**: Search by text and boolean expressions (`AND`, `OR`) across URL, method, name, headers, body patterns, and metadata. Group stubs and proxy routes by remote service (`metadata.project`, e.g., `erp-system`, `crm-service`, `billing-platform`). Switch individual services between `LIVE PROXY` and `STUBS MODE` so manual testers and runtime-parameterized BDD/JUnit suites can run fully integrated, hybrid, or fully simulated without modifying test code.
 2. **Lifecycle Manipulation**: Toggle active/parked state (`priority` tiers on `/__admin/mappings/{id}`) without destroying mappings. Add new stubs or catch-all proxy routes from templates. Duplicate existing stubs. Delete stubs with user assurance.
 3. **Ad-Hoc Request Replay (Multi-Protocol Tester)**: Execute arbitrary HTTP, Casual, Kafka, or AMQP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`, `X-Correlation-Id`). Record and navigate execution history.
-4. **Traffic Observability, Harvesting & Triage (Request Journal)**: Live stream of served traffic clearly badged as `PROXIED`, `STUB`, or `UNMATCHED`. Server-side isolation of unmatched traffic (`?unmatched=true`), configurable journal fetch limit, and progressive/lazy DOM rendering. Snapshot `PROXIED` responses into offline service stubs (`/__admin/lifecycle/snapshots`, `/__admin/lifecycle/snapshot-template`); promote `UNMATCHED` 404 requests directly into the Stub Editor (`Create Stub from Request`); replay any entry in the Multi-Protocol Tester; export as cURL or Java `stubFor()` DSL.
+4. **Traffic Observability, Harvesting & Triage (Request Journal)**: Live stream of served traffic clearly badged as `PROXIED`, `STUB`, or `UNMATCHED`. Server-side isolation of unmatched traffic (`?unmatched=true`), configurable journal fetch limit, and progressive/lazy DOM rendering. Snapshot `PROXIED` responses into offline service stubs (`/__admin/lifecycle/snapshots`, `/__admin/lifecycle/snapshot-template`); promote `UNMATCHED` 404 requests directly into the Unified Document Workspace (`Create Stub from Request`); replay any entry in the Multi-Protocol Tester; export as cURL or Java `stubFor()` DSL.
 5. **Native Scenario Inspection**: Live visual inspection of FSM scenario states and DAG transitions via `/__admin/scenarios`, with 1-click state reset.
 6. **Contract Ingestion & SDK Bootstrapping**: Ingest OpenAPI 3.0 / 3.1 definitions (as synthetic stubs or live proxies) and combine contracts with harvested Journal traffic to bootstrap typed Java `TestDataBuilder`s and domain-level simulation SDKs.
 
@@ -135,7 +135,7 @@ These stories define the **inviolable acceptance criteria** for any client front
 
 ### Story 8: Remote WireMock Target & Forwarded Proxy Strategy
 - **Given** the Web Console is accessed at `http://localhost:8090/__admin/ui/`.
-- **When** the user clicks the target status button (`#btn-target-host`) and configures target `https://gateway.corp:8443/test-envs/env1/wiremock` with strategy `proxy`.
+- **When** the user clicks the target status button (`#btn-target-host`) to open the Target Host tab in Settings (`#modal-settings`) and configures target `https://gateway.corp:8443/test-envs/env1/wiremock` with strategy `proxy`.
 - **Then** the browser URL updates to include `?wiremock=https%3A%2F%2Fgateway.corp%3A8443%2Ftest-envs%2Fenv1%2Fwiremock`.
 - **And** the navbar indicator displays `Target: https://gateway.corp:8443/test-envs/env1/wiremock (proxied)`.
 - **When** the browser refreshes stubs or dispatches test requests.
@@ -146,15 +146,16 @@ These stories define the **inviolable acceptance criteria** for any client front
 ### Story 9: Remote WireMock Capability Detection & Graceful Degradation
 - **Given** the Web Console is pointing to a remote WireMock instance (e.g. standard vanilla WireMock lacking custom extensions).
 - **When** the console loads or connects to the remote target.
-- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/lifecycle/status` for snapshot recording and project mode flipping), Async Messaging (`/__admin/async/status`), TCP NetEm (`/__admin/tcp-netem/proxies`), and Metrics (`/__admin/metrics/prometheus`).
-- **And** features backed by missing extensions gracefully degrade with visual hints (`.cap-disabled`) and descriptive tooltips rather than vanishing from the UI:
-  - TCP NetEm tab (`#nav-tab-netem`) is styled as `.cap-disabled` with a tooltip indicating missing `wiremock-extension-tcp-netem`.
-  - Async Queues tab (`#nav-tab-queues`) is styled as `.cap-disabled` when `wiremock-extension-async` is absent.
+- **Then** the console probes endpoint availability for Core (`/__admin/mappings`), Stub Lifecycle (`/__admin/lifecycle/status`), TCP NetEm (`/__admin/tcp-netem/proxies`), Metrics (`/__admin/metrics/prometheus`), Casual Gateway (`/__admin/casual/config`), Async Messaging (`/__admin/async/status`), and Compressed Journal (`/__admin/journal/stats`).
+- **And** extension tabs remain visible in the navigation bar for discoverability while unavailable controls gracefully degrade with visual hints (`.cap-disabled`) and descriptive tooltips:
+  - TCP NetEm tab (`#nav-tab-netem`) is styled as `.cap-disabled` with a tooltip indicating missing `wiremock-extension-tcp-netem` (and `#tab-netem` displays `#netem-cap-missing-banner`).
+  - Async Queues & Topics tab (`#nav-tab-queues`) remains visible in the navigation bar and `wiremock-extension-async` is reported as `Not Installed` in the capabilities matrix when `/__admin/async/status` is absent.
+  - Casual protocol dispatch (`#btn-tester-send` when `proto=casual`) is styled as `.cap-disabled` with `#casual-cap-missing-banner` when `wiremock-extension-casual` is absent.
   - Metrics link (`#link-metrics`) is styled as `.cap-disabled`.
-  - Recording snapshot & project mode controls (`#btn-project-snapshot`, `#btn-project-mode-toggle`, `#btn-journal-snapshot-filtered`) are styled as `.cap-disabled` when `/__admin/lifecycle/status` is unavailable, while native priority-tier stub parking (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk enable/disable via `/__admin/mappings/{id}`) remains enabled even on vanilla WireMock.
-  - Core WireMock features (Stubs Catalog, Request Journal, Multi-Protocol Tester, Scenarios) remain 100% operational with zero console exceptions.
-- **When** the user opens the Target Server modal (`#btn-target-host`).
-- **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing active capability counts (e.g. `Degraded` vs `All extensions active`) and clear `Active` / `Not Installed` status badges for each capability.
+  - Recording snapshot & project mode controls (`#btn-project-snapshot`, `#btn-project-mode-toggle`, `#btn-journal-snapshot-filtered`, `.btn-snapshot-req`) are styled as `.cap-disabled` when `/__admin/lifecycle/status` is unavailable, while native priority-tier stub parking (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk enable/disable via `/__admin/mappings/{id}`) remains enabled even on vanilla WireMock.
+  - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational with zero console exceptions.
+- **When** the user opens Settings on the Target Host tab (`#btn-target-host` -> `#modal-settings`).
+- **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing active capability counts (e.g. `1/7 active (Degraded)` vs `All 7 extensions active`) and clear `Active` / `Not Installed` status badges (`data-testid="cap-badge-{key}"`) for each capability.
 
 ### Story 10: High-Volume Request Journal Lazy Rendering, Custom Limit, and Server-Side Unmatched Filtering
 - **Given** WireMock has recorded thousands of events in the Request Journal, with isolated unmatched requests buried among high-volume traffic.
@@ -215,24 +216,21 @@ These stories define the **inviolable acceptance criteria** for any client front
 
 ### Story 15: Persistent Local Browser Headers in Multi-Protocol Tester
 - **Given** an engineer is testing services requiring mandatory corporate headers (`X-Correlation-Id`, `X-Tenant-Id`, `Authorization`).
-- **When** the user configures local persistent headers in the tester and enables them.
+- **When** the user configures local persistent headers via Console Settings (`#modal-settings` -> `Persistent Headers` tab, opened from `#btn-manage-local-headers` or `#btn-open-settings`) and enables `#tester-local-headers-toggle`.
 - **Then** the headers are stored exclusively in browser `localStorage` and never transmitted to or stored in server-side stub files.
-- **And** the headers are rendered visibly in the Request Headers section as distinctive chips displaying key-value pairs (with dynamic macros like `{{uuid}}`, `{{now}}`, `{{timestamp}}` supported).
-- **And** if the user specifies an identical header key in the per-request textarea, the local header chip shows an `(overridden)` visual state and the textarea header takes precedence.
-- **When** the user dispatches the request or clicks "Copy as cURL".
+- **And** when HTTP protocol is active in the Multi-Protocol Tester, the headers render visibly in `#tester-local-headers-chips` displaying key-value pairs (supporting dynamic macros `{{uuid}}`, `{{now}}`, `{{timestamp}}`), while switching protocols (`http`, `kafka`, `amqp`, `casual`) preserves independent per-protocol drafts in the shared `#tester-headers` editor.
+- **And** if the user specifies an identical header key in `#tester-headers`, the local header chip shows an `(overridden)` visual state and the per-request header takes precedence.
+- **When** the user dispatches the request or clicks "Copy cURL".
 - **Then** the resolved headers (combining enabled local persistent headers and per-request headers) are sent and included in the cURL command and Sent Request inspector.
 
-### Story 16: Nested JSON/XML Payload Unnesting, Character Encoding Detection, and Stacked Lens Round-Tripping
-- **Given** an API request or response payload contains escaped or encoded nested structures (e.g., escaped JSON inside JSON, XML inside an escaped JSON string, JSON inside XML CDATA, or Base64-encoded UTF-8 and single-byte non-UTF-8 payloads like ISO-8859-1 or KOI8-R).
-- **When** inspecting traffic in the Stub Catalog, Request Journal, or Multi-Protocol Tester (`http`, `casual`, `kafka`, `amqp`).
-- **Then** the engine automatically detects document syntax and character encoding (from XML prologs like `<?xml version="1.0" encoding="ISO-8859-1"?>`, `X-Casual-Charset`, or `Content-Type`), displaying concise descriptors (`JSON · 0.4 KB`, `XML · ISO-8859-1 · 0.2 KB`, `BASE64 · XML · KOI8-R · 0.3 KB`, `FIELDED · JSON · ISO-8859-1 · 0.4 KB`).
-- **And** the viewer auto-unnests embedded payloads inline by default with format badges and `Edit` / `Copy` actions.
-- **When** viewing or editing payloads in the Stub Editor (Response Body, Request Matcher, or Raw Stub JSON) or Multi-Protocol Tester.
-- **Then** clicking `Edit` on any nested payload node activates an in-line, compact editor directly within the folded structure without separate detached viewports or modal stacking.
-- **When** the user modifies the nested payload and clicks "Apply".
-- **Then** the cascading engine executes **pure surgical in-place substitution** (direct JSON string literal replacement, XML CDATA slice substitution, or Base64 re-encoding) up the payload tree to the Root Document:
-  - Intermediate container envelopes act as translucent pass-throughs; all surrounding whitespace, indentation, line breaks, XML tags, and sibling fields are byte-for-byte preserved without newline or backslash explosions.
-  - The Root Document maintains the single source of truth for drafts with an "Unsaved Changes" dirty indicator, disabling duplicate root editor viewports and centralizing final persistence in the root's Save/Discard action.
+### Story 16: Nested Polyglot Payload Unnesting, Charset Detection & Unified Document Workspace Round-Tripping
+- **Given** an API request, response, stub mapping, OpenAPI spec, or queue message contains nested or encoded structures (escaped JSON inside JSON, XML inside JSON, JSON/KV inside XML CDATA or entities, Java `Map.toString()` `{k=v}` KV notation, or Base64-encoded payloads in `UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`, or `US-ASCII`).
+- **When** inspecting traffic or mappings across Stub Detail (`#stub-json-viewer`), Request Journal, Multi-Protocol Tester (`http`, `casual`, `kafka`, `amqp`), Queues, OpenAPI, or Bundles.
+- **Then** the Polyglot AST engine automatically detects syntax (`json`, `xml`, `kv`, `text`) and character encoding (XML prolog `encoding` -> `X-Casual-Charset` -> `Content-Type` charset -> `UTF-8`), rendering concise descriptor badges (`JSON · 0.4 KB`, `XML · ISO-8859-1 · 0.2 KB`, `BASE64 · XML · KOI8-R · 0.3 KB`, `FIELDED · JSON · ISO-8859-1 · 0.4 KB`) and foldable nested tree cards (`PolyglotViewer`) with `Rich` / `Raw` syntax toggles, `📋 Copy`, and `⛶ Open in Workspace` (emitting zero disabled Edit buttons on read-only views).
+- **When** the user triggers `New`, `Edit`, `Duplicate`, or `Edit / Workspace` on an editable document (Stubs, Tester Request Payload, OpenAPI, Bundles, or Queue Messages).
+- **Then** the Unified Fullscreen Document Workspace (`#modal-document-workspace`) opens in the pretty-printed **Document Viewer** first (unless opened directly into editing for quick-paste/re-publish flows); clicking `✏️ Edit Document` or `✏️ Edit Section` transitions into the focused **Section Editor** (`code-editor.js`, defaulting in-memory to `<pre contenteditable="plaintext-only">` + `CSS.highlights` with hot-swappable fallback to the legacy dual-layer `<textarea>` engine) with breadcrumb trail navigation and wire-style preservation (`Auto`, `Compact`, `Pretty`).
+- **When** the user modifies the root document or a deeply nested leaf payload and clicks `✓ Apply Section`.
+- **Then** the AST splice engine executes **exact `[start, end]` character-span substitution** up the ancestor chain back to the Root Document—avoiding duplicate-sibling `.replace()` collisions, `hasOwnProperty` root-key overwrites, or placeholder collisions while preserving compact vs. multi-line wire style and surrounding whitespace/XML tags—marking the document dirty (`#workspace-dirty-badge`) until the user commits via `💾 Save` / `💾 Save Mapping` or discards via `#modal-confirm`.
 
 ### Story 17: Request Journal Caller Source Identification & Filtering
 
@@ -243,3 +241,8 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Given** incoming HTTP requests (optionally behind proxies setting `X-Forwarded-For` or `X-Real-IP`), Casual TCP gateway calls forwarding remote TCP peer IPs, or Console Proxy traffic.
 - **When** requests are queried via `/__admin/ui/api/requests`, rendered in the Web UI Request Journal, or streamed via `wm tail`.
 - **Then** the server extracts the effective source IP (`X-Forwarded-For` first hop -> `X-Real-IP` -> socket `clientIp`), resolves reverse-DNS hostnames asynchronously on virtual threads with a bounded batch wait (~50ms) and 15-minute positive/negative TTL cache (fast-pathing loopback to `localhost`), renders a scannable `Source` column (`shortHost` + compact IP) and expandable `Source Caller` detail panel, and supports substring/boolean search (`src:`, `ip:`, `host:`) plus 1-click source chip filtering.
+
+### Story 18: Explicit Lazy In-Browser Demo Mode from Live-Generated Snapshot
+- **Given** the Web Console is opened without a live WireMock backend (or for interactive product showcase).
+- **When** Demo Mode is explicitly activated via `?demo=true`, `file://`, `github.io` (without `?wiremock=`), or clicking `✨ Demo Mode` (`#btn-demo-target-host`) in Settings—never via silent 404 or network-error failover.
+- **Then** the API client dynamically imports `demo-backend.js` and `demo-snapshot.js` (generated from an authentic in-process `WireMockServer` by `DemoSnapshotGenerator`), delegating stub filtering and journal matching to the canonical `StubCatalog` and `filter.js` modules for full offline parity.
