@@ -18,15 +18,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.mattiasgreen.wiremock.async.admin.AsyncExtensionFactory;
+import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
+import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.mattiasgreen.wiremock.casual.CasualExtensionFactory;
 import com.github.mattiasgreen.wiremock.casual.CasualRegistry;
 import com.github.mattiasgreen.wiremock.casual.CasualWireMockGateway;
 import com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmExtensionFactory;
 import com.github.mattiasgreen.wiremock.netem.engine.NetEmEngine;
 import com.github.mattiasgreen.wiremock.openapi.OpenApiExtensionFactory;
+import com.github.mattiasgreen.wiremock.support.IndexedBodyLookup;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.extension.Extension;
+import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
+import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -74,12 +80,39 @@ public final class DemoSnapshotGenerator {
     public static String generateSnapshotModuleSource() {
         NetEmEngine netEmEngine = new NetEmEngine();
         CasualRegistry casualRegistry = CasualRegistry.create();
-        AsyncEngine asyncEngine = AsyncEngine.create();
+        CasualRegistry upstreamCasualRegistry = CasualRegistry.create();
+        InMemoryMessageBroker testBroker = new InMemoryMessageBroker("demo-test-broker");
+        InMemoryMessageBroker upstreamBroker = new InMemoryMessageBroker("demo-upstream-broker");
+        AsyncEngine asyncEngine = AsyncEngine.create(testBroker, upstreamBroker);
+        asyncEngine.registerPublisher("upstream-kafka", upstreamBroker::send);
+        asyncEngine.registerPublisher("upstream-amqp", upstreamBroker::send);
+
+        ClientSourceResolver demoSourceResolver =
+                new ClientSourceResolver(DemoSnapshotGenerator::resolveDemoHostname, 150L, Duration.ofMinutes(5));
+
+        ExtensionFactory demoUiFactory = (WireMockServices services) -> {
+            StubLifecycleService service = new StubLifecycleService(services != null ? services.getAdmin() : null);
+            IndexedBodyLookup lookup = services != null
+                            && services.getStores() != null
+                            && services.getStores().getRequestJournalStore() instanceof IndexedBodyLookup l
+                    ? l
+                    : null;
+            return List.<Extension>of(
+                    new UiAdminApiEndpoint(new JournalFilterService(demoSourceResolver, lookup)),
+                    new StubLifecycleAdminEndpoint(service));
+        };
+
+        WireMockServer upstreamHttpServer =
+                new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        WireMockServer upstreamCasualServer = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensions(new CasualExtensionFactory(upstreamCasualRegistry)));
+        CasualWireMockGateway upstreamCasualGateway = null;
 
         WireMockServer wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
-                        new UiExtensionFactory(),
+                        demoUiFactory,
                         new OpenApiExtensionFactory(),
                         new TcpNetEmExtensionFactory(netEmEngine),
                         new CasualExtensionFactory(casualRegistry),
@@ -88,6 +121,28 @@ public final class DemoSnapshotGenerator {
         CasualWireMockGateway casualGateway = null;
 
         try {
+            upstreamHttpServer.start();
+            upstreamHttpServer.stubFor(get(urlPathEqualTo("/erp/api/inventory/SKU-400"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json; charset=utf-8")
+                            .withBody("{\"sku\":\"SKU-400\",\"available\":42,\"warehouse\":\"SE-ARN\"}")));
+
+            upstreamCasualServer.start();
+            upstreamCasualServer.stubFor(post(urlEqualTo("/__casual/services/inventoryCheck"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json; charset=utf-8")
+                            .withHeader("X-Casual-Service", "inventoryCheck")
+                            .withHeader("X-Casual-Error-State", "OK")
+                            .withBody("{\"service\":\"inventoryCheck\",\"inStock\":true,\"warehouse\":\"SE-ARN\"}")));
+            upstreamCasualGateway = CasualWireMockGateway.builder()
+                    .port(0)
+                    .wireMockServer(upstreamCasualServer)
+                    .build();
+            upstreamCasualGateway.start();
+            upstreamCasualRegistry.setGateway(upstreamCasualGateway);
+
             wireMockServer.start();
 
             casualGateway = CasualWireMockGateway.builder()
@@ -101,9 +156,11 @@ public final class DemoSnapshotGenerator {
 
             int wmPort = wireMockServer.port();
             int casualPort = casualGateway.getPort();
+            int upstreamHttpPort = upstreamHttpServer.port();
+            int upstreamCasualPort = upstreamCasualGateway.getPort();
             int amqpPort = asyncEngine.getAmqpServerPort();
 
-            seedStubs(wireMockServer);
+            seedStubs(wireMockServer, upstreamHttpPort, upstreamCasualPort);
 
             try (HttpClient httpClient = HttpClient.newBuilder()
                     .version(HttpClient.Version.HTTP_1_1)
@@ -114,7 +171,7 @@ public final class DemoSnapshotGenerator {
                 int kafkaPort = startKafkaSink(httpClient, baseUrl);
                 int netEmListenPort = configureNetEmProxy(httpClient, baseUrl, wmPort);
 
-                fireTraffic(httpClient, baseUrl, netEmListenPort);
+                fireTraffic(httpClient, baseUrl, netEmListenPort, testBroker, asyncEngine);
                 seedAsyncMessages(httpClient, baseUrl);
 
                 JsonNode mappingsResp = getJson(httpClient, baseUrl + "/__admin/mappings");
@@ -124,7 +181,14 @@ public final class DemoSnapshotGenerator {
                 JsonNode casualConfigNode = getJson(httpClient, baseUrl + "/__admin/casual/config");
                 JsonNode asyncDestinationsResp = getJson(httpClient, baseUrl + "/__admin/async/destinations");
 
-                ArrayNode asyncDestinations = extractArray(asyncDestinationsResp, "destinations");
+                ArrayNode rawAsyncDestinations = extractArray(asyncDestinationsResp, "destinations");
+                ArrayNode asyncDestinations = MAPPER.createArrayNode();
+                for (JsonNode dest : rawAsyncDestinations) {
+                    if ("in-memory".equals(dest.path("protocol").asText(""))) {
+                        continue;
+                    }
+                    asyncDestinations.add(dest);
+                }
                 ObjectNode asyncMessages = MAPPER.createObjectNode();
                 for (JsonNode dest : asyncDestinations) {
                     String protocol = dest.path("protocol").asText("");
@@ -164,8 +228,15 @@ public final class DemoSnapshotGenerator {
                 snapshot.set("asyncDestinations", asyncDestinations);
                 snapshot.set("asyncMessages", asyncMessages);
 
-                JsonNode normalized =
-                        normalizePorts(snapshot, wmPort, casualPort, netEmListenPort, kafkaPort, amqpPort);
+                JsonNode normalized = normalizePorts(
+                        snapshot,
+                        wmPort,
+                        casualPort,
+                        netEmListenPort,
+                        kafkaPort,
+                        amqpPort,
+                        upstreamHttpPort,
+                        upstreamCasualPort);
                 String formattedJson = MAPPER.writer(PRETTY_PRINTER).writeValueAsString(normalized);
                 return HEADER_COMMENT + "export const DEMO_SNAPSHOT = " + formattedJson + ";\n";
             }
@@ -181,7 +252,14 @@ public final class DemoSnapshotGenerator {
                 } catch (Exception ignored) {
                 }
             }
+            if (upstreamCasualGateway != null) {
+                try {
+                    upstreamCasualGateway.close();
+                } catch (Exception ignored) {
+                }
+            }
             casualRegistry.reset();
+            upstreamCasualRegistry.reset();
             try {
                 asyncEngine.getBrokerRegistry().clear();
                 asyncEngine.close();
@@ -194,10 +272,31 @@ public final class DemoSnapshotGenerator {
             if (wireMockServer.isRunning()) {
                 wireMockServer.stop();
             }
+            if (upstreamCasualServer.isRunning()) {
+                upstreamCasualServer.stop();
+            }
+            if (upstreamHttpServer.isRunning()) {
+                upstreamHttpServer.stop();
+            }
         }
     }
 
-    private static void seedStubs(WireMockServer server) throws Exception {
+    private static String resolveDemoHostname(String ip) {
+        if (ip == null) {
+            return "";
+        }
+        return switch (ip) {
+            case "10.42.8.11" -> "system-a.internal";
+            case "10.42.8.12" -> "system-b.internal";
+            case "10.42.8.13" -> "checkout-svc.internal";
+            case "10.42.8.14" -> "payment-gw.internal";
+            case "10.42.8.19" -> "";
+            default -> ClientSourceResolver.jdkReverseLookup(ip);
+        };
+    }
+
+    private static void seedStubs(WireMockServer server, int upstreamHttpPort, int upstreamCasualPort)
+            throws Exception {
         String usersBody = MAPPER.writeValueAsString(List.of(
                 Map.of("id", "usr-1", "name", "Ada Lovelace", "role", "ADMIN"),
                 Map.of("id", "usr-2", "name", "Alan Turing", "role", "SECURITY"),
@@ -280,7 +379,7 @@ public final class DemoSnapshotGenerator {
                 .withId(UUID.fromString("10000000-0000-4000-8000-000000000005"))
                 .withName("ERP System Live Proxy")
                 .atPriority(10)
-                .willReturn(aResponse().proxiedFrom("http://erp.internal:9000"))
+                .willReturn(aResponse().proxiedFrom("http://127.0.0.1:" + upstreamHttpPort))
                 .withMetadata(Map.of("project", "erp-system", "mode", "proxy", "tags", List.of("proxy", "erp"))));
 
         server.stubFor(any(urlMatching("/erp/api/.*"))
@@ -376,6 +475,81 @@ public final class DemoSnapshotGenerator {
                         Map.of("mode", "mock", "protocol", "amqp", "channel", "orders.inbound", "ackPolicy", "ack"),
                         "tags",
                         List.of("async", "amqp", "orders"))));
+
+        server.stubFor(post(urlMatching("/__casual/services/inventory.*"))
+                .withId(UUID.fromString("10000000-0000-4000-8000-000000000011"))
+                .withName("Casual XATMI: inventoryCheck Proxy")
+                .atPriority(10)
+                .willReturn(aResponse().proxiedFrom("casual://127.0.0.1:" + upstreamCasualPort))
+                .withMetadata(Map.of(
+                        "project",
+                        "Casual Gateway",
+                        "mode",
+                        "proxy",
+                        "protocol",
+                        "casual",
+                        "targetBaseUrl",
+                        "casual://127.0.0.1:" + upstreamCasualPort,
+                        "tags",
+                        List.of("casual", "proxy", "xatmi"))));
+
+        server.stubFor(any(urlMatching("/__async/kafka/events\\..*"))
+                .withId(UUID.fromString("10000000-0000-4000-8000-000000000012"))
+                .withName("Kafka Topic: Events Bridge")
+                .atPriority(10)
+                .willReturn(aResponse().proxiedFrom("async://upstream-kafka"))
+                .withMetadata(Map.of(
+                        "project",
+                        "Async Messaging",
+                        "mode",
+                        "proxy",
+                        "protocol",
+                        "kafka",
+                        "async",
+                        Map.of(
+                                "mode",
+                                "proxy",
+                                "protocol",
+                                "kafka",
+                                "broker",
+                                "downstream-kafka",
+                                "channelPattern",
+                                "events\\.(.*)",
+                                "proxyBroker",
+                                "upstream-kafka",
+                                "proxyChannel",
+                                "upstream.events.$1"),
+                        "tags",
+                        List.of("async", "kafka", "bridge"))));
+
+        server.stubFor(any(urlMatching("/__async/amqp/payments\\..*"))
+                .withId(UUID.fromString("10000000-0000-4000-8000-000000000013"))
+                .withName("AMQP Queue: Payments Bridge")
+                .atPriority(10)
+                .willReturn(aResponse().proxiedFrom("async://upstream-amqp"))
+                .withMetadata(Map.of(
+                        "project",
+                        "Async Messaging",
+                        "mode",
+                        "proxy",
+                        "protocol",
+                        "amqp",
+                        "async",
+                        Map.of(
+                                "mode",
+                                "proxy",
+                                "protocol",
+                                "amqp",
+                                "broker",
+                                "downstream-artemis",
+                                "channelPattern",
+                                "payments\\.(.*)",
+                                "proxyBroker",
+                                "upstream-amqp",
+                                "proxyChannel",
+                                "upstream.payments.$1"),
+                        "tags",
+                        List.of("async", "amqp", "bridge"))));
     }
 
     private static int startKafkaSink(HttpClient httpClient, String baseUrl) throws Exception {
@@ -420,14 +594,20 @@ public final class DemoSnapshotGenerator {
         return listenPort;
     }
 
-    private static void fireTraffic(HttpClient httpClient, String baseUrl, int netEmListenPort) throws Exception {
+    private static void fireTraffic(
+            HttpClient httpClient,
+            String baseUrl,
+            int netEmListenPort,
+            InMemoryMessageBroker testBroker,
+            AsyncEngine asyncEngine)
+            throws Exception {
         // 1. Matched GET through NetEm proxy (records both WireMock ServeEvent and NetEm stats/journal)
         String netEmTarget = netEmListenPort > 0 ? "http://127.0.0.1:" + netEmListenPort : baseUrl;
         HttpResponse<String> usersResp = httpClient.send(
                 HttpRequest.newBuilder()
                         .uri(URI.create(netEmTarget + "/api/v1/users"))
                         .header("X-Correlation-Id", "corr-users-101")
-                        .header("X-Forwarded-For", "127.0.0.1")
+                        .header("X-Forwarded-For", "10.42.8.11")
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -448,7 +628,7 @@ public final class DemoSnapshotGenerator {
                         .uri(URI.create(baseUrl + "/api/v1/orders"))
                         .header("Content-Type", "application/json")
                         .header("X-Correlation-Id", "corr-orders-202")
-                        .header("X-Forwarded-For", "127.0.0.1")
+                        .header("X-Forwarded-For", "10.42.8.13")
                         .POST(HttpRequest.BodyPublishers.ofString(reqPayload))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -461,7 +641,7 @@ public final class DemoSnapshotGenerator {
                 HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/api/v1/orders/ORD-9942/status"))
                         .header("X-Correlation-Id", "corr-order-fsm-303")
-                        .header("X-Forwarded-For", "127.0.0.1")
+                        .header("X-Forwarded-For", "10.42.8.13")
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -470,12 +650,26 @@ public final class DemoSnapshotGenerator {
                     "Expected 200 from /api/v1/orders/ORD-9942/status, got " + statusResp.statusCode());
         }
 
-        // 4. Unmatched 404 request
+        // 4. Proxied HTTP ERP request (records real PROXY verdict)
+        HttpResponse<String> erpResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(baseUrl + "/erp/api/inventory/SKU-400"))
+                        .header("X-Correlation-Id", "corr-erp-proxy-350")
+                        .header("X-Forwarded-For", "10.42.8.12")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        if (erpResp.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Expected 200 from /erp/api/inventory/SKU-400, got " + erpResp.statusCode());
+        }
+
+        // 5. Unmatched 404 request from unresolved caller IP (verifies IP fallback in Journal Source column)
         HttpResponse<String> missingResp = httpClient.send(
                 HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/api/v1/missing-route"))
                         .header("X-Correlation-Id", "corr-missing-404")
-                        .header("X-Forwarded-For", "127.0.0.1")
+                        .header("X-Forwarded-For", "10.42.8.19")
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -483,12 +677,71 @@ public final class DemoSnapshotGenerator {
             throw new IllegalStateException("Expected 404 from /api/v1/missing-route, got " + missingResp.statusCode());
         }
 
-        // 5. Casual XATMI tpcall via Admin API (exercises live Netty gateway + logs Casual ServeEvent)
-        postJson(
+        // 6. Casual XATMI tpcall via Admin API (local stub + live upstream Casual proxy)
+        postJsonWithHeaders(
                 httpClient,
                 baseUrl + "/__admin/casual/call",
+                Map.of("X-Forwarded-For", "10.42.8.14"),
                 Map.of("service", "echoService", "bufferType", "JSON", "payload", "{\"ping\":\"pong\"}"),
                 200);
+        postJsonWithHeaders(
+                httpClient,
+                baseUrl + "/__admin/casual/call",
+                Map.of("X-Forwarded-For", "10.42.8.12"),
+                Map.of("service", "inventoryCheck", "bufferType", "JSON", "payload", "{\"sku\":\"SKU-400\"}"),
+                200);
+
+        // 7. Async Kafka & AMQP real stub + bridge mediation ServeEvents
+        testBroker.send(
+                "orders.events",
+                AsyncMessage.builder()
+                        .id("evt-kafka-stub-1")
+                        .correlationId("corr-kafka-stub-1")
+                        .protocol("kafka")
+                        .destination("orders.events")
+                        .key("ORD-9942")
+                        .headers(Map.of("X-Forwarded-For", "10.42.8.11", "x-tenant-id", "emea-retail"))
+                        .payload("{\"orderId\":\"ORD-9942\",\"event\":\"ORDER_CREATED\"}")
+                        .build());
+        asyncEngine.processInbound("orders.events");
+
+        testBroker.send(
+                "events.audit",
+                AsyncMessage.builder()
+                        .id("evt-kafka-bridge-1")
+                        .correlationId("corr-kafka-bridge-1")
+                        .protocol("kafka")
+                        .destination("events.audit")
+                        .key("AUD-700")
+                        .headers(Map.of("X-Forwarded-For", "10.42.8.12", "x-source-broker", "downstream-kafka"))
+                        .payload("{\"auditId\":\"AUD-700\",\"action\":\"LOGIN_VERIFIED\"}")
+                        .build());
+        asyncEngine.processInbound("events.audit");
+
+        testBroker.send(
+                "orders.inbound",
+                AsyncMessage.builder()
+                        .id("evt-amqp-stub-1")
+                        .correlationId("corr-amqp-stub-1")
+                        .protocol("amqp")
+                        .destination("orders.inbound")
+                        .replyTo("orders.replies")
+                        .headers(Map.of("X-Forwarded-For", "10.42.8.13", "content-type", "application/json"))
+                        .payload("{\"orderId\":\"ORD-9942\",\"action\":\"RESERVE_STOCK\"}")
+                        .build());
+        asyncEngine.processInbound("orders.inbound");
+
+        testBroker.send(
+                "payments.settled",
+                AsyncMessage.builder()
+                        .id("evt-amqp-bridge-1")
+                        .correlationId("corr-amqp-bridge-1")
+                        .protocol("amqp")
+                        .destination("payments.settled")
+                        .headers(Map.of("X-Forwarded-For", "10.42.8.14", "x-source-broker", "downstream-artemis"))
+                        .payload("{\"paymentId\":\"PAY-501\",\"amount\":1250.00,\"currency\":\"EUR\"}")
+                        .build());
+        asyncEngine.processInbound("payments.settled");
     }
 
     private static void seedAsyncMessages(HttpClient httpClient, String baseUrl) throws Exception {
@@ -642,14 +895,18 @@ public final class DemoSnapshotGenerator {
 
     private static JsonNode postJson(HttpClient httpClient, String url, Object bodyObj, int expectedStatus)
             throws IOException, InterruptedException {
+        return postJsonWithHeaders(httpClient, url, Map.of(), bodyObj, expectedStatus);
+    }
+
+    private static JsonNode postJsonWithHeaders(
+            HttpClient httpClient, String url, Map<String, String> headers, Object bodyObj, int expectedStatus)
+            throws IOException, InterruptedException {
         String body = MAPPER.writeValueAsString(bodyObj);
+        HttpRequest.Builder builder =
+                HttpRequest.newBuilder().uri(URI.create(url)).header("Content-Type", "application/json");
+        headers.forEach(builder::header);
         HttpResponse<String> resp = httpClient.send(
-                HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
+                builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() != expectedStatus) {
             throw new IllegalStateException("POST " + url + " expected " + expectedStatus + " but got "
                     + resp.statusCode() + ": " + resp.body());
@@ -669,7 +926,14 @@ public final class DemoSnapshotGenerator {
     }
 
     private static JsonNode normalizePorts(
-            JsonNode node, int wmPort, int casualPort, int netEmListenPort, int kafkaPort, int amqpPort) {
+            JsonNode node,
+            int wmPort,
+            int casualPort,
+            int netEmListenPort,
+            int kafkaPort,
+            int amqpPort,
+            int upstreamHttpPort,
+            int upstreamCasualPort) {
         if (node == null) {
             return null;
         }
@@ -696,11 +960,26 @@ public final class DemoSnapshotGenerator {
                         entry.setValue(obj.numberNode(8080));
                     }
                 } else if (val.isTextual()) {
-                    String normalized =
-                            normalizePortText(val.asText(), wmPort, casualPort, netEmListenPort, kafkaPort, amqpPort);
+                    String normalized = normalizePortText(
+                            val.asText(),
+                            wmPort,
+                            casualPort,
+                            netEmListenPort,
+                            kafkaPort,
+                            amqpPort,
+                            upstreamHttpPort,
+                            upstreamCasualPort);
                     entry.setValue(obj.textNode(normalized));
                 } else {
-                    normalizePorts(val, wmPort, casualPort, netEmListenPort, kafkaPort, amqpPort);
+                    normalizePorts(
+                            val,
+                            wmPort,
+                            casualPort,
+                            netEmListenPort,
+                            kafkaPort,
+                            amqpPort,
+                            upstreamHttpPort,
+                            upstreamCasualPort);
                 }
             }
             return obj;
@@ -713,9 +992,24 @@ public final class DemoSnapshotGenerator {
                     arr.set(
                             i,
                             arr.textNode(normalizePortText(
-                                    item.asText(), wmPort, casualPort, netEmListenPort, kafkaPort, amqpPort)));
+                                    item.asText(),
+                                    wmPort,
+                                    casualPort,
+                                    netEmListenPort,
+                                    kafkaPort,
+                                    amqpPort,
+                                    upstreamHttpPort,
+                                    upstreamCasualPort)));
                 } else {
-                    normalizePorts(item, wmPort, casualPort, netEmListenPort, kafkaPort, amqpPort);
+                    normalizePorts(
+                            item,
+                            wmPort,
+                            casualPort,
+                            netEmListenPort,
+                            kafkaPort,
+                            amqpPort,
+                            upstreamHttpPort,
+                            upstreamCasualPort);
                 }
             }
             return arr;
@@ -724,7 +1018,14 @@ public final class DemoSnapshotGenerator {
     }
 
     private static String normalizePortText(
-            String text, int wmPort, int casualPort, int netEmListenPort, int kafkaPort, int amqpPort) {
+            String text,
+            int wmPort,
+            int casualPort,
+            int netEmListenPort,
+            int kafkaPort,
+            int amqpPort,
+            int upstreamHttpPort,
+            int upstreamCasualPort) {
         if (text == null || text.isEmpty() || text.indexOf(':') < 0) {
             return text;
         }
@@ -740,6 +1041,12 @@ public final class DemoSnapshotGenerator {
         }
         if (amqpPort > 0) {
             result = replaceHostPort(result, amqpPort, 5672);
+        }
+        if (upstreamHttpPort > 0) {
+            result = replaceHostPort(result, upstreamHttpPort, 9000);
+        }
+        if (upstreamCasualPort > 0) {
+            result = replaceHostPort(result, upstreamCasualPort, 7773);
         }
         return result;
     }

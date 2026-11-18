@@ -65,11 +65,14 @@ public class DemoSnapshotContractTest {
         JsonNode mappings = root.get("mappings");
         assertThat(mappings).isNotNull();
         assertThat(mappings.isArray()).isTrue();
-        assertThat(mappings.size()).isGreaterThanOrEqualTo(8);
+        assertThat(mappings.size()).isGreaterThanOrEqualTo(13);
 
         boolean hasNestedPolyglotStub = false;
         boolean hasParkedStub = false;
         boolean hasScenarioStub = false;
+        boolean hasCasualProxyStub = false;
+        boolean hasKafkaBridgeStub = false;
+        boolean hasAmqpBridgeStub = false;
         for (JsonNode mapping : mappings) {
             String body = mapping.path("response").path("body").asText("");
             if (body.contains("complianceAudit") && body.contains("encodedManifest") && body.contains("auditReport")) {
@@ -81,6 +84,22 @@ public class DemoSnapshotContractTest {
             if ("OrderFulfillment".equals(mapping.path("scenarioName").asText(""))) {
                 hasScenarioStub = true;
             }
+            String protocol = mapping.path("metadata").path("protocol").asText("");
+            String mode = mapping.path("metadata").path("mode").asText("");
+            if ("casual".equals(protocol) && "proxy".equals(mode)) {
+                hasCasualProxyStub = true;
+            }
+            JsonNode asyncMeta = mapping.path("metadata").path("async");
+            if ("proxy".equals(asyncMeta.path("mode").asText(""))) {
+                if ("kafka".equals(asyncMeta.path("protocol").asText(""))
+                        && "downstream-kafka".equals(asyncMeta.path("broker").asText(""))) {
+                    hasKafkaBridgeStub = true;
+                }
+                if ("amqp".equals(asyncMeta.path("protocol").asText(""))
+                        && "downstream-artemis".equals(asyncMeta.path("broker").asText(""))) {
+                    hasAmqpBridgeStub = true;
+                }
+            }
         }
         assertThat(hasNestedPolyglotStub)
                 .as("Snapshot mappings must include nested JSON/Base64/XML stub")
@@ -91,24 +110,57 @@ public class DemoSnapshotContractTest {
         assertThat(hasScenarioStub)
                 .as("Snapshot mappings must include OrderFulfillment scenario stub")
                 .isTrue();
+        assertThat(hasCasualProxyStub)
+                .as("Snapshot mappings must include Casual proxy stub")
+                .isTrue();
+        assertThat(hasKafkaBridgeStub)
+                .as("Snapshot mappings must include two-broker Kafka bridge stub")
+                .isTrue();
+        assertThat(hasAmqpBridgeStub)
+                .as("Snapshot mappings must include two-broker AMQP bridge stub")
+                .isTrue();
 
-        // 2. Requests: matched + unmatched + sourceIp
+        // 2. Requests: matched + unmatched + proxied + async bridged + resolved hostnames & IP fallback
         JsonNode requests = root.get("requests");
         assertThat(requests).isNotNull();
         assertThat(requests.isArray()).isTrue();
-        assertThat(requests.size()).isGreaterThanOrEqualTo(4);
+        assertThat(requests.size()).isGreaterThanOrEqualTo(11);
 
         boolean hasMatched = false;
         boolean hasUnmatched = false;
         boolean hasSourceIp = false;
+        boolean hasNamedHost = false;
+        boolean hasUnresolvedFallbackIp = false;
+        boolean hasKafkaBridged = false;
+        boolean hasAmqpBridged = false;
+        boolean hasCasualProxied = false;
         for (JsonNode req : requests) {
             if (req.path("wasMatched").asBoolean(false)) {
                 hasMatched = true;
             } else {
                 hasUnmatched = true;
             }
-            if (!req.path("sourceIp").asText("").isBlank()) {
+            String srcIp = req.path("sourceIp").asText("");
+            String srcHost = req.path("sourceHost").asText("");
+            if (!srcIp.isBlank()) {
                 hasSourceIp = true;
+            }
+            if ("system-a.internal".equals(srcHost) || "system-b.internal".equals(srcHost)) {
+                hasNamedHost = true;
+            }
+            if ("10.42.8.19".equals(srcIp) && srcHost.isBlank()) {
+                hasUnresolvedFallbackIp = true;
+            }
+            String url = req.path("request").path("url").asText("");
+            boolean isProxy = req.path("responseDefinition").has("proxyBaseUrl");
+            if (url.contains("/__async/kafka/events.audit") && isProxy) {
+                hasKafkaBridged = true;
+            }
+            if (url.contains("/__async/amqp/payments.settled") && isProxy) {
+                hasAmqpBridged = true;
+            }
+            if (url.contains("/__casual/services/inventoryCheck") && isProxy) {
+                hasCasualProxied = true;
             }
         }
         assertThat(hasMatched)
@@ -119,6 +171,21 @@ public class DemoSnapshotContractTest {
                 .isTrue();
         assertThat(hasSourceIp)
                 .as("Snapshot requests must include enriched sourceIp")
+                .isTrue();
+        assertThat(hasNamedHost)
+                .as("Snapshot requests must include resolved source hostnames (system-a/system-b)")
+                .isTrue();
+        assertThat(hasUnresolvedFallbackIp)
+                .as("Snapshot requests must include unresolved IP fallback (10.42.8.19)")
+                .isTrue();
+        assertThat(hasKafkaBridged)
+                .as("Snapshot requests must include bridged Kafka ServeEvent")
+                .isTrue();
+        assertThat(hasAmqpBridged)
+                .as("Snapshot requests must include bridged AMQP ServeEvent")
+                .isTrue();
+        assertThat(hasCasualProxied)
+                .as("Snapshot requests must include proxied Casual ServeEvent")
                 .isTrue();
 
         // 3. Scenarios
