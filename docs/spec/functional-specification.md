@@ -182,7 +182,7 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **When** the scenario runs in `LIVE PROXY` mode against live Server B.
 - **Then** the customer applies for a product, receives an offer, approves purchase, and is billed via Casual 2PC transaction (`tpcall("billing/charge")` within global `Xid` with `prepare` and `commit`).
 - **And** the Unified Request Journal captures all 7 downstream calls as `🌐 PROXIED`, displaying protocol badge `CASUAL` and status `OK` for Casual XATMI calls without conflating with HTTP `POST` or `200`.
-- **When** the operator snapshots live recordings via the Console UI (`#btn-project-snapshot`) and toggles mode to `STUBS MODE` (`#btn-project-mode-toggle`).
+- **When** the operator snapshots live recordings from the Request Journal (`#btn-journal-snapshot-filtered`), enables the recorded stubs, and parks the proxy stubs via the Stubs sidebar (`#bulk-actions-bar` / `#btn-toggle-stub`).
 - **Then** recorded stubs are generated in priority over proxy routes, with Casual stubs tagged as `[RECORDED CASUAL OK]` and protocol `casual`.
 - **When** Upstream Server B is shut down completely and the customer scenario is replayed.
 - **Then** the entire customer application, offer, approval, Casual 2PC billing, and sales order flow completes successfully offline from recorded stubs.

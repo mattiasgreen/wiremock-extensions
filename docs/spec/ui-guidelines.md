@@ -65,9 +65,8 @@ Every served request in the Request Journal—and every rule in the Stubs Catalo
 | **`📌 STUB`** *(or `STUB · TPL`)* | `#10B981` (Emerald Green) | *"Served locally by a WireMock stub mapping (static or Handlebars template). Zero upstream network calls."* | WireMock answered in-process from a declarative stub. Append `· TPL` when `response-template` transformer is active. |
 | **`⚠️ UNMATCHED`** | `#F59E0B` (Amber) / `#EF4444` (Red) | *"No matching stub, scenario transition, or proxy route found (HTTP 404)."* | WireMock did not know how to handle the request; requires a new stub or proxy route. |
 
-### 2.2 Service (`Project`) Grouping & Hybrid Mode
-* What WireMock metadata stores as `metadata.project` represents an **Upstream / Remote Service** (e.g., `erp-system`, `crm-service`, `billing-platform`, `notification-gateway`).
-* Each service operates independently in **`LIVE PROXY`** or **`STUBS MODE`**, allowing manual testers in the UI (and automated JUnit/Cucumber runners via runtime parameters) to mix live and simulated services seamlessly.
+### 2.2 Service (`Project`) Metadata
+* What WireMock metadata stores as `metadata.project` represents an **Upstream / Remote Service** (e.g., `erp-system`, `crm-service`, `billing-platform`, `notification-gateway`), searchable directly via `#search-box` and displayed as `.project-pill` badges on stub cards.
 
 ---
 
@@ -75,13 +74,13 @@ Every served request in the Request Journal—and every rule in the Stubs Catalo
 
 Every UI screen and button placement must optimize these four end-to-end flows:
 
-### Workflow A: Live Integration Harvesting (`PROXIED` $\rightarrow$ `STUB`)
+### Workflow A: Live Integration Harvesting (`PROXIED` / `BRIDGED` $\rightarrow$ `STUB`)
 1. **Bootstrap Proxy**: User imports an OpenAPI spec in **Live Proxy Mode** *or* creates a quick catch-all/prefix **Proxy Route** (`➕ New` $\rightarrow$ Proxy Template, e.g., `/erp/api/.*` $\rightarrow$ `https://erp-test.internal`) for a remote service when no OpenAPI spec exists.
-2. **Observe Live Traffic**: User runs manual click-testing or a BDD test. Calls appear in the Request Journal badged as **`🌐 PROXIED`** with the target upstream origin visible.
+2. **Observe Live Traffic**: User runs manual click-testing or a BDD test. Calls appear in the Request Journal badged as **`🌐 PROXIED`** (or **`🔀 BRIDGED`** for async Kafka/AMQP bridges) with the target upstream origin visible.
 3. **Harvest**:
-   * *Single Call*: User clicks **`📸 Snapshot Stub`** on a `PROXIED` journal entry to save that authentic response as a parked (`priority >= 100`) stub under that service.
-   * *Whole Service*: User selects the service in the Stubs sidebar and clicks **`📸 Snapshot`** in the Service Lifecycle Bar to capture all deduplicated `PROXIED` calls into parked (`priority >= 100`) stubs.
-4. **Go Offline**: User clicks **`🟣 Switch to Stubs`**. Proxy routes for that service are parked (`priority >= 100`), harvested static stubs are promoted (`priority < 100`), and subsequent test runs execute offline (`📌 STUB`).
+   * *Single Call*: User clicks **`📸 Snapshot Stub`** on a `PROXIED` / `BRIDGED` journal entry to save that authentic response as a parked (`priority >= 100`) stub.
+   * *Filtered Batch*: User clicks **`📸 Snapshot Filtered Proxied`** (`#btn-journal-snapshot-filtered`) in Request Journal to capture all currently filtered `PROXIED` / `BRIDGED` calls into deduplicated parked (`priority >= 100`) stubs.
+4. **Go Offline**: User enables the recorded stubs and/or disables proxy stubs in the Stubs sidebar (using `#btn-toggle-stub` or `#bulk-actions-bar`), and subsequent test runs execute offline (`📌 STUB`).
 
 ### Workflow B: Unmatched Request Triage (`UNMATCHED 404` $\rightarrow$ Working Stub)
 1. **Identify**: User filters Request Journal by **`⚠️ Unmatched`** (or spots the amber/red `UNMATCHED` pill).
@@ -108,14 +107,14 @@ Every UI screen and button placement must optimize these four end-to-end flows:
 ## 4. Layout, Action Budget & Sensory Feedback Rules
 
 ### 4.1 Action Budget (Preventing "Button Soup")
-* **Toolbar Ceiling**: A panel header or card header may contain **at most 1 Primary CTA** (solid accent fill) and **at most 2–3 compact Secondary buttons**. Secondary utility actions (`Import`, `Export`, `Refresh`) should use compact icon+label buttons with clear visual grouping. In Stub Detail, export actions live inside `#btn-stub-copy-menu` (`Copy cURL` / `Copy Java` / `Copy JSON`) and secondary lifecycle actions (`Duplicate`, `Delete`) live inside `#btn-stub-more-menu`.
+* **Toolbar Ceiling**: A panel header or card header may contain **at most 1 Primary CTA** (solid accent fill) and compact Secondary/Danger buttons. In Stub Detail, export actions live inside `#btn-stub-copy-menu` (`Copy cURL` / `Copy Java` / `Copy JSON`), while `Duplicate` (`#btn-clone-stub`) and `Delete` (`#btn-delete-stub`) are exposed directly inline in the toolbar.
 * **Contextual Action Placement**: Actions that mutate or export a specific item (`⚡ Test`, `✏️ Edit`, `⏸️ Disable`, `📄 Duplicate`, `🗑️ Delete`) belong inside the **Detail Inspector header** of the selected item, never duplicated across every row of a dense list. Bulk selection actions (`Enable`, `Disable`, `Export`, `Delete`) operate strictly on currently visible filtered stubs (`getVisibleSelectedStubIds`).
 * **Unified Chrome Modals & Discoverable Tabs**:
   * Configuration lives in a single 4-tab Settings modal (`#modal-settings`: Target Host, Persistent Headers, Snapshot Exclusions, Config Sync), and all document inspection/editing converges in the fullscreen Document Workspace (`#modal-document-workspace`).
   * Extension tabs (`TCP NetEm`, `Queues & Topics`) stay visible in the navbar even against vanilla WireMock for discoverability, degrading gracefully with `.cap-disabled` and informative banners/tooltips when unsupported.
 * **Persistent vs. Full-Width Workspace**:
-  * `Stubs` and `Multi-Protocol Tester` share the persistent left `#sidebar-stubs` catalog so developers can click through stubs and immediately fire requests in the Tester.
-  * `Request Journal`, `Scenarios`, `TCP NetEm`, and `Queues` collapse `#sidebar-stubs` to claim 100% horizontal viewport width for wide tables and DAG visualizations.
+  * `Stubs` displays the persistent left `#sidebar-stubs` catalog.
+  * `Multi-Protocol Tester`, `Request Journal`, `Scenarios`, `TCP NetEm`, and `Queues` collapse `#sidebar-stubs` to claim 100% horizontal viewport width for wide tables, request/response split panes, and DAG visualizations.
 
 ### 4.2 Non-Blocking Sensory Feedback
 * **Zero Native `window.alert()` / `window.confirm()` Calls**: Never block the browser thread with native `alert()` or `confirm()` dialogs. Use non-blocking toast notifications (`showToast` -> `#toast-container`) or inline button state transitions (`✅ Copied!`), and use the Promise-based confirmation modal (`confirmDialog` -> `#modal-confirm`) for destructive operations (`Delete Stub`, `Clear Journal`, `Reset Scenarios`, `Purge Destination`) and unsaved-edit prompts.

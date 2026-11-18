@@ -17,16 +17,15 @@
 | **Navigation Tab: NetEm** | `#nav-tab-netem` | `"nav-tab-netem"` / tab 4 | Switch to L4 TCP Network Emulator & Chaos console (visible even when `.cap-disabled`). |
 | **Navigation Tab: Queues** | `#nav-tab-queues` | `"nav-tab-queues"` / tab 5 | Switch to Async Destinations & Queues explorer (`metadata.async`; visible on vanilla WireMock). |
 | **Stubs Filter Input** | `#search-box` | `"search-box"` | Case-insensitive free-text and boolean (`AND`, `OR`) filter. |
-| **Stubs Project Filter** | `#project-filter-select` | `"project-filter-select"` | Project / upstream service filter dropdown. |
 | **Stubs Status Filter Pills** | `#btn-filter-all`, `#btn-filter-active`, `#btn-filter-disabled` | `"status-filter"` | Lifecycle filter pills (`All`, `Active`, `Disabled` / parked). |
 | **Stubs Catalog List** | `#stub-list` (`.stub-card`) | `"stub-list"` | Scrollable catalog of `.stub-card` mappings with selection checkboxes (`.stub-card-chk`). |
 | **Bulk Actions Bar** | `#bulk-actions-bar` (`#btn-bulk-enable`, `-disable`, `-export`, `-delete`) | `"bulk-actions-bar"` | Scoped strictly to visible selected stubs (`getVisibleSelectedStubIds`). |
 | **Stub Details Panel** | `#stub-detail-view`, `#stub-json-viewer` | `"stub-detail-view"` | Polyglot Tree Viewer (`Rich` / `Raw` via `#stub-viewer-mode-toggle`) of selected stub mapping. |
 | **Stub Primary Actions** | `#btn-test-stub`, `#btn-edit-stub`, `#btn-toggle-stub`, `#btn-view-stub-in-journal` | `"stub-primary-actions"` | Test in Tester, Edit in Document Workspace, toggle active/parked tier, or filter Journal by stub. |
 | **Stub Copy Dropdown Menu** | `#btn-stub-copy-menu`, `#stub-copy-menu` (`#btn-copy-curl`, `#btn-copy-java`, `#btn-copy-json`) | `"stub-copy-menu"` | Copies `POST /__admin/mappings` cURL heredoc (`<< 'EOF'`), Java `stubFor(...)` DSL, or raw JSON. |
-| **Stub More Dropdown Menu** | `#btn-stub-more-menu`, `#stub-more-menu` (`#btn-clone-stub`, `#btn-delete-stub`) | `"stub-more-menu"` | Duplicates stub in Document Workspace or permanently deletes with confirmation dialog. |
+| **Stub Duplicate & Delete Buttons** | `#btn-clone-stub`, `#btn-delete-stub` | `"btn-clone-stub"`, `"btn-delete-stub"` | Inline Stub Detail toolbar buttons: duplicates stub in Document Workspace or permanently deletes with confirmation dialog. |
 | **Journal Table** | `#journal-table`, `#journal-list` | `"journal-table"` | Table view of served requests with timestamp, caller source, protocol, operation, target/url, status, resolution/verdict, duration. |
-| **Journal Source Cell** | `td.journal-source-cell` | `"journal-source-cell"` | Displays resolved caller short hostname (or IP) with compact IP subline and clickable source filter chip (`.btn-journal-filter-source`). |
+| **Journal Source Cell** | `td.journal-source-cell` | `"journal-source-cell"` | Displays resolved caller short hostname (or IP fallback when DNS fails) as a clickable source filter chip (`.btn-journal-filter-source`). |
 | **Journal Source Detail** | `div.journal-source-detail` | `"journal-source-detail"` | Expanded `Source Caller` section showing resolved FQDN and effective source IP. |
 | **Journal Verdict Pills** | `#btn-journal-verdict-all`, `-proxied`, `-stub`, `-unmatched` | `"journal-verdict-filter"` | Filter pills for the 3 core verdicts (`🌐 PROXIED`, `📌 STUB`, `⚠️ UNMATCHED`). |
 | **Journal Protocol Pills** | `#btn-journal-proto-all`, `-http`, `-kafka`, `-amqp`, `-casual` | `"journal-protocol-filter"` | Filter pills for captured protocol traffic. |
@@ -78,7 +77,6 @@
 | **Modal: Confirmation Dialog** | `#modal-confirm` (`#confirm-modal-title`, `#confirm-modal-message`, `#btn-confirm-accept`, `#btn-confirm-secondary`, `#btn-confirm-cancel`) | `"modal-confirm"` | Promise-based confirmation dialog (`confirmDialog`) replacing native `window.confirm()`. |
 | **Toast Notifications** | `#toast-container` (`.toast-item`, `.toast-message`, `.toast-close`) | `"toast-container"` | Non-blocking notification stack (`showToast`) replacing native `window.alert()`. |
 | **Site Header / Tab Title** | `document.title` / `<title>` | Window / Frame Title | Browser tab display identifying the active WireMock URI: `WMC - <wiremock-uri>`. |
-| **Project Lifecycle Bar** | `#project-lifecycle-bar`, `#project-mode-badge`, `#btn-project-mode-toggle`, `#btn-project-snapshot` | `"project-lifecycle-bar"` | Active project toolbar (`LIVE PROXY` / `STUBS MODE`) displayed when proxy stubs exist. |
 | **Casual Protocol & Status Badges** | `.http-badge.badge-CASUAL`, `.stub-status-pill.status-proxy`, `.card-value.status-proxy` | `"badge-casual"` | Distinguishes Casual XATMI calls (`CASUAL` / `OK` / `TPESVCFAIL` / `TPENOENT`) and proxy routes (`PROXY`). |
 
 ---

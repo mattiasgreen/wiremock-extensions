@@ -26,7 +26,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 - **End-to-End OpenAPI & Bundle Import Hub**:
   - One-click import modal (`#openapi-modal`) for OpenAPI 3.0 / 3.1 specifications (YAML or JSON) and WireMock JSON bundles, with inline `PolyglotViewer` preview and `✏️ Paste / Edit in Workspace` (`#modal-document-workspace`).
   - Choice between **Synthetic Stubs** (format-aware data generator) and **Live Transparent Proxy** (proxies requests to upstream live service with auto-discovered `servers:` block).
-  - Direct handoff into the Multi-Protocol Tester with persistent Stubs Explorer on the left, request/response inspector, and collapsible execution history sidebar.
+  - Direct handoff into the full-width Multi-Protocol Tester, with request/response inspector and collapsible execution history sidebar.
 
 - **Live Proxy Recording & Project Lifecycle**:
   - Group stubs and proxies into distinct **Projects**.
@@ -40,7 +40,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
   - **Unified Document Workspace (`#modal-document-workspace`)**: `➕ New`, `✏️ Edit`, `📄 Duplicate`, and `⛶ Open in Workspace` open in the foldable **Polyglot Tree Viewer** (`polyglot-viewer.js`) first—auto-unnesting embedded JSON, XML (CDATA/entities), Java `Map.toString()` `{k=v}` KV (`pseudo-json.js`), and Base64 payloads with charset detection (`UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`, `US-ASCII` via `charset-codec.js`).
   - **Focused Section Editor & Exact-Span Splicing**: Clicking `✏️ Edit Document` or `✏️ Edit Section` transitions into `code-editor.js` (defaulting in-memory to `<pre contenteditable="plaintext-only">` + `CSS.highlights`, with hot-swappable fallback to the dual-layer `<textarea>` engine). Clicking `✓ Apply Section` splices edits back using exact `[start, end]` character spans (`polyglot-ast.js`, preserving compact vs. multi-line wire style) before `💾 Save`.
   - Clean Stub Detail toolbar with grouped `📋 Copy ▾` (`Copy cURL`, `Copy Java`, `Copy JSON`) and `••• More ▾` (`Duplicate`, `Delete`) menus, Promise-based confirmation dialogs (`#modal-confirm`), and non-blocking toast notifications (`#toast-container`).
-  - **⚡ Test Stub** button transitions directly into the Multi-Protocol Tester with pre-populated URL, method, headers, and body while keeping the stubs sidebar visible.
+  - **⚡ Test Stub** button transitions directly into the full-width Multi-Protocol Tester with pre-populated URL, method, headers, and body.
 
 - **Unified Multi-Protocol Request Tester (`PROTOCOL_ADAPTERS`)**:
   - Dispatch requests across **HTTP**, **Kafka**, **AMQP 1.0**, and **Casual XATMI** using one shared headers editor (with isolated per-protocol drafts), one adaptive Send button (`#btn-tester-send`), `PolyglotViewer` + Document Workspace payload editor, and on-click shareable links (`#btn-tester-share-link`).
