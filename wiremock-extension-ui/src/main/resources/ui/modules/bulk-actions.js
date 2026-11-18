@@ -13,8 +13,7 @@ export function getCurrentlyVisibleStubs() {
   const search = (elements.searchBox && elements.searchBox.value) || '';
   return stubCatalog.query({
     search,
-    status: state.statusFilter,
-    project: state.selectedProject
+    status: state.statusFilter
   });
 }
 

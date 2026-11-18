@@ -1,7 +1,6 @@
 package com.github.mattiasgreen.wiremock.ui;
 
 import com.github.tomakehurst.wiremock.common.Json;
-import com.github.tomakehurst.wiremock.common.Metadata;
 import com.github.tomakehurst.wiremock.core.Admin;
 import com.github.tomakehurst.wiremock.matching.RequestPattern;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
@@ -9,8 +8,7 @@ import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.util.*;
 
 /**
- * Canonical domain service managing native priority-tier stub lifecycle operations,
- * stateless project mode switching ({@code proxy} &lt;-&gt; {@code stubs}),
+ * Canonical domain service managing native priority-tier stub lifecycle operations
  * and deduplicated ServeEvent snapshot conversions.
  *
  * <p>Uses WireMock's native stub priority ordering directly:
@@ -27,10 +25,6 @@ public class StubLifecycleService {
     public static final int PRIORITY_ACTIVE_PROXY = 10;
     public static final int PRIORITY_OFFLINE_GUARD = 50;
     public static final int PRIORITY_PARKED = 100;
-
-    private static final String META_PREVIOUS_PRIORITY = "previousPriority";
-
-    public record ProjectModeResult(String project, String activeMode, int stubsEnabled, int stubsDisabled) {}
 
     public record SnapshotCommand(
             Set<String> requestIds,
@@ -144,60 +138,6 @@ public class StubLifecycleService {
         return deriveProjectFromUrl(url);
     }
 
-    /**
-     * Statelessly switches all non-guard stubs belonging to {@code targetProject} (or {@code _all}/{@code *})
-     * between {@code "proxy"} mode (proxies at priority 10, static stubs parked at 100) and
-     * {@code "stubs"} mode (static stubs active at priority 5 or restored custom priority, proxies parked at 100).
-     */
-    public ProjectModeResult switchProjectMode(String targetProject, String requestedMode) {
-        return switchProjectMode(requireAdmin(), targetProject, requestedMode);
-    }
-
-    public ProjectModeResult switchProjectMode(Admin targetAdmin, String targetProject, String requestedMode) {
-        Objects.requireNonNull(targetAdmin, "admin must not be null");
-        String normalizedMode =
-                requestedMode == null ? "" : requestedMode.trim().toLowerCase(Locale.ROOT);
-        if (!"proxy".equals(normalizedMode) && !"stubs".equals(normalizedMode)) {
-            throw new IllegalArgumentException(
-                    "Invalid project mode '" + requestedMode + "'. Expected 'proxy' or 'stubs'.");
-        }
-
-        boolean allProjects = isAllProjectsToken(targetProject);
-        boolean proxyMode = "proxy".equals(normalizedMode);
-        List<StubMapping> mappings =
-                new ArrayList<>(targetAdmin.listAllStubMappings().getMappings());
-
-        int stubsEnabled = 0;
-        int stubsDisabled = 0;
-
-        for (StubMapping stub : mappings) {
-            if (stub == null || isOfflineGuard(stub)) {
-                continue;
-            }
-            if (!allProjects && !targetProject.equals(getStubProject(stub))) {
-                continue;
-            }
-
-            boolean proxyStub = isProxyStub(stub);
-            boolean currentlyParked = isParked(stub);
-            boolean shouldBeActive = proxyMode ? proxyStub : !proxyStub;
-
-            if (shouldBeActive && currentlyParked) {
-                StubMapping updated = StubMapping.buildFrom(StubMapping.buildJsonStringFor(stub));
-                unparkStub(updated, proxyStub);
-                targetAdmin.editStubMapping(updated);
-                stubsEnabled++;
-            } else if (!shouldBeActive && !currentlyParked) {
-                StubMapping updated = StubMapping.buildFrom(StubMapping.buildJsonStringFor(stub));
-                parkStub(updated, proxyStub);
-                targetAdmin.editStubMapping(updated);
-                stubsDisabled++;
-            }
-        }
-
-        return new ProjectModeResult(allProjects ? "_all" : targetProject, normalizedMode, stubsEnabled, stubsDisabled);
-    }
-
     public List<StubMapping> snapshotRecordings(SnapshotCommand cmd) {
         return snapshotRecordings(requireAdmin(), cmd);
     }
@@ -302,35 +242,6 @@ public class StubLifecycleService {
                     "StubLifecycleService was not initialized with an Admin instance. Use withAdmin(admin).");
         }
         return this.admin;
-    }
-
-    private static void parkStub(StubMapping stub, boolean proxyStub) {
-        Integer currentPriority = stub.getPriority();
-        int defaultActive = proxyStub ? PRIORITY_ACTIVE_PROXY : PRIORITY_ACTIVE_STUB;
-        if (currentPriority != null && currentPriority < PRIORITY_PARKED && currentPriority != defaultActive) {
-            Map<String, Object> nextMeta = copyMetadata(stub);
-            nextMeta.put(META_PREVIOUS_PRIORITY, currentPriority);
-            stub.setMetadata(new Metadata(nextMeta));
-        }
-        stub.setPriority(PRIORITY_PARKED);
-    }
-
-    private static void unparkStub(StubMapping stub, boolean proxyStub) {
-        int restoredPriority = proxyStub ? PRIORITY_ACTIVE_PROXY : PRIORITY_ACTIVE_STUB;
-        if (stub.getMetadata() != null && stub.getMetadata().containsKey(META_PREVIOUS_PRIORITY)) {
-            Object prevObj = stub.getMetadata().get(META_PREVIOUS_PRIORITY);
-            if (prevObj instanceof Number n && n.intValue() > 0 && n.intValue() < PRIORITY_PARKED) {
-                restoredPriority = n.intValue();
-            }
-            Map<String, Object> nextMeta = copyMetadata(stub);
-            nextMeta.remove(META_PREVIOUS_PRIORITY);
-            stub.setMetadata(new Metadata(nextMeta));
-        }
-        stub.setPriority(restoredPriority);
-    }
-
-    private static Map<String, Object> copyMetadata(StubMapping stub) {
-        return stub.getMetadata() != null ? new LinkedHashMap<>(stub.getMetadata()) : new LinkedHashMap<>();
     }
 
     private static boolean isAllProjectsToken(String targetProject) {

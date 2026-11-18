@@ -196,7 +196,7 @@ export function extractRequestSource(req) {
 
   const shortHost = host ? host.split('.')[0] : '';
   const displayPrimary = shortHost || ip || '-';
-  const displaySecondary = (shortHost && ip) ? ip : '';
+  const displaySecondary = '';
   let tooltip = 'Unknown source';
   if (host && ip) {
     tooltip = `${host} (${ip})`;

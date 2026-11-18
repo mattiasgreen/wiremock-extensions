@@ -273,8 +273,9 @@ body {
 }
 
 /* Sidebar visibility based on active tab:
-   Visible for Stubs and Tester; hidden for Journal and Scenarios to maximize table/visualizer space */
+   Visible for Stubs; hidden for Journal, Tester, Scenarios, NetEm, and Queues to maximize workspace */
 .main-container[data-active-tab="tab-journal"] .sidebar,
+.main-container[data-active-tab="tab-tester"] .sidebar,
 .main-container[data-active-tab="tab-scenarios"] .sidebar,
 .main-container[data-active-tab="tab-netem"] .sidebar,
 .main-container[data-active-tab="tab-queues"] .sidebar {

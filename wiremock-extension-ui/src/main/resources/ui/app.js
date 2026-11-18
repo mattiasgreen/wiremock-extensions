@@ -85,7 +85,6 @@ import {
   initTargetConnectionModal
 } from './modules/settings.js';
 import { setupOpenApiModal } from './modules/openapi.js';
-import { setupProjectLifecycleBar } from './modules/projects.js';
 import { initStubLifecycleHandlers } from './modules/lifecycle.js';
 import { exportStubs, initBundleImport } from './modules/import-export.js';
 import { getVisibleSelectedStubIds } from './modules/bulk-actions.js';
@@ -190,7 +189,6 @@ initDialogSystem();
 initDocumentWorkspace();
 setupOpenApiModal();
 initBundleImport();
-setupProjectLifecycleBar(loadData);
 
 // Feature module initializers
 initStubsTab();

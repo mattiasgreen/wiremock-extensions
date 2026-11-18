@@ -109,14 +109,11 @@ class UiDemoModePlaywrightTest {
         // Switch back to All
         page.locator("#btn-filter-all").click();
 
-        // Filter by Async Messaging project
-        Locator projectSelect = page.locator("#project-filter-select");
-        if (projectSelect.isVisible()) {
-            projectSelect.selectOption("Async Messaging");
-            Locator asyncFilteredCards = page.locator("#stub-list .stub-card");
-            assertThat(asyncFilteredCards.count()).isGreaterThanOrEqualTo(2);
-            projectSelect.selectOption("");
-        }
+        // Filter by Async Messaging via search box
+        page.locator("#search-box").fill("Async Messaging");
+        Locator asyncFilteredCards = page.locator("#stub-list .stub-card");
+        assertThat(asyncFilteredCards.count()).isGreaterThanOrEqualTo(2);
+        page.locator("#search-box").fill("");
 
         // 4. Verify Request Journal Tab
         page.locator("#nav-tab-journal").click();

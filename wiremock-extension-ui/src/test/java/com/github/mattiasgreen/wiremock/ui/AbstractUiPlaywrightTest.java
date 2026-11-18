@@ -318,13 +318,6 @@ public abstract class AbstractUiPlaywrightTest {
         }
     }
 
-    protected void openStubMoreMenu() {
-        if (page.locator("#stub-more-menu").isHidden()) {
-            page.locator("#btn-stub-more-menu").click();
-            page.waitForSelector("#stub-more-menu:not(.hidden)");
-        }
-    }
-
     protected void openSettingsModal(String tabName) {
         String norm = tabName == null ? "target" : tabName.trim().toLowerCase(Locale.ROOT);
         if ("target".equals(norm)) {
@@ -360,7 +353,7 @@ public abstract class AbstractUiPlaywrightTest {
     }
 
     protected void selectProject(String projectName) {
-        page.locator("#project-filter-select").selectOption(projectName);
+        page.locator("#search-box").fill(projectName == null ? "" : projectName);
     }
 
     protected void selectStatusFilter(String status) {

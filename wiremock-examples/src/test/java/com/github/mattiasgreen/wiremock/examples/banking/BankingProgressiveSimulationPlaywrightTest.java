@@ -73,11 +73,9 @@ class BankingProgressiveSimulationPlaywrightTest {
         Page portalPage = context.newPage();
         Page consolePage = context.newPage();
 
-        // 1. Open WireMock Console UI (Tab 2) and verify initial LIVE PROXY mode across All Projects
+        // 1. Open WireMock Console UI (Tab 2) and verify initial proxy stubs
         consolePage.navigate(harness.getWireMockServer().baseUrl() + "/__admin/ui/");
         consolePage.waitForSelector("#stub-list .stub-card");
-        consolePage.waitForSelector("#project-lifecycle-bar:not(.hidden)");
-        assertThat(consolePage.locator("#project-mode-badge").textContent()).contains("LIVE PROXY");
 
         // Verify the Casual proxy stub card renders CASUAL badge and PROXY status badge
         Locator casualProxyCard = consolePage
@@ -147,19 +145,31 @@ class BankingProgressiveSimulationPlaywrightTest {
         casualJournalRow.click();
         captureScreenshot(consolePage, "04-console-journal-proxied-unified.png");
 
-        // 5. Switch to Stubs Tab -> Snapshot Recordings & Flip to STUBS MODE
+        // 5. Snapshot proxied recordings from Request Journal -> Enable recorded stubs in Stubs Tab
+        consolePage.waitForSelector("#btn-journal-snapshot-filtered:not([disabled])");
+        consolePage.locator("#btn-journal-snapshot-filtered").click();
+        consolePage.waitForSelector("#btn-journal-snapshot-filtered:has-text('Snapshotted')");
+
         consolePage.locator("#nav-tab-stubs").click();
         consolePage.waitForSelector("#tab-stub-detail.active");
-        consolePage.waitForSelector("#project-lifecycle-bar:not(.hidden)");
-
-        consolePage.locator("#btn-project-snapshot").click();
 
         // Wait for snapshot to complete by checking disabled filter count
         consolePage.waitForFunction("() => document.getElementById('btn-filter-disabled')?.textContent.includes('7')");
 
-        // Flip All Projects from LIVE PROXY -> STUBS MODE
-        consolePage.locator("#btn-project-mode-toggle").click();
-        consolePage.waitForSelector("#project-mode-badge:has-text('STUBS MODE')");
+        // Park active proxy routes first while recorded stubs are still in Disabled tier, then enable recorded stubs
+        consolePage.locator("#btn-filter-active").click();
+        consolePage.waitForSelector("#stub-list .stub-card");
+        consolePage.locator("#chk-select-all").check();
+        consolePage.locator("#btn-bulk-disable").click();
+        consolePage.waitForFunction("() => document.getElementById('btn-filter-active')?.textContent.includes('(0)')");
+
+        consolePage.locator("#btn-filter-disabled").click();
+        consolePage.locator("#search-box").fill("RECORDED");
+        consolePage.waitForSelector(".stub-card:has-text('RECORDED')");
+        consolePage.locator("#chk-select-all").check();
+        consolePage.locator("#btn-bulk-enable").click();
+        consolePage.locator("#search-box").fill("");
+        consolePage.locator("#btn-filter-all").click();
         consolePage.waitForSelector(".stub-card:has-text('RECORDED')");
 
         // Verify recorded Casual stub card displays [RECORDED CASUAL OK], CASUAL badge, and OK status pill

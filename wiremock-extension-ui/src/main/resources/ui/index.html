@@ -82,24 +82,10 @@
         </div>
         
         <div class="project-filter-bar">
-          <select id="project-filter-select" data-testid="project-filter-select" class="project-filter-select" title="Filter by Project">
-            <option value="">📁 All Projects</option>
-          </select>
           <div class="status-filter-pills">
             <button class="filter-pill active" data-filter="all" id="btn-filter-all" data-testid="btn-filter-all">All (<span id="count-filter-all">0</span>)</button>
             <button class="filter-pill" data-filter="active" id="btn-filter-active" data-testid="btn-filter-active">Active (<span id="count-filter-active">0</span>)</button>
             <button class="filter-pill" data-filter="disabled" id="btn-filter-disabled" data-testid="btn-filter-disabled">Disabled (<span id="count-filter-disabled">0</span>)</button>
-          </div>
-        </div>
-
-        <div id="project-lifecycle-bar" class="project-lifecycle-bar hidden" data-testid="project-lifecycle-bar">
-          <div class="project-lifecycle-left">
-            <span id="project-mode-badge" class="project-mode-badge mode-proxy" data-testid="project-mode-badge">LIVE PROXY</span>
-            <span id="project-active-name" class="project-active-name"></span>
-          </div>
-          <div class="project-lifecycle-actions">
-            <button id="btn-project-mode-toggle" data-testid="btn-project-mode-toggle" class="btn btn-tiny btn-secondary" title="Switch project between Live Proxy mode and offline Stubs mode">🔄 Switch Mode</button>
-            <button id="btn-project-snapshot" data-testid="btn-project-snapshot" class="btn btn-tiny btn-primary" title="Snapshot recorded live traffic into disabled stubs for this project">📸 Snapshot</button>
           </div>
         </div>
 
@@ -190,13 +176,8 @@
                     <button type="button" id="btn-copy-json" data-testid="btn-copy-json" class="dropdown-item" role="menuitem" title="Copy stub mapping JSON">📋 Copy JSON</button>
                   </div>
                 </div>
-                <div class="action-dropdown">
-                  <button type="button" id="btn-stub-more-menu" data-testid="btn-stub-more-menu" class="btn btn-small" aria-expanded="false" aria-haspopup="true" title="More stub actions">••• More ▾</button>
-                  <div id="stub-more-menu" class="dropdown-menu hidden" role="menu">
-                    <button type="button" id="btn-clone-stub" data-testid="btn-clone-stub" class="dropdown-item" role="menuitem" title="Duplicate this stub mapping">📄 Duplicate</button>
-                    <button type="button" id="btn-delete-stub" data-testid="btn-delete-stub" class="dropdown-item dropdown-item-danger" role="menuitem" title="Permanently delete this stub">🗑️ Delete</button>
-                  </div>
-                </div>
+                <button type="button" id="btn-clone-stub" data-testid="btn-clone-stub" class="btn btn-small" title="Duplicate this stub mapping">📄 Duplicate</button>
+                <button type="button" id="btn-delete-stub" data-testid="btn-delete-stub" class="btn btn-small btn-danger" title="Permanently delete this stub">🗑️ Delete</button>
               </div>
             </div>
 

@@ -193,23 +193,6 @@ class InMemoryDemoBackend {
 
   handleLifecycle(pathname, method, rawBody) {
     if (pathname === '/__admin/lifecycle/status' && method === 'GET') return resJson(200, { status: 'UP' });
-    const projMatch = pathname.match(/^\/__admin\/lifecycle\/projects\/([^/]+)\/mode$/);
-    if (projMatch && method === 'POST') {
-      const project = decodeURIComponent(projMatch[1]);
-      const requestedMode = String(parseBody(rawBody).mode || 'stubs').toLowerCase();
-      const allProjects = !project || project === '*' || project.toLowerCase() === '_all';
-      let stubsEnabled = 0;
-      let stubsDisabled = 0;
-      this.stubs.forEach(stub => {
-        if (isOfflineGuardStub(stub) || (!allProjects && getStubProject(stub) !== project)) return;
-        const isProxy = isProxyStub(stub);
-        const parked = isStubParked(stub);
-        const wantActive = requestedMode === 'proxy' ? isProxy : !isProxy;
-        if (wantActive && parked) { stub.priority = isProxy ? PRIORITY_ACTIVE_PROXY : PRIORITY_ACTIVE_STUB; stubsEnabled++; }
-        else if (!wantActive && !parked) { stub.priority = PRIORITY_PARKED; stubsDisabled++; }
-      });
-      return resJson(200, { project: allProjects ? '_all' : project, activeMode: requestedMode, stubsEnabled, stubsDisabled });
-    }
     if (pathname === '/__admin/lifecycle/snapshots' && method === 'POST') {
       const body = parseBody(rawBody);
       const count = Array.isArray(body.requestIds) ? this.requests.filter(r => body.requestIds.includes(r.id)).length : 1;

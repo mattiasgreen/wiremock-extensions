@@ -9,13 +9,11 @@ import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
 import com.github.tomakehurst.wiremock.stubbing.StubMapping;
 import java.io.IOException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
  * Admin API Extension providing priority-tier stub lifecycle extensions:
- * capability status probe, project proxy/stubs mode switching, and serve event snapshot conversions.
+ * capability status probe and serve event snapshot conversions.
  *
  * <p>Individual stub parking/activation and bulk updates use WireMock's native {@code /__admin/mappings/{id}} API.
  * Acts as a thin HTTP adapter mapping Admin API routes to {@link StubLifecycleService}.
@@ -133,37 +131,6 @@ public class StubLifecycleAdminEndpoint implements AdminApiExtension {
             if (stub.isEmpty()) return notFound("Recorded request not found in journal for id: " + targetId);
 
             return ok(stub.get());
-        });
-
-        // Project Mode Toggle: Switches a project (or _all) between "proxy" and "stubs" mode
-        router.add(RequestMethod.POST, "/lifecycle/projects/{project}/mode", (admin, serveEvent, pathParams) -> {
-            String projectParam = pathParams.get("project");
-            String targetProject = projectParam != null ? URLDecoder.decode(projectParam, StandardCharsets.UTF_8) : "";
-            if (targetProject.isBlank()) return badRequest("Project name is required");
-
-            String requestedMode = "stubs";
-            String body = serveEvent.getRequest().getBodyAsString();
-            if (body != null && !body.isBlank()) {
-                try {
-                    JsonNode root = objectMapper.readTree(body);
-                    if (root.has("mode")) {
-                        requestedMode = root.get("mode").asText("stubs").toLowerCase(Locale.ROOT);
-                    }
-                } catch (IOException ignored) {
-                }
-            }
-
-            try {
-                StubLifecycleService.ProjectModeResult res =
-                        service.withAdmin(admin).switchProjectMode(targetProject, requestedMode);
-                return ok(Map.of(
-                        "project", res.project(),
-                        "activeMode", res.activeMode(),
-                        "stubsEnabled", res.stubsEnabled(),
-                        "stubsDisabled", res.stubsDisabled()));
-            } catch (IllegalArgumentException e) {
-                return badRequest(e.getMessage());
-            }
         });
     }
 

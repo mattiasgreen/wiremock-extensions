@@ -141,10 +141,6 @@ export function exportStubs(scope = 'all', explicitIds = null) {
     const idSet = Array.isArray(explicitIds) ? new Set(explicitIds) : state.selectedStubIds;
     list = allStubs.filter(s => idSet.has(s.id));
     filename = `wiremock-stubs-selected-${list.length}.json`;
-  } else if (scope === 'project' && state.selectedProject) {
-    list = allStubs.filter(s => getStubProject(s) === state.selectedProject);
-    const safeProj = state.selectedProject.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    filename = `wiremock-stubs-${safeProj}.json`;
   } else {
     list = allStubs;
     filename = 'wiremock-stubs-all.json';

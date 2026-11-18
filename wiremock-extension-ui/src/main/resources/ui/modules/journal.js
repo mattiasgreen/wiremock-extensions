@@ -162,7 +162,7 @@ function buildRowHtml(req) {
   const displayStatus = isCasual ? casualErrorState : status;
   const verdict = getRequestVerdict(req);
   const src = extractRequestSource(req);
-  const sourceFilterToken = src.host || src.ip;
+  const sourceFilterToken = src.ip || src.shortHost || src.host;
 
   let html = `
     <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${protocol.toLowerCase()}" data-testid="journal-row">
@@ -463,7 +463,8 @@ function setupEventDelegation() {
       const sourceVal = sourceBtn.getAttribute('data-source') || '';
       const sourceHost = sourceBtn.getAttribute('data-source-host') || '';
       const sourceIp = sourceBtn.getAttribute('data-source-ip') || '';
-      const chipLabel = (sourceHost && sourceIp) ? `${sourceHost} (${sourceIp})` : sourceVal;
+      const shortHost = sourceHost ? sourceHost.split('.')[0] : '';
+      const chipLabel = (shortHost && sourceIp) ? `${shortHost} (${sourceIp})` : sourceVal;
       if (elements.journalSearch) {
         elements.journalSearch.value = sourceVal;
       }
@@ -808,9 +809,7 @@ function setupEventDelegation() {
       const targetId = snapshotBtn.getAttribute('data-id') || (snapshotBtn.dataset && snapshotBtn.dataset.id);
       if (!targetId) return;
 
-      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
-        ? state.selectedProject
-        : 'Recorded Traffic';
+      const targetProject = 'Recorded Traffic';
 
       if (state.capabilities && state.capabilities.lifecycle) {
         try {
@@ -1043,9 +1042,7 @@ export function initJournalTab() {
       const proxiedReqs = getFilteredProxiedRequests();
       if (!proxiedReqs || proxiedReqs.length === 0) return;
       const count = proxiedReqs.length;
-      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
-        ? state.selectedProject
-        : 'Recorded Traffic';
+      const targetProject = 'Recorded Traffic';
 
       elements.btnJournalSnapshotFiltered.disabled = true;
       const origText = elements.btnJournalSnapshotFiltered.innerHTML;

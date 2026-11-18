@@ -227,11 +227,7 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.locator("#btn-test-stub").click();
             page.waitForSelector("#tab-tester.active");
 
-            assertThat(page.locator(".sidebar").isVisible()).isTrue();
-            assertThat(page.locator(".stub-card:has-text('/api/v1/catalog/orders')")
-                            .first()
-                            .getAttribute("class"))
-                    .contains("selected");
+            assertThat(page.locator(".sidebar").isVisible()).isFalse();
 
             assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
             assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/catalog/orders");
@@ -244,9 +240,13 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(page.locator("#tester-response-status").textContent()).contains("201");
             assertThat(page.locator("#tester-response-body").textContent()).contains("ORD-9912");
 
+            page.locator("#nav-tab-stubs").click();
+            page.waitForSelector("#tab-stub-detail.active");
             page.locator(".stub-card:has-text('/api/v1/catalog/products')")
                     .first()
                     .click();
+            page.locator("#btn-test-stub").click();
+            page.waitForSelector("#tab-tester.active");
             assertThat(page.locator("#tester-method").inputValue()).isEqualTo("GET");
             assertThat(page.locator("#tester-url").inputValue()).isEqualTo("/api/v1/catalog/products");
 
@@ -360,15 +360,12 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector("#tester-response-status:has-text('200')");
             assertThat(page.locator("#tester-response-body").textContent()).contains("Live Catalog Item");
 
+            openJournalTab();
+            page.waitForSelector("#btn-journal-snapshot-filtered:not([disabled])");
+            page.locator("#btn-journal-snapshot-filtered").click();
+            page.waitForSelector("#btn-journal-snapshot-filtered:has-text('Snapshotted')");
+
             openStubsTab();
-            page.locator("#project-filter-select").selectOption("Catalog Service");
-
-            page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
-            assertThat(page.locator("#project-mode-badge").textContent()).contains("LIVE PROXY");
-
-            page.locator("#btn-project-snapshot").click();
-            page.waitForSelector("#toast-container .toast-item:has-text('Snapshot complete!')");
-
             page.waitForSelector("#btn-filter-disabled");
             page.locator("#btn-filter-disabled").click();
             page.waitForSelector(".stub-card:has-text('RECORDED')");
@@ -379,8 +376,11 @@ public class UiOpenApiPlaywrightTest extends AbstractUiPlaywrightTest {
             assertThat(disabledCard.locator(".status-badge.badge-disabled").textContent())
                     .contains("DISABLED");
 
-            page.locator("#btn-project-mode-toggle").click();
-            page.waitForSelector("#project-mode-badge:has-text('STUBS MODE')");
+            disabledCard.click();
+            page.locator("#btn-toggle-stub").click();
+            page.waitForSelector("#btn-filter-active");
+            page.locator("#btn-filter-active").click();
+            page.waitForSelector(".stub-card:has-text('RECORDED')");
 
             upstreamServer.stop();
 

@@ -97,15 +97,13 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         String url = page.url();
         assertThat(url).contains("#stubs?stubId=");
 
-        // Verify Copy & More dropdown menus expose expected actions cleanly
+        // Verify Copy dropdown and inline Duplicate/Delete buttons expose expected actions cleanly
+        assertThat(page.locator("#btn-clone-stub").isVisible()).isTrue();
+        assertThat(page.locator("#btn-delete-stub").isVisible()).isTrue();
         openStubCopyMenu();
         assertThat(page.locator("#btn-copy-curl").isVisible()).isTrue();
         assertThat(page.locator("#btn-copy-java").isVisible()).isTrue();
         assertThat(page.locator("#btn-copy-json").isVisible()).isTrue();
-
-        openStubMoreMenu();
-        assertThat(page.locator("#btn-clone-stub").isVisible()).isTrue();
-        assertThat(page.locator("#btn-delete-stub").isVisible()).isTrue();
 
         assertThat(pageErrors).isEmpty();
     }
@@ -116,9 +114,6 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector("#stub-list .stub-card");
 
-        Locator projectSelect = page.locator("#project-filter-select");
-        assertThat(projectSelect.isVisible()).isTrue();
-
         Locator projectPills = page.locator(".project-pill");
         assertThat(projectPills.count()).isGreaterThan(0);
 
@@ -128,6 +123,11 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         assertThat(btnAll.isVisible()).isTrue();
         assertThat(btnActive.isVisible()).isTrue();
         assertThat(btnDisabled.isVisible()).isTrue();
+
+        page.locator("#search-box").fill("api-users");
+        page.waitForSelector("#stub-list .stub-card");
+        assertThat(page.locator("#stub-list .stub-card").count()).isGreaterThan(0);
+        page.locator("#search-box").fill("");
 
         assertThat(pageErrors).isEmpty();
     }
@@ -274,7 +274,6 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         page.waitForSelector(".stub-card:has-text('/api/v1/users')");
 
         page.locator(".stub-card:has-text('/api/v1/users')").first().click();
-        openStubMoreMenu();
         page.waitForSelector("#btn-clone-stub");
 
         page.locator("#btn-clone-stub").click();

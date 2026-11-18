@@ -15,12 +15,6 @@ export const elements = {
 
   // Stubs Tab
   searchBox: document.getElementById('search-box'),
-  projectFilterSelect: document.getElementById('project-filter-select'),
-  projectLifecycleBar: document.getElementById('project-lifecycle-bar'),
-  projectModeBadge: document.getElementById('project-mode-badge'),
-  projectActiveName: document.getElementById('project-active-name'),
-  btnProjectModeToggle: document.getElementById('btn-project-mode-toggle'),
-  btnProjectSnapshot: document.getElementById('btn-project-snapshot'),
   chkSelectAll: document.getElementById('chk-select-all'),
   stubList: document.getElementById('stub-list'),
   stubDetailEmpty: document.getElementById('stub-detail-empty'),
@@ -44,8 +38,6 @@ export const elements = {
   btnViewStubInJournal: document.getElementById('btn-view-stub-in-journal'),
   btnStubCopyMenu: document.getElementById('btn-stub-copy-menu'),
   stubCopyMenu: document.getElementById('stub-copy-menu'),
-  btnStubMoreMenu: document.getElementById('btn-stub-more-menu'),
-  stubMoreMenu: document.getElementById('stub-more-menu'),
   btnCopyCurl: document.getElementById('btn-copy-curl'),
   btnCopyJava: document.getElementById('btn-copy-java'),
   btnCopyJson: document.getElementById('btn-copy-json'),

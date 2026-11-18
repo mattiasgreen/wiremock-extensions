@@ -342,9 +342,4 @@ export function getSnapshotStubTemplate(requestId, project = null, excludedJsonP
   });
 }
 
-export function setProjectMode(project, mode) {
-  const enc = encodeURIComponent(project);
-  return apiPost(`/__admin/lifecycle/projects/${enc}/mode`, { mode });
-}
-
 export { detectCapabilities };

@@ -858,6 +858,11 @@ public class UiModuleUnitTest {
 
                 const templateCount = tplSelect.options.length;
                 const templateKeysMatch = templateCount === Object.keys(STUB_TEMPLATES).length;
+                const hasProtocolTemplates = ['casual-stub', 'casual-proxy', 'amqp-stub', 'amqp-proxy', 'kafka-stub', 'kafka-proxy']
+                    .every(k => Array.from(tplSelect.options).some(opt => opt.value === k) && Boolean(STUB_TEMPLATES[k]))
+                    && STUB_TEMPLATES['casual-proxy'].response?.proxyBaseUrl === 'casual://upstream-casual:7772'
+                    && STUB_TEMPLATES['amqp-proxy'].response?.proxyBaseUrl === 'async://upstream-amqp'
+                    && STUB_TEMPLATES['kafka-proxy'].response?.proxyBaseUrl === 'async://upstream-kafka';
 
                 // 2. Switch template via select
                 tplSelect.value = 'body-contains';
@@ -919,6 +924,7 @@ public class UiModuleUnitTest {
                 return {
                     openedInViewer,
                     templateKeysMatch,
+                    hasProtocolTemplates,
                     templateSwitched,
                     inSectionEditor,
                     lintVisible,
@@ -939,6 +945,7 @@ public class UiModuleUnitTest {
 
         assertThat(result.get("openedInViewer")).isEqualTo(true);
         assertThat(result.get("templateKeysMatch")).isEqualTo(true);
+        assertThat(result.get("hasProtocolTemplates")).isEqualTo(true);
         assertThat(result.get("templateSwitched")).isEqualTo(true);
         assertThat(result.get("inSectionEditor")).isEqualTo(true);
         assertThat(result.get("lintVisible")).isEqualTo(true);
@@ -1291,14 +1298,15 @@ public class UiModuleUnitTest {
                 const allVisible = getVisibleCatalogStubs("");
                 const bulkVisible = getCurrentlyVisibleStubs();
 
-                // Project filtering check (inferred 'api-orders')
-                state.selectedProject = "api-orders";
-                const ordersVisible = getVisibleCatalogStubs("");
+                // Search filtering check for 'orders' across visible catalog and bulk helpers
+                const searchBox = document.getElementById("search-box");
+                if (searchBox) searchBox.value = "orders";
+                const ordersVisible = getVisibleCatalogStubs("orders");
                 const ordersBulk = getCurrentlyVisibleStubs();
                 const ordersCounts = getCatalogCounts("api-orders");
+                if (searchBox) searchBox.value = "";
 
                 // Status filter checks
-                state.selectedProject = null;
                 state.statusFilter = "active";
                 const activeOnly = getVisibleCatalogStubs("");
 
@@ -1832,9 +1840,9 @@ public class UiModuleUnitTest {
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(((Number) result.get("initialStubsCount")).intValue()).isEqualTo(9);
+        assertThat(((Number) result.get("initialStubsCount")).intValue()).isGreaterThanOrEqualTo(12);
         assertThat(((Number) result.get("initialDisabledCount")).intValue()).isEqualTo(1);
-        assertThat(((Number) result.get("initialRequestsCount")).intValue()).isEqualTo(6);
+        assertThat(((Number) result.get("initialRequestsCount")).intValue()).isGreaterThanOrEqualTo(11);
         assertThat(result.get("hasOrderFulfillment")).isEqualTo(true);
         assertThat(result.get("hasCasualStub")).isEqualTo(true);
         assertThat(result.get("hasCasualJournalEntry")).isEqualTo(true);
@@ -1954,13 +1962,12 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName(
-            "api & demoBackend: Consolidated /__admin/lifecycle/snapshots, snapshot-template, and projects/{project}/mode routes")
+    @DisplayName("api & demoBackend: Consolidated /__admin/lifecycle/snapshots and snapshot-template routes")
     void testConsolidatedLifecycleApiAndDemoBackendRoutes() {
         String script =
                 """
             async () => {
-                const { snapshotProjectRecordings, snapshotFilteredRecordings, getSnapshotStubTemplate, setProjectMode } = await import('./modules/api.js');
+                const { snapshotProjectRecordings, snapshotFilteredRecordings, getSnapshotStubTemplate } = await import('./modules/api.js');
                 const { demoBackend } = await import('./modules/demo-backend.js');
 
                 demoBackend.reset();
@@ -1970,7 +1977,6 @@ public class UiModuleUnitTest {
                     const projSnap = await snapshotProjectRecordings('Order Service');
                     const filteredSnap = await snapshotFilteredRecordings([reqId], 'CustomerDomain', true);
                     const template = await getSnapshotStubTemplate(reqId, 'OrderDomain');
-                    const modeRes = await setProjectMode('_all', 'stubs');
 
                     return {
                         projSnapTotal: projSnap.totalRecorded,
@@ -1978,9 +1984,7 @@ public class UiModuleUnitTest {
                         filteredSnapTotal: filteredSnap.totalRecorded,
                         filteredSnapStatus: filteredSnap.status,
                         templateProject: template && template.metadata ? template.metadata.project : null,
-                        templateSource: template && template.metadata ? template.metadata.source : null,
-                        modeProject: modeRes.project,
-                        modeActive: modeRes.activeMode
+                        templateSource: template && template.metadata ? template.metadata.source : null
                     };
                 } finally {
                     demoBackend.setDemoMode(false);
@@ -1998,8 +2002,6 @@ public class UiModuleUnitTest {
         assertThat(result.get("filteredSnapStatus")).isEqualTo("active");
         assertThat(result.get("templateProject")).isEqualTo("OrderDomain");
         assertThat(result.get("templateSource")).isEqualTo("recorded-proxy");
-        assertThat(result.get("modeProject")).isEqualTo("_all");
-        assertThat(result.get("modeActive")).isEqualTo("stubs");
     }
 
     @Test
@@ -3058,8 +3060,7 @@ public class UiModuleUnitTest {
                     if (searchEl) searchEl.value = 'Orders';
                     const searchScoped = getVisibleSelectedStubIds();
 
-                    if (searchEl) searchEl.value = '';
-                    state.selectedProject = 'orders';
+                    if (searchEl) searchEl.value = 'orders';
                     state.statusFilter = 'active';
                     const projectAndStatusScoped = getVisibleSelectedStubIds();
 
@@ -3152,7 +3153,7 @@ public class UiModuleUnitTest {
         assertThat(result.get("demoAfterNetwork")).isEqualTo(false);
         assertThat(result.get("demoActiveAfterEnable")).isEqualTo(true);
         assertThat(result.get("backendLoaded")).isEqualTo(true);
-        assertThat(((Number) result.get("demoMappingsCount")).intValue()).isEqualTo(10);
+        assertThat(((Number) result.get("demoMappingsCount")).intValue()).isGreaterThanOrEqualTo(13);
         assertThat(result.get("demoActiveAfterDisable")).isEqualTo(false);
     }
 

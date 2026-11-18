@@ -163,6 +163,149 @@ export const STUB_TEMPLATES = {
     metadata: {
       role: 'offline-guard'
     }
+  },
+  'casual-stub': {
+    name: 'Casual XATMI: Service Stub',
+    priority: 5,
+    request: {
+      method: 'POST',
+      url: '/__casual/services/echoService'
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Casual-Service': 'echoService',
+        'X-Casual-Error-State': 'OK'
+      },
+      jsonBody: {
+        service: 'echoService',
+        status: 'OK',
+        xatmiReturnCode: 0,
+        message: 'Simulated Casual XATMI reply'
+      }
+    },
+    metadata: {
+      protocol: 'casual',
+      service: 'echoService'
+    }
+  },
+  'casual-proxy': {
+    name: 'Casual XATMI: Domain Proxy / Bridge',
+    priority: 10,
+    request: {
+      method: 'POST',
+      urlPattern: '/__casual/services/.*'
+    },
+    response: {
+      proxyBaseUrl: 'casual://upstream-casual:7772'
+    },
+    metadata: {
+      mode: 'proxy',
+      protocol: 'casual',
+      targetBaseUrl: 'casual://upstream-casual:7772'
+    }
+  },
+  'amqp-stub': {
+    name: 'AMQP Queue: Local Stub',
+    priority: 5,
+    request: {
+      method: 'POST',
+      url: '/__async/amqp/orders.inbound'
+    },
+    response: {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Async-Ack': 'ack',
+        'X-Async-Protocol': 'amqp'
+      },
+      jsonBody: {
+        status: 'ACKNOWLEDGED',
+        queue: 'orders.inbound'
+      }
+    },
+    metadata: {
+      protocol: 'amqp',
+      channel: 'orders.inbound',
+      async: {
+        mode: 'mock',
+        protocol: 'amqp',
+        channel: 'orders.inbound',
+        ackPolicy: 'ack'
+      }
+    }
+  },
+  'amqp-proxy': {
+    name: 'AMQP Queue: Broker Bridge / Proxy',
+    priority: 10,
+    request: {
+      method: 'ANY',
+      urlPattern: '/__async/amqp/.*'
+    },
+    response: {
+      proxyBaseUrl: 'async://upstream-amqp'
+    },
+    metadata: {
+      mode: 'proxy',
+      protocol: 'amqp',
+      async: {
+        mode: 'proxy',
+        protocol: 'amqp',
+        broker: 'downstream-artemis',
+        channelPattern: 'orders\\.(.*)',
+        proxyBroker: 'upstream-amqp',
+        proxyChannel: 'upstream.orders.$1'
+      }
+    }
+  },
+  'kafka-stub': {
+    name: 'Kafka Topic: Local Stub',
+    priority: 5,
+    request: {
+      method: 'POST',
+      url: '/__async/kafka/orders.events'
+    },
+    response: {
+      status: 204,
+      headers: {
+        'X-Async-Ack': 'ack',
+        'X-Async-Protocol': 'kafka'
+      }
+    },
+    metadata: {
+      protocol: 'kafka',
+      channel: 'orders.events',
+      async: {
+        mode: 'mock',
+        protocol: 'kafka',
+        channel: 'orders.events',
+        ackPolicy: 'ack'
+      }
+    }
+  },
+  'kafka-proxy': {
+    name: 'Kafka Topic: Broker Bridge / Proxy',
+    priority: 10,
+    request: {
+      method: 'ANY',
+      urlPattern: '/__async/kafka/.*'
+    },
+    response: {
+      proxyBaseUrl: 'async://upstream-kafka'
+    },
+    metadata: {
+      mode: 'proxy',
+      protocol: 'kafka',
+      async: {
+        mode: 'proxy',
+        protocol: 'kafka',
+        broker: 'downstream-kafka',
+        channelPattern: 'orders\\.events\\.(.*)',
+        proxyBroker: 'upstream-kafka',
+        proxyChannel: 'upstream.orders.events.$1'
+      }
+    }
   }
 };
 
@@ -195,9 +338,7 @@ function buildWorkspaceTemplates(project = '') {
 }
 
 function getActiveProjectFilter() {
-  return (state.selectedProject && state.selectedProject !== '*' && state.selectedProject !== '_all')
-    ? state.selectedProject
-    : '';
+  return '';
 }
 
 export function openStubEditor(stub, clone = false, customTitle = null) {

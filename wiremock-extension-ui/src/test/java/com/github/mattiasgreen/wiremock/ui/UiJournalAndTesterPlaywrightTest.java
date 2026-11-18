@@ -1007,10 +1007,14 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                 page.locator("tr.journal-row:has-text('/api/v1/source-alpha')").first();
         Locator betaRow =
                 page.locator("tr.journal-row:has-text('/api/v1/source-beta')").first();
-        assertThat(alphaRow.locator("[data-testid='journal-source-cell']").textContent())
-                .contains("198.51.100.42");
-        assertThat(betaRow.locator("[data-testid='journal-source-cell']").textContent())
-                .contains("localhost");
+        assertThat(alphaRow.locator("[data-testid='journal-source-cell']")
+                        .textContent()
+                        .trim())
+                .isEqualTo("198.51.100.42");
+        assertThat(betaRow.locator("[data-testid='journal-source-cell']")
+                        .textContent()
+                        .trim())
+                .isEqualTo("localhost");
 
         // Expand row and inspect Source Caller detail section
         alphaRow.click();

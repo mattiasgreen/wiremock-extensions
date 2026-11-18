@@ -128,8 +128,8 @@ class StubLifecycleAdminEndpointTest {
     }
 
     @Test
-    @DisplayName("Should snapshot live proxied journal traffic into DISABLED stubs and toggle project mode")
-    void shouldSnapshotProxiedTrafficAndToggleProjectMode() throws Exception {
+    @DisplayName("Should snapshot live proxied journal traffic into DISABLED stubs and serve offline when activated")
+    void shouldSnapshotProxiedTrafficAndServeOffline() throws Exception {
         WireMockServer upstreamServer =
                 new WireMockServer(WireMockConfiguration.options().dynamicPort());
         upstreamServer.start();
@@ -192,20 +192,16 @@ class StubLifecycleAdminEndpointTest {
             assertThat(recordedStub.getMetadata().getString("project")).isEqualTo("Warehouse");
             assertThat(recordedStub.getMetadata().getString("source")).isEqualTo("recorded-proxy");
 
-            // Now switch project "Warehouse" to STUBS mode!
-            HttpResponse<String> modeRes = httpClient.send(
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(server.baseUrl() + "/__admin/lifecycle/projects/Warehouse/mode"))
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString("{\"mode\":\"stubs\"}"))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-
-            assertThat(modeRes.statusCode()).isEqualTo(200);
-            JsonNode modeJson = objectMapper.readTree(modeRes.body());
-            assertThat(modeJson.get("activeMode").asText()).isEqualTo("stubs");
-            assertThat(modeJson.get("stubsEnabled").asInt()).isEqualTo(1);
-            assertThat(modeJson.get("stubsDisabled").asInt()).isEqualTo(1);
+            // Activate recorded stub at priority 5 via native WireMock mapping API
+            server.editStub(com.github.tomakehurst.wiremock.client.WireMock.get(urlEqualTo("/api/inventory/123"))
+                    .withId(recordedStub.getId())
+                    .withName(recordedStub.getName())
+                    .atPriority(StubLifecycleService.PRIORITY_ACTIVE_STUB)
+                    .willReturn(aResponse()
+                            .withStatus(recordedStub.getResponse().getStatus())
+                            .withHeaders(recordedStub.getResponse().getHeaders())
+                            .withBody(recordedStub.getResponse().getBody()))
+                    .withMetadata(recordedStub.getMetadata()));
 
             // Pull the plug on upstream (simulate offline testing)
             upstreamServer.stop();
@@ -456,8 +452,9 @@ class StubLifecycleAdminEndpointTest {
             assertThat(emptySnapJson.get("status").asText()).isEqualTo("disabled");
             assertThat(emptySnapJson.get("totalRecorded").asInt()).isEqualTo(1);
 
-            // Legacy endpoints must return 404
+            // Removed & legacy endpoints must return 404
             for (String legacyPath : List.of(
+                    "/__admin/lifecycle/projects/Warehouse/mode",
                     "/__admin/projects/Warehouse/recordings/snapshot",
                     "/__admin/stubs/snapshot-filtered",
                     "/__admin/stubs/snapshot-template",

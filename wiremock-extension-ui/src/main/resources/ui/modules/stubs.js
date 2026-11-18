@@ -26,10 +26,19 @@ import {
 import { openStubEditor } from './lifecycle.js';
 import { handleStubCheckboxClick, updateBulkToolbar, handleSelectAllToggle } from './bulk-actions.js';
 import { exportStubs } from './import-export.js';
-import { updateFilterCounts } from './projects.js';
 import { sendStubToTester } from './tester.js';
 
 export { getStubUrl, generateCurl, generateCreateStubCurl, generateJavaStubFor, sendStubToTester };
+
+export function updateFilterCounts() {
+  const counts = stubCatalog.getCounts();
+  const elAll = document.getElementById('count-filter-all');
+  const elAct = document.getElementById('count-filter-active');
+  const elDis = document.getElementById('count-filter-disabled');
+  if (elAll) elAll.textContent = counts.all;
+  if (elAct) elAct.textContent = counts.active;
+  if (elDis) elDis.textContent = counts.disabled;
+}
 
 let currentStubViewMode = 'rich';
 let currentRawStubJson = '';
@@ -39,8 +48,7 @@ let stubViewerController = null;
 
 function closeStubDropdowns() {
   const pairs = [
-    ['btn-stub-copy-menu', 'stub-copy-menu'],
-    ['btn-stub-more-menu', 'stub-more-menu']
+    ['btn-stub-copy-menu', 'stub-copy-menu']
   ];
   pairs.forEach(([btnId, menuId]) => {
     const btn = document.getElementById(btnId);
@@ -62,12 +70,11 @@ export function getVisibleCatalogStubs(searchQuery) {
   const filter = (searchQuery !== undefined ? searchQuery : (elements.searchBox && elements.searchBox.value || '')).trim();
   return stubCatalog.query({
     search: filter,
-    status: state.statusFilter,
-    project: state.selectedProject
+    status: state.statusFilter
   });
 }
 
-export function getCatalogCounts(projectFilter = state.selectedProject) {
+export function getCatalogCounts(projectFilter = null) {
   return stubCatalog.getCounts(projectFilter);
 }
 
@@ -356,14 +363,6 @@ export function initStubsTab() {
       setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
     });
   }
-  if (elements.projectFilterSelect) {
-    elements.projectFilterSelect.addEventListener('change', (e) => {
-      state.selectedProject = e.target.value || null;
-      renderStubList();
-      updateFilterCounts();
-      updateBulkToolbar();
-    });
-  }
   ['all', 'active', 'disabled'].forEach(filter => {
     const btn = document.getElementById(`btn-filter-${filter}`);
     if (btn) {
@@ -384,7 +383,7 @@ export function initStubsTab() {
   }
   if (elements.btnExportStubs) {
     elements.btnExportStubs.addEventListener('click', () => {
-      exportStubs(state.selectedProject ? 'project' : 'all');
+      exportStubs('all');
     });
   }
   if (elements.btnRefresh) {
@@ -484,10 +483,9 @@ export function initStubsTab() {
     });
   }
 
-  // Dropdown menus (#btn-stub-copy-menu / #btn-stub-more-menu)
+  // Dropdown menu (#btn-stub-copy-menu)
   const dropdownConfigs = [
-    ['btn-stub-copy-menu', 'stub-copy-menu'],
-    ['btn-stub-more-menu', 'stub-more-menu']
+    ['btn-stub-copy-menu', 'stub-copy-menu']
   ];
   dropdownConfigs.forEach(([btnId, menuId]) => {
     const btn = document.getElementById(btnId);
