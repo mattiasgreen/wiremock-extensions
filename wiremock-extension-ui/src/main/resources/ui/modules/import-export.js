@@ -4,30 +4,150 @@
  */
 import { state, uiActions } from './state.js';
 import { elements } from './dom.js';
+import { showToast } from './dialog.js';
 import { importMappings } from './api.js';
 import { getStubProject } from './stub-catalog.js';
-import { mountCodeInputEditor } from './payload-lens.js';
+import { validatePayload } from './highlighter.js';
+import { mountPolyglotViewer } from './polyglot-viewer.js';
+import { openDocumentWorkspace } from './document-workspace.js';
 
-export function exportStubs(scope = 'all') {
+let currentBundleText = '';
+let bundleViewer = null;
+let bundleUiBound = false;
+
+function updateBundleLintPill() {
+  const pill = elements.bundleContentLintPill || document.getElementById('bundle-content-lint-pill');
+  if (!pill) return;
+  const trimmed = currentBundleText.trim();
+  if (!trimmed) {
+    pill.textContent = '';
+    pill.classList.add('hidden');
+    return;
+  }
+  const res = validatePayload(trimmed, 'json');
+  if (!res.valid) {
+    pill.textContent = `⚠️ ${res.errorMessage || 'Invalid JSON'}`;
+    pill.classList.remove('hidden');
+  } else {
+    pill.textContent = '';
+    pill.classList.add('hidden');
+  }
+}
+
+function openBundleWorkspace(startInEditor = true) {
+  openDocumentWorkspace({
+    title: 'WireMock JSON Bundle',
+    text: currentBundleText,
+    format: 'json',
+    editable: true,
+    startInEditor,
+    saveLabel: '✓ Apply Bundle',
+    onCommit: (nextText) => {
+      setBundleContent(nextText);
+      return true;
+    }
+  });
+}
+
+function ensureBundleViewer() {
+  const host = elements.bundleContentViewer || document.getElementById('bundle-content-viewer');
+  if (!host) return null;
+  if (!bundleViewer) {
+    bundleViewer = mountPolyglotViewer(host, {
+      text: currentBundleText,
+      mode: 'rich',
+      editable: false,
+      onOpenWorkspace: () => openBundleWorkspace(false)
+    });
+  }
+  return bundleViewer;
+}
+
+export function setBundleContent(text) {
+  currentBundleText = typeof text === 'string' ? text : String(text ?? '');
+  const viewer = ensureBundleViewer();
+  if (viewer) {
+    viewer.update({ text: currentBundleText });
+  }
+  updateBundleLintPill();
+}
+
+export function getBundleContent() {
+  return currentBundleText;
+}
+
+export function initBundleImport() {
+  ensureBundleViewer();
+  if (bundleUiBound) return;
+  bundleUiBound = true;
+
+  const editBtn = elements.btnBundleEditWorkspace || document.getElementById('btn-bundle-edit-workspace');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => openBundleWorkspace(true));
+  }
+
+  const cancelBtn = elements.btnCancelBundleImport || document.getElementById('btn-cancel-bundle-import');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', closeImportModal);
+  }
+
+  const browseBtn = elements.btnBrowseBundleFile || document.getElementById('btn-browse-bundle-file');
+  const fileInput = elements.bundleFileInput || document.getElementById('bundle-file-input');
+  if (browseBtn && fileInput) {
+    browseBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setBundleContent(event.target.result || '');
+        };
+        reader.readAsText(file);
+      }
+    });
+  }
+
+  const dropzone = elements.bundleDropzone || document.getElementById('bundle-dropzone');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setBundleContent(event.target.result || '');
+        };
+        reader.readAsText(file);
+      }
+    });
+  }
+}
+
+export function exportStubs(scope = 'all', explicitIds = null) {
   let list = [];
   let filename = 'wiremock-stubs.json';
 
   const allStubs = state.currentStubs || [];
 
   if (scope === 'selected') {
-    list = allStubs.filter(s => state.selectedStubIds.has(s.id));
+    const idSet = Array.isArray(explicitIds) ? new Set(explicitIds) : state.selectedStubIds;
+    list = allStubs.filter(s => idSet.has(s.id));
     filename = `wiremock-stubs-selected-${list.length}.json`;
-  } else if (scope === 'project' && state.selectedProject) {
-    list = allStubs.filter(s => getStubProject(s) === state.selectedProject);
-    const safeProj = state.selectedProject.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-    filename = `wiremock-stubs-${safeProj}.json`;
   } else {
     list = allStubs;
     filename = 'wiremock-stubs-all.json';
   }
 
   if (list.length === 0) {
-    alert('No stubs to export.');
+    showToast('No stubs to export.', { type: 'warning' });
     return;
   }
 
@@ -53,17 +173,16 @@ export function exportStubs(scope = 'all') {
 }
 
 export function handleBundleImport() {
-  const contentEl = document.getElementById('bundle-content');
   const policyEl = document.getElementById('bundle-conflict-policy');
   const projectEl = document.getElementById('bundle-target-project');
   const feedbackEl = document.getElementById('bundle-import-feedback');
   const submitBtn = document.getElementById('btn-submit-bundle-import');
 
-  const rawJson = contentEl ? contentEl.value.trim() : '';
+  const rawJson = currentBundleText.trim();
   if (!rawJson) {
     if (feedbackEl) {
       feedbackEl.textContent = 'Please paste or select a WireMock JSON bundle.';
-      feedbackEl.className = 'import-feedback error';
+      feedbackEl.className = 'modal-feedback error';
     }
     return;
   }
@@ -74,7 +193,7 @@ export function handleBundleImport() {
   } catch (err) {
     if (feedbackEl) {
       feedbackEl.textContent = 'Invalid JSON: ' + err.message;
-      feedbackEl.className = 'import-feedback error';
+      feedbackEl.className = 'modal-feedback error';
     }
     return;
   }
@@ -85,12 +204,11 @@ export function handleBundleImport() {
   } else if (parsed.mappings && Array.isArray(parsed.mappings)) {
     mappings = parsed.mappings;
   } else if (parsed.request) {
-    // Single stub mapping
     mappings = [parsed];
   } else {
     if (feedbackEl) {
       feedbackEl.textContent = 'JSON does not contain WireMock stub mappings.';
-      feedbackEl.className = 'import-feedback error';
+      feedbackEl.className = 'modal-feedback error';
     }
     return;
   }
@@ -98,7 +216,6 @@ export function handleBundleImport() {
   const targetProject = projectEl ? projectEl.value.trim() : '';
   const duplicatePolicy = policyEl ? policyEl.value : 'OVERWRITE';
 
-  // Apply target project and handle APPEND (generate new UUIDs)
   mappings = mappings.map(stub => {
     const copy = { ...stub };
     if (targetProject) {
@@ -128,14 +245,15 @@ export function handleBundleImport() {
     .then(() => {
       if (feedbackEl) {
         feedbackEl.textContent = `Successfully imported ${mappings.length} mappings!`;
-        feedbackEl.className = 'import-feedback success';
+        feedbackEl.className = 'modal-feedback success';
       }
+      showToast(`Imported ${mappings.length} stub mapping(s)`, { type: 'success' });
       closeImportModal();
     })
     .catch(err => {
       if (feedbackEl) {
         feedbackEl.textContent = 'Import failed: ' + err.message;
-        feedbackEl.className = 'import-feedback error';
+        feedbackEl.className = 'modal-feedback error';
       }
     })
     .finally(() => {
@@ -147,33 +265,22 @@ export function handleBundleImport() {
 }
 
 export function openImportModal(initialTab = 'openapi') {
+  initBundleImport();
   const modal = document.getElementById('openapi-modal');
   if (modal) {
     modal.classList.remove('hidden');
     switchImportTab(initialTab);
-    const bundleContent = document.getElementById('bundle-content');
-    if (bundleContent && !bundleContent._mountedEditor) {
-      bundleContent._mountedEditor = mountCodeInputEditor(bundleContent, {
-        title: 'WireMock JSON Bundle',
-        format: 'json',
-        context: 'bundle-import',
-        formatBtn: document.getElementById('btn-bundle-format-json'),
-        maximizeBtn: document.getElementById('btn-bundle-maximize'),
-        lintPill: document.getElementById('bundle-content-lint-pill')
-      });
-    }
   }
 }
 
 export function closeImportModal() {
   const modal = document.getElementById('openapi-modal');
   if (modal) modal.classList.add('hidden');
-  const bundleContent = document.getElementById('bundle-content');
-  if (bundleContent) bundleContent.value = '';
+  setBundleContent('');
   const bundleFeedback = document.getElementById('bundle-import-feedback');
   if (bundleFeedback) {
     bundleFeedback.textContent = '';
-    bundleFeedback.className = 'import-feedback';
+    bundleFeedback.className = 'modal-feedback hidden';
   }
 }
 

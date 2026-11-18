@@ -1,13 +1,13 @@
 /**
- * Browser Local Preferences controller: Persistent Headers and JSON Path Exclusions.
- * All settings are stored exclusively in browser localStorage (never sent to WireMock).
- * Supports zero-file clipboard copy-paste export and import.
+ * Unified Settings & Target Host controller: Target Host switcher,
+ * Persistent Headers, JSON Path Exclusions, and Clipboard Config Sync.
+ * Preferences are stored exclusively in browser localStorage.
  */
 import { elements, escapeHtml } from './dom.js';
-import { state, setTargetUrlInLocation, getWireMockUri } from './state.js';
+import { showToast } from './dialog.js';
+import { state, uiActions, setTargetUrlInLocation, getWireMockUri } from './state.js';
 import { renderTargetCapabilities } from './capabilities.js';
-import { renderLocalHeaderChips } from './tester.js';
-import { demoBackend } from './demo-backend.js';
+import { enableDemoMode, disableDemoMode, isDemoModeActive } from './api.js';
 
 export const LOCAL_SETTINGS_KEY = 'wiremock_ui_preferences';
 export const LOCAL_HEADERS_KEY = 'wiremock_ui_local_headers';
@@ -75,7 +75,6 @@ export function loadPreferences() {
     }
   } catch (_) {}
 
-  // Fallback / migration from legacy LOCAL_HEADERS_KEY
   let headers = DEFAULT_HEADERS;
   try {
     const savedHeaders = localStorage.getItem(LOCAL_HEADERS_KEY);
@@ -146,9 +145,9 @@ export function setLocalHeadersEnabled(enabled) {
 /**
  * Checks if a path or key matches any rule in the excludedJsonPaths list.
  *
- * @param {string} path Full JSONPath, e.g. "$.CORRELATION_ID" or "$.FML_ARCHIVE_JSON.caseId"
- * @param {string} key Property key, e.g. "CORRELATION_ID" or "caseId"
- * @param {string[]} excludedPaths List of exclusion rules
+ * @param {string} path
+ * @param {string} key
+ * @param {string[]} excludedPaths
  * @returns {boolean}
  */
 export function isJsonPathExcluded(path, key, excludedPaths = []) {
@@ -187,14 +186,6 @@ export function isJsonPathExcluded(path, key, excludedPaths = []) {
  *
  * @param {string} textareaVal
  * @param {boolean} executeMacros
- * @returns {{
- *   headers: Record<string, string>,
- *   customHeaders: Record<string, string>,
- *   overriddenKeys: Set<string>,
- *   appliedLocalHeaders: Array<{ name: string, value: string }>,
- *   localHeaders: Array<{ name: string, value: string, enabled: boolean }>,
- *   isEnabled: boolean
- * }}
  */
 export function getEffectiveTesterHeaders(textareaVal = '', executeMacros = true) {
   const localHeaders = loadLocalHeaders();
@@ -292,10 +283,50 @@ export function importPreferencesJson(jsonText) {
   }
 }
 
-export function openLocalHeadersModal(initialTab = 'headers') {
-  if (!elements.modalLocalHeaders) return;
-  const prefs = loadPreferences();
+export function switchSettingsTab(tab = 'target') {
+  const activeTab = ['target', 'headers', 'exclusions', 'sync'].includes(tab) ? tab : 'target';
+  const tabs = [
+    { btn: elements.settingsTabTarget, panel: elements.settingsPanelTarget, name: 'target' },
+    { btn: elements.settingsTabHeaders, panel: elements.settingsPanelHeaders, name: 'headers' },
+    { btn: elements.settingsTabExclusions, panel: elements.settingsPanelExclusions, name: 'exclusions' },
+    { btn: elements.settingsTabSync, panel: elements.settingsPanelSync, name: 'sync' }
+  ];
 
+  tabs.forEach(t => {
+    if (!t.btn || !t.panel) return;
+    const isMatch = t.name === activeTab;
+    t.btn.classList.toggle('active', isMatch);
+    t.panel.classList.toggle('hidden', !isMatch);
+  });
+
+  const isTarget = activeTab === 'target';
+  if (elements.btnResetTargetHost) elements.btnResetTargetHost.classList.toggle('hidden', !isTarget);
+  if (elements.btnDemoTargetHost) elements.btnDemoTargetHost.classList.toggle('hidden', !isTarget);
+  if (elements.btnSaveTargetHost) elements.btnSaveTargetHost.classList.toggle('hidden', !isTarget);
+  if (elements.btnResetDefaultSettings) elements.btnResetDefaultSettings.classList.toggle('hidden', isTarget);
+  if (elements.btnSaveLocalHeaders) elements.btnSaveLocalHeaders.classList.toggle('hidden', isTarget);
+}
+
+export function openSettingsModal(initialTab = 'target') {
+  const modal = elements.modalSettings || document.getElementById('modal-settings');
+  if (!modal) return;
+
+  // Populate Target Host controls
+  if (elements.inputTargetHost) {
+    elements.inputTargetHost.value = (state.targetConfig && state.targetConfig.fullUrl) || state.apiBaseUrl || '';
+  }
+  if (state.connectionStrategy === 'direct') {
+    if (elements.radioStrategyDirect) elements.radioStrategyDirect.checked = true;
+  } else {
+    if (elements.radioStrategyProxy) elements.radioStrategyProxy.checked = true;
+  }
+  if (elements.targetHostStatus) {
+    elements.targetHostStatus.classList.add('hidden');
+  }
+  renderTargetCapabilities();
+
+  // Populate Local Preferences controls
+  const prefs = loadPreferences();
   if (elements.localHeadersTbody) {
     elements.localHeadersTbody.innerHTML = '';
     const headers = prefs.headers;
@@ -306,11 +337,9 @@ export function openLocalHeadersModal(initialTab = 'headers') {
       headers.forEach(h => addLocalHeaderRow(h.name, h.value, h.enabled !== false));
     }
   }
-
   if (elements.settingsExcludedPaths) {
     elements.settingsExcludedPaths.value = (prefs.excludedJsonPaths || []).join('\n');
   }
-
   if (elements.settingsImportJson) elements.settingsImportJson.value = '';
   if (elements.settingsCopyFeedback) elements.settingsCopyFeedback.classList.add('hidden');
   if (elements.settingsImportFeedback) {
@@ -319,32 +348,26 @@ export function openLocalHeadersModal(initialTab = 'headers') {
   }
 
   switchSettingsTab(initialTab);
-  elements.modalLocalHeaders.classList.remove('hidden');
-}
+  modal.classList.remove('hidden');
 
-export function closeLocalHeadersModal() {
-  if (elements.modalLocalHeaders) {
-    elements.modalLocalHeaders.classList.add('hidden');
+  if (initialTab === 'target' && elements.inputTargetHost) {
+    elements.inputTargetHost.focus();
   }
 }
 
-export function switchSettingsTab(tab) {
-  const tabs = [
-    { btn: elements.settingsTabHeaders, panel: elements.settingsPanelHeaders, name: 'headers' },
-    { btn: elements.settingsTabExclusions, panel: elements.settingsPanelExclusions, name: 'exclusions' },
-    { btn: elements.settingsTabSync, panel: elements.settingsPanelSync, name: 'sync' }
-  ];
+export function closeSettingsModal() {
+  const modal = elements.modalSettings || document.getElementById('modal-settings');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
 
-  tabs.forEach(t => {
-    if (!t.btn || !t.panel) return;
-    if (t.name === tab) {
-      t.btn.classList.add('active');
-      t.panel.classList.remove('hidden');
-    } else {
-      t.btn.classList.remove('active');
-      t.panel.classList.add('hidden');
-    }
-  });
+export function openLocalHeadersModal(initialTab = 'headers') {
+  openSettingsModal(initialTab);
+}
+
+export function closeLocalHeadersModal() {
+  closeSettingsModal();
 }
 
 export function addLocalHeaderRow(name = '', value = '', enabled = true) {
@@ -401,10 +424,11 @@ export function saveSettingsFromModal(onSavedCallback = null) {
   }
 
   savePreferences({ headers, excludedJsonPaths });
-  closeLocalHeadersModal();
+  closeSettingsModal();
   if (typeof onSavedCallback === 'function') {
     onSavedCallback();
   }
+  showToast('Preferences saved to browser', { type: 'success' });
 }
 
 export async function copySettingsConfigToClipboard() {
@@ -427,7 +451,7 @@ export async function copySettingsConfigToClipboard() {
       }, 3000);
     }
   } catch (err) {
-    alert('Failed to copy to clipboard: ' + err.message);
+    showToast('Failed to copy to clipboard: ' + err.message, { type: 'error' });
   }
 }
 
@@ -470,6 +494,7 @@ export function resetDefaultSettingsInModal(onResetCallback = null) {
   if (typeof onResetCallback === 'function') {
     onResetCallback();
   }
+  showToast('Preferences reset to defaults', { type: 'info' });
 }
 
 export function updateTargetHostDisplay() {
@@ -481,16 +506,14 @@ export function updateTargetHostDisplay() {
     brandEl.title = `WMC - ${wiremockUri}`;
   }
 
+  const demoActive = isDemoModeActive();
+
   if (elements.demoModeBadge) {
-    if (demoBackend.isDemoMode()) {
-      elements.demoModeBadge.classList.remove('hidden');
-    } else {
-      elements.demoModeBadge.classList.add('hidden');
-    }
+    elements.demoModeBadge.classList.toggle('hidden', !demoActive);
   }
 
   if (elements.targetHostLabel) {
-    if (demoBackend.isDemoMode()) {
+    if (demoActive) {
       elements.targetHostLabel.textContent = 'Target: ✨ Demo Mode (In-Browser)';
     } else if (state.targetConfig) {
       const modeStr = state.connectionStrategy === 'direct' ? 'direct' : 'proxied';
@@ -500,7 +523,7 @@ export function updateTargetHostDisplay() {
     }
   }
   if (elements.targetHostDot) {
-    if (demoBackend.isDemoMode()) {
+    if (demoActive) {
       elements.targetHostDot.className = 'target-host-dot demo';
     } else {
       elements.targetHostDot.className = state.targetConfig
@@ -521,24 +544,46 @@ export function updateTargetHostDisplay() {
   }
 }
 
-export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
+export function initTargetConnectionModal({ loadData, loadVersionInfo, onHeadersChanged } = {}) {
+  const notifyHeadersChanged = () => {
+    if (typeof onHeadersChanged === 'function') {
+      onHeadersChanged();
+    } else if (uiActions.renderLocalHeaderChips) {
+      uiActions.renderLocalHeaderChips();
+    }
+  };
+  if (elements.btnTargetHost) {
+    elements.btnTargetHost.addEventListener('click', () => openSettingsModal('target'));
+  }
   if (elements.btnOpenSettings) {
-    elements.btnOpenSettings.addEventListener('click', () => openLocalHeadersModal('headers'));
+    elements.btnOpenSettings.addEventListener('click', () => openSettingsModal('headers'));
   }
   if (elements.btnManageLocalHeaders) {
-    elements.btnManageLocalHeaders.addEventListener('click', () => openLocalHeadersModal('headers'));
+    elements.btnManageLocalHeaders.addEventListener('click', () => openSettingsModal('headers'));
   }
-  if (elements.btnCloseLocalHeadersModal) {
-    elements.btnCloseLocalHeadersModal.addEventListener('click', closeLocalHeadersModal);
+  if (elements.btnCloseSettingsModal) {
+    elements.btnCloseSettingsModal.addEventListener('click', closeSettingsModal);
   }
-  if (elements.btnCancelLocalHeaders) {
-    elements.btnCancelLocalHeaders.addEventListener('click', closeLocalHeadersModal);
+  if (elements.btnCancelSettingsModal) {
+    elements.btnCancelSettingsModal.addEventListener('click', closeSettingsModal);
   }
-  if (elements.btnAddLocalHeaderRow) {
-    elements.btnAddLocalHeaderRow.addEventListener('click', () => addLocalHeaderRow('', '', true));
+  if (elements.modalSettings) {
+    elements.modalSettings.addEventListener('click', (e) => {
+      if (e.target === elements.modalSettings) {
+        closeSettingsModal();
+      }
+    });
   }
-  if (elements.btnSaveLocalHeaders) {
-    elements.btnSaveLocalHeaders.addEventListener('click', () => saveSettingsFromModal(() => renderLocalHeaderChips()));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elements.modalSettings && !elements.modalSettings.classList.contains('hidden')) {
+      const confirmModal = document.getElementById('modal-confirm');
+      if (confirmModal && !confirmModal.classList.contains('hidden')) return;
+      closeSettingsModal();
+    }
+  });
+
+  if (elements.settingsTabTarget) {
+    elements.settingsTabTarget.addEventListener('click', () => switchSettingsTab('target'));
   }
   if (elements.settingsTabHeaders) {
     elements.settingsTabHeaders.addEventListener('click', () => switchSettingsTab('headers'));
@@ -549,76 +594,43 @@ export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
   if (elements.settingsTabSync) {
     elements.settingsTabSync.addEventListener('click', () => switchSettingsTab('sync'));
   }
+
+  if (elements.btnAddLocalHeaderRow) {
+    elements.btnAddLocalHeaderRow.addEventListener('click', () => addLocalHeaderRow('', '', true));
+  }
+  if (elements.btnSaveLocalHeaders) {
+    elements.btnSaveLocalHeaders.addEventListener('click', () => saveSettingsFromModal(notifyHeadersChanged));
+  }
   if (elements.btnSettingsCopyConfig) {
     elements.btnSettingsCopyConfig.addEventListener('click', copySettingsConfigToClipboard);
   }
   if (elements.btnSettingsApplyImport) {
-    elements.btnSettingsApplyImport.addEventListener('click', () => applyPastedSettingsFromModal(() => renderLocalHeaderChips()));
+    elements.btnSettingsApplyImport.addEventListener('click', () => applyPastedSettingsFromModal(notifyHeadersChanged));
   }
   if (elements.btnResetDefaultSettings) {
-    elements.btnResetDefaultSettings.addEventListener('click', () => resetDefaultSettingsInModal(() => renderLocalHeaderChips()));
+    elements.btnResetDefaultSettings.addEventListener('click', () => resetDefaultSettingsInModal(notifyHeadersChanged));
   }
   if (elements.testerLocalHeadersToggle) {
     elements.testerLocalHeadersToggle.addEventListener('change', (e) => {
       setLocalHeadersEnabled(e.target.checked);
-      renderLocalHeaderChips();
+      notifyHeadersChanged();
     });
   }
   if (elements.testerHeaders) {
     elements.testerHeaders.addEventListener('input', () => {
-      renderLocalHeaderChips();
-    });
-  }
-
-  // Target Host Switcher
-  if (elements.btnTargetHost && elements.targetHostModal) {
-    elements.btnTargetHost.addEventListener('click', () => {
-      elements.targetHostModal.classList.remove('hidden');
-      if (elements.inputTargetHost) {
-        elements.inputTargetHost.value = (state.targetConfig && state.targetConfig.fullUrl) || state.apiBaseUrl || '';
-        elements.inputTargetHost.focus();
-      }
-      if (state.connectionStrategy === 'direct') {
-        if (elements.radioStrategyDirect) elements.radioStrategyDirect.checked = true;
-      } else {
-        if (elements.radioStrategyProxy) elements.radioStrategyProxy.checked = true;
-      }
-      if (elements.targetHostStatus) {
-        elements.targetHostStatus.classList.add('hidden');
-      }
-      renderTargetCapabilities();
-    });
-  }
-
-  const closeTargetModal = () => {
-    if (elements.targetHostModal) {
-      elements.targetHostModal.classList.add('hidden');
-    }
-  };
-
-  if (elements.btnCloseTargetHost) {
-    elements.btnCloseTargetHost.addEventListener('click', closeTargetModal);
-  }
-  if (elements.btnCancelTargetHost) {
-    elements.btnCancelTargetHost.addEventListener('click', closeTargetModal);
-  }
-  if (elements.targetHostModal) {
-    elements.targetHostModal.addEventListener('click', (e) => {
-      if (e.target === elements.targetHostModal) {
-        closeTargetModal();
-      }
+      notifyHeadersChanged();
     });
   }
 
   const applyTargetHost = (newTarget, strategy) => {
     state.capabilitiesDetected = false;
     if (newTarget) {
-      demoBackend.setDemoMode(false);
+      disableDemoMode();
     }
     setTargetUrlInLocation(newTarget, strategy);
     updateTargetHostDisplay();
     renderTargetCapabilities();
-    closeTargetModal();
+    closeSettingsModal();
     if (typeof loadData === 'function') loadData();
     if (typeof loadVersionInfo === 'function') loadVersionInfo();
   };
@@ -637,15 +649,14 @@ export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
 
   if (elements.btnResetTargetHost) {
     elements.btnResetTargetHost.addEventListener('click', () => {
-      demoBackend.setDemoMode(false);
+      disableDemoMode();
       applyTargetHost('', 'proxy');
     });
   }
 
   if (elements.btnDemoTargetHost) {
-    elements.btnDemoTargetHost.addEventListener('click', () => {
-      demoBackend.setDemoMode(true);
-      demoBackend.reset();
+    elements.btnDemoTargetHost.addEventListener('click', async () => {
+      await enableDemoMode();
       applyTargetHost('', 'proxy');
     });
   }
@@ -656,7 +667,7 @@ export function initTargetConnectionModal({ loadData, loadVersionInfo } = {}) {
         e.preventDefault();
         if (elements.btnSaveTargetHost) elements.btnSaveTargetHost.click();
       } else if (e.key === 'Escape') {
-        closeTargetModal();
+        closeSettingsModal();
       }
     });
   }

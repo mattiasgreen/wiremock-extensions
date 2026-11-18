@@ -246,10 +246,7 @@ export class StubCatalog {
         if (seen.has(s.id)) continue;
         seen.add(s.id);
       }
-      result.push({
-        ...s,
-        _disabled: isStubParked(s)
-      });
+      result.push({ ...s });
     }
     return result;
   }

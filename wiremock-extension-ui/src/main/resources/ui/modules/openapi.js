@@ -2,32 +2,100 @@
  * OpenAPI Import Modal Controller (ES Module).
  * Pure Vanilla JS, zero NPM dependencies.
  */
-
 import { elements } from './dom.js';
+import { showToast } from './dialog.js';
 import { doFetch, inspectOpenApi } from './api.js';
 import { loadData } from './app-loader.js';
-import { mountCodeInputEditor } from './payload-lens.js';
+import { detectFormat, validatePayload } from './highlighter.js';
+import { mountPolyglotViewer } from './polyglot-viewer.js';
+import { openDocumentWorkspace } from './document-workspace.js';
+
+let currentSpecText = '';
+let specViewer = null;
+
+export function getOpenApiSpecText() {
+  return currentSpecText;
+}
 
 export function setupOpenApiModal() {
   if (!elements.btnOpenOpenApiModal || !elements.openapiModal) return;
 
-  if (elements.openapiSpecContent) {
-    mountCodeInputEditor(elements.openapiSpecContent, {
+  function updateSpecLintPill() {
+    const pill = elements.openapiSpecLintPill || document.getElementById('openapi-spec-lint-pill');
+    if (!pill) return;
+    const trimmed = currentSpecText.trim();
+    if (!trimmed) {
+      pill.textContent = '';
+      pill.classList.add('hidden');
+      return;
+    }
+    const fmt = detectFormat(trimmed);
+    if (fmt === 'json' || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      const res = validatePayload(trimmed, 'json');
+      if (!res.valid) {
+        pill.textContent = `⚠️ ${res.errorMessage || 'Invalid JSON'}`;
+        pill.classList.remove('hidden');
+        return;
+      }
+    }
+    pill.textContent = '';
+    pill.classList.add('hidden');
+  }
+
+  function openSpecWorkspace(startInEditor = true) {
+    const trimmed = currentSpecText.trim();
+    const fmt = (detectFormat(trimmed) === 'json' || trimmed.startsWith('{') || trimmed.startsWith('['))
+      ? 'json'
+      : 'yaml';
+    openDocumentWorkspace({
       title: 'OpenAPI Specification',
-      format: 'yaml',
-      context: 'openapi-spec',
-      formatBtn: document.getElementById('btn-openapi-format-spec'),
-      maximizeBtn: document.getElementById('btn-openapi-maximize-spec'),
-      lintPill: document.getElementById('openapi-spec-lint-pill')
+      text: currentSpecText,
+      format: fmt,
+      editable: true,
+      startInEditor,
+      saveLabel: '✓ Apply Spec',
+      onCommit: (nextText) => {
+        setSpecText(nextText);
+        return true;
+      }
     });
   }
 
+  function ensureSpecViewer() {
+    const host = elements.openapiSpecViewer || document.getElementById('openapi-spec-viewer');
+    if (!host) return null;
+    if (!specViewer) {
+      specViewer = mountPolyglotViewer(host, {
+        text: currentSpecText,
+        mode: 'rich',
+        editable: false,
+        onOpenWorkspace: () => openSpecWorkspace(false)
+      });
+    }
+    return specViewer;
+  }
+
+  function setSpecText(text) {
+    currentSpecText = typeof text === 'string' ? text : String(text ?? '');
+    const viewer = ensureSpecViewer();
+    if (viewer) {
+      viewer.update({ text: currentSpecText });
+    }
+    updateSpecLintPill();
+    triggerSpecInspection();
+  }
+
+  ensureSpecViewer();
+
+  const editSpecBtn = elements.btnOpenApiEditWorkspace || document.getElementById('btn-openapi-edit-workspace');
+  if (editSpecBtn) {
+    editSpecBtn.addEventListener('click', () => openSpecWorkspace(true));
+  }
+
   function openModal() {
+    ensureSpecViewer();
     elements.openapiModal.classList.remove('hidden');
     clearFeedback();
-    if (elements.openapiSpecContent) {
-      elements.openapiSpecContent.focus();
-    }
   }
 
   function closeModal() {
@@ -49,15 +117,10 @@ export function setupOpenApiModal() {
     }
   }
 
-  // Generation mode toggle
   function updateModeUi() {
     const isProxy = elements.optOpenApiModeProxy && elements.optOpenApiModeProxy.checked;
     if (elements.openapiProxyConfig) {
-      if (isProxy) {
-        elements.openapiProxyConfig.classList.remove('hidden');
-      } else {
-        elements.openapiProxyConfig.classList.add('hidden');
-      }
+      elements.openapiProxyConfig.classList.toggle('hidden', !isProxy);
     }
   }
 
@@ -68,9 +131,8 @@ export function setupOpenApiModal() {
     elements.optOpenApiModeProxy.addEventListener('change', updateModeUi);
   }
 
-  // Auto-inspect OpenAPI spec on input
   async function triggerSpecInspection() {
-    const spec = (elements.openapiSpecContent && elements.openapiSpecContent.value.trim()) || '';
+    const spec = currentSpecText.trim();
     if (!spec || spec.length < 20) return;
 
     try {
@@ -96,14 +158,6 @@ export function setupOpenApiModal() {
     }
   }
 
-  if (elements.openapiSpecContent) {
-    let inspectTimer = null;
-    elements.openapiSpecContent.addEventListener('input', () => {
-      clearTimeout(inspectTimer);
-      inspectTimer = setTimeout(triggerSpecInspection, 600);
-    });
-  }
-
   if (elements.openapiServerSelect) {
     elements.openapiServerSelect.addEventListener('change', () => {
       if (elements.openapiServerSelect.value && elements.openapiProxyUrl) {
@@ -122,14 +176,12 @@ export function setupOpenApiModal() {
     elements.btnCancelOpenApi.addEventListener('click', closeModal);
   }
 
-  // Close on clicking backdrop outside modal dialog
   elements.openapiModal.addEventListener('click', (e) => {
     if (e.target === elements.openapiModal) {
       closeModal();
     }
   });
 
-  // Browse file button
   if (elements.btnBrowseOpenApiFile && elements.openapiFileInput) {
     elements.btnBrowseOpenApiFile.addEventListener('click', () => {
       elements.openapiFileInput.click();
@@ -138,12 +190,11 @@ export function setupOpenApiModal() {
     elements.openapiFileInput.addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       if (file) {
-        readFileIntoTextarea(file);
+        readFileIntoSpec(file);
       }
     });
   }
 
-  // Drag and drop support
   if (elements.openapiDropzone) {
     ['dragenter', 'dragover'].forEach(eventName => {
       elements.openapiDropzone.addEventListener(eventName, (e) => {
@@ -165,26 +216,22 @@ export function setupOpenApiModal() {
       const dt = e.dataTransfer;
       const file = dt && dt.files && dt.files[0];
       if (file) {
-        readFileIntoTextarea(file);
+        readFileIntoSpec(file);
       }
     });
   }
 
-  function readFileIntoTextarea(file) {
+  function readFileIntoSpec(file) {
     const reader = new FileReader();
     reader.onload = (event) => {
-      if (elements.openapiSpecContent) {
-        elements.openapiSpecContent.value = event.target.result;
-        triggerSpecInspection();
-      }
+      setSpecText(event.target.result || '');
     };
     reader.readAsText(file);
   }
 
-  // Submit button
   if (elements.btnSubmitOpenApiImport) {
     elements.btnSubmitOpenApiImport.addEventListener('click', async () => {
-      const spec = (elements.openapiSpecContent && elements.openapiSpecContent.value.trim()) || '';
+      const spec = currentSpecText.trim();
       if (!spec) {
         showFeedback('Please paste an OpenAPI specification or drop a file.', true);
         return;
@@ -221,10 +268,7 @@ export function setupOpenApiModal() {
         }
       }
 
-      const payload = {
-        spec,
-        options
-      };
+      const payload = { spec, options };
 
       elements.btnSubmitOpenApiImport.disabled = true;
       elements.btnSubmitOpenApiImport.textContent = isProxy ? 'Configuring Proxy...' : 'Generating...';
@@ -238,7 +282,9 @@ export function setupOpenApiModal() {
 
         const data = await response.json();
         if (response.ok) {
-          showFeedback(`Successfully created ${data.totalStubsCreated} stubs from OpenAPI spec!`, false);
+          const msg = `Successfully created ${data.totalStubsCreated} stubs from OpenAPI spec!`;
+          showFeedback(msg, false);
+          showToast(msg, { type: 'success' });
           await loadData();
           setTimeout(() => {
             closeModal();

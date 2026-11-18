@@ -108,9 +108,10 @@ class UiVanillaWireMockPlaywrightTest {
         page.locator("#btn-toggle-stub").click();
         page.waitForSelector("#detail-lifecycle-state:has-text('ACTIVE')");
 
-        // 3. Verify Target Host capability matrix reports Core active and optional extensions disabled
+        // 3. Verify Settings modal Target tab capability matrix reports Core active and optional extensions disabled
         page.locator("#btn-target-host").click();
-        page.waitForSelector("#target-host-modal:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
+        page.waitForSelector("#settings-panel-target:not(.hidden)");
         page.waitForSelector(".capability-row");
 
         Locator capRows = page.locator(".capability-row");
@@ -125,8 +126,8 @@ class UiVanillaWireMockPlaywrightTest {
         Locator netemBadge = page.locator("[data-testid='cap-badge-netem']");
         assertThat(netemBadge.textContent()).isEqualTo("Not Installed");
 
-        page.locator("#btn-close-target-host").click();
-        assertThat(page.locator("#target-host-modal").isHidden()).isTrue();
+        page.locator("#btn-close-settings-modal").click();
+        assertThat(page.locator("#modal-settings").isHidden()).isTrue();
 
         // 5. Verify HTTP Tester executes against vanilla WireMock
         page.locator("#nav-tab-tester").click();

@@ -828,111 +828,114 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("Stub Editor: Toggle between Form Mode and Raw JSON Mode with live roundtrip synchronization")
-    void testStubEditorRawJsonModeSwitchingAndValidation() {
+    @DisplayName(
+            "Document Workspace & Lifecycle: Viewer-first open, template switch, root editor validation, force-apply, and dirty guard")
+    void testDocumentWorkspaceLifecycleAndValidation() {
         String script =
                 """
             async () => {
+                const { openStubEditor, STUB_TEMPLATES } = await import('./modules/lifecycle.js');
                 const {
-                    openStubEditor,
-                    closeStubEditor,
-                    setEditorMode,
-                    getEditorMode,
-                    formatRawEditorJson
-                } = await import('./modules/lifecycle.js');
+                    closeDocumentWorkspace,
+                    isWorkspaceOpen,
+                    isWorkspaceDirty,
+                    getWorkspaceRootText
+                } = await import('./modules/document-workspace.js');
 
-                const initialStub = {
-                    id: "test-stub-101",
-                    name: "Get Risk Profile",
-                    priority: 3,
-                    request: {
-                        method: "POST",
-                        url: "/api/risk-profile",
-                        bodyPatterns: [{ equalToJson: '{"tier": "gold"}', ignoreArrayOrder: true, ignoreExtraElements: true }]
-                    },
-                    response: {
-                        status: 200,
-                        body: '{"approved": true}'
-                    },
-                    metadata: {
-                        project: "Risk Control",
-                        tags: ["credit", "crm"]
-                    }
-                };
-
-                // 1. Open editor for Creation -> Form / Quickstart mode is available
+                // 1. Open New Stub in Document Workspace -> opens in DOCUMENT_VIEWER with templates visible
                 openStubEditor(null, false);
-                const initialMode = getEditorMode();
+                const modal = document.getElementById('modal-document-workspace');
+                const viewerPane = document.getElementById('workspace-viewer-pane');
+                const editorPane = document.getElementById('workspace-editor-pane');
+                const tplGroup = document.getElementById('workspace-template-group');
+                const tplSelect = document.getElementById('workspace-template-select');
 
-                const formPanel = document.getElementById('editor-form-panel');
-                const jsonPanel = document.getElementById('editor-json-panel');
-                const rawTextarea = document.getElementById('editor-raw-json');
-                const errorEl = document.getElementById('editor-raw-json-error');
+                const openedInViewer = isWorkspaceOpen()
+                    && !modal.classList.contains('hidden')
+                    && !viewerPane.classList.contains('hidden')
+                    && editorPane.classList.contains('hidden')
+                    && !tplGroup.classList.contains('hidden');
 
-                const formVisibleInitial = !formPanel.classList.contains('hidden');
-                const jsonVisibleInitial = !jsonPanel.classList.contains('hidden');
+                const templateCount = tplSelect.options.length;
+                const templateKeysMatch = templateCount === Object.keys(STUB_TEMPLATES).length;
+                const hasProtocolTemplates = ['casual-stub', 'casual-proxy', 'amqp-stub', 'amqp-proxy', 'kafka-stub', 'kafka-proxy']
+                    .every(k => Array.from(tplSelect.options).some(opt => opt.value === k) && Boolean(STUB_TEMPLATES[k]))
+                    && STUB_TEMPLATES['casual-proxy'].response?.proxyBaseUrl === 'casual://upstream-casual:7772'
+                    && STUB_TEMPLATES['amqp-proxy'].response?.proxyBaseUrl === 'async://upstream-amqp'
+                    && STUB_TEMPLATES['kafka-proxy'].response?.proxyBaseUrl === 'async://upstream-kafka';
 
-                // 2. Switch to Raw JSON Mode
-                const switchToJsonSuccess = setEditorMode('json');
-                const modeAfterJsonSwitch = getEditorMode();
-                const formHiddenAfterSwitch = formPanel.classList.contains('hidden');
-                const jsonVisibleAfterSwitch = !jsonPanel.classList.contains('hidden');
+                // 2. Switch template via select
+                tplSelect.value = 'body-contains';
+                tplSelect.dispatchEvent(new Event('change'));
+                await new Promise(r => setTimeout(r, 20));
+                const templateSwitched = getWorkspaceRootText().includes('Submit Message (Body Contains)')
+                    && getWorkspaceRootText().includes('string X');
 
-                // Load initialStub into editor to test raw content
-                rawTextarea.value = JSON.stringify(initialStub, null, 2);
-                const rawJsonContent = rawTextarea.value;
-                const rawContainsGold = rawJsonContent.includes('gold');
+                // 3. Enter Root Section Editor
+                document.getElementById('btn-workspace-edit-root').click();
+                const inSectionEditor = viewerPane.classList.contains('hidden')
+                    && !editorPane.classList.contains('hidden');
 
-                // 3. Edit raw JSON in textarea
-                const editedJson = JSON.parse(rawTextarea.value);
-                editedJson.priority = 1;
-                editedJson.metadata.project = "CRM Global Risk";
-                rawTextarea.value = JSON.stringify(editedJson);
+                // 4. Inject malformed JSON into editor and verify live validation blocks normal Apply but allows Force Apply
+                const editorInput = document.querySelector('#workspace-code-editor-host [data-testid="code-editor-input"]');
+                const isPre = editorInput && editorInput.tagName === 'PRE';
+                if (isPre) {
+                    editorInput.textContent = '{"unclosedJson": ';
+                } else if (editorInput) {
+                    editorInput.value = '{"unclosedJson": ';
+                }
+                editorInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-                // 4. Switch back to Form Mode -> should sync changes into form fields
-                const switchToFormSuccess = setEditorMode('form');
-                const modeAfterFormSwitch = getEditorMode();
-                const priorityInputValue = document.getElementById('editor-priority').value;
-                const projectInputValue = document.getElementById('editor-project').value;
+                const lintPill = document.getElementById('workspace-lint-pill');
+                const banner = document.getElementById('workspace-validation-banner');
+                const applyBtn = document.getElementById('btn-workspace-apply-section');
+                const forceBtn = document.getElementById('btn-workspace-force-apply');
 
-                // 5. Switch to JSON Mode, write malformed JSON, and attempt switch back
-                setEditorMode('json');
-                rawTextarea.value = '{"unclosedJson": ';
-                const invalidSwitchSuccess = setEditorMode('form');
-                const modeAfterFailedSwitch = getEditorMode();
-                const errorVisible = !errorEl.classList.contains('hidden');
-                const errorMsg = errorEl.textContent;
+                const lintVisible = !lintPill.classList.contains('hidden') && lintPill.textContent.includes('Invalid JSON');
+                const bannerVisible = !banner.classList.contains('hidden');
+                const applyDisabled = applyBtn.disabled;
+                const forceVisible = !forceBtn.classList.contains('hidden');
 
-                // 6. Test Editing an Existing Stub -> Opens directly in JSON mode (form removed)
-                openStubEditor(initialStub, false);
-                const existingStubMode = getEditorMode();
-                const existingStubJsonVisible = !jsonPanel.classList.contains('hidden');
-                const existingStubFormVisible = !formPanel.classList.contains('hidden');
+                // 5. Fix JSON, apply back to viewer, verify dirty badge
+                const validEdited = JSON.stringify({
+                    name: 'Edited Workspace Stub',
+                    priority: 2,
+                    request: { method: 'GET', url: '/api/workspace-test' },
+                    response: { status: 200, jsonBody: { ok: true } }
+                }, null, 2);
+                if (isPre) {
+                    editorInput.textContent = validEdited;
+                } else {
+                    editorInput.value = validEdited;
+                }
+                editorInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-                // Close editor
-                closeStubEditor();
+                const applyReEnabled = !applyBtn.disabled;
+                applyBtn.click();
+
+                const returnedToViewer = !viewerPane.classList.contains('hidden')
+                    && editorPane.classList.contains('hidden');
+                const dirtyDetected = isWorkspaceDirty()
+                    && !document.getElementById('workspace-dirty-badge').classList.contains('hidden');
+                const rootUpdated = getWorkspaceRootText().includes('Edited Workspace Stub');
+
+                closeDocumentWorkspace(true);
 
                 return {
-                    initialMode,
-                    formVisibleInitial,
-                    jsonVisibleInitial,
-                    switchToJsonSuccess,
-                    modeAfterJsonSwitch,
-                    formHiddenAfterSwitch,
-                    jsonVisibleAfterSwitch,
-                    rawContainsGold,
-                    rawJsonContent,
-                    switchToFormSuccess,
-                    modeAfterFormSwitch,
-                    priorityInputValue,
-                    projectInputValue,
-                    invalidSwitchSuccess,
-                    modeAfterFailedSwitch,
-                    errorVisible,
-                    errorMsgContainsInvalid: errorMsg.includes("Invalid JSON"),
-                    existingStubMode,
-                    existingStubJsonVisible,
-                    existingStubFormVisible
+                    openedInViewer,
+                    templateKeysMatch,
+                    hasProtocolTemplates,
+                    templateSwitched,
+                    inSectionEditor,
+                    lintVisible,
+                    bannerVisible,
+                    applyDisabled,
+                    forceVisible,
+                    applyReEnabled,
+                    returnedToViewer,
+                    dirtyDetected,
+                    rootUpdated,
+                    closedCleanly: !isWorkspaceOpen()
                 };
             }
         """;
@@ -940,41 +943,32 @@ public class UiModuleUnitTest {
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(result.get("initialMode")).isEqualTo("form");
-        assertThat(result.get("formVisibleInitial")).isEqualTo(true);
-        assertThat(result.get("jsonVisibleInitial")).isEqualTo(false);
-
-        assertThat(result.get("switchToJsonSuccess")).isEqualTo(true);
-        assertThat(result.get("modeAfterJsonSwitch")).isEqualTo("json");
-        assertThat(result.get("formHiddenAfterSwitch")).isEqualTo(true);
-        assertThat(result.get("jsonVisibleAfterSwitch")).isEqualTo(true);
-        assertThat(result.get("rawContainsGold")).isEqualTo(true);
-
-        assertThat(result.get("switchToFormSuccess")).isEqualTo(true);
-        assertThat(result.get("modeAfterFormSwitch")).isEqualTo("form");
-        assertThat(result.get("priorityInputValue")).isEqualTo("1");
-        assertThat(result.get("projectInputValue")).isEqualTo("CRM Global Risk");
-
-        assertThat(result.get("invalidSwitchSuccess")).isEqualTo(false);
-        assertThat(result.get("modeAfterFailedSwitch")).isEqualTo("json");
-        assertThat(result.get("errorVisible")).isEqualTo(true);
-        assertThat(result.get("errorMsgContainsInvalid")).isEqualTo(true);
-
-        // Verify editing existing stub opens directly in JSON mode (form removed)
-        assertThat(result.get("existingStubMode")).isEqualTo("json");
-        assertThat(result.get("existingStubJsonVisible")).isEqualTo(true);
-        assertThat(result.get("existingStubFormVisible")).isEqualTo(false);
+        assertThat(result.get("openedInViewer")).isEqualTo(true);
+        assertThat(result.get("templateKeysMatch")).isEqualTo(true);
+        assertThat(result.get("hasProtocolTemplates")).isEqualTo(true);
+        assertThat(result.get("templateSwitched")).isEqualTo(true);
+        assertThat(result.get("inSectionEditor")).isEqualTo(true);
+        assertThat(result.get("lintVisible")).isEqualTo(true);
+        assertThat(result.get("bannerVisible")).isEqualTo(true);
+        assertThat(result.get("applyDisabled")).isEqualTo(true);
+        assertThat(result.get("forceVisible")).isEqualTo(true);
+        assertThat(result.get("applyReEnabled")).isEqualTo(true);
+        assertThat(result.get("returnedToViewer")).isEqualTo(true);
+        assertThat(result.get("dirtyDetected")).isEqualTo(true);
+        assertThat(result.get("rootUpdated")).isEqualTo(true);
+        assertThat(result.get("closedCleanly")).isEqualTo(true);
     }
 
     @Test
     @DisplayName(
-            "Snapshot Modal: Reuses stub editor modal with decoded Base64 JSON, unescaped equalToJson, and relaxation controls")
-    void testSnapshotStubModalPrePopulationAndMatcherRelaxation() {
+            "Snapshot Workspace: Pre-populates Document Workspace with decoded Base64 JSON and matchesJsonPath patterns")
+    void testSnapshotStubWorkspacePrePopulation() {
         String script =
                 """
             async () => {
                 const { buildSnapshotStubMapping } = await import('./modules/journal.js');
-                const { openStubEditor, closeStubEditor, setEditorMode, buildStubFromForm } = await import('./modules/lifecycle.js');
+                const { openStubEditor } = await import('./modules/lifecycle.js');
+                const { closeDocumentWorkspace, getWorkspaceRootText } = await import('./modules/document-workspace.js');
 
                 const journalReq = {
                     id: "req-snapshot-editor-test",
@@ -997,50 +991,39 @@ public class UiModuleUnitTest {
                 };
 
                 const stubData = buildSnapshotStubMapping(journalReq);
+                const equalJsonStubData = buildSnapshotStubMapping(journalReq, { useEqualToJson: true });
 
-                // Open stub editor with snapshot stub
-                openStubEditor(stubData, false);
-                const titleEl = document.getElementById('editor-modal-title');
-                titleEl.textContent = 'Snapshot Stub from Journal';
+                openStubEditor(stubData, false, 'Snapshot Stub from Journal');
 
-                const modal = document.getElementById('stub-editor-modal');
+                const modal = document.getElementById('modal-document-workspace');
+                const titleEl = document.getElementById('workspace-title');
+                const viewerPane = document.getElementById('workspace-viewer-pane');
+                const tplGroup = document.getElementById('workspace-template-group');
+
                 const isModalVisible = !modal.classList.contains('hidden');
                 const modalTitle = titleEl.textContent;
+                const templateHiddenForExisting = tplGroup.classList.contains('hidden');
+                const rootText = getWorkspaceRootText();
+                const parsedRoot = JSON.parse(rootText);
+                const viewerText = viewerPane.textContent || '';
+                const viewerContainsNestedBlock = viewerPane.querySelectorAll('.nested-payload-block').length >= 1;
 
-                const matchTypeSelect = document.getElementById('editor-body-match-type');
-                const matchPatternInput = document.getElementById('editor-body-match-pattern');
-                const ignoreExtraChk = document.getElementById('editor-json-ignore-extra');
-                const ignoreOrderChk = document.getElementById('editor-json-ignore-order');
-                const formatReqBtn = document.getElementById('btn-editor-format-request-json');
-                const responseBodyInput = document.getElementById('editor-body');
-
-                const matchType = matchTypeSelect.value;
-                const patternValue = matchPatternInput.value;
-                const responseBodyValue = responseBodyInput.value;
-
-                // Test switching to raw JSON mode to inspect serialized representation
-                setEditorMode('json');
-                const rawTextarea = document.getElementById('editor-raw-json');
-                const rawJson = JSON.parse(rawTextarea.value);
-
-                // Switch back to form mode and build stub payload
-                setEditorMode('form');
-                const builtPayload = buildStubFromForm();
-
-                closeStubEditor();
+                closeDocumentWorkspace(true);
 
                 return {
                     isModalVisible,
                     modalTitle,
-                    matchType,
-                    patternContainsScore: patternValue.includes('750'),
-                    patternContainsJsonPath: patternValue.includes('$.FML_ARCHIVE_JSON.score'),
-                    patternContainsNoB64: !patternValue.includes('eyJzY29yZSI6NzUwfQ=='),
-                    responseContainsLimit: responseBodyValue.includes('"limit": 50000'),
-                    responseContainsNoB64: !responseBodyValue.includes('eyJsaW1pdCI6NTAwMDB9'),
-                    formatReqBtnVisible: !formatReqBtn.classList.contains('hidden'),
-                    rawJsonPathMatches: Array.isArray(rawJson.request.bodyPatterns) && rawJson.request.bodyPatterns.some(p => (typeof p.matchesJsonPath === 'object' ? p.matchesJsonPath.expression : p.matchesJsonPath) === '$.FML_ARCHIVE_JSON.score'),
-                    builtPayloadHasJsonPath: Array.isArray(builtPayload.request.bodyPatterns) && builtPayload.request.bodyPatterns.some(p => (typeof p.matchesJsonPath === 'object' ? p.matchesJsonPath.expression : p.matchesJsonPath) === '$.FML_ARCHIVE_JSON.score')
+                    templateHiddenForExisting,
+                    rootContainsScore750: rootText.includes('750'),
+                    rootContainsJsonPath: rootText.includes('$.FML_ARCHIVE_JSON.score'),
+                    rootContainsNoB64Req: !rootText.includes('eyJzY29yZSI6NzUwfQ=='),
+                    responseContainsLimit: parsedRoot.response.body.includes('"limit": 50000'),
+                    responseContainsNoB64: !parsedRoot.response.body.includes('eyJsaW1pdCI6NTAwMDB9'),
+                    viewerContainsNestedBlock,
+                    viewerContainsLimit: viewerText.includes('50000'),
+                    rawJsonPathMatches: Array.isArray(parsedRoot.request.bodyPatterns)
+                        && parsedRoot.request.bodyPatterns.some(p => p.matchesJsonPath?.expression === '$.FML_ARCHIVE_JSON.score'),
+                    equalToJsonHasDecodedScore: equalJsonStubData.request.bodyPatterns[0]?.equalToJson?.FML_ARCHIVE_JSON?.score === 750
                 };
             }
         """;
@@ -1050,15 +1033,16 @@ public class UiModuleUnitTest {
 
         assertThat(result.get("isModalVisible")).isEqualTo(true);
         assertThat(result.get("modalTitle")).isEqualTo("Snapshot Stub from Journal");
-        assertThat(result.get("matchType")).isEqualTo("matchesJsonPath");
-        assertThat(result.get("patternContainsScore")).isEqualTo(true);
-        assertThat(result.get("patternContainsJsonPath")).isEqualTo(true);
-        assertThat(result.get("patternContainsNoB64")).isEqualTo(true);
+        assertThat(result.get("templateHiddenForExisting")).isEqualTo(true);
+        assertThat(result.get("rootContainsScore750")).isEqualTo(true);
+        assertThat(result.get("rootContainsJsonPath")).isEqualTo(true);
+        assertThat(result.get("rootContainsNoB64Req")).isEqualTo(true);
         assertThat(result.get("responseContainsLimit")).isEqualTo(true);
         assertThat(result.get("responseContainsNoB64")).isEqualTo(true);
-        assertThat(result.get("formatReqBtnVisible")).isEqualTo(true);
+        assertThat(result.get("viewerContainsNestedBlock")).isEqualTo(true);
+        assertThat(result.get("viewerContainsLimit")).isEqualTo(true);
         assertThat(result.get("rawJsonPathMatches")).isEqualTo(true);
-        assertThat(result.get("builtPayloadHasJsonPath")).isEqualTo(true);
+        assertThat(result.get("equalToJsonHasDecodedScore")).isEqualTo(true);
     }
 
     @Test
@@ -1314,14 +1298,15 @@ public class UiModuleUnitTest {
                 const allVisible = getVisibleCatalogStubs("");
                 const bulkVisible = getCurrentlyVisibleStubs();
 
-                // Project filtering check (inferred 'api-orders')
-                state.selectedProject = "api-orders";
-                const ordersVisible = getVisibleCatalogStubs("");
+                // Search filtering check for 'orders' across visible catalog and bulk helpers
+                const searchBox = document.getElementById("search-box");
+                if (searchBox) searchBox.value = "orders";
+                const ordersVisible = getVisibleCatalogStubs("orders");
                 const ordersBulk = getCurrentlyVisibleStubs();
                 const ordersCounts = getCatalogCounts("api-orders");
+                if (searchBox) searchBox.value = "";
 
                 // Status filter checks
-                state.selectedProject = null;
                 state.statusFilter = "active";
                 const activeOnly = getVisibleCatalogStubs("");
 
@@ -1460,12 +1445,13 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("Nested Payload Lens: Deep multi-layer payload discovery across JSON, XML, CDATA, and Base64")
+    @DisplayName("Nested Payload AST: Deep multi-layer payload discovery across JSON, XML, CDATA, and Base64")
     void testDeepPayloadUnnestingDiscovery() {
         String script =
                 """
             async () => {
-                const { discoverEmbeddedPayloads, utf8ToBase64 } = await import('./modules/payload-lens.js');
+                const { discoverEmbeddedPayloads } = await import('./modules/polyglot-ast.js');
+                const { utf8ToBase64 } = await import('./modules/charset-codec.js');
 
                 // 3-level payload: JSON -> escaped JSON string -> escaped SOAP XML
                 const innerSoapXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><id>12345</id></soap:Body></soap:Envelope>';
@@ -1485,6 +1471,7 @@ public class UiModuleUnitTest {
                     firstEncoding: discovered[0] ? discovered[0].encoding : null,
                     firstHasChildren: discovered[0] && discovered[0].children && discovered[0].children.length > 0,
                     firstGrandchildPath: (discovered[0] && discovered[0].children && discovered[0].children[0]) ? discovered[0].children[0].path : null,
+                    firstGrandchildParentPath: (discovered[0] && discovered[0].children && discovered[0].children[0]) ? discovered[0].children[0].parentPath : null,
                     firstGrandchildFormat: (discovered[0] && discovered[0].children && discovered[0].children[0]) ? discovered[0].children[0].format : null,
                     secondPath: discovered[1] ? discovered[1].path : null,
                     secondFormat: discovered[1] ? discovered[1].format : null,
@@ -1501,7 +1488,8 @@ public class UiModuleUnitTest {
         assertThat(result.get("firstFormat")).isEqualTo("json");
         assertThat(result.get("firstEncoding")).isEqualTo("JSON_STRING");
         assertThat(result.get("firstHasChildren")).isEqualTo(true);
-        assertThat(result.get("firstGrandchildPath")).isEqualTo("$.payload.innerXml");
+        assertThat(result.get("firstGrandchildPath")).isEqualTo("$.innerXml");
+        assertThat(result.get("firstGrandchildParentPath")).isEqualTo("$.payload");
         assertThat(result.get("firstGrandchildFormat")).isEqualTo("xml");
         assertThat(result.get("secondPath")).isEqualTo("$.b64Report");
         assertThat(result.get("secondFormat")).isEqualTo("xml");
@@ -1514,8 +1502,8 @@ public class UiModuleUnitTest {
         String script =
                 """
             async () => {
-                const { discoverEmbeddedPayloads } = await import('./modules/payload-lens.js');
-                const { detectFormat, parsePseudoJson } = await import('./modules/highlighter.js');
+                const { discoverEmbeddedPayloads } = await import('./modules/polyglot-ast.js');
+                const { parsePseudoJson } = await import('./modules/pseudo-json.js');
 
                 const samplePayload = JSON.stringify({
                     id: "tx-123",
@@ -1524,12 +1512,14 @@ public class UiModuleUnitTest {
                 });
 
                 const discovered = discoverEmbeddedPayloads(samplePayload);
+                const parsedFirst = parsePseudoJson(discovered[0].unescapedValue);
 
                 return {
                     count: discovered.length,
                     firstPath: discovered[0] ? discovered[0].path : null,
                     firstFormat: discovered[0] ? discovered[0].format : null,
                     firstUnescaped: discovered[0] ? discovered[0].unescapedValue : null,
+                    firstParsedNestedId: parsedFirst?.abc?.abc?.id ?? null,
                     secondPath: discovered[1] ? discovered[1].path : null,
                     secondFormat: discovered[1] ? discovered[1].format : null,
                     secondUnescaped: discovered[1] ? discovered[1].unescapedValue : null
@@ -1544,6 +1534,7 @@ public class UiModuleUnitTest {
         assertThat(result.get("firstPath")).isEqualTo("$.b5");
         assertThat(result.get("firstFormat")).isEqualTo("kv");
         assertThat(result.get("firstUnescaped")).isEqualTo("{abc={abc={id=1111111111111}}}");
+        assertThat(((Number) result.get("firstParsedNestedId")).longValue()).isEqualTo(1111111111111L);
         assertThat(result.get("secondPath")).isEqualTo("$.b11");
         assertThat(result.get("secondFormat")).isEqualTo("kv");
         assertThat(result.get("secondUnescaped")).isEqualTo("{messages=null; deviations=[]; periods=[]}");
@@ -1551,12 +1542,12 @@ public class UiModuleUnitTest {
 
     @Test
     @DisplayName(
-            "Nested Payload Lens: Cascading round-trip re-escaping fidelity from leaf XML through middle JSON to root JSON")
+            "Nested Payload AST: Cascading round-trip re-escaping fidelity from leaf XML through middle JSON to root JSON")
     void testRoundTripReEscapingFidelity() {
         String script =
                 """
             async () => {
-                const { discoverEmbeddedPayloads, cascadeLensStackToRoot, applyNestedPayloadEdit } = await import('./modules/payload-lens.js');
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot } = await import('./modules/polyglot-ast.js');
 
                 // Initial 3-level document
                 const innerSoapXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><id>OLD_ID</id></soap:Body></soap:Envelope>';
@@ -1581,7 +1572,7 @@ public class UiModuleUnitTest {
                 const editedLeafXml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><id>NEW_CASE_9999</id><status>APPROVED</status></soap:Body></soap:Envelope>';
 
                 // Save and cascade to root
-                const newRootJson = cascadeLensStackToRoot(stack, editedLeafXml, { minifyOnSave: false });
+                const newRootJson = cascadeLensStackToRoot(stack, editedLeafXml, { wireStyleOverride: 'multiline' });
 
                 // Verify wire fidelity: parse the root JSON and read middle JSON
                 const parsedRoot = JSON.parse(newRootJson);
@@ -1609,12 +1600,12 @@ public class UiModuleUnitTest {
 
     @Test
     @DisplayName(
-            "Nested Payload Lens: Surgical in-place substitution preserves intermediate container whitespace and byte fidelity across 5 nested layers")
+            "Nested Payload AST: Surgical in-place substitution preserves intermediate container whitespace and byte fidelity across 5 nested layers")
     void testSurgicalInPlaceCascadePreservesIntermediateWhitespaceAndEnvelopes() {
         String script =
                 """
             async () => {
-                const { discoverEmbeddedPayloads, cascadeLensStackToRoot } = await import('./modules/payload-lens.js');
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot } = await import('./modules/polyglot-ast.js');
 
                 // Build a 5-layer multi-format structure cleanly with JSON.stringify
                 const innermost = JSON.stringify({ auditor: "ISO20022-GATEWAY", passed: true });
@@ -1623,7 +1614,7 @@ public class UiModuleUnitTest {
                 const gatewayJson = JSON.stringify({ routing: { network: "SWIFT_NET" }, messagePayload: xml });
                 const bodyJson = JSON.stringify({ transferId: "SWIFT-2026-X891", executionTrace: { gatewayEnvelope: gatewayJson } }, null, 2);
                 const initialStub = {
-                    id: "demo-stub-multiformat-deep",
+                    id: "stub-multiformat-deep",
                     name: "B2B SWIFT Transfer",
                     response: {
                         status: 200,
@@ -1692,12 +1683,13 @@ public class UiModuleUnitTest {
 
     @Test
     @DisplayName(
-            "Nested Payload Lens: Syntax validation blocks invalid payload while forceInvalid allows negative testing")
+            "Nested Payload AST: Syntax validation blocks invalid payload while forceInvalid allows negative testing")
     void testValidationAndForceApplyOverride() {
         String script =
                 """
             async () => {
-                const { validatePayload, applyNestedPayloadEdit } = await import('./modules/payload-lens.js');
+                const { validatePayload } = await import('./modules/highlighter.js');
+                const { applyNestedPayloadEdit } = await import('./modules/polyglot-ast.js');
 
                 const validJsonVal = validatePayload('{"valid": true}', 'json');
                 const invalidJsonVal = validatePayload('{"bad": }', 'json');
@@ -1710,7 +1702,7 @@ public class UiModuleUnitTest {
                     path: '$.embedded',
                     format: 'json',
                     encoding: 'JSON_STRING',
-                    wasCompact: true
+                    wireStyle: 'compact'
                 };
 
                 let errorThrown = false;
@@ -1751,120 +1743,121 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("demoBackend: Preloaded showcase seeding, stub lifecycle, and state machine matching")
+    @DisplayName("demoBackend: Live-captured DEMO_SNAPSHOT seeding, stub lifecycle, and state machine matching")
     void testDemoBackendShowcaseAndMatching() {
         String script =
                 """
             async () => {
                 const { demoBackend } = await import('./modules/demo-backend.js');
                 demoBackend.reset();
+                try {
+                    // 1. Initial Seeding verification from DEMO_SNAPSHOT
+                    const initialStubsCount = demoBackend.stubs.filter(s => (s.priority ?? 5) < 100).length;
+                    const initialDisabledCount = demoBackend.stubs.filter(s => (s.priority ?? 5) >= 100).length;
+                    const initialRequestsCount = demoBackend.requests.length;
+                    const initialScenarios = demoBackend.scenarios;
 
-                // 1. Initial Seeding verification
-                const initialStubsCount = demoBackend.stubs.filter(s => (s.priority ?? 5) < 100).length;
-                const initialDisabledCount = demoBackend.stubs.filter(s => (s.priority ?? 5) >= 100).length;
-                const initialRequestsCount = demoBackend.requests.length;
-                const initialScenarios = demoBackend.scenarios;
-                const initialCasualServices = demoBackend.casualServices;
+                    // 2. HTTP Request Simulation (Matched with Scenario progression)
+                    // OrderFulfillment starts in 'SHIPPED' state in DEMO_SNAPSHOT
+                    const deliverOrderResp = await demoBackend.handleRequest('/api/v1/orders/ORD-9942/status', {
+                        method: 'GET'
+                    });
+                    const deliverOrderBody = await deliverOrderResp.json();
+                    const scenarioAfterDeliver = demoBackend.scenarios.find(s => s.name === 'OrderFulfillment').state;
 
-                // 2. HTTP Request Simulation (Matched with Scenario progression)
-                // OrderLifecycle is currently in 'PROCESSING' state
-                const completeOrderResp = await demoBackend.handleRequest('/api/v1/orders/ORD-101/complete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const completeOrderBody = await completeOrderResp.json();
-                const scenarioAfterComplete = demoBackend.scenarios.find(s => s.name === 'OrderLifecycle').state;
+                    // 3. HTTP Request Simulation (Create Order with nested polyglot audit report)
+                    const orderResp = await demoBackend.handleRequest('/api/v1/orders', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orderId: 'ORD-9942', totalAmount: 1250 })
+                    });
+                    const orderBody = await orderResp.json();
 
-                // 3. HTTP Request Simulation (Matched Banking KYC with embedded audit report)
-                const kycResp = await demoBackend.handleRequest('/api/v1/kyc/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ caseId: 'KYC-9042', applicant: 'Alice Lindqvist' })
-                });
-                const kycBody = await kycResp.json();
+                    // 4. Unmatched Request Simulation
+                    const unmatchedResp = await demoBackend.handleRequest('/api/v1/non-existent-route', {
+                        method: 'GET'
+                    });
 
-                // 4. Unmatched Request Simulation
-                const unmatchedResp = await demoBackend.handleRequest('/api/v1/non-existent-route', {
-                    method: 'GET'
-                });
+                    // 5. Stub Lifecycle Toggle (Native Priority Tier Parking)
+                    const orderLookupResp = await demoBackend.handleRequest('/__admin/mappings/10000000-0000-4000-8000-000000000002', {
+                        method: 'GET'
+                    });
+                    const orderStub = await orderLookupResp.json();
+                    const toggleResp = await demoBackend.handleRequest('/__admin/mappings/10000000-0000-4000-8000-000000000002', {
+                        method: 'PUT',
+                        body: JSON.stringify(Object.assign({}, orderStub, {
+                            priority: 100,
+                            metadata: Object.assign({}, orderStub.metadata || {}, {
+                                previousPriority: orderStub.priority ?? 5
+                            })
+                        }))
+                    });
+                    const toggleResult = await toggleResp.json();
 
-                // 5. Stub Lifecycle Toggle (Native Priority Tier Parking)
-                const kycLookupResp = await demoBackend.handleRequest('/__admin/mappings/demo-stub-kyc-verify', {
-                    method: 'GET'
-                });
-                const kycStub = await kycLookupResp.json();
-                const toggleResp = await demoBackend.handleRequest('/__admin/mappings/demo-stub-kyc-verify', {
-                    method: 'PUT',
-                    body: JSON.stringify(Object.assign({}, kycStub, {
-                        priority: 100,
-                        metadata: Object.assign({}, kycStub.metadata || {}, {
-                            previousPriority: kycStub.priority ?? 5
+                    // 6. Casual XATMI simulation
+                    const casualResp = await demoBackend.handleRequest('/__admin/casual/call', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            service: 'echoService',
+                            bufferType: 'JSON',
+                            payload: '{"account": "ACC-101"}'
                         })
-                    }))
-                });
-                const toggleResult = await toggleResp.json();
+                    });
+                    const casualResult = await casualResp.json();
 
-                // 6. Casual XATMI simulation
-                const casualResp = await demoBackend.handleRequest('/__admin/casual/call', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        service: 'echoService',
-                        bufferType: 'JSON',
-                        payload: '{"account": "ACC-101"}'
-                    })
-                });
-                const casualResult = await casualResp.json();
-
-                return {
-                    initialStubsCount,
-                    initialDisabledCount,
-                    initialRequestsCount,
-                    hasOrderLifecycle: initialScenarios.some(s => s.name === 'OrderLifecycle'),
-                    hasEchoService: initialCasualServices.some(s => s.name === 'echoService'),
-                    completeOrderStatus: completeOrderResp.status,
-                    completeOrderDelivered: completeOrderBody.state === 'COMPLETED',
-                    scenarioAfterComplete,
-                    kycStatus: kycResp.status,
-                    kycStatusApproved: kycBody.status === 'APPROVED',
-                    kycHasEmbeddedReport: kycBody.complianceAudit.includes('<report'),
-                    unmatchedStatus: unmatchedResp.status,
-                    toggleResultDisabled: (toggleResult.priority ?? 5) >= 100,
-                    stubsAfterToggle: demoBackend.stubs.filter(s => (s.priority ?? 5) < 100).length,
-                    disabledAfterToggle: demoBackend.stubs.filter(s => (s.priority ?? 5) >= 100).length,
-                    casualStatus: casualResult.status,
-                    casualHasEcho: casualResult.payload.includes('ACC-101'),
-                    hasCasualStub: demoBackend.stubs.some(s => s.id === 'demo-stub-casual-credit-inquiry'),
-                    hasCasualJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/services/creditScoreInquiry')),
-                    hasAsyncKafkaStub: demoBackend.stubs.some(s => s.id === 'demo-stub-async-kafka-orders'),
-                    hasAsyncAmqpStub: demoBackend.stubs.some(s => s.id === 'demo-stub-async-amqp-payments'),
-                    hasAsyncJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__async/kafka/orders.events')),
-                    hasCasualQueueJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/queues/billing.q/enqueue')),
-                    asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP'
-                };
+                    return {
+                        initialStubsCount,
+                        initialDisabledCount,
+                        initialRequestsCount,
+                        hasOrderFulfillment: initialScenarios.some(s => s.name === 'OrderFulfillment'),
+                        deliverOrderStatus: deliverOrderResp.status,
+                        deliverOrderDelivered: deliverOrderBody.status === 'DELIVERED',
+                        scenarioAfterDeliver,
+                        orderStatus: orderResp.status,
+                        orderCreated: orderBody.status === 'CREATED',
+                        orderHasEmbeddedAudit: typeof orderBody.complianceAudit === 'string' && orderBody.complianceAudit.includes('<auditReport'),
+                        unmatchedStatus: unmatchedResp.status,
+                        toggleResultDisabled: (toggleResult.priority ?? 5) >= 100,
+                        stubsAfterToggle: demoBackend.stubs.filter(s => (s.priority ?? 5) < 100).length,
+                        disabledAfterToggle: demoBackend.stubs.filter(s => (s.priority ?? 5) >= 100).length,
+                        casualStatus: casualResult.status,
+                        casualHasEcho: casualResult.payload.includes('ACC-101'),
+                        hasCasualStub: demoBackend.stubs.some(s => s.id === '10000000-0000-4000-8000-000000000008'),
+                        hasCasualJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__casual/services/echoService')),
+                        hasAsyncKafkaStub: demoBackend.stubs.some(s => s.id === '10000000-0000-4000-8000-000000000009'),
+                        hasAsyncAmqpStub: demoBackend.stubs.some(s => s.id === '10000000-0000-4000-8000-000000000010'),
+                        hasAsyncJournalEntry: demoBackend.requests.some(r => r.request.url.includes('/__async/in-memory/orders.notifications')),
+                        hasKafkaDestination: demoBackend.asyncDestinations.some(d => d.id === 'kafka:orders.events'),
+                        hasCasualDestination: demoBackend.asyncDestinations.some(d => d.id === 'casual:billing.q'),
+                        asyncStatusUp: (await (await demoBackend.handleRequest('/__admin/async/status', { method: 'GET' })).json()).status === 'UP'
+                    };
+                } finally {
+                    demoBackend.reset();
+                }
             }
         """;
 
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(((Number) result.get("initialStubsCount")).intValue()).isGreaterThanOrEqualTo(5);
-        assertThat(((Number) result.get("initialDisabledCount")).intValue()).isGreaterThanOrEqualTo(2);
-        assertThat(((Number) result.get("initialRequestsCount")).intValue()).isGreaterThanOrEqualTo(4);
-        assertThat(result.get("hasOrderLifecycle")).isEqualTo(true);
-        assertThat(result.get("hasEchoService")).isEqualTo(true);
+        assertThat(((Number) result.get("initialStubsCount")).intValue()).isGreaterThanOrEqualTo(12);
+        assertThat(((Number) result.get("initialDisabledCount")).intValue()).isEqualTo(1);
+        assertThat(((Number) result.get("initialRequestsCount")).intValue()).isGreaterThanOrEqualTo(11);
+        assertThat(result.get("hasOrderFulfillment")).isEqualTo(true);
         assertThat(result.get("hasCasualStub")).isEqualTo(true);
         assertThat(result.get("hasCasualJournalEntry")).isEqualTo(true);
         assertThat(result.get("hasAsyncKafkaStub")).isEqualTo(true);
         assertThat(result.get("hasAsyncAmqpStub")).isEqualTo(true);
         assertThat(result.get("hasAsyncJournalEntry")).isEqualTo(true);
-        assertThat(result.get("hasCasualQueueJournalEntry")).isEqualTo(true);
+        assertThat(result.get("hasKafkaDestination")).isEqualTo(true);
+        assertThat(result.get("hasCasualDestination")).isEqualTo(true);
         assertThat(result.get("asyncStatusUp")).isEqualTo(true);
-        assertThat(((Number) result.get("completeOrderStatus")).intValue()).isEqualTo(200);
-        assertThat(result.get("completeOrderDelivered")).isEqualTo(true);
-        assertThat(result.get("scenarioAfterComplete")).isEqualTo("COMPLETED");
-        assertThat(((Number) result.get("kycStatus")).intValue()).isEqualTo(200);
-        assertThat(result.get("kycStatusApproved")).isEqualTo(true);
-        assertThat(result.get("kycHasEmbeddedReport")).isEqualTo(true);
+        assertThat(((Number) result.get("deliverOrderStatus")).intValue()).isEqualTo(200);
+        assertThat(result.get("deliverOrderDelivered")).isEqualTo(true);
+        assertThat(result.get("scenarioAfterDeliver")).isEqualTo("DELIVERED");
+        assertThat(((Number) result.get("orderStatus")).intValue()).isEqualTo(201);
+        assertThat(result.get("orderCreated")).isEqualTo(true);
+        assertThat(result.get("orderHasEmbeddedAudit")).isEqualTo(true);
         assertThat(((Number) result.get("unmatchedStatus")).intValue()).isEqualTo(404);
         assertThat(result.get("toggleResultDisabled")).isEqualTo(true);
         assertThat(((Number) result.get("disabledAfterToggle")).intValue())
@@ -1969,13 +1962,12 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName(
-            "api & demoBackend: Consolidated /__admin/lifecycle/snapshots, snapshot-template, and projects/{project}/mode routes")
+    @DisplayName("api & demoBackend: Consolidated /__admin/lifecycle/snapshots and snapshot-template routes")
     void testConsolidatedLifecycleApiAndDemoBackendRoutes() {
         String script =
                 """
             async () => {
-                const { snapshotProjectRecordings, snapshotFilteredRecordings, getSnapshotStubTemplate, setProjectMode } = await import('./modules/api.js');
+                const { snapshotProjectRecordings, snapshotFilteredRecordings, getSnapshotStubTemplate } = await import('./modules/api.js');
                 const { demoBackend } = await import('./modules/demo-backend.js');
 
                 demoBackend.reset();
@@ -1985,7 +1977,6 @@ public class UiModuleUnitTest {
                     const projSnap = await snapshotProjectRecordings('Order Service');
                     const filteredSnap = await snapshotFilteredRecordings([reqId], 'CustomerDomain', true);
                     const template = await getSnapshotStubTemplate(reqId, 'OrderDomain');
-                    const modeRes = await setProjectMode('_all', 'stubs');
 
                     return {
                         projSnapTotal: projSnap.totalRecorded,
@@ -1993,9 +1984,7 @@ public class UiModuleUnitTest {
                         filteredSnapTotal: filteredSnap.totalRecorded,
                         filteredSnapStatus: filteredSnap.status,
                         templateProject: template && template.metadata ? template.metadata.project : null,
-                        templateSource: template && template.metadata ? template.metadata.source : null,
-                        modeProject: modeRes.project,
-                        modeActive: modeRes.activeMode
+                        templateSource: template && template.metadata ? template.metadata.source : null
                     };
                 } finally {
                     demoBackend.setDemoMode(false);
@@ -2013,17 +2002,15 @@ public class UiModuleUnitTest {
         assertThat(result.get("filteredSnapStatus")).isEqualTo("active");
         assertThat(result.get("templateProject")).isEqualTo("OrderDomain");
         assertThat(result.get("templateSource")).isEqualTo("recorded-proxy");
-        assertThat(result.get("modeProject")).isEqualTo("_all");
-        assertThat(result.get("modeActive")).isEqualTo("stubs");
     }
 
     @Test
-    @DisplayName("Nested Payload Lens: Deep 4-level unnesting and round-tripping (cdata-json-in-xml-in-json-in-json)")
+    @DisplayName("Nested Payload AST: Deep 4-level unnesting and round-tripping (cdata-json-in-xml-in-json-in-json)")
     void testDeepMultiFormatUnnesting4Levels() {
         String script =
                 """
             async () => {
-                const { discoverEmbeddedPayloads, cascadeLensStackToRoot, applyNestedPayloadEdit } = await import('./modules/payload-lens.js');
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot } = await import('./modules/polyglot-ast.js');
 
                 // 4-level deep payload: JSON -> JSON -> XML -> CDATA -> JSON
                 const innerAuditTrailJson = JSON.stringify({ auditor: "ISO20022-GATEWAY", passed: true });
@@ -2084,69 +2071,90 @@ public class UiModuleUnitTest {
     }
 
     @Test
-    @DisplayName("Nested Payload Lens: renderFormattedWithNestedPreviews inline flow and hover pill group")
-    void testRenderFormattedWithNestedPreviewsInlineFlow() {
+    @DisplayName(
+            "Polyglot Tree Viewer: Renders foldable nested cards down AST hierarchy, hides edit buttons in read-only views, and wires section actions")
+    void testPolyglotViewerReadOnlyAndEditableTreeRendering() {
         String script =
                 """
             async () => {
-                const { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } = await import('./modules/payload-lens.js');
+                const { renderPolyglotTreeHtml, mountPolyglotViewer } = await import('./modules/polyglot-viewer.js');
 
-                const innerXml = '<report xmlns="http://corp.audit"><score>98</score><passed>true</passed><details>Tier 1 verified</details></report>';
-                const rootJson = JSON.stringify({
-                    requestId: "REQ-101",
-                    complianceReport: innerXml
-                }, null, 2);
-
-                const discovered = discoverEmbeddedPayloads(rootJson);
-                const html = renderFormattedWithNestedPreviews(rootJson, discovered, 'viewer_test_01');
-
-                return {
-                    hasInlineClass: html.includes('class="truncated-payload-preview'),
-                    hasPillGroup: html.includes('class="preview-pill-group"'),
-                    hasOpenPill: html.includes('btn-lens-open-pill'),
-                    hasExpandPill: html.includes('btn-lens-expand-pill'),
-                    hasExpandedDiv: html.includes('inline-expanded-payload'),
-                    snippetPreserved: html.includes('&lt;report')
-                };
-            }
-        """;
-
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
-
-        assertThat(result.get("hasInlineClass")).isEqualTo(true);
-        assertThat(result.get("hasPillGroup")).isEqualTo(true);
-        assertThat(result.get("hasOpenPill")).isEqualTo(true);
-        assertThat(result.get("hasExpandPill")).isEqualTo(true);
-        assertThat(result.get("hasExpandedDiv")).isEqualTo(true);
-        assertThat(result.get("snippetPreserved")).isEqualTo(true);
-    }
-
-    @Test
-    @DisplayName("Nested Payload Lens: Recursive multi-level auto-unnesting renders child previews down AST hierarchy")
-    void testRecursiveMultiLevelAutoUnnesting() {
-        String script =
-                """
-            async () => {
-                const { discoverEmbeddedPayloads, renderFormattedWithNestedPreviews } = await import('./modules/payload-lens.js');
-
-                // Level 1: body (JSON)
-                // Level 2: gatewayEnvelope (JSON)
-                // Level 3: messagePayload (XML)
                 const innerXml = '<swiftMessage xmlns="http://banking.corp"><id>SW-99</id></swiftMessage>';
                 const gatewayJson = JSON.stringify({ routing: "SWIFT_NET", messagePayload: innerXml });
                 const rootBodyJson = JSON.stringify({ transferId: "TX-1", gatewayEnvelope: gatewayJson });
                 const stubJson = JSON.stringify({ response: { body: rootBodyJson } }, null, 2);
 
-                const discovered = discoverEmbeddedPayloads(stubJson);
-                const html = renderFormattedWithNestedPreviews(stubJson, discovered, 'viewer_multi_01');
+                // 1. Read-only render: copy + open-workspace buttons only, NEVER disabled edit buttons
+                const readOnlyHtml = renderPolyglotTreeHtml(stubJson, { mode: 'rich', editable: false });
+                const roHost = document.createElement('div');
+                let workspaceOpenedPath = null;
+                let workspaceChainKeys = null;
+                document.body.appendChild(roHost);
+                const roCtrl = mountPolyglotViewer(roHost, {
+                    text: stubJson,
+                    mode: 'rich',
+                    editable: false,
+                    onOpenWorkspace: (chain) => {
+                        workspaceOpenedPath = chain[chain.length - 1]?.path || null;
+                        workspaceChainKeys = chain.map(n => n.key);
+                    }
+                });
+
+                const roBlocks = roHost.querySelectorAll('.nested-payload-block').length;
+                const roDisabledEditBtns = roHost.querySelectorAll('button[disabled]').length;
+                const roEditBtns = roHost.querySelectorAll('.btn-workspace-edit-section').length;
+                const roOpenBtns = roHost.querySelectorAll('.btn-nested-open-workspace').length;
+                const roCopyBtns = roHost.querySelectorAll('.btn-nested-copy').length;
+
+                // Click deepest Open in Workspace button
+                const openBtns = roHost.querySelectorAll('.btn-nested-open-workspace');
+                openBtns[openBtns.length - 1].click();
+
+                // Click collapse toggle on first nested block
+                const firstBlock = roHost.querySelector('.nested-payload-block');
+                firstBlock.querySelector('.btn-nested-toggle').click();
+                const collapsedAfterClick = firstBlock.classList.contains('collapsed');
+
+                roCtrl.destroy();
+                roHost.remove();
+
+                // 2. Editable render: emits .btn-workspace-edit-section buttons and invokes onEditSection
+                const editHost = document.createElement('div');
+                let editedPath = null;
+                let editedChainKeys = null;
+                document.body.appendChild(editHost);
+                const editCtrl = mountPolyglotViewer(editHost, {
+                    text: stubJson,
+                    mode: 'rich',
+                    editable: true,
+                    onEditSection: (chain) => {
+                        editedPath = chain[chain.length - 1]?.path || null;
+                        editedChainKeys = chain.map(n => n.key);
+                    }
+                });
+                const editSectionBtns = editHost.querySelectorAll('.btn-workspace-edit-section').length;
+                const editOpenBtns = editHost.querySelectorAll('.btn-nested-open-workspace').length;
+                const editBtns = editHost.querySelectorAll('.btn-workspace-edit-section');
+                editBtns[editBtns.length - 1].click();
+
+                editCtrl.destroy();
+                editHost.remove();
 
                 return {
-                    topDiscoveredCount: discovered.length,
-                    hasLevel1Preview: html.includes('data-node-id="viewer_multi_01_n0"'),
-                    hasLevel2ChildPreview: html.includes('data-node-id="viewer_multi_01_n0_c_n0"'),
-                    hasLevel3GrandchildPreview: html.includes('data-node-id="viewer_multi_01_n0_c_n0_c_n0"'),
-                    containsUnnestedXmlText: html.includes('swiftMessage')
+                    readOnlyHasTree: readOnlyHtml.includes('class="polyglot-tree'),
+                    readOnlyContainsUnnestedXml: readOnlyHtml.includes('swiftMessage'),
+                    roBlocks,
+                    roDisabledEditBtns,
+                    roEditBtns,
+                    roOpenBtns,
+                    roCopyBtns,
+                    workspaceOpenedPath,
+                    workspaceChainKeys,
+                    collapsedAfterClick,
+                    editSectionBtns,
+                    editOpenBtns,
+                    editedPath,
+                    editedChainKeys
                 };
             }
         """;
@@ -2154,11 +2162,22 @@ public class UiModuleUnitTest {
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(result.get("topDiscoveredCount")).isEqualTo(1);
-        assertThat(result.get("hasLevel1Preview")).isEqualTo(true);
-        assertThat(result.get("hasLevel2ChildPreview")).isEqualTo(true);
-        assertThat(result.get("hasLevel3GrandchildPreview")).isEqualTo(true);
-        assertThat(result.get("containsUnnestedXmlText")).isEqualTo(true);
+        assertThat(result.get("readOnlyHasTree")).isEqualTo(true);
+        assertThat(result.get("readOnlyContainsUnnestedXml")).isEqualTo(true);
+        assertThat(result.get("roBlocks")).isEqualTo(3);
+        assertThat(result.get("roDisabledEditBtns")).isEqualTo(0);
+        assertThat(result.get("roEditBtns")).isEqualTo(0);
+        assertThat(result.get("roOpenBtns")).isEqualTo(3);
+        assertThat(result.get("roCopyBtns")).isEqualTo(3);
+        assertThat(result.get("workspaceOpenedPath")).isEqualTo("$.messagePayload");
+        assertThat(result.get("workspaceChainKeys"))
+                .isEqualTo(java.util.List.of("body", "gatewayEnvelope", "messagePayload"));
+        assertThat(result.get("collapsedAfterClick")).isEqualTo(true);
+        assertThat(result.get("editSectionBtns")).isEqualTo(3);
+        assertThat(result.get("editOpenBtns")).isEqualTo(0);
+        assertThat(result.get("editedPath")).isEqualTo("$.messagePayload");
+        assertThat(result.get("editedChainKeys"))
+                .isEqualTo(java.util.List.of("body", "gatewayEnvelope", "messagePayload"));
     }
 
     @Test
@@ -2167,7 +2186,7 @@ public class UiModuleUnitTest {
         String script =
                 """
             async () => {
-                const { formatCasualBufferDescriptor } = await import('./modules/payload-lens.js');
+                const { formatCasualBufferDescriptor } = await import('./modules/polyglot-ast.js');
 
                 return {
                     jsonJson: formatCasualBufferDescriptor('JSON', 'JSON', '0.4'),
@@ -2198,11 +2217,8 @@ public class UiModuleUnitTest {
         String script =
                 """
             async () => {
-                const {
-                    detectCharset,
-                    formatPayloadDescriptor,
-                    formatCasualBufferDescriptor
-                } = await import('./modules/payload-lens.js');
+                const { detectCharset } = await import('./modules/charset-codec.js');
+                const { formatPayloadDescriptor, formatCasualBufferDescriptor } = await import('./modules/polyglot-ast.js');
 
                 const xmlIso = '<?xml version="1.0" encoding="ISO-8859-1"?><note><to>Åke</to></note>';
                 const xmlKoi8 = "<?xml version='1.0' encoding='koi8-r'?><msg>Привет</msg>";
@@ -2257,12 +2273,9 @@ public class UiModuleUnitTest {
         String script =
                 """
             async () => {
-                const {
-                    discoverEmbeddedPayloads,
-                    renderFormattedWithNestedPreviews,
-                    cascadeLensStackToRoot,
-                    encodeToBase64
-                } = await import('./modules/payload-lens.js');
+                const { discoverEmbeddedPayloads, cascadeLensStackToRoot } = await import('./modules/polyglot-ast.js');
+                const { encodeToBase64 } = await import('./modules/charset-codec.js');
+                const { renderPolyglotTreeHtml } = await import('./modules/polyglot-viewer.js');
 
                 // 1. Construct raw ISO-8859-1 Base64 (Å = 0xC5, ö = 0xF6 — invalid UTF-8 sequences)
                 const isoXmlText = '<?xml version="1.0" encoding="ISO-8859-1"?><customer><name>Åke Söderström</name><status>PENDING</status></customer>';
@@ -2287,14 +2300,14 @@ public class UiModuleUnitTest {
                 const cdataOuterNode = discovered.find(d => d.key === 'cdataEnvelope');
                 const cdataInnerNode = cdataOuterNode && cdataOuterNode.children ? cdataOuterNode.children[0] : null;
 
-                const renderedHtml = renderFormattedWithNestedPreviews(rootJson, discovered, 'viewer_charset_01');
+                const renderedHtml = renderPolyglotTreeHtml(rootJson, { mode: 'rich', editable: false });
 
                 // 4. Round-trip edit ISO-8859-1 payload
                 const editedIsoXml = isoXmlText.replace('PENDING', 'APPROVED');
                 const updatedRootAfterIso = cascadeLensStackToRoot([
                     { text: rootJson, descriptor: null },
                     { text: isoNode.unescapedValue, descriptor: isoNode }
-                ], editedIsoXml, { minifyOnSave: true });
+                ], editedIsoXml, { wireStyleOverride: 'compact' });
                 const parsedAfterIso = JSON.parse(updatedRootAfterIso);
                 const rawBytesAfterIso = Uint8Array.from(atob(parsedAfterIso.isoField), c => c.charCodeAt(0));
 
@@ -2303,7 +2316,7 @@ public class UiModuleUnitTest {
                 const updatedRootAfterKoi8 = cascadeLensStackToRoot([
                     { text: rootJson, descriptor: null },
                     { text: koi8Node.unescapedValue, descriptor: koi8Node }
-                ], editedKoi8Xml, { minifyOnSave: true });
+                ], editedKoi8Xml, { wireStyleOverride: 'compact' });
                 const parsedAfterKoi8 = JSON.parse(updatedRootAfterKoi8);
                 const rawBytesAfterKoi8 = Uint8Array.from(atob(parsedAfterKoi8.koi8Field), c => c.charCodeAt(0));
 
@@ -2343,20 +2356,21 @@ public class UiModuleUnitTest {
 
     @Test
     @DisplayName(
-            "Character Encoding: Top-level viewer badges in Casual Tester, HTTP Tester, Journal, and Demo showcase reflect non-UTF-8 charsets")
+            "Character Encoding: Top-level viewer badges in Casual Tester and HTTP Tester reflect non-UTF-8 charsets")
     void testTopLevelViewerAndCasualCharsetBadgesInDom() {
         String script =
                 """
             async () => {
-                const { elements } = await import('./modules/dom.js');
-                const { displayResponseResult, updateTesterRequestPill, switchTesterProtocol } = await import('./modules/tester.js');
+                const { displayResponseResult, updateTesterRequestPill, switchTesterProtocol, setTesterBody } = await import('./modules/tester.js');
                 const { demoBackend } = await import('./modules/demo-backend.js');
 
                 // 1. Casual Request Pill with ISO-8859-1 header inside Unified Tester
                 switchTesterProtocol('casual', false);
-                if (elements.testerCasualBuffer) elements.testerCasualBuffer.value = 'CSTRING';
-                if (elements.testerCasualHeaders) elements.testerCasualHeaders.value = 'Content-Type: text/plain; charset=ISO-8859-1\\nX-Casual-Service: echoService';
-                if (elements.testerBody) elements.testerBody.value = 'Åke Söderström';
+                const bufEl = document.getElementById('tester-casual-buffer');
+                const hdrEl = document.getElementById('tester-headers');
+                if (bufEl) bufEl.value = 'CSTRING';
+                if (hdrEl) hdrEl.value = 'Content-Type: text/plain; charset=ISO-8859-1\\nX-Casual-Service: echoService';
+                setTesterBody('Åke Söderström');
                 updateTesterRequestPill();
                 const casualReqPillText = document.getElementById('tester-request-top-pill')?.textContent || '';
 
@@ -2370,14 +2384,15 @@ public class UiModuleUnitTest {
                 );
                 const testerResPillText = document.getElementById('tester-top-pill')?.textContent || '';
 
-                // 3. Demo Backend settlePayment showcase has ISO-8859-1 XML prolog
-                const settleStub = demoBackend.stubs.find(s => s.id === 'demo-stub-casual-settle-payment');
-                const settleHasIsoProlog = settleStub && settleStub.response && settleStub.response.body.includes('ISO-8859-1');
+                // 3. Demo Snapshot echoService Casual stub & Create Order nested polyglot stub exist
+                const echoStub = demoBackend.stubs.find(s => s.id === '10000000-0000-4000-8000-000000000008');
+                const orderStub = demoBackend.stubs.find(s => s.id === '10000000-0000-4000-8000-000000000002');
 
                 return {
                     casualReqPillText,
                     testerResPillText,
-                    settleHasIsoProlog: Boolean(settleHasIsoProlog)
+                    hasEchoStub: Boolean(echoStub),
+                    orderStubHasAuditReport: Boolean(orderStub && orderStub.response && orderStub.response.body.includes('auditReport'))
                 };
             }
         """;
@@ -2387,201 +2402,250 @@ public class UiModuleUnitTest {
 
         assertThat((String) result.get("casualReqPillText")).contains("CSTRING · TEXT · ISO-8859-1");
         assertThat((String) result.get("testerResPillText")).contains("XML · KOI8-R");
-        assertThat(result.get("settleHasIsoProlog")).isEqualTo(true);
+        assertThat(result.get("hasEchoStub")).isEqualTo(true);
+        assertThat(result.get("orderStubHasAuditReport")).isEqualTo(true);
     }
 
     @Test
     @DisplayName(
-            "Canonical Payload Surface & Viewport Navigation Stack: LIFO stacking, dirty detection, and contextual save")
-    void testViewportNavigationStackAndDirtyPrompt() {
+            "Document Workspace: Viewer-first open, section editing, dirty confirm modal, validation/force-apply, and root save")
+    void testDocumentWorkspaceSectionEditApplyDirtyPromptAndForceApply() {
         String script =
                 """
             async () => {
                 const {
-                    pushViewportLayer,
-                    popViewportLayer,
-                    getActiveViewportLayer,
-                    setViewportContent,
-                    requestCloseViewport,
-                    saveActiveViewport,
-                    discardActiveViewport,
-                    viewportStack
-                } = await import('./modules/payload-lens.js');
+                    openDocumentWorkspace,
+                    closeDocumentWorkspace,
+                    isWorkspaceOpen,
+                    isWorkspaceDirty,
+                    getWorkspaceRootText
+                } = await import('./modules/document-workspace.js');
 
-                // Clear any prior stack
-                while (viewportStack.length > 0) {
-                    popViewportLayer();
+                let committedValue = null;
+                try {
+                    const initialJson = JSON.stringify({
+                        name: 'Original Stub',
+                        nestedXml: '<note><status>PENDING</status></note>'
+                    }, null, 2);
+
+                    openDocumentWorkspace({
+                        title: 'Stub: Original Stub',
+                        text: initialJson,
+                        format: 'json',
+                        editable: true,
+                        saveLabel: '💾 Save Mapping',
+                        onCommit: (saved) => {
+                            committedValue = saved;
+                        }
+                    });
+
+                    const openAtStart = isWorkspaceOpen();
+                    const viewerVisibleInitially = !document.getElementById('workspace-viewer-pane').classList.contains('hidden');
+                    const editorHiddenInitially = document.getElementById('workspace-editor-pane').classList.contains('hidden');
+                    const cleanInitially = !isWorkspaceDirty();
+
+                    // Enter root Section Editor via button
+                    document.getElementById('btn-workspace-edit-root').click();
+                    const editorVisibleAfterClick = !document.getElementById('workspace-editor-pane').classList.contains('hidden');
+
+                    // Make an edit inside [data-testid="code-editor-input"]
+                    const inputEl = document.querySelector('#workspace-code-editor-host [data-testid="code-editor-input"]');
+                    const setEditorText = (val) => {
+                        if ('value' in inputEl) inputEl.value = val;
+                        else inputEl.textContent = val;
+                        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    };
+
+                    setEditorText('{"broken": }');
+                    const applyDisabledOnInvalid = document.getElementById('btn-workspace-apply-section').disabled;
+                    const forceVisibleOnInvalid = !document.getElementById('btn-workspace-force-apply').classList.contains('hidden');
+                    const dirtyAfterEdit = isWorkspaceDirty();
+
+                    // Attempt close while dirty in SECTION_EDITOR -> triggers #modal-confirm
+                    document.getElementById('btn-close-workspace').click();
+                    const confirmVisible = !document.getElementById('modal-confirm').classList.contains('hidden');
+                    const confirmTitle = document.getElementById('confirm-modal-title').textContent;
+                    // Cancel confirm to stay in editor
+                    document.getElementById('btn-confirm-cancel').click();
+                    await new Promise(r => setTimeout(r, 20));
+                    const stillOpenAfterCancel = isWorkspaceOpen();
+
+                    // Force apply invalid payload -> returns to DOCUMENT_VIEWER with dirty badge
+                    document.getElementById('btn-workspace-force-apply').click();
+                    const returnedToViewerAfterForce = !document.getElementById('workspace-viewer-pane').classList.contains('hidden');
+                    const dirtyBadgeVisible = !document.getElementById('workspace-dirty-badge').classList.contains('hidden');
+
+                    // Re-edit root with valid JSON, apply section, and save
+                    document.getElementById('btn-workspace-edit-root').click();
+                    const inputEl2 = document.querySelector('#workspace-code-editor-host [data-testid="code-editor-input"]');
+                    const nextJson = JSON.stringify({ name: 'Updated Stub', nestedXml: '<note><status>OK</status></note>' }, null, 2);
+                    if ('value' in inputEl2) inputEl2.value = nextJson;
+                    else inputEl2.textContent = nextJson;
+                    inputEl2.dispatchEvent(new Event('input', { bubbles: true }));
+
+                    document.getElementById('btn-workspace-apply-section').click();
+                    const rootMatchesAfterApply = getWorkspaceRootText() === nextJson;
+
+                    document.getElementById('btn-workspace-save').click();
+                    await new Promise(r => setTimeout(r, 20));
+                    const closedAfterSave = !isWorkspaceOpen();
+
+                    return {
+                        openAtStart,
+                        viewerVisibleInitially,
+                        editorHiddenInitially,
+                        cleanInitially,
+                        editorVisibleAfterClick,
+                        applyDisabledOnInvalid,
+                        forceVisibleOnInvalid,
+                        dirtyAfterEdit,
+                        confirmVisible,
+                        confirmTitle,
+                        stillOpenAfterCancel,
+                        returnedToViewerAfterForce,
+                        dirtyBadgeVisible,
+                        rootMatchesAfterApply,
+                        closedAfterSave,
+                        committedMatches: committedValue === nextJson
+                    };
+                } finally {
+                    closeDocumentWorkspace(true);
                 }
-
-                let rootSavedValue = null;
-                // 1. Push root viewport layer (e.g. Stub mapping)
-                const rootJson = '{\\n  "name": "Original Stub"\\n}';
-                pushViewportLayer({
-                    title: 'Stub: Original Stub',
-                    text: rootJson,
-                    format: 'json',
-                    context: 'stub',
-                    onSave: (savedText) => {
-                        rootSavedValue = savedText;
-                    }
-                });
-
-                const initialDepth = viewportStack.length;
-                const rootLayer = getActiveViewportLayer();
-                const initialRootClean = !rootLayer.isDirty;
-
-                // 2. Modify root layer
-                setViewportContent('{\\n  "name": "Modified Stub"\\n}');
-                const rootDirtyAfterEdit = rootLayer.isDirty;
-
-                // 3. Push child viewport layer (Nested payload)
-                const childXml = '<msg>Original XML</msg>';
-                let childSavedValue = null;
-                pushViewportLayer({
-                    title: '$.payload.body',
-                    text: childXml,
-                    format: 'xml',
-                    context: 'nested',
-                    onSave: (savedText) => {
-                        childSavedValue = savedText;
-                    }
-                });
-
-                const stackedDepth = viewportStack.length;
-                const childLayer = getActiveViewportLayer();
-
-                // 4. Modify child layer
-                setViewportContent('<msg>Edited XML</msg>');
-                const childDirty = childLayer.isDirty;
-
-                // 5. Test request close on dirty child: should require prompt
-                const closeChildAttempt = requestCloseViewport();
-                const childNeedsPrompt = closeChildAttempt.needsPrompt;
-
-                // 6. Confirm Save on child
-                saveActiveViewport();
-                const childSaveCalled = childSavedValue === '<msg>Edited XML</msg>';
-                const depthAfterChildSave = viewportStack.length;
-
-                // 7. Test request close on dirty root
-                const closeRootAttempt = requestCloseViewport();
-                const rootNeedsPrompt = closeRootAttempt.needsPrompt;
-
-                // 8. Confirm Save on root
-                saveActiveViewport();
-                const rootSaveCalled = rootSavedValue === '{\\n  "name": "Modified Stub"\\n}';
-                const finalDepth = viewportStack.length;
-
-                return {
-                    initialDepth,
-                    initialRootClean,
-                    rootDirtyAfterEdit,
-                    stackedDepth,
-                    childDirty,
-                    childNeedsPrompt,
-                    childSaveCalled,
-                    depthAfterChildSave,
-                    rootNeedsPrompt,
-                    rootSaveCalled,
-                    finalDepth
-                };
             }
         """;
 
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(result.get("initialDepth")).isEqualTo(1);
-        assertThat(result.get("initialRootClean")).isEqualTo(true);
-        assertThat(result.get("rootDirtyAfterEdit")).isEqualTo(true);
-        assertThat(result.get("stackedDepth")).isEqualTo(2);
-        assertThat(result.get("childDirty")).isEqualTo(true);
-        assertThat(result.get("childNeedsPrompt")).isEqualTo(true);
-        assertThat(result.get("childSaveCalled")).isEqualTo(true);
-        assertThat(result.get("depthAfterChildSave")).isEqualTo(1);
-        assertThat(result.get("rootNeedsPrompt")).isEqualTo(true);
-        assertThat(result.get("rootSaveCalled")).isEqualTo(true);
-        assertThat(result.get("finalDepth")).isEqualTo(0);
+        assertThat(result.get("openAtStart")).isEqualTo(true);
+        assertThat(result.get("viewerVisibleInitially")).isEqualTo(true);
+        assertThat(result.get("editorHiddenInitially")).isEqualTo(true);
+        assertThat(result.get("cleanInitially")).isEqualTo(true);
+        assertThat(result.get("editorVisibleAfterClick")).isEqualTo(true);
+        assertThat(result.get("applyDisabledOnInvalid")).isEqualTo(true);
+        assertThat(result.get("forceVisibleOnInvalid")).isEqualTo(true);
+        assertThat(result.get("dirtyAfterEdit")).isEqualTo(true);
+        assertThat(result.get("confirmVisible")).isEqualTo(true);
+        assertThat((String) result.get("confirmTitle")).contains("Discard Section Changes");
+        assertThat(result.get("stillOpenAfterCancel")).isEqualTo(true);
+        assertThat(result.get("returnedToViewerAfterForce")).isEqualTo(true);
+        assertThat(result.get("dirtyBadgeVisible")).isEqualTo(true);
+        assertThat(result.get("rootMatchesAfterApply")).isEqualTo(true);
+        assertThat(result.get("closedAfterSave")).isEqualTo(true);
+        assertThat(result.get("committedMatches")).isEqualTo(true);
     }
 
     @Test
     @DisplayName(
-            "Dual-Layer Code Editor: Binding, Backdrop Syntax Tokenization, Experience Mode Toggle, and Auto-Fallback")
-    void testDualLayerCodeEditorBindingAndExperienceModes() {
+            "Unified Code Editor: Default highlight-api with CSS.highlights + Tab/Enter indentation, legacy hot-swap, and 50KB degradation")
+    void testUnifiedCodeEditorHighlightApiAndLegacyFallback() {
         String script =
                 """
             async () => {
-                const { attachDualLayerEditor } = await import('./modules/payload-lens.js');
+                const { mountCodeEditor, getEditorEngine, setEditorEngine, isHighlightApiSupported } = await import('./modules/code-editor.js');
 
-                // 1. Create a container and textarea
+                const origEngine = getEditorEngine();
                 const container = document.createElement('div');
-                const toggleContainer = document.createElement('div');
-                const textarea = document.createElement('textarea');
-                textarea.value = '{\\n  "testKey": "testVal",\\n  "num": 42\\n}';
-                container.appendChild(textarea);
-                container.appendChild(toggleContainer);
                 document.body.appendChild(container);
+                let editor = null;
+                try {
+                    setEditorEngine('highlight-api');
+                    const sample = '{"testKey": "testVal", "num": 42}';
+                    editor = mountCodeEditor(container, { value: sample, format: 'json' });
 
-                // 2. Attach Dual Layer Editor
-                const editor = attachDualLayerEditor(textarea, toggleContainer);
-                const wrapper = textarea.parentElement;
-                const backdrop = wrapper.querySelector('.dual-layer-backdrop');
-                const code = backdrop.querySelector('code');
+                    const activeBetaEngine = editor.getEngine();
+                    const hasBetaSurface = container.querySelector('.code-editor-surface.engine-highlight-api') !== null;
+                    const preEl = container.querySelector('pre.code-editor-pre[data-testid="code-editor-input"]');
+                    const hasContentEditablePre = preEl !== null && (preEl.contentEditable === 'plaintext-only' || preEl.contentEditable === 'true');
+                    const highlightKeyCount = isHighlightApiSupported() && CSS.highlights.has('wm-hl-key')
+                        ? CSS.highlights.get('wm-hl-key').size
+                        : 0;
 
-                const isWrapperModeRich = wrapper.classList.contains('mode-rich');
-                const hasBackdrop = backdrop !== null;
-                const backdropHtml = code.innerHTML;
-                const hasKeySpan = backdropHtml.includes('class="json-key"');
-                const hasStringSpan = backdropHtml.includes('class="json-string"');
-                const hasNumSpan = backdropHtml.includes('class="json-number"');
+                    // Test formatCode + getValue / setValue
+                    const formatted = editor.formatCode();
+                    const formattedContainsNewline = formatted.includes('\\n  "testKey"');
 
-                // 3. Switch to Raw mode via toggle
-                const btnRaw = toggleContainer.querySelector('.btn-mode-raw');
-                btnRaw.click();
-                const isRawActive = btnRaw.classList.contains('active');
-                const isWrapperModeRaw = wrapper.classList.contains('mode-raw');
-                const editorGetModeRaw = editor.getMode();
+                    // Test Tab and Enter indentation in highlight-api <pre>
+                    editor.setValue('{\\n}');
+                    const textNode = preEl.firstChild;
+                    const sel = window.getSelection();
+                    const range = document.createRange();
+                    range.setStart(textNode, 1);
+                    range.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    preEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+                    const afterEnterValue = editor.getValue();
+                    preEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+                    const afterTabValue = editor.getValue();
 
-                // 4. Switch back to Rich mode via controller
-                editor.setMode('rich');
-                const isRichActiveAgain = wrapper.classList.contains('mode-rich');
+                    // Test 55 KB payload degradation in highlight-api (clears ranges cleanly)
+                    const hugePayload = '{"large":"' + 'x'.repeat(55 * 1024) + '"}';
+                    editor.setValue(hugePayload);
+                    const hugeHighlightKeySize = isHighlightApiSupported() && CSS.highlights.has('wm-hl-key')
+                        ? CSS.highlights.get('wm-hl-key').size
+                        : 0;
 
-                // 5. Test large payload auto-fallback (> 20 KB)
-                textarea.value = '{"large": "' + 'x'.repeat(25 * 1024) + '"}';
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                const isAutoDegradedToRaw = wrapper.classList.contains('mode-raw');
+                    // Hot-swap to legacy-duallayer preserving content, then restore manageable payload
+                    editor.setValue(formatted);
+                    const swappedEngine = editor.setEngine('legacy-duallayer');
+                    const hasLegacyWrapper = container.querySelector('.dual-layer-editor-wrapper.mode-rich') !== null;
+                    const legacyBackdropHasSpans = (container.querySelector('.dual-layer-code')?.innerHTML || '').includes('class="json-key"');
+                    const legacyPreservedValue = editor.getValue() === formatted;
 
-                // Clean up DOM
-                container.remove();
+                    // Verify 55 KB degradation in legacy-duallayer switches to .mode-raw.mode-degraded
+                    editor.setValue(hugePayload);
+                    const legacyWrapperAfterHuge = container.querySelector('.dual-layer-editor-wrapper');
+                    const legacyAutoDegraded = legacyWrapperAfterHuge.classList.contains('mode-raw')
+                        && legacyWrapperAfterHuge.classList.contains('mode-degraded');
 
-                return {
-                    isWrapperModeRich,
-                    hasBackdrop,
-                    hasKeySpan,
-                    hasStringSpan,
-                    hasNumSpan,
-                    isRawActive,
-                    isWrapperModeRaw,
-                    editorGetModeRaw,
-                    isRichActiveAgain,
-                    isAutoDegradedToRaw
-                };
+                    // Also check setEditorEngine persistence in memory
+                    setEditorEngine('legacy-duallayer');
+                    const defaultAfterSet = getEditorEngine();
+
+                    return {
+                        highlightApiSupported: isHighlightApiSupported(),
+                        activeBetaEngine,
+                        hasBetaSurface,
+                        hasContentEditablePre,
+                        highlightKeyCount,
+                        formattedContainsNewline,
+                        afterEnterIndented: afterEnterValue === '{\\n  \\n}',
+                        afterTabIndented: afterTabValue === '{\\n    \\n}',
+                        hugeHighlightKeySize,
+                        swappedEngine,
+                        hasLegacyWrapper,
+                        legacyBackdropHasSpans,
+                        legacyPreservedValue,
+                        legacyAutoDegraded,
+                        defaultAfterSet
+                    };
+                } finally {
+                    if (editor) editor.destroy();
+                    container.remove();
+                    setEditorEngine(origEngine);
+                }
             }
         """;
 
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
 
-        assertThat(result.get("isWrapperModeRich")).isEqualTo(true);
-        assertThat(result.get("hasBackdrop")).isEqualTo(true);
-        assertThat(result.get("hasKeySpan")).isEqualTo(true);
-        assertThat(result.get("hasStringSpan")).isEqualTo(true);
-        assertThat(result.get("hasNumSpan")).isEqualTo(true);
-        assertThat(result.get("isRawActive")).isEqualTo(true);
-        assertThat(result.get("isWrapperModeRaw")).isEqualTo(true);
-        assertThat(result.get("editorGetModeRaw")).isEqualTo("raw");
-        assertThat(result.get("isRichActiveAgain")).isEqualTo(true);
-        assertThat(result.get("isAutoDegradedToRaw")).isEqualTo(true);
+        assertThat(result.get("highlightApiSupported")).isEqualTo(true);
+        assertThat(result.get("activeBetaEngine")).isEqualTo("highlight-api");
+        assertThat(result.get("hasBetaSurface")).isEqualTo(true);
+        assertThat(result.get("hasContentEditablePre")).isEqualTo(true);
+        assertThat(((Number) result.get("highlightKeyCount")).intValue()).isGreaterThanOrEqualTo(2);
+        assertThat(result.get("formattedContainsNewline")).isEqualTo(true);
+        assertThat(result.get("afterEnterIndented")).isEqualTo(true);
+        assertThat(result.get("afterTabIndented")).isEqualTo(true);
+        assertThat(result.get("hugeHighlightKeySize")).isEqualTo(0);
+        assertThat(result.get("swappedEngine")).isEqualTo("legacy-duallayer");
+        assertThat(result.get("hasLegacyWrapper")).isEqualTo(true);
+        assertThat(result.get("legacyBackdropHasSpans")).isEqualTo(true);
+        assertThat(result.get("legacyPreservedValue")).isEqualTo(true);
+        assertThat(result.get("legacyAutoDegraded")).isEqualTo(true);
+        assertThat(result.get("defaultAfterSet")).isEqualTo("legacy-duallayer");
     }
 
     @Test
@@ -2595,60 +2659,74 @@ public class UiModuleUnitTest {
                 const { demoBackend } = await import('./modules/demo-backend.js');
 
                 demoBackend.reset();
-                state.currentRequests = demoBackend.requests;
-                state.journalVerdictFilter = 'all';
-                state.journalProtocolFilter = 'all';
+                try {
+                    await demoBackend.handleRequest('/__admin/async/publish', {
+                        method: 'POST',
+                        body: JSON.stringify({ protocol: 'kafka', destination: 'orders.events', payload: '{"ok":true}' })
+                    });
+                    await demoBackend.handleRequest('/__admin/async/publish', {
+                        method: 'POST',
+                        body: JSON.stringify({ protocol: 'amqp', destination: 'orders.inbound', payload: '{"ok":true}' })
+                    });
+                    state.currentRequests = demoBackend.requests;
+                    state.journalVerdictFilter = 'all';
+                    state.journalProtocolFilter = 'all';
 
-                // 1. Verify detectRequestProtocol
-                const httpReq = state.currentRequests.find(r => r.request.url.startsWith('/api/'));
-                const casualReq = state.currentRequests.find(r => r.request.url.startsWith('/__casual/'));
-                const kafkaReq = state.currentRequests.find(r => r.request.url.startsWith('/__async/kafka/'));
-                const amqpReq = state.currentRequests.find(r => r.request.url.startsWith('/__async/amqp/'));
+                    // 1. Verify detectRequestProtocol
+                    const httpReq = state.currentRequests.find(r => r.request.url.startsWith('/api/'));
+                    const casualReq = state.currentRequests.find(r => r.request.url.startsWith('/__casual/'));
+                    const kafkaReq = state.currentRequests.find(r => r.request.url.startsWith('/__async/kafka/'));
+                    const amqpReq = state.currentRequests.find(r => r.request.url.startsWith('/__async/amqp/'));
 
-                const httpProto = detectRequestProtocol(httpReq);
-                const casualProto = detectRequestProtocol(casualReq);
-                const kafkaProto = detectRequestProtocol(kafkaReq);
-                const amqpProto = detectRequestProtocol(amqpReq);
+                    const httpProto = detectRequestProtocol(httpReq);
+                    const casualProto = detectRequestProtocol(casualReq);
+                    const kafkaProto = detectRequestProtocol(kafkaReq);
+                    const amqpProto = detectRequestProtocol(amqpReq);
 
-                // 2. Render all in Journal
-                renderJournal();
-                const totalRows = document.querySelectorAll('#journal-list tr.journal-row').length;
-                const kafkaBadges = document.querySelectorAll('#journal-list .protocol-kafka').length;
-                const amqpBadges = document.querySelectorAll('#journal-list .protocol-amqp').length;
-                const casualBadges = document.querySelectorAll('#journal-list .protocol-casual').length;
-                const httpBadges = document.querySelectorAll('#journal-list .protocol-http').length;
-                const produceBadges = document.querySelectorAll('#journal-list .badge-PRODUCE').length;
+                    // 2. Render all in Journal
+                    renderJournal();
+                    const totalRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+                    const kafkaBadges = document.querySelectorAll('#journal-list .protocol-kafka').length;
+                    const amqpBadges = document.querySelectorAll('#journal-list .protocol-amqp').length;
+                    const casualBadges = document.querySelectorAll('#journal-list .protocol-casual').length;
+                    const httpBadges = document.querySelectorAll('#journal-list .protocol-http').length;
+                    const produceBadges = document.querySelectorAll('#journal-list .badge-PRODUCE').length;
 
-                // 3. Test protocol filtering - Kafka only
-                state.journalProtocolFilter = 'kafka';
-                renderJournal();
-                const kafkaFilteredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+                    // 3. Test protocol filtering - Kafka only
+                    state.journalProtocolFilter = 'kafka';
+                    renderJournal();
+                    const kafkaFilteredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
 
-                // 4. Test protocol filtering - Casual only
-                state.journalProtocolFilter = 'casual';
-                renderJournal();
-                const casualFilteredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+                    // 4. Test protocol filtering - Casual only
+                    state.journalProtocolFilter = 'casual';
+                    renderJournal();
+                    const casualFilteredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
 
-                // 5. Reset filter
-                state.journalProtocolFilter = 'all';
-                renderJournal();
-                const restoredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
+                    // 5. Reset filter
+                    state.journalProtocolFilter = 'all';
+                    renderJournal();
+                    const restoredRows = document.querySelectorAll('#journal-list tr.journal-row').length;
 
-                return {
-                    httpProto,
-                    casualProto,
-                    kafkaProto,
-                    amqpProto,
-                    totalRows,
-                    hasKafkaBadges: kafkaBadges >= 1,
-                    hasAmqpBadges: amqpBadges >= 1,
-                    hasCasualBadges: casualBadges >= 1,
-                    hasHttpBadges: httpBadges >= 1,
-                    hasProduceBadges: produceBadges >= 1,
-                    kafkaFilteredRows,
-                    casualFilteredRows,
-                    restoredRows
-                };
+                    return {
+                        httpProto,
+                        casualProto,
+                        kafkaProto,
+                        amqpProto,
+                        totalRows,
+                        hasKafkaBadges: kafkaBadges >= 1,
+                        hasAmqpBadges: amqpBadges >= 1,
+                        hasCasualBadges: casualBadges >= 1,
+                        hasHttpBadges: httpBadges >= 1,
+                        hasProduceBadges: produceBadges >= 1,
+                        kafkaFilteredRows,
+                        casualFilteredRows,
+                        restoredRows
+                    };
+                } finally {
+                    state.journalProtocolFilter = 'all';
+                    state.currentRequests = [];
+                    demoBackend.reset();
+                }
             }
         """;
 
@@ -2659,7 +2737,7 @@ public class UiModuleUnitTest {
         assertThat(result.get("casualProto")).isEqualTo("casual");
         assertThat(result.get("kafkaProto")).isEqualTo("kafka");
         assertThat(result.get("amqpProto")).isEqualTo("amqp");
-        assertThat(((Number) result.get("totalRows")).intValue()).isGreaterThanOrEqualTo(4);
+        assertThat(((Number) result.get("totalRows")).intValue()).isGreaterThanOrEqualTo(6);
         assertThat(result.get("hasKafkaBadges")).isEqualTo(true);
         assertThat(result.get("hasAmqpBadges")).isEqualTo(true);
         assertThat(result.get("hasCasualBadges")).isEqualTo(true);
@@ -2668,6 +2746,415 @@ public class UiModuleUnitTest {
         assertThat(((Number) result.get("kafkaFilteredRows")).intValue()).isGreaterThanOrEqualTo(1);
         assertThat(((Number) result.get("casualFilteredRows")).intValue()).isGreaterThanOrEqualTo(1);
         assertThat(result.get("restoredRows")).isEqualTo(result.get("totalRows"));
+    }
+
+    @Test
+    @DisplayName(
+            "charset-codec: UTF-8, ISO-8859-1, WINDOWS-1252, and KOI8-R byte/Base64 round-trips plus header/prolog detection")
+    void testCharsetCodecRoundTripsAndDetection() {
+        String script =
+                """
+            async () => {
+                const {
+                    normalizeCharsetName,
+                    detectCharset,
+                    encodeStringToBytes,
+                    decodeBytesToString,
+                    encodeToBase64,
+                    decodeBase64WithCharset
+                } = await import('./modules/charset-codec.js');
+
+                const utfText = 'Åke € Привет 🚀';
+                const utfDecodedObj = decodeBase64WithCharset(encodeToBase64(utfText, 'UTF-8'));
+                const utfRoundTrip = utfDecodedObj?.text;
+
+                const isoText = 'Åke Söderström';
+                const isoBytes = encodeStringToBytes(isoText, 'ISO-8859-1');
+                const isoDecoded = decodeBytesToString(isoBytes, 'ISO-8859-1');
+                const isoRoundTrip = decodeBase64WithCharset(encodeToBase64(isoText, 'ISO-8859-1'))?.text;
+
+                const winText = 'Price: 120 € “quoted”';
+                const winBytes = encodeStringToBytes(winText, 'WINDOWS-1252');
+                const winRoundTrip = decodeBase64WithCharset(encodeToBase64(winText, 'WINDOWS-1252'))?.text;
+
+                const koiText = 'Привет мир';
+                const koiBytes = encodeStringToBytes(koiText, 'KOI8-R');
+                const koiByteRoundTrip = decodeBytesToString(koiBytes, 'KOI8-R');
+                const koiXml = '<?xml version="1.0" encoding="KOI8-R"?><m>Привет мир</m>';
+                const koiRoundTrip = decodeBase64WithCharset(encodeToBase64(koiXml, 'KOI8-R'))?.text;
+
+                const headerKoiOverContentType = detectCharset('{}', {
+                    'Content-Type': 'application/json; charset=iso-8859-1',
+                    'X-Casual-Charset': 'koi8-r'
+                });
+                const xmlPrologOverHeader = detectCharset(
+                    '<?xml version="1.0" encoding="cp1252"?><a/>',
+                    { 'X-Casual-Charset': 'utf-8' }
+                );
+
+                return {
+                    utfRoundTrip,
+                    isoRoundTrip,
+                    isoDecoded,
+                    isoContainsSingleByteAring: isoBytes.includes(0xC5),
+                    winRoundTrip,
+                    winEuroByte: winBytes.includes(0x80),
+                    koiByteRoundTrip,
+                    koiRoundTrip,
+                    koiFirstByte: koiBytes[0],
+                    normLatin1: normalizeCharsetName('latin1'),
+                    normWin: normalizeCharsetName('cp1252'),
+                    headerKoiOverContentType,
+                    xmlPrologOverHeader
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("utfRoundTrip")).isEqualTo("Åke € Привет 🚀");
+        assertThat(result.get("isoRoundTrip")).isEqualTo("Åke Söderström");
+        assertThat(result.get("isoDecoded")).isEqualTo("Åke Söderström");
+        assertThat(result.get("isoContainsSingleByteAring")).isEqualTo(true);
+        assertThat(result.get("winRoundTrip")).isEqualTo("Price: 120 € “quoted”");
+        assertThat(result.get("winEuroByte")).isEqualTo(true);
+        assertThat(result.get("koiByteRoundTrip")).isEqualTo("Привет мир");
+        assertThat(result.get("koiRoundTrip"))
+                .isEqualTo("<?xml version=\"1.0\" encoding=\"KOI8-R\"?><m>Привет мир</m>");
+        assertThat(((Number) result.get("koiFirstByte")).intValue()).isEqualTo(0xF0);
+        assertThat(result.get("normLatin1")).isEqualTo("ISO-8859-1");
+        assertThat(result.get("normWin")).isEqualTo("WINDOWS-1252");
+        assertThat(result.get("headerKoiOverContentType")).isEqualTo("KOI8-R");
+        assertThat(result.get("xmlPrologOverHeader")).isEqualTo("WINDOWS-1252");
+    }
+
+    @Test
+    @DisplayName(
+            "pseudo-json: Nested {k=v}, semicolon maps, quoted strings with = and commas, invalid rejection, and formatPseudoJson")
+    void testPseudoJsonParsingAndFormatting() {
+        String script =
+                """
+            async () => {
+                const { parsePseudoJson, formatPseudoJson } = await import('./modules/pseudo-json.js');
+
+                const nested = parsePseudoJson('{user={id=42, roles=[ADMIN, USER], meta={active=true, score=9.5}}}');
+                const semi = parsePseudoJson('{messages=null; deviations=[]; status=OK}');
+                const quoted = parsePseudoJson('{expr="a=1, b=2", tag=\\'x=y,z\\', ok=true}');
+
+                const unbalanced = parsePseudoJson('{a=1, b={c=2}');
+                const trailingJunk = parsePseudoJson('{a=1} extra');
+                const plainText = parsePseudoJson('hello world');
+
+                const formatted = formatPseudoJson('{a=1, nested={msg="x=1, y=2", flag=true}}');
+
+                return {
+                    nestedId: nested?.user?.id,
+                    nestedRole0: nested?.user?.roles?.[0],
+                    nestedScore: nested?.user?.meta?.score,
+                    semiMessagesNull: semi?.messages === null,
+                    semiDeviationsEmpty: Array.isArray(semi?.deviations) && semi.deviations.length === 0,
+                    quotedExpr: quoted?.expr,
+                    quotedTag: quoted?.tag,
+                    unbalancedIsNull: unbalanced === null,
+                    trailingJunkIsNull: trailingJunk === null,
+                    plainTextIsNull: plainText === null,
+                    formattedPreservesKvSyntax: formatted.includes(' = ') && !formatted.includes('":'),
+                    formattedReParses: parsePseudoJson(formatted)?.nested?.msg === 'x=1, y=2'
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(((Number) result.get("nestedId")).intValue()).isEqualTo(42);
+        assertThat(result.get("nestedRole0")).isEqualTo("ADMIN");
+        assertThat(((Number) result.get("nestedScore")).doubleValue()).isEqualTo(9.5);
+        assertThat(result.get("semiMessagesNull")).isEqualTo(true);
+        assertThat(result.get("semiDeviationsEmpty")).isEqualTo(true);
+        assertThat(result.get("quotedExpr")).isEqualTo("a=1, b=2");
+        assertThat(result.get("quotedTag")).isEqualTo("x=y,z");
+        assertThat(result.get("unbalancedIsNull")).isEqualTo(true);
+        assertThat(result.get("trailingJunkIsNull")).isEqualTo(true);
+        assertThat(result.get("plainTextIsNull")).isEqualTo(true);
+        assertThat(result.get("formattedPreservesKvSyntax")).isEqualTo(true);
+        assertThat(result.get("formattedReParses")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName(
+            "polyglot-ast regressions: duplicate siblings, root key collisions, literal token safety, and wire-style preservation")
+    void testPolyglotAstRegressionsAndWireStyle() {
+        String script =
+                """
+            async () => {
+                const {
+                    discoverEmbeddedPayloads,
+                    spliceEmbeddedPayloadEdit,
+                    applyNestedPathEdit,
+                    buildPolyglotSegments
+                } = await import('./modules/polyglot-ast.js');
+                const { renderPolyglotTreeHtml } = await import('./modules/polyglot-viewer.js');
+
+                // 1. Duplicate sibling strings: editing orderB mutates ONLY orderB
+                const dupRoot = JSON.stringify({
+                    orderA: JSON.stringify({ status: 'PAID' }),
+                    orderB: JSON.stringify({ status: 'PAID' })
+                }, null, 2);
+                const dupNodes = discoverEmbeddedPayloads(dupRoot);
+                const orderBNode = dupNodes.find(n => n.path === '$.orderB');
+                const dupEdited = applyNestedPathEdit(dupRoot, [orderBNode], JSON.stringify({ status: 'REFUNDED' }));
+                const dupParsed = JSON.parse(dupEdited);
+
+                // 2. Root key collision: root has "status", envelope -> inner has "status"
+                // Exercise external-reformat JSONPath fallback with explicit bogus span so fallback traversal runs
+                const collisionParent = JSON.stringify({
+                    status: 'ROOT_OK',
+                    envelope: JSON.stringify({ status: 'INNER_OLD' })
+                });
+                const colNodes = discoverEmbeddedPayloads(collisionParent);
+                const colNodeCopy = Object.assign({}, colNodes[0], { span: { start: -1, end: -1 } });
+                const collisionAfterFallback = spliceEmbeddedPayloadEdit(
+                    collisionParent,
+                    { path: '$.envelope.status', parentPath: '$', format: 'text', encoding: 'JSON_STRING', wireStyle: 'compact', span: { start: -1, end: -1 } },
+                    'INNER_NEW'
+                );
+                const colParsed1 = JSON.parse(collisionAfterFallback);
+
+                // Also test two-level cascade when root also shares the leaf key name
+                const twoLevelCollisionRoot = JSON.stringify({
+                    payload: 'ROOT_PAYLOAD_UNCHANGED',
+                    wrapper: JSON.stringify({
+                        payload: JSON.stringify({ ok: false })
+                    })
+                }, null, 2);
+                const wrapperNode = discoverEmbeddedPayloads(twoLevelCollisionRoot).find(n => n.path === '$.wrapper');
+                const innerPayloadNode = wrapperNode.children.find(c => c.key === 'payload');
+                const twoLevelEdited = applyNestedPathEdit(twoLevelCollisionRoot, [wrapperNode, innerPayloadNode], '{"ok":true}');
+                const twoLevelParsed = JSON.parse(twoLevelEdited);
+
+                // 3. Literal __LENS_TOKEN_0__ safety in buildPolyglotSegments + renderPolyglotTreeHtml
+                const tokenTextRoot = JSON.stringify({
+                    marker: '__LENS_TOKEN_0__',
+                    nested: JSON.stringify({ a: 1, literal: '__LENS_TOKEN_0__' })
+                }, null, 2);
+                const segments = buildPolyglotSegments(tokenTextRoot);
+                const renderedTokenHtml = renderPolyglotTreeHtml(tokenTextRoot, { mode: 'rich', editable: false });
+
+                // 4. Wire-style preservation & override + KV preservation
+                const compactNestedRoot = JSON.stringify({
+                    compactJson: JSON.stringify({ k: 1 }),
+                    multilineJson: JSON.stringify({ k: 1 }, null, 2),
+                    compactXml: '<a b="1"><c>2</c></a>',
+                    multilineXml: '<a>\\n  <c>2</c>\\n</a>',
+                    kvMap: btoa('{alpha=1, beta=two}')
+                }, null, 2);
+                const wsNodes = discoverEmbeddedPayloads(compactNestedRoot);
+
+                const editedCompactJson = JSON.parse(applyNestedPathEdit(
+                    compactNestedRoot,
+                    [wsNodes.find(n => n.key === 'compactJson')],
+                    '{\\n  "k": 9\\n}'
+                )).compactJson;
+
+                const editedMultilineJson = JSON.parse(applyNestedPathEdit(
+                    compactNestedRoot,
+                    [wsNodes.find(n => n.key === 'multilineJson')],
+                    '{\\n  "k": 9\\n}'
+                )).multilineJson;
+
+                const overriddenToCompact = JSON.parse(applyNestedPathEdit(
+                    compactNestedRoot,
+                    [wsNodes.find(n => n.key === 'multilineJson')],
+                    '{\\n  "k": 9\\n}',
+                    { wireStyleOverride: 'compact' }
+                )).multilineJson;
+
+                const editedCompactXml = JSON.parse(applyNestedPathEdit(
+                    compactNestedRoot,
+                    [wsNodes.find(n => n.key === 'compactXml')],
+                    '<a b="1">\\n  <c>9</c>\\n</a>'
+                )).compactXml;
+
+                const editedMultilineXml = JSON.parse(applyNestedPathEdit(
+                    compactNestedRoot,
+                    [wsNodes.find(n => n.key === 'multilineXml')],
+                    '<a>\\n  <c>9</c>\\n</a>'
+                )).multilineXml;
+
+                const editedKvB64 = JSON.parse(applyNestedPathEdit(
+                    compactNestedRoot,
+                    [wsNodes.find(n => n.key === 'kvMap')],
+                    '{alpha=9, beta=three}'
+                )).kvMap;
+
+                return {
+                    dupOrderA: JSON.parse(dupParsed.orderA).status,
+                    dupOrderB: JSON.parse(dupParsed.orderB).status,
+                    colRootStatusPreserved: colParsed1.status,
+                    colEnvelopeStatusUpdated: colParsed1.envelope.status,
+                    twoLevelRootPayloadPreserved: twoLevelParsed.payload,
+                    twoLevelInnerOk: JSON.parse(JSON.parse(twoLevelParsed.wrapper).payload).ok,
+                    segmentPreservesLiteral: segments.segments.some(s => s.type === 'code' && s.text.includes('__LENS_TOKEN_0__')),
+                    htmlPreservesLiteral: renderedTokenHtml.includes('__LENS_TOKEN_0__'),
+                    editedCompactJson,
+                    editedMultilineJsonHasNewline: editedMultilineJson.includes('\\n'),
+                    overriddenToCompact,
+                    editedCompactXml,
+                    editedMultilineXmlHasNewline: editedMultilineXml.includes('\\n'),
+                    editedKvDecoded: atob(editedKvB64)
+                };
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("dupOrderA")).isEqualTo("PAID");
+        assertThat(result.get("dupOrderB")).isEqualTo("REFUNDED");
+        assertThat(result.get("colRootStatusPreserved")).isEqualTo("ROOT_OK");
+        assertThat(result.get("colEnvelopeStatusUpdated")).isEqualTo("INNER_NEW");
+        assertThat(result.get("twoLevelRootPayloadPreserved")).isEqualTo("ROOT_PAYLOAD_UNCHANGED");
+        assertThat(result.get("twoLevelInnerOk")).isEqualTo(true);
+        assertThat(result.get("segmentPreservesLiteral")).isEqualTo(true);
+        assertThat(result.get("htmlPreservesLiteral")).isEqualTo(true);
+        assertThat(result.get("editedCompactJson")).isEqualTo("{\"k\":9}");
+        assertThat(result.get("editedMultilineJsonHasNewline")).isEqualTo(true);
+        assertThat(result.get("overriddenToCompact")).isEqualTo("{\"k\":9}");
+        assertThat(result.get("editedCompactXml")).isEqualTo("<a b=\"1\"><c>9</c></a>");
+        assertThat(result.get("editedMultilineXmlHasNewline")).isEqualTo(true);
+        assertThat(result.get("editedKvDecoded")).isEqualTo("{alpha=9, beta=three}");
+    }
+
+    @Test
+    @DisplayName("bulk-actions: getVisibleSelectedStubIds excludes selected stubs hidden by active filters")
+    void testBulkActionsScopesToVisibleFilteredStubs() {
+        String script =
+                """
+            async () => {
+                const { state } = await import('./modules/state.js');
+                const { stubCatalog } = await import('./modules/stub-catalog.js');
+                const { getVisibleSelectedStubIds } = await import('./modules/bulk-actions.js');
+
+                const prevMappings = stubCatalog._mappings;
+                const prevSelected = new Set(state.selectedStubIds);
+                const prevStatus = state.statusFilter;
+                const prevProject = state.selectedProject;
+                const searchEl = document.getElementById('search-box');
+                const prevSearch = searchEl ? searchEl.value : '';
+
+                try {
+                    stubCatalog.setMappings([
+                        { id: 's-1', name: 'Orders Alpha', priority: 5, request: { method: 'GET', url: '/orders/1' }, response: { status: 200 }, metadata: { project: 'orders' } },
+                        { id: 's-2', name: 'Billing Beta', priority: 5, request: { method: 'GET', url: '/billing/1' }, response: { status: 200 }, metadata: { project: 'billing' } },
+                        { id: 's-3', name: 'Orders Parked', priority: 100, request: { method: 'GET', url: '/orders/2' }, response: { status: 200 }, metadata: { project: 'orders' } }
+                    ]);
+                    state.selectedStubIds = new Set(['s-1', 's-2', 's-3']);
+
+                    state.statusFilter = 'all';
+                    state.selectedProject = null;
+                    if (searchEl) searchEl.value = '';
+                    const allVisible = getVisibleSelectedStubIds();
+
+                    if (searchEl) searchEl.value = 'Orders';
+                    const searchScoped = getVisibleSelectedStubIds();
+
+                    if (searchEl) searchEl.value = 'orders';
+                    state.statusFilter = 'active';
+                    const projectAndStatusScoped = getVisibleSelectedStubIds();
+
+                    return {
+                        allVisible,
+                        searchScoped,
+                        projectAndStatusScoped
+                    };
+                } finally {
+                    stubCatalog.setMappings(prevMappings);
+                    state.selectedStubIds = prevSelected;
+                    state.statusFilter = prevStatus;
+                    state.selectedProject = prevProject;
+                    if (searchEl) searchEl.value = prevSearch;
+                }
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("allVisible")).isEqualTo(java.util.List.of("s-1", "s-2", "s-3"));
+        assertThat(result.get("searchScoped")).isEqualTo(java.util.List.of("s-1", "s-3"));
+        assertThat(result.get("projectAndStatusScoped")).isEqualTo(java.util.List.of("s-1"));
+    }
+
+    @Test
+    @DisplayName(
+            "api: 404 or network error never silently enables Demo Mode, while enableDemoMode loads DEMO_SNAPSHOT on demand")
+    void testApiDoesNotSilentlyFallbackOnFailureAndLoadsDemoOnDemand() {
+        String script =
+                """
+            async () => {
+                const { apiGet, isDemoModeActive, enableDemoMode, disableDemoMode } = await import('./modules/api.js');
+
+                const origFetch = window.fetch;
+                disableDemoMode();
+                try {
+                    // 1. HTTP 404 on /__admin/mappings -> rejects, stays live
+                    window.fetch = async () => new Response('Not Found', { status: 404 });
+                    let threwOn404 = false;
+                    try {
+                        await apiGet('/__admin/mappings');
+                    } catch (_) {
+                        threwOn404 = true;
+                    }
+                    const demoAfter404 = isDemoModeActive();
+
+                    // 2. Network error on /__admin/mappings -> rejects, stays live
+                    window.fetch = async () => { throw new TypeError('Failed to fetch'); };
+                    let threwOnNetwork = false;
+                    try {
+                        await apiGet('/__admin/mappings');
+                    } catch (_) {
+                        threwOnNetwork = true;
+                    }
+                    const demoAfterNetwork = isDemoModeActive();
+
+                    // 3. Explicit enableDemoMode() loads demo-backend backed by DEMO_SNAPSHOT
+                    const backend = await enableDemoMode();
+                    const demoActiveAfterEnable = isDemoModeActive();
+                    const mappingsResp = await apiGet('/__admin/mappings');
+
+                    disableDemoMode();
+                    const demoActiveAfterDisable = isDemoModeActive();
+
+                    return {
+                        threwOn404,
+                        demoAfter404,
+                        threwOnNetwork,
+                        demoAfterNetwork,
+                        demoActiveAfterEnable,
+                        backendLoaded: Boolean(backend),
+                        demoMappingsCount: Array.isArray(mappingsResp?.mappings) ? mappingsResp.mappings.length : 0,
+                        demoActiveAfterDisable
+                    };
+                } finally {
+                    window.fetch = origFetch;
+                    disableDemoMode();
+                }
+            }
+        """;
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> result = (java.util.Map<String, Object>) evalJs(script);
+
+        assertThat(result.get("threwOn404")).isEqualTo(true);
+        assertThat(result.get("demoAfter404")).isEqualTo(false);
+        assertThat(result.get("threwOnNetwork")).isEqualTo(true);
+        assertThat(result.get("demoAfterNetwork")).isEqualTo(false);
+        assertThat(result.get("demoActiveAfterEnable")).isEqualTo(true);
+        assertThat(result.get("backendLoaded")).isEqualTo(true);
+        assertThat(((Number) result.get("demoMappingsCount")).intValue()).isGreaterThanOrEqualTo(13);
+        assertThat(result.get("demoActiveAfterDisable")).isEqualTo(false);
     }
 
     @Test

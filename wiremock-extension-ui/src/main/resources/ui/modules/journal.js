@@ -4,16 +4,16 @@
  */
 import { state, uiActions, registerUiActions } from './state.js';
 import { elements, escapeHtml } from './dom.js';
-import { highlightJson, highlightPayload, detectFormat } from './highlighter.js';
+import { confirmDialog, showToast } from './dialog.js';
+import { highlightJson, detectFormat } from './highlighter.js';
 import {
-  discoverEmbeddedPayloads,
-  renderFormattedWithNestedPreviews,
-  openPayloadLens,
+  renderPolyglotTreeHtml,
+  collectSegmentsAndNodes,
   formatCasualBufferDescriptor,
   formatPayloadDescriptor,
-  detectCharset,
-  pushViewportLayer
-} from './payload-lens.js';
+  detectCharset
+} from './polyglot-viewer.js';
+import { openDocumentWorkspace } from './document-workspace.js';
 import {
   decodeBase64Payload,
   normalizeJsonPayload,
@@ -162,7 +162,7 @@ function buildRowHtml(req) {
   const displayStatus = isCasual ? casualErrorState : status;
   const verdict = getRequestVerdict(req);
   const src = extractRequestSource(req);
-  const sourceFilterToken = src.host || src.ip;
+  const sourceFilterToken = src.ip || src.shortHost || src.host;
 
   let html = `
     <tr class="journal-row ${isExpanded ? 'expanded' : ''}" data-request-id="${req.id}" data-verdict="${verdict.key}" data-protocol="${protocol.toLowerCase()}" data-testid="journal-row">
@@ -194,24 +194,11 @@ function buildRowHtml(req) {
     const reqFmt = reqBodyRaw ? detectFormat(reqBodyRaw) : 'text';
     const reqSizeKb = reqBodyRaw ? (new Blob([reqBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const reqB64 = decodeBase64Payload(reqBodyRaw);
-    const journalReadOnlyReason = "Recorded traffic is immutable — use '📸 Snapshot Stub' or '🚀 Replay in Tester' on the journal entry";
-    const journalSession = {
-      editable: false,
-      readOnlyReason: journalReadOnlyReason,
-      context: 'journal',
-      onSaveRoot: null
-    };
-    const reqDiscovered = reqBodyRaw ? discoverEmbeddedPayloads(reqBodyRaw) : [];
     const reqBodyHtml = reqBodyRaw
-      ? (reqDiscovered.length > 0
-          ? renderFormattedWithNestedPreviews(reqBodyRaw, reqDiscovered, `jrn_req_${req.id}`, null, journalSession)
-          : highlightPayload(reqBodyRaw))
+      ? renderPolyglotTreeHtml(reqBodyRaw, { mode: 'rich', editable: false, headers: reqHeaders })
       : '<span style="color: var(--text-muted);">(empty)</span>';
-    const reqB64Discovered = reqB64.hasBase64 ? discoverEmbeddedPayloads(reqB64.decodedFormatted) : [];
     const reqBodyDecodedHtml = reqB64.hasBase64
-      ? (reqB64Discovered.length > 0
-          ? renderFormattedWithNestedPreviews(reqB64.decodedFormatted, reqB64Discovered, `jrn_req_b64_${req.id}`, null, journalSession)
-          : highlightPayload(reqB64.decodedFormatted))
+      ? renderPolyglotTreeHtml(reqB64.decodedFormatted, { mode: 'rich', editable: false, headers: reqHeaders })
       : '';
 
     const resHeadersHtml = highlightJson(resHeaders);
@@ -220,17 +207,11 @@ function buildRowHtml(req) {
     const resFmt = resBodyRaw ? detectFormat(resBodyRaw) : 'text';
     const resSizeKb = resBodyRaw ? (new Blob([resBodyRaw]).size / 1024).toFixed(1) : '0.0';
     const resB64 = decodeBase64Payload(resBodyRaw);
-    const resDiscovered = resBodyRaw ? discoverEmbeddedPayloads(resBodyRaw) : [];
     const resBodyHtml = resBodyRaw
-      ? (resDiscovered.length > 0
-          ? renderFormattedWithNestedPreviews(resBodyRaw, resDiscovered, `jrn_res_${req.id}`, null, journalSession)
-          : highlightPayload(resBodyRaw))
+      ? renderPolyglotTreeHtml(resBodyRaw, { mode: 'rich', editable: false, headers: resHeaders })
       : '<span style="color: var(--text-muted);">(empty)</span>';
-    const resB64Discovered = resB64.hasBase64 ? discoverEmbeddedPayloads(resB64.decodedFormatted) : [];
     const resBodyDecodedHtml = resB64.hasBase64
-      ? (resB64Discovered.length > 0
-          ? renderFormattedWithNestedPreviews(resB64.decodedFormatted, resB64Discovered, `jrn_res_b64_${req.id}`, null, journalSession)
-          : highlightPayload(resB64.decodedFormatted))
+      ? renderPolyglotTreeHtml(resB64.decodedFormatted, { mode: 'rich', editable: false, headers: resHeaders })
       : '';
 
     const reqCharset = detectCharset(reqBodyRaw, reqHeaders);
@@ -282,8 +263,7 @@ function buildRowHtml(req) {
                     ${reqBodyRaw ? `
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-req-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(reqBadgeLabel)}</span>
-                        <button type="button" class="btn btn-tiny btn-viewer-inline-edit" disabled title="${escapeHtml(journalReadOnlyReason)}">✏️ Edit</button>
-                        <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="req" data-id="${req.id}" title="Maximize Request Body in Fullscreen Viewport">⛶ Maximize</button>
+                        <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="req" data-id="${req.id}" title="Open Request Body in Document Workspace">⛶ Workspace</button>
                       </span>
                     ` : ''}
                   </div>
@@ -302,10 +282,10 @@ function buildRowHtml(req) {
                   ${reqB64.hasBase64 ? `
                     <div id="req-body-${req.id}" class="journal-body-container" data-active-view="decoded">
                       <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(reqBodyRaw)}</pre>
-                      <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</pre>
+                      <div class="code-block-mini code-block-body journal-body-decoded" data-body-owner="req" data-req-id="${req.id}" data-b64-decoded="true" data-testid="journal-body-decoded">${reqBodyDecodedHtml}</div>
                     </div>
                   ` : `
-                    <pre class="code-block-mini code-block-body">${reqBodyHtml}</pre>
+                    <div class="code-block-mini code-block-body" data-body-owner="req" data-req-id="${req.id}">${reqBodyHtml}</div>
                   `}
                 </div>
               </div>
@@ -333,8 +313,7 @@ function buildRowHtml(req) {
                     ${resBodyRaw ? `
                       <span class="preview-pill-group">
                         <span class="preview-pill-badge btn-journal-toggle-body" data-target="jrn-res-body-${req.id}" role="button" tabindex="0" title="Click to collapse">${escapeHtml(resBadgeLabel)}</span>
-                        <button type="button" class="btn btn-tiny btn-viewer-inline-edit" disabled title="${escapeHtml(journalReadOnlyReason)}">✏️ Edit</button>
-                        <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="res" data-id="${req.id}" title="Maximize Response Body in Fullscreen Viewport">⛶ Maximize</button>
+                        <button type="button" class="btn-payload-maximize btn-journal-maximize" data-type="res" data-id="${req.id}" title="Open Response Body in Document Workspace">⛶ Workspace</button>
                       </span>
                     ` : ''}
                   </div>
@@ -353,10 +332,10 @@ function buildRowHtml(req) {
                   ${resB64.hasBase64 ? `
                     <div id="res-body-${req.id}" class="journal-body-container" data-active-view="decoded">
                       <pre class="code-block-mini code-block-body journal-body-raw hidden" data-testid="journal-body-raw">${highlightJson(resBodyRaw)}</pre>
-                      <pre class="code-block-mini code-block-body journal-body-decoded" data-testid="journal-body-decoded">${resBodyDecodedHtml}</pre>
+                      <div class="code-block-mini code-block-body journal-body-decoded" data-body-owner="res" data-req-id="${req.id}" data-b64-decoded="true" data-testid="journal-body-decoded">${resBodyDecodedHtml}</div>
                     </div>
                   ` : `
-                    <pre class="code-block-mini code-block-body">${resBodyHtml}</pre>
+                    <div class="code-block-mini code-block-body" data-body-owner="res" data-req-id="${req.id}">${resBodyHtml}</div>
                   `}
                 </div>
               </div>
@@ -484,7 +463,8 @@ function setupEventDelegation() {
       const sourceVal = sourceBtn.getAttribute('data-source') || '';
       const sourceHost = sourceBtn.getAttribute('data-source-host') || '';
       const sourceIp = sourceBtn.getAttribute('data-source-ip') || '';
-      const chipLabel = (sourceHost && sourceIp) ? `${sourceHost} (${sourceIp})` : sourceVal;
+      const shortHost = sourceHost ? sourceHost.split('.')[0] : '';
+      const chipLabel = (shortHost && sourceIp) ? `${shortHost} (${sourceIp})` : sourceVal;
       if (elements.journalSearch) {
         elements.journalSearch.value = sourceVal;
       }
@@ -513,6 +493,79 @@ function setupEventDelegation() {
       return;
     }
 
+    const nestedToggleBtn = e.target.closest('.btn-nested-toggle');
+    if (nestedToggleBtn) {
+      e.stopPropagation();
+      const block = nestedToggleBtn.closest('.nested-payload-block');
+      if (block) {
+        const isCollapsed = block.classList.toggle('collapsed');
+        const body = block.querySelector(':scope > .nested-payload-body');
+        if (body) body.classList.toggle('hidden', isCollapsed);
+        nestedToggleBtn.textContent = isCollapsed ? '▸' : '▾';
+        nestedToggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+      }
+      return;
+    }
+
+    const resolveJournalNestedContext = (btn) => {
+      const block = btn.closest('.nested-payload-block');
+      const host = btn.closest('[data-body-owner]');
+      if (!block || !host) return null;
+      const owner = host.getAttribute('data-body-owner');
+      const reqId = host.getAttribute('data-req-id');
+      const isDecoded = host.getAttribute('data-b64-decoded') === 'true';
+      const req = requestJournal.findById(reqId);
+      if (!req) return null;
+      const rawBody = owner === 'req'
+        ? ((req.request && (req.request.body || req.request.bodyAsBase64)) || '')
+        : ((req.response && (req.response.body || req.response.base64Body))
+          || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '');
+      const text = isDecoded ? decodeBase64Payload(rawBody).decodedFormatted : rawBody;
+      const headers = owner === 'req'
+        ? (req.request && req.request.headers) || {}
+        : (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
+      return { block, owner, reqId, req, text, headers };
+    };
+
+    const nestedCopyBtn = e.target.closest('.btn-nested-copy');
+    if (nestedCopyBtn) {
+      e.stopPropagation();
+      const ctx = resolveJournalNestedContext(nestedCopyBtn);
+      if (ctx) {
+        const nodeId = nestedCopyBtn.getAttribute('data-node-id');
+        const collected = collectSegmentsAndNodes(ctx.text, 5, ctx.headers);
+        const chain = nodeId ? collected.nodeMap.get(nodeId) : null;
+        const node = chain && chain.length > 0 ? chain[chain.length - 1] : null;
+        const copyText = node
+          ? (node.unescapedValue ?? node.formattedValue ?? '')
+          : (ctx.block.querySelector('.nested-payload-code')?.textContent || '');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(copyText).catch(() => {});
+        }
+        nestedCopyBtn.textContent = '✅ Copied!';
+        showToast('Payload copied to clipboard', { type: 'success' });
+        setTimeout(() => { nestedCopyBtn.textContent = '📋 Copy'; }, 1500);
+      }
+      return;
+    }
+
+    const nestedOpenBtn = e.target.closest('.btn-nested-open-workspace');
+    if (nestedOpenBtn) {
+      e.stopPropagation();
+      const ctx = resolveJournalNestedContext(nestedOpenBtn);
+      if (ctx) {
+        openDocumentWorkspace({
+          title: `Journal ${ctx.owner === 'req' ? 'Request' : 'Response'}: ${(ctx.req.request && ctx.req.request.url) || ctx.reqId}`,
+          text: ctx.text,
+          format: detectFormat(ctx.text),
+          headers: ctx.headers,
+          editable: false,
+          initialSectionPath: ctx.block.getAttribute('data-node-path') || null
+        });
+      }
+      return;
+    }
+
     const topLensBtn = e.target.closest('.btn-journal-top-lens') || e.target.closest('.btn-journal-maximize');
     if (topLensBtn) {
       e.stopPropagation();
@@ -523,17 +576,17 @@ function setupEventDelegation() {
         const bodyRaw = type === 'req'
           ? ((req.request && (req.request.body || req.request.bodyAsBase64)) || '')
           : ((req.response && (req.response.body || req.response.base64Body)) || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '');
+        const headers = type === 'req'
+          ? (req.request && req.request.headers) || {}
+          : (req.response && req.response.headers) || (req.responseDefinition && req.responseDefinition.headers) || {};
         if (bodyRaw) {
           const fmt = detectFormat(bodyRaw);
-          pushViewportLayer({
+          openDocumentWorkspace({
             title: `Journal ${type === 'req' ? 'Request' : 'Response'}: ${(req.request && req.request.url) || reqId}`,
             text: bodyRaw,
             format: fmt,
-            context: 'journal',
-            mode: 'viewer',
-            editable: false,
-            readOnlyReason: "Recorded traffic is immutable — use '📸 Snapshot Stub' or '🚀 Replay in Tester' on the journal entry",
-            onSave: null
+            headers,
+            editable: false
           });
         }
       }
@@ -577,6 +630,9 @@ function setupEventDelegation() {
         }
         if (elements.testerHeaders) elements.testerHeaders.value = headerLines.join('\n');
         if (elements.testerBody) elements.testerBody.value = req.request.body || '';
+        if (uiActions.setTesterRequestPayload) {
+          uiActions.setTesterRequestPayload(req.request.body || '');
+        }
         activateTab('tab-tester', false);
         updateTesterRoute(false);
       }
@@ -722,11 +778,24 @@ function setupEventDelegation() {
       if (container) {
         const activeView = container.getAttribute('data-active-view') || 'decoded';
         const activeEl = container.querySelector(activeView === 'raw' ? '.journal-body-raw' : '.journal-body-decoded');
-        const textToCopy = activeEl ? (activeEl.textContent || '') : '';
+        let textToCopy = activeEl ? (activeEl.textContent || '') : '';
+        if (targetId && (targetId.startsWith('req-body-') || targetId.startsWith('res-body-'))) {
+          const isReq = targetId.startsWith('req-body-');
+          const reqId = targetId.slice(isReq ? 'req-body-'.length : 'res-body-'.length);
+          const req = requestJournal.findById(reqId);
+          if (req) {
+            const rawBody = isReq
+              ? ((req.request && (req.request.body || req.request.bodyAsBase64)) || '')
+              : ((req.response && (req.response.body || req.response.base64Body))
+                || (req.responseDefinition && (req.responseDefinition.body || req.responseDefinition.base64Body)) || '');
+            textToCopy = activeView === 'raw' ? rawBody : decodeBase64Payload(rawBody).decodedFormatted;
+          }
+        }
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(textToCopy).catch(() => {});
         }
         copyBodyBtn.textContent = '✅ Copied!';
+        showToast('Body copied to clipboard', { type: 'success' });
         setTimeout(() => {
           copyBodyBtn.textContent = '📋 Copy Body';
         }, 1500);
@@ -740,18 +809,12 @@ function setupEventDelegation() {
       const targetId = snapshotBtn.getAttribute('data-id') || (snapshotBtn.dataset && snapshotBtn.dataset.id);
       if (!targetId) return;
 
-      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
-        ? state.selectedProject
-        : 'Recorded Traffic';
+      const targetProject = 'Recorded Traffic';
 
       if (state.capabilities && state.capabilities.lifecycle) {
         try {
           const template = await getSnapshotStubTemplate(targetId, targetProject, loadExcludedJsonPaths());
-          openStubEditor(template, false);
-          const titleEl = document.getElementById('editor-modal-title');
-          if (titleEl) {
-            titleEl.textContent = 'Snapshot Stub from Journal';
-          }
+          openStubEditor(template, false, 'Snapshot Stub from Journal');
           return;
         } catch (err) {
           console.warn('Failed to fetch snapshot template from backend, using local fallback:', err);
@@ -762,11 +825,7 @@ function setupEventDelegation() {
       if (!req) return;
 
       const stubData = buildSnapshotStubMapping(req);
-      openStubEditor(stubData, false);
-      const titleEl = document.getElementById('editor-modal-title');
-      if (titleEl) {
-        titleEl.textContent = 'Snapshot Stub from Journal';
-      }
+      openStubEditor(stubData, false, 'Snapshot Stub from Journal');
       return;
     }
 
@@ -983,9 +1042,7 @@ export function initJournalTab() {
       const proxiedReqs = getFilteredProxiedRequests();
       if (!proxiedReqs || proxiedReqs.length === 0) return;
       const count = proxiedReqs.length;
-      const targetProject = (state.selectedProject && state.selectedProject !== '_all' && state.selectedProject !== '*')
-        ? state.selectedProject
-        : 'Recorded Traffic';
+      const targetProject = 'Recorded Traffic';
 
       elements.btnJournalSnapshotFiltered.disabled = true;
       const origText = elements.btnJournalSnapshotFiltered.innerHTML;
@@ -1019,7 +1076,7 @@ export function initJournalTab() {
           renderJournal();
         }, 2000);
       } catch (err) {
-        alert('Failed to snapshot recordings: ' + err.message);
+        showToast('Failed to snapshot recordings: ' + err.message, { type: 'error' });
         elements.btnJournalSnapshotFiltered.innerHTML = origText;
         renderJournal();
       }
@@ -1056,15 +1113,22 @@ export function initJournalTab() {
   }
 
   if (elements.btnResetJournal) {
-    elements.btnResetJournal.addEventListener('click', () => {
-      if (confirm('Are you sure you want to clear the request journal?')) {
-        doFetch('/__admin/requests', { method: 'DELETE' })
-          .then(() => {
-            state.journalCurrentPage = 1;
-            loadJournal();
-          })
-          .catch(err => console.warn('Could not reset journal', err));
-      }
+    elements.btnResetJournal.addEventListener('click', async () => {
+      const outcome = await confirmDialog({
+        title: 'Clear Request Journal',
+        message: 'Are you sure you want to clear the request journal?',
+        confirmLabel: 'Clear Journal',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (outcome !== 'confirm') return;
+      doFetch('/__admin/requests', { method: 'DELETE' })
+        .then(() => {
+          state.journalCurrentPage = 1;
+          loadJournal();
+          showToast('Request journal cleared', { type: 'success' });
+        })
+        .catch(err => showToast('Failed to clear journal: ' + err.message, { type: 'error' }));
     });
   }
 

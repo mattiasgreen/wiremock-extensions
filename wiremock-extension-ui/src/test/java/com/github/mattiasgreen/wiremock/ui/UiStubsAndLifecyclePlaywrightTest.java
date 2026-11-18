@@ -97,6 +97,14 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         String url = page.url();
         assertThat(url).contains("#stubs?stubId=");
 
+        // Verify Copy dropdown and inline Duplicate/Delete buttons expose expected actions cleanly
+        assertThat(page.locator("#btn-clone-stub").isVisible()).isTrue();
+        assertThat(page.locator("#btn-delete-stub").isVisible()).isTrue();
+        openStubCopyMenu();
+        assertThat(page.locator("#btn-copy-curl").isVisible()).isTrue();
+        assertThat(page.locator("#btn-copy-java").isVisible()).isTrue();
+        assertThat(page.locator("#btn-copy-json").isVisible()).isTrue();
+
         assertThat(pageErrors).isEmpty();
     }
 
@@ -105,9 +113,6 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
     void testProjectGroupingAndFiltering() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector("#stub-list .stub-card");
-
-        Locator projectSelect = page.locator("#project-filter-select");
-        assertThat(projectSelect.isVisible()).isTrue();
 
         Locator projectPills = page.locator(".project-pill");
         assertThat(projectPills.count()).isGreaterThan(0);
@@ -118,6 +123,11 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         assertThat(btnAll.isVisible()).isTrue();
         assertThat(btnActive.isVisible()).isTrue();
         assertThat(btnDisabled.isVisible()).isTrue();
+
+        page.locator("#search-box").fill("api-users");
+        page.waitForSelector("#stub-list .stub-card");
+        assertThat(page.locator("#stub-list .stub-card").count()).isGreaterThan(0);
+        page.locator("#search-box").fill("");
 
         assertThat(pageErrors).isEmpty();
     }
@@ -198,7 +208,16 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
                 }
                 """;
 
-        page.locator("#bundle-content").fill(bundleJson);
+        page.locator("#btn-bundle-edit-workspace").click();
+        waitForStubEditorOpen();
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent(bundleJson);
+        saveStubWorkspaceAndWaitClosed();
+        assertThat(page.locator("#bundle-content-viewer").textContent()).contains("/api/v1/health/ping");
+
         page.locator("#bundle-target-project").fill("Ops Management");
 
         page.locator("#btn-submit-bundle-import").click();
@@ -213,29 +232,43 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
     }
 
     @Test
-    @DisplayName("Should show bulk actions bar when stub checkboxes are selected")
-    void testBulkActionsBar() {
+    @DisplayName("Should scope bulk delete to currently visible filtered stubs and confirm via #modal-confirm")
+    void testBulkActionsBarAndVisibleOnlyBulkDelete() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector(".stub-card-chk");
 
         assertThat(page.locator("#bulk-actions-bar").isHidden()).isTrue();
 
-        Locator firstChk = page.locator(".stub-card-chk").first();
-        firstChk.check();
+        // Select both specific target stubs (/api/v1/users and /api/v1/orders)
+        Locator usersChk = page.locator(".stub-card:has-text('/api/v1/users') .stub-card-chk")
+                .first();
+        Locator ordersChk = page.locator(".stub-card:has-text('/api/v1/orders') .stub-card-chk")
+                .first();
+        usersChk.check();
+        ordersChk.check();
 
         page.waitForSelector("#bulk-actions-bar:not(.hidden)");
-        assertThat(page.locator("#bulk-selected-count").textContent()).contains("1 selected");
+        assertThat(page.locator("#bulk-selected-count").textContent()).contains("2 selected");
 
-        firstChk.uncheck();
-        page.waitForSelector(
-                "#bulk-actions-bar", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
-        assertThat(page.locator("#bulk-actions-bar").isHidden()).isTrue();
+        // Filter to only "orders" -> bulk toolbar scopes to visible match ("1 selected")
+        page.locator("#search-box").fill("orders");
+        page.waitForSelector("#bulk-selected-count:has-text('1 selected')");
+
+        // Delete visible selection via #modal-confirm -> hides non-matching /api/v1/users from deletion!
+        page.locator("#btn-bulk-delete").click();
+        acceptConfirmModal();
+
+        page.locator("#search-box").fill("");
+        page.waitForSelector(".stub-card:has-text('/api/v1/users')");
+        assertThat(page.locator(".stub-card:has-text('/api/v1/orders')").count())
+                .isEqualTo(0);
+        assertThat(page.locator(".stub-card:has-text('/api/v1/users')").count()).isGreaterThanOrEqualTo(1);
 
         assertThat(pageErrors).isEmpty();
     }
 
     @Test
-    @DisplayName("Should clone stub mapping via editor modal, save it, and verify traffic")
+    @DisplayName("Should clone stub mapping via Document Workspace, save it, and verify traffic")
     void testCloneAndEditStub() throws Exception {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector(".stub-card:has-text('/api/v1/users')");
@@ -245,21 +278,20 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
 
         page.locator("#btn-clone-stub").click();
         waitForStubEditorOpen();
-        assertThat(page.locator("#editor-modal-title").textContent()).isEqualTo("Duplicate Stub Mapping");
+        assertThat(page.locator("#workspace-title").textContent()).isEqualTo("Duplicate Stub Mapping");
 
-        page.waitForSelector("#editor-json-panel:not(.hidden)");
-        page.locator("#btn-editor-raw-inline-edit").click();
-        page.waitForSelector("#editor-raw-json:not(.hidden)");
-        String currentJson = page.locator("#editor-raw-json").inputValue();
+        page.locator("#btn-workspace-edit-root").click();
+        page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        String currentJson = getCodeEditorContent();
         String updatedJson = currentJson
                 .replace("/api/v1/users", "/api/v1/users/cloned")
                 .replace("\"status\": 200", "\"status\": 201")
                 .replace(
                         "\"name\": \"List Users API (Copy)\"",
                         "\"name\": \"List Users API (Copy)\",\n  \"metadata\": { \"project\": \"User Clones\" }");
-        page.locator("#editor-raw-json").fill(updatedJson);
+        setCodeEditorContent(updatedJson);
 
-        saveStubEditorAndWaitClosed();
+        saveStubWorkspaceAndWaitClosed();
 
         page.waitForSelector(".stub-card:has-text('/api/v1/users/cloned')");
         Locator clonedCard = page.locator(".stub-card:has-text('/api/v1/users/cloned')");
@@ -278,7 +310,7 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
     }
 
     @Test
-    @DisplayName("Scenario 12: Stub lifecycle management (Edit Active, Edit Disabled, Ad-hoc Creation)")
+    @DisplayName("Scenario 12: Stub lifecycle management via Document Workspace (Edit Active, Edit Disabled, Create)")
     void testStubManagementEditAndCreateWorkflow() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
         page.waitForSelector("#stub-list .stub-card");
@@ -291,12 +323,11 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         page.locator("#btn-edit-stub").click();
 
         waitForStubEditorOpen();
-        page.waitForSelector("#editor-json-panel:not(.hidden)");
-        page.locator("#btn-editor-raw-inline-edit").click();
-        page.waitForSelector("#editor-raw-json:not(.hidden)");
-        String activeJson = page.locator("#editor-raw-json").inputValue();
-        page.locator("#editor-raw-json").fill(activeJson.replace("List Users API", "Updated Users API"));
-        saveStubEditorAndWaitClosed();
+        page.locator("#btn-workspace-edit-root").click();
+        page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        String activeJson = getCodeEditorContent();
+        setCodeEditorContent(activeJson.replace("List Users API", "Updated Users API"));
+        saveStubWorkspaceAndWaitClosed();
         page.waitForSelector("#detail-name:has-text('Updated Users API')");
         assertThat(page.locator("#detail-name").textContent()).contains("Updated Users API");
 
@@ -305,24 +336,37 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
 
         page.locator("#btn-edit-stub").click();
         waitForStubEditorOpen();
-        page.waitForSelector("#editor-json-panel:not(.hidden)");
-        page.locator("#btn-editor-raw-inline-edit").click();
-        page.waitForSelector("#editor-raw-json:not(.hidden)");
-        String disabledJson = page.locator("#editor-raw-json").inputValue();
-        page.locator("#editor-raw-json").fill(disabledJson.replace("Updated Users API", "Updated Disabled Users API"));
-        saveStubEditorAndWaitClosed();
+        page.locator("#btn-workspace-edit-root").click();
+        page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        String disabledJson = getCodeEditorContent();
+        setCodeEditorContent(disabledJson.replace("Updated Users API", "Updated Disabled Users API"));
+        saveStubWorkspaceAndWaitClosed();
         page.waitForSelector("#detail-name:has-text('Updated Disabled Users API')");
         assertThat(page.locator("#detail-name").textContent()).contains("Updated Disabled Users API");
 
         openNewStubModal();
-        assertThat(page.locator("#editor-modal-title").textContent()).contains("Create New Stub");
+        assertThat(page.locator("#workspace-title").textContent()).contains("Create New Stub");
 
-        page.locator("#editor-name").fill("Ad-hoc Custom API");
-        page.locator("#editor-method").selectOption("POST");
-        page.locator("#editor-url").fill("/api/v1/adhoc-test");
-        page.locator("#editor-status").fill("201");
-        page.locator("#editor-body").fill("{\"adhoc\": true, \"message\": \"Created successfully\"}");
-        saveStubEditorAndWaitClosed();
+        String adhocJson =
+                """
+                {
+                  "name": "Ad-hoc Custom API",
+                  "priority": 5,
+                  "request": {
+                    "method": "POST",
+                    "url": "/api/v1/adhoc-test"
+                  },
+                  "response": {
+                    "status": 201,
+                    "headers": {
+                      "Content-Type": "application/json"
+                    },
+                    "body": "{\\"adhoc\\": true, \\"message\\": \\"Created successfully\\"}"
+                  }
+                }
+                """;
+        editWorkspaceRootJson(adhocJson);
+        saveStubWorkspaceAndWaitClosed();
         page.waitForSelector(".stub-card:has-text('Ad-hoc Custom API')");
 
         Locator adhocCard = page.locator(".stub-card")
@@ -347,22 +391,15 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
 
         openNewStubModal();
 
-        page.waitForSelector("#editor-openapi-banner:not(.hidden)");
-        assertThat(page.locator("#editor-openapi-banner").textContent())
-                .contains("The primary way is to point to an OpenAPI spec");
+        page.waitForSelector("#workspace-template-group:not(.hidden)");
+        assertThat(page.locator("#workspace-template-select").inputValue()).isEqualTo("uri-get");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("/api/v1/items");
 
-        page.waitForSelector("#editor-template-group:not(.hidden)");
-        assertThat(page.locator("#editor-template-select").inputValue()).isEqualTo("uri-get");
-        assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/items");
+        page.locator("#workspace-template-select").selectOption("body-contains");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("/api/v1/messages");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("string X");
 
-        page.locator("#editor-template-select").selectOption("body-contains");
-        assertThat(page.locator("#editor-method").inputValue()).isEqualTo("POST");
-        assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/messages");
-        assertThat(page.locator("#editor-body-match-type").inputValue()).isEqualTo("contains");
-        page.waitForSelector("#editor-body-match-container:not(.hidden)");
-        assertThat(page.locator("#editor-body-match-pattern").inputValue()).isEqualTo("string X");
-
-        saveStubEditorAndWaitClosed();
+        saveStubWorkspaceAndWaitClosed();
 
         page.waitForSelector(".stub-card:has-text('Submit Message (Body Contains)')");
         Locator card = page.locator(".stub-card")
@@ -374,7 +411,7 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
         page.waitForSelector("#tab-tester.active");
         assertThat(page.locator("#tester-method").inputValue()).isEqualTo("POST");
         assertThat(page.locator("#tester-url").inputValue()).contains("/api/v1/messages");
-        assertThat(page.locator("#tester-body").inputValue()).contains("string X");
+        assertThat(page.locator("#tester-request-viewer").innerText()).contains("string X");
 
         page.locator("#btn-tester-send").click();
         page.waitForSelector("#tester-response-status:has-text('200')");
@@ -382,9 +419,9 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
 
         openStubsTab();
         openNewStubModal();
-        page.locator("#btn-editor-open-openapi").click();
+        page.locator("#btn-workspace-open-openapi").click();
         page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+                "#modal-document-workspace", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
         page.waitForSelector("#openapi-modal:not(.hidden)");
         page.locator("#btn-cancel-openapi").click();
         waitForOpenApiModalClosed();
@@ -395,57 +432,50 @@ public class UiStubsAndLifecyclePlaywrightTest extends AbstractUiPlaywrightTest 
     }
 
     @Test
-    @DisplayName("Scenario 31: Stub Editor Nested Payload Lens round-trip editing and re-escaping")
+    @DisplayName("Scenario 31: Document Workspace nested section round-trip editing and re-escaping")
     void testStubEditorNestedPayloadLensRoundTrip() throws Exception {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/");
         page.waitForSelector("#stub-list");
 
-        // Open Stub Editor to create a new stub
         openNewStubModal();
 
-        page.locator("#editor-name").fill("Lens Roundtrip Stub");
-        page.locator("#editor-url").fill("/api/v1/roundtrip-test");
-
-        // Fill response body with JSON containing escaped XML
         String initialXml =
                 "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>OLD-ACC</account></soap:Body></soap:Envelope>";
-        String rootJson = "{\"status\": \"PENDING\", \"soapPayload\": \"" + initialXml.replace("\"", "\\\"") + "\"}";
+        String rootBodyJson =
+                "{\"status\": \"PENDING\", \"soapPayload\": \"" + initialXml.replace("\"", "\\\"") + "\"}";
+        String stubJson =
+                """
+                {
+                  "name": "Lens Roundtrip Stub",
+                  "request": { "method": "GET", "url": "/api/v1/roundtrip-test" },
+                  "response": { "status": 200, "body": %s }
+                }
+                """
+                        .formatted("\"" + rootBodyJson.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
 
-        page.locator("#editor-body").fill(rootJson);
+        editWorkspaceRootJson(stubJson);
 
-        // Embedded payloads bar should detect the nested XML
-        page.waitForSelector("#editor-body-embedded-bar:not(.hidden)");
-        Locator embeddedChip = page.locator("#editor-body-embedded-bar .embedded-node-chip");
-        assertThat(embeddedChip.count()).isGreaterThan(0);
-        assertThat(embeddedChip.first().textContent()).contains("soapPayload");
-        assertThat(embeddedChip.first().textContent()).contains("XML");
+        // Viewer discovers nested response.body -> soapPayload XML
+        Locator sectionBtns = page.locator("#workspace-viewer-pane .btn-workspace-edit-section");
+        assertThat(sectionBtns.count()).isGreaterThanOrEqualTo(2);
+        sectionBtns.last().click();
+        page.waitForSelector("#workspace-editor-pane:not(.hidden)");
 
-        // Click chip to open Lens modal
-        embeddedChip.first().click();
-        page.waitForSelector("#modal-payload-lens:not(.hidden)");
+        assertThat(getCodeEditorContent()).contains("OLD-ACC");
 
-        Locator lensEditor = page.locator("#payload-lens-editor");
-        assertThat(lensEditor.inputValue()).contains("OLD-ACC");
-
-        // Edit the inner XML in pretty-printed form
         String updatedXml =
                 "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><account>NEW-ACC-9999</account></soap:Body></soap:Envelope>";
-        lensEditor.fill(updatedXml);
+        setCodeEditorContent(updatedXml);
 
-        // Save to root
-        page.locator("#btn-lens-save-root").click();
-        assertThat(page.locator("#modal-payload-lens").isHidden()).isTrue();
+        page.locator("#btn-workspace-apply-section").click();
+        page.waitForSelector("#workspace-viewer-pane:not(.hidden)");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("NEW-ACC-9999");
 
-        // The textarea #editor-body should now have the updated re-escaped XML
-        assertThat(page.locator("#editor-body").inputValue()).contains("NEW-ACC-9999");
+        saveStubWorkspaceAndWaitClosed();
 
-        // Save the stub
-        saveStubEditorAndWaitClosed();
-
-        // Execute request against WireMock server via HTTP client to verify wire response
         java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
         java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
-                .uri(java.net.URI.create(wireMockServer.baseUrl() + "/api/v1/roundtrip-test"))
+                .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/roundtrip-test"))
                 .GET()
                 .build();
         java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());

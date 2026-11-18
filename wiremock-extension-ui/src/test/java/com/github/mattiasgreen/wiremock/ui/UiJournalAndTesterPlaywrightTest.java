@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import java.net.URI;
@@ -91,13 +90,28 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-preset-bearer").click();
         assertThat(page.locator("#tester-headers").inputValue()).contains("Authorization: Bearer <token>");
 
-        page.locator("#tester-body").fill("{\"name\":\"TestItem\",\"count\":5}");
-        page.locator("#btn-tester-format-json").click();
-        assertThat(page.locator("#tester-body").inputValue()).contains("  \"name\": \"TestItem\"");
+        // Edit and Prettify JSON inside Document Workspace
+        page.locator("#btn-tester-edit-workspace").click();
+        waitForStubEditorOpen();
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent("{\"name\":\"TestItem\",\"count\":5}");
+        page.locator("#btn-workspace-format").click();
+        assertThat(getCodeEditorContent()).contains("  \"name\": \"TestItem\"");
+        saveStubWorkspaceAndWaitClosed();
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("TestItem");
 
+        // Verify on-click share link builds shareable deep link
         page.locator("#tester-method").selectOption("POST");
         page.locator("#tester-url").fill("/api/v1/orders");
-        page.locator("#tester-body").fill("{\"item\": \"Widget\"}");
+        setTesterRequestBodyViaWorkspace("{\"item\": \"Widget\"}");
+        page.locator("#btn-tester-share-link").click();
+        String shareUrl = (String) page.evaluate("() => navigator.clipboard.readText()");
+        assertThat(shareUrl).contains("#tester?");
+        assertThat(shareUrl).contains("m=POST");
+
         page.locator("#btn-tester-send").click();
 
         page.waitForSelector("#tester-response-status:has-text('201')");
@@ -122,8 +136,8 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-expand-tester-history").click();
         assertThat(historyPanel.getAttribute("class")).doesNotContain("collapsed");
 
-        page.onceDialog(Dialog::accept);
         page.locator("#btn-tester-clear-history").click();
+        acceptConfirmModal();
         assertThat(page.locator(".history-item").count()).isEqualTo(0);
 
         assertThat(pageErrors).isEmpty();
@@ -412,6 +426,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
             page.waitForSelector(".stub-card");
             page.locator(".stub-card", new Page.LocatorOptions().setHasText("/api/v1/users"))
                     .click();
+            openStubCopyMenu();
             page.locator("#btn-copy-java").click();
             String javaSnippet = (String) page.evaluate("() => navigator.clipboard.readText()");
             assertThat(javaSnippet).contains("stubFor(get(urlEqualTo(\"/api/v1/users\"))");
@@ -477,12 +492,17 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                     page.locator("tr[data-testid='journal-detail-row'] [data-testid='btn-create-stub-from-req']");
             assertThat(createStubBtn.isVisible()).isTrue();
 
-            // Click Create Stub from Request -> verify Stub Editor modal opens pre-filled
+            // Click Create Stub from Request -> verify Document Workspace opens pre-filled
             createStubBtn.click();
             waitForStubEditorOpen();
-            assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/api/v1/missing-endpoint");
-            assertThat(page.locator("#editor-status").inputValue()).isEqualTo("200");
-            page.locator("#btn-cancel-editor").click();
+            assertThat(page.locator("#workspace-title").textContent()).contains("Create Stub from Journal Request");
+            assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("/api/v1/missing-endpoint");
+            assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("200");
+            page.locator("#btn-close-workspace").click();
+            page.waitForSelector(
+                    "#modal-document-workspace",
+                    new com.microsoft.playwright.Page.WaitForSelectorOptions()
+                            .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
         } finally {
             upstreamErp.stop();
         }
@@ -573,9 +593,10 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         Locator countEl = page.locator("#tester-local-headers-count");
         assertThat(countEl.textContent().trim()).isEqualTo("2");
 
-        // Open Manage Local Headers modal
+        // Open Manage Local Headers -> opens merged #modal-settings on headers tab
         page.locator("#btn-manage-local-headers").click();
-        page.waitForSelector("#modal-local-headers:not(.hidden)");
+        page.waitForSelector("#modal-settings:not(.hidden)");
+        page.waitForSelector("#settings-panel-headers:not(.hidden)");
 
         // Table body
         Locator tbody = page.locator("#local-headers-tbody");
@@ -600,7 +621,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         // Save
         page.locator("#btn-save-local-headers").click();
         page.waitForFunction(
-                "() => document.getElementById('modal-local-headers') && document.getElementById('modal-local-headers').classList.contains('hidden')");
+                "() => document.getElementById('modal-settings') && document.getElementById('modal-settings').classList.contains('hidden')");
 
         // Verify count and chips
         assertThat(countEl.textContent().trim()).isEqualTo("3");
@@ -685,58 +706,43 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
 
         page.waitForSelector("#tester-response-status:has-text('200')");
 
-        // Response should render Auto-Unnested Preview chip, expanded by default
-        Locator previewChip = page.locator("#tester-response-body .truncated-payload-preview");
-        assertThat(previewChip.count()).isGreaterThan(0);
-        assertThat(previewChip.first().textContent()).contains("JSON");
+        // Response should render Foldable Polyglot Tree cards, expanded by default
+        Locator nestedBlock = page.locator("#tester-response-body .nested-payload-block");
+        assertThat(nestedBlock.count()).isGreaterThan(0);
+        assertThat(nestedBlock.first().textContent()).contains("JSON");
+        assertThat(page.locator("#tester-response-body button[disabled]").count())
+                .isEqualTo(0);
 
         // It is expanded by default
-        Locator expandBtn = previewChip.first().locator("> .preview-pill-group > .btn-lens-expand-pill");
-        Locator expandedPayload = previewChip.first().locator("> .inline-expanded-payload");
-        assertThat(expandedPayload.isVisible()).isTrue();
-        assertThat(expandBtn.getAttribute("title")).contains("Click to collapse");
+        Locator toggleBtn = nestedBlock.first().locator("> .nested-payload-header > .btn-nested-toggle");
+        Locator blockBody = nestedBlock.first().locator("> .nested-payload-body");
+        assertThat(blockBody.isVisible()).isTrue();
 
-        // Test collapse button / badge toggle
-        expandBtn.click();
-        assertThat(expandedPayload.isHidden()).isTrue();
-        assertThat(expandBtn.getAttribute("title")).contains("Click to expand");
+        // Test collapse toggle
+        toggleBtn.click();
+        assertThat(blockBody.isHidden()).isTrue();
+        assertThat(nestedBlock.first().getAttribute("class")).contains("collapsed");
 
         // Expand again
-        expandBtn.click();
-        assertThat(expandedPayload.isVisible()).isTrue();
-        assertThat(expandBtn.getAttribute("title")).contains("Click to collapse");
+        toggleBtn.click();
+        assertThat(blockBody.isVisible()).isTrue();
 
-        // Open in Focused Lens modal
-        Locator openLensBtn = previewChip.first().locator("> .preview-pill-group > .btn-lens-open-pill");
-        openLensBtn.click();
+        // Open in Document Workspace from nested block
+        Locator openWorkspaceBtn = nestedBlock
+                .first()
+                .locator("> .nested-payload-header > .nested-payload-actions > .btn-nested-open-workspace");
+        openWorkspaceBtn.click();
 
-        page.waitForSelector("#modal-payload-lens:not(.hidden)");
-        Locator modal = page.locator("#modal-payload-lens");
+        waitForStubEditorOpen();
+        Locator modal = page.locator("#modal-document-workspace");
         assertThat(modal.isVisible()).isTrue();
+        assertThat(page.locator("#workspace-title").textContent()).contains("Tester Response");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("coreBankingXml");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("ACC-7788");
+        assertThat(page.locator("#btn-workspace-edit-root").isHidden()).isTrue();
 
-        // Breadcrumbs should contain Root and path
-        Locator breadcrumbs = page.locator("#payload-lens-breadcrumbs");
-        assertThat(breadcrumbs.textContent()).contains("Root Wire Document");
-        assertThat(breadcrumbs.textContent()).contains("$.payload");
-
-        // The editor should contain the unescaped middle JSON
-        Locator lensEditor = page.locator("#payload-lens-editor");
-        assertThat(lensEditor.inputValue()).contains("coreBankingXml");
-
-        // Deep nested bar inside Lens should show the embedded XML
-        Locator deepNestedBar = page.locator("#payload-lens-nested-bar");
-        if (deepNestedBar.isVisible()) {
-            Locator deepPill = deepNestedBar.locator(".inner-drill-chip");
-            if (deepPill.count() > 0) {
-                deepPill.first().click();
-                // Now breadcrumb should have 3 levels
-                assertThat(breadcrumbs.textContent()).contains("XML");
-                assertThat(lensEditor.inputValue()).contains("ACC-7788");
-            }
-        }
-
-        // Close lens
-        page.locator("#btn-close-payload-lens").click();
+        // Close workspace
+        page.locator("#btn-close-workspace").click();
         assertThat(modal.isHidden()).isTrue();
     }
 
@@ -873,15 +879,15 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(snapshotBtn.isVisible()).isTrue();
         snapshotBtn.click();
 
-        // Verify Stub Editor modal opens pre-filled for async snapshot stub
+        // Verify Document Workspace opens pre-filled for async snapshot stub
         waitForStubEditorOpen();
-        Locator modalTitle = page.locator("#editor-modal-title");
+        Locator modalTitle = page.locator("#workspace-title");
         assertThat(modalTitle.textContent()).isEqualTo("Snapshot Stub from Journal");
-        assertThat(page.locator("#editor-url").inputValue()).isEqualTo("/__async/kafka/orders.events");
-        assertThat(page.locator("#editor-body").inputValue()).contains("COMMITTED");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("/__async/kafka/orders.events");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("COMMITTED");
 
         // Save snapshot stub and verify it persists
-        saveStubEditorAndWaitClosed();
+        saveStubWorkspaceAndWaitClosed();
 
         assertThat(wireMockServer.listAllStubMappings().getMappings().stream()
                         .anyMatch(s -> "/__async/kafka/orders.events"
@@ -918,7 +924,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                 .contains("active");
         assertThat(page.locator("#tester-bar-kafka").isVisible()).isTrue();
         assertThat(page.locator("#tester-bar-http").isVisible()).isFalse();
-        assertThat(page.locator("#tester-section-headers-kafka").isVisible()).isTrue();
+        assertThat(page.locator("#tester-headers").isVisible()).isTrue();
         assertThat(page.locator("#tester-body-label").textContent()).isEqualTo("Event Payload");
 
         // Switch to AMQP
@@ -926,7 +932,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#btn-tester-proto-amqp").getAttribute("class")).contains("active");
         assertThat(page.locator("#tester-bar-amqp").isVisible()).isTrue();
         assertThat(page.locator("#tester-bar-kafka").isVisible()).isFalse();
-        assertThat(page.locator("#tester-section-headers-amqp").isVisible()).isTrue();
+        assertThat(page.locator("#tester-headers").isVisible()).isTrue();
         assertThat(page.locator("#tester-body-label").textContent()).isEqualTo("Message Payload");
 
         // Switch to Casual
@@ -934,7 +940,7 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#btn-tester-proto-casual").getAttribute("class"))
                 .contains("active");
         assertThat(page.locator("#tester-bar-casual").isVisible()).isTrue();
-        assertThat(page.locator("#tester-section-headers-casual").isVisible()).isTrue();
+        assertThat(page.locator("#tester-headers").isVisible()).isTrue();
         assertThat(page.locator("#tester-body-label").textContent()).isEqualTo("Buffer Payload");
 
         // Test Quick Templates: Kafka
@@ -943,14 +949,14 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                 .contains("active");
         assertThat(page.locator("#tester-kafka-topic").inputValue()).isEqualTo("orders.events");
         assertThat(page.locator("#tester-kafka-key").inputValue()).isEqualTo("ORD-1001");
-        assertThat(page.locator("#tester-body").inputValue()).contains("ORDER_CREATED");
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("ORDER_CREATED");
 
         // Test Quick Templates: AMQP
         page.locator("#tester-quick-templates").selectOption("amqp-orders-inbound");
         assertThat(page.locator("#btn-tester-proto-amqp").getAttribute("class")).contains("active");
         assertThat(page.locator("#tester-amqp-dest").inputValue()).isEqualTo("orders.inbound");
         assertThat(page.locator("#tester-amqp-correlation").inputValue()).isEqualTo("corr-amqp-01");
-        assertThat(page.locator("#tester-body").inputValue()).contains("alice@example.com");
+        assertThat(page.locator("#tester-request-viewer").textContent()).contains("alice@example.com");
 
         // Test Quick Templates: Casual
         page.locator("#tester-quick-templates").selectOption("casual-echo");
@@ -1001,10 +1007,14 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
                 page.locator("tr.journal-row:has-text('/api/v1/source-alpha')").first();
         Locator betaRow =
                 page.locator("tr.journal-row:has-text('/api/v1/source-beta')").first();
-        assertThat(alphaRow.locator("[data-testid='journal-source-cell']").textContent())
-                .contains("198.51.100.42");
-        assertThat(betaRow.locator("[data-testid='journal-source-cell']").textContent())
-                .contains("localhost");
+        assertThat(alphaRow.locator("[data-testid='journal-source-cell']")
+                        .textContent()
+                        .trim())
+                .isEqualTo("198.51.100.42");
+        assertThat(betaRow.locator("[data-testid='journal-source-cell']")
+                        .textContent()
+                        .trim())
+                .isEqualTo("localhost");
 
         // Expand row and inspect Source Caller detail section
         alphaRow.click();

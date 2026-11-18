@@ -4,8 +4,15 @@
  */
 import { state, uiActions, registerUiActions } from './state.js';
 import { elements, escapeHtml } from './dom.js';
+import { showToast } from './dialog.js';
 import { detectFormat } from './highlighter.js';
-import { detectCharset, createPayloadComponent } from './payload-lens.js';
+import {
+  mountPolyglotViewer,
+  formatCasualBufferDescriptor,
+  formatPayloadDescriptor,
+  detectCharset
+} from './polyglot-viewer.js';
+import { openDocumentWorkspace } from './document-workspace.js';
 import { setRoute, activateTab } from './router.js';
 import {
   stubCatalog,
@@ -16,15 +23,40 @@ import {
   getStubProject,
   isStubParked
 } from './stub-catalog.js';
-import { handleToggleStub, handleDeleteStub, openStubEditor } from './lifecycle.js';
+import { openStubEditor } from './lifecycle.js';
 import { handleStubCheckboxClick, updateBulkToolbar, handleSelectAllToggle } from './bulk-actions.js';
 import { exportStubs } from './import-export.js';
-import { updateFilterCounts } from './projects.js';
 import { sendStubToTester } from './tester.js';
 
 export { getStubUrl, generateCurl, generateCreateStubCurl, generateJavaStubFor, sendStubToTester };
 
+export function updateFilterCounts() {
+  const counts = stubCatalog.getCounts();
+  const elAll = document.getElementById('count-filter-all');
+  const elAct = document.getElementById('count-filter-active');
+  const elDis = document.getElementById('count-filter-disabled');
+  if (elAll) elAll.textContent = counts.all;
+  if (elAct) elAct.textContent = counts.active;
+  if (elDis) elDis.textContent = counts.disabled;
+}
+
 let currentStubViewMode = 'rich';
+let currentRawStubJson = '';
+let currentStubHeaders = {};
+let currentStubTitle = '';
+let stubViewerController = null;
+
+function closeStubDropdowns() {
+  const pairs = [
+    ['btn-stub-copy-menu', 'stub-copy-menu']
+  ];
+  pairs.forEach(([btnId, menuId]) => {
+    const btn = document.getElementById(btnId);
+    const menu = document.getElementById(menuId);
+    if (menu) menu.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
+}
 
 export function getAllCatalogStubs() {
   return stubCatalog.getAll();
@@ -38,12 +70,11 @@ export function getVisibleCatalogStubs(searchQuery) {
   const filter = (searchQuery !== undefined ? searchQuery : (elements.searchBox && elements.searchBox.value || '')).trim();
   return stubCatalog.query({
     search: filter,
-    status: state.statusFilter,
-    project: state.selectedProject
+    status: state.statusFilter
   });
 }
 
-export function getCatalogCounts(projectFilter = state.selectedProject) {
+export function getCatalogCounts(projectFilter = null) {
   return stubCatalog.getCounts(projectFilter);
 }
 
@@ -255,11 +286,13 @@ export function selectStub(stub, updateRoute = true) {
   if (btnEdit) btnEdit.style.display = '';
   if (btnClone) btnClone.style.display = '';
 
+  closeStubDropdowns();
   const rawStubJson = typeof stub === 'string' ? stub : JSON.stringify(stub, null, 2);
 
   const resBody = (stub.response && stub.response.body) || '';
   const bodyFormat = resBody ? detectFormat(resBody).toUpperCase() : 'JSON';
   const stubCharset = detectCharset(resBody, resHeaders);
+  const sizeKb = (new Blob([rawStubJson]).size / 1024).toFixed(1);
   let normBuf = null;
   if (isCasual) {
     const bufferType = (stub.metadata && stub.metadata.bufferType)
@@ -269,39 +302,53 @@ export function selectStub(stub, updateRoute = true) {
     normBuf = typeof bufferType === 'object' && bufferType.equalTo ? bufferType.equalTo : String(bufferType);
   }
 
-  const modeToggle = document.getElementById('stub-viewer-mode-toggle');
-  const topPillGroup = document.getElementById('stub-top-pill-group');
-  const topPill = document.getElementById('stub-top-pill');
-  const btnTopEdit = document.getElementById('btn-top-stub-edit');
-  const btnStubCopy = document.getElementById('btn-stub-copy');
-  const btnStubMaximize = document.getElementById('btn-stub-maximize');
+  currentRawStubJson = rawStubJson;
+  currentStubHeaders = resHeaders;
+  currentStubTitle = `Stub: ${stub.name || stubUrl || stub.id}`;
 
-  if (btnTopEdit) {
-    btnTopEdit.style.display = 'inline-flex';
-    btnTopEdit.disabled = false;
-    btnTopEdit.title = 'Edit stub mapping in editor modal';
+  const topPill = document.getElementById('stub-top-pill');
+  if (topPill) {
+    topPill.textContent = (isCasual && normBuf)
+      ? formatCasualBufferDescriptor(normBuf, bodyFormat, sizeKb, stubCharset)
+      : formatPayloadDescriptor({ format: 'JSON', charset: stubCharset, sizeKb });
+    topPill.title = 'Click to collapse / expand stub JSON';
   }
 
-  createPayloadComponent(null, {
-    viewerEl: elements.stubJsonViewer,
-    toggleEl: modeToggle,
-    pillEl: topPill,
-    pillGroupEl: topPillGroup,
-    maximizeBtn: btnStubMaximize,
-    copyBtn: btnStubCopy,
-    editBtn: btnTopEdit,
-    onEdit: () => openStubEditor(stub, false),
-    readOnly: true,
-    editable: false,
-    readOnlyReason: "Read-only stub preview — click '✏️ Edit' in the stub header above to modify this stub",
-    text: rawStubJson,
-    format: bodyFormat,
-    charset: stubCharset,
-    bufferType: normBuf,
-    defaultMode: currentStubViewMode,
-    title: `Stub: ${stub.name || stub.id}`,
-    context: 'stub'
-  });
+  const modeToggle = document.getElementById('stub-viewer-mode-toggle');
+  if (modeToggle) {
+    modeToggle.querySelectorAll('[data-mode]').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === currentStubViewMode);
+    });
+  }
+
+  if (stubViewerController) {
+    stubViewerController.destroy();
+    stubViewerController = null;
+  }
+
+  if (elements.stubJsonViewer) {
+    elements.stubJsonViewer.classList.remove('hidden');
+    stubViewerController = mountPolyglotViewer(elements.stubJsonViewer, {
+      text: rawStubJson,
+      mode: currentStubViewMode,
+      editable: false,
+      headers: resHeaders,
+      onOpenWorkspace: (chainOrPath) => {
+        const sectionPath = Array.isArray(chainOrPath) && chainOrPath.length > 0
+          ? chainOrPath[chainOrPath.length - 1].path
+          : (typeof chainOrPath === 'string' ? chainOrPath : null);
+        openDocumentWorkspace({
+          title: currentStubTitle,
+          text: rawStubJson,
+          format: 'json',
+          editable: false,
+          headers: resHeaders,
+          mode: currentStubViewMode,
+          initialSectionPath: sectionPath
+        });
+      }
+    });
+  }
 
   if (updateRoute) {
     setRoute('stubs', { stubId: stub.id });
@@ -314,14 +361,6 @@ export function initStubsTab() {
       renderStubList();
       updateBulkToolbar();
       setRoute('stubs', { q: elements.searchBox.value.trim() }, true);
-    });
-  }
-  if (elements.projectFilterSelect) {
-    elements.projectFilterSelect.addEventListener('change', (e) => {
-      state.selectedProject = e.target.value || null;
-      renderStubList();
-      updateFilterCounts();
-      updateBulkToolbar();
     });
   }
   ['all', 'active', 'disabled'].forEach(filter => {
@@ -344,7 +383,7 @@ export function initStubsTab() {
   }
   if (elements.btnExportStubs) {
     elements.btnExportStubs.addEventListener('click', () => {
-      exportStubs(state.selectedProject ? 'project' : 'all');
+      exportStubs('all');
     });
   }
   if (elements.btnRefresh) {
@@ -392,15 +431,92 @@ export function initStubsTab() {
   }
   if (elements.btnCopyJson) {
     elements.btnCopyJson.addEventListener('click', () => {
-      if (elements.stubJsonViewer && elements.stubJsonViewer.textContent) {
+      if (currentRawStubJson) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(elements.stubJsonViewer.textContent).catch(() => {});
+          navigator.clipboard.writeText(currentRawStubJson).catch(() => {});
         }
         elements.btnCopyJson.textContent = '✅ Copied!';
+        showToast('Stub JSON copied to clipboard', { type: 'success' });
         setTimeout(() => elements.btnCopyJson.textContent = '📋 Copy JSON', 1500);
       }
     });
   }
+  const btnStubCopy = document.getElementById('btn-stub-copy');
+  if (btnStubCopy) {
+    btnStubCopy.addEventListener('click', () => {
+      if (!currentRawStubJson) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(currentRawStubJson).catch(() => {});
+      }
+      btnStubCopy.textContent = '✅ Copied!';
+      showToast('Stub JSON copied to clipboard', { type: 'success' });
+      setTimeout(() => btnStubCopy.textContent = '📋 Copy', 1500);
+    });
+  }
+  const btnStubMaximize = document.getElementById('btn-stub-maximize');
+  if (btnStubMaximize) {
+    btnStubMaximize.addEventListener('click', () => {
+      if (!currentRawStubJson) return;
+      openDocumentWorkspace({
+        title: currentStubTitle || 'Stub Mapping JSON',
+        text: currentRawStubJson,
+        format: 'json',
+        editable: false,
+        headers: currentStubHeaders,
+        mode: currentStubViewMode
+      });
+    });
+  }
+  const modeToggle = document.getElementById('stub-viewer-mode-toggle');
+  if (modeToggle) {
+    modeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mode]');
+      if (!btn) return;
+      const mode = btn.getAttribute('data-mode') === 'raw' ? 'raw' : 'rich';
+      currentStubViewMode = mode;
+      modeToggle.querySelectorAll('[data-mode]').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+      });
+      if (stubViewerController) {
+        stubViewerController.setMode(mode);
+      }
+    });
+  }
+
+  // Dropdown menu (#btn-stub-copy-menu)
+  const dropdownConfigs = [
+    ['btn-stub-copy-menu', 'stub-copy-menu']
+  ];
+  dropdownConfigs.forEach(([btnId, menuId]) => {
+    const btn = document.getElementById(btnId);
+    const menu = document.getElementById(menuId);
+    if (!btn || !menu) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasHidden = menu.classList.contains('hidden');
+      closeStubDropdowns();
+      if (wasHidden) {
+        menu.classList.remove('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+      }
+    });
+    menu.addEventListener('click', (e) => {
+      if (e.target.closest('.dropdown-item')) {
+        closeStubDropdowns();
+      }
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.action-dropdown')) {
+      closeStubDropdowns();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeStubDropdowns();
+    }
+  });
+
   if (elements.btnCopyCurl) {
     elements.btnCopyCurl.addEventListener('click', () => {
       if (!state.selectedStubId) return;
@@ -411,6 +527,7 @@ export function initStubsTab() {
         navigator.clipboard.writeText(cmd).catch(() => {});
       }
       elements.btnCopyCurl.textContent = '✅ Copied!';
+      showToast('cURL copied to clipboard', { type: 'success' });
       setTimeout(() => elements.btnCopyCurl.textContent = '📋 Copy cURL', 1500);
     });
   }
@@ -424,6 +541,7 @@ export function initStubsTab() {
         navigator.clipboard.writeText(snippet).catch(() => {});
       }
       elements.btnCopyJava.textContent = '✅ Copied!';
+      showToast('Java DSL snippet copied to clipboard', { type: 'success' });
       setTimeout(() => elements.btnCopyJava.textContent = '☕ Copy Java', 1500);
     });
   }

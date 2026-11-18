@@ -120,21 +120,23 @@ class BankingProgressiveSimulationTest {
             HttpResponse<String> snapshotResp = httpClient.send(
                     HttpRequest.newBuilder()
                             .uri(URI.create(wmBase + "/__admin/lifecycle/snapshots"))
-                            .POST(HttpRequest.BodyPublishers.noBody())
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(
+                                    "{\"project\":\"_all\",\"activate\":true}", StandardCharsets.UTF_8))
                             .build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             assertThat(snapshotResp.statusCode()).isEqualTo(200);
             assertThat(snapshotResp.body()).containsIgnoringWhitespaces("\"totalRecorded\":14");
 
-            HttpResponse<String> modeResp = httpClient.send(
-                    HttpRequest.newBuilder()
-                            .uri(URI.create(wmBase + "/__admin/lifecycle/projects/_all/mode"))
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString("{\"mode\":\"stubs\"}", StandardCharsets.UTF_8))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            assertThat(modeResp.statusCode()).isEqualTo(200);
-            assertThat(modeResp.body()).containsIgnoringWhitespaces("\"activeMode\":\"stubs\"");
+            // Park active proxy routes at priority 100 via WireMock Admin API
+            for (var stub : harness.getWireMockServer().listAllStubMappings().getMappings()) {
+                if (stub.getResponse() != null
+                        && stub.getResponse().getProxyBaseUrl() != null
+                        && !stub.getResponse().getProxyBaseUrl().isBlank()) {
+                    stub.setPriority(100);
+                    harness.getWireMockServer().editStubMapping(stub);
+                }
+            }
 
             // Clear Request Journal before Run 2 and shut down Server B completely!
             harness.getWireMockServer().resetRequests();

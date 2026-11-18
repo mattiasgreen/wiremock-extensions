@@ -2,65 +2,14 @@
  * Utility for detecting, parsing, and deep-decoding Base64-encoded JSON payloads.
  * Supports standard Base64, URL-safe Base64, MIME wrapped lines, and UTF-8 multi-byte characters.
  */
+import { decodeBase64ToUtf8, tryDecodeBase64Json } from './charset-codec.js';
+import {
+  isJsonPathExcluded,
+  loadExcludedJsonPaths,
+  DEFAULT_EXCLUDED_JSON_PATHS
+} from './settings.js';
 
-/**
- * Safely decodes a Base64 string to a UTF-8 string.
- * Returns null if the string is not valid Base64 or not valid UTF-8.
- *
- * @param {string} str
- * @returns {string|null}
- */
-export function decodeBase64ToUtf8(str) {
-  if (typeof str !== 'string') return null;
-  const cleaned = str.trim().replace(/[\r\n\s]+/g, '');
-  if (cleaned.length < 2) return null;
-
-  // Normalize URL-safe Base64
-  let normalized = cleaned.replace(/-/g, '+').replace(/_/g, '/');
-  while (normalized.length % 4 !== 0) {
-    normalized += '=';
-  }
-
-  // Must match Base64 character set
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
-    return null;
-  }
-
-  try {
-    const binary = atob(normalized);
-    if (!binary || binary.length === 0) return null;
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch (_) {
-    return null;
-  }
-}
-
-/**
- * Tests if a string is a Base64-encoded JSON object or array, returning the parsed JSON if so.
- * Returns null if not Base64 or not a valid JSON object/array.
- *
- * @param {string} val
- * @returns {object|array|null}
- */
-export function tryDecodeBase64Json(val) {
-  if (typeof val !== 'string') return null;
-  const utf8 = decodeBase64ToUtf8(val);
-  if (!utf8) return null;
-  const trimmed = utf8.trim();
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (typeof parsed === 'object' && parsed !== null) {
-        return parsed;
-      }
-    } catch (_) {}
-  }
-  return null;
-}
+export { decodeBase64ToUtf8, tryDecodeBase64Json };
 
 /**
  * Recursively inspects an object or array and decodes any string values
@@ -214,12 +163,6 @@ export function normalizeJsonPayload(input) {
   return null;
 }
 
-import {
-  isJsonPathExcluded,
-  loadExcludedJsonPaths,
-  DEFAULT_EXCLUDED_JSON_PATHS
-} from './settings.js';
-
 /**
  * Common volatile / transient header & envelope JSON properties that should be omitted
  * when generating request matchers from snapshot traffic.
@@ -336,5 +279,3 @@ export function buildJsonPathBodyPatterns(normalizedJson, excludedPaths = null) 
     }
   }));
 }
-
-

@@ -197,8 +197,14 @@ public class UiNetEmPlaywrightTest {
         assertThat(cards.count()).isGreaterThanOrEqualTo(2);
         assertThat(Integer.parseInt(statActiveToxics.textContent().trim())).isGreaterThanOrEqualTo(2);
 
-        // 3. Click Reset All Toxics
+        // 3. Click Reset All Toxics -> confirm via #modal-confirm
         page.locator("#btn-netem-reset-all").click();
+        page.waitForSelector("#modal-confirm:not(.hidden)");
+        page.locator("#btn-confirm-accept").click();
+        page.waitForSelector(
+                "#modal-confirm",
+                new com.microsoft.playwright.Page.WaitForSelectorOptions()
+                        .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
         page.waitForSelector("#netem-toxics-list .empty-state");
         assertThat(page.locator("#netem-toxics-list").textContent()).contains("No network impairments active");
         assertThat(Integer.parseInt(statActiveToxics.textContent().trim())).isEqualTo(0);

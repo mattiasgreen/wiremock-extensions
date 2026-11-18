@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
-import com.microsoft.playwright.Dialog;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
@@ -89,14 +88,9 @@ class BankingDemoVideoRecordingTest {
         Page page = context.newPage();
         DemoCursorHelper cursor = new DemoCursorHelper(page);
 
-        // SCENE 1: Frame 0 inside WireMock Console UI (Live Proxy Mode)
+        // SCENE 1: Frame 0 inside WireMock Console UI (Live Proxy Routes)
         page.navigate(harness.getWireMockServer().baseUrl() + "/__admin/ui/#stubs");
         page.waitForSelector("#stub-list .stub-card");
-        page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
-        assertThat(page.locator("#project-mode-badge").textContent()).contains("LIVE PROXY");
-
-        // Spotlight the Live Proxy badge to establish initial context
-        cursor.spotlight(page.locator("#project-mode-badge"), 350);
 
         // Highlight and click the Casual proxy route stub card
         Locator casualProxyCard = page.locator(".stub-card")
@@ -161,19 +155,30 @@ class BankingDemoVideoRecordingTest {
         cursor.glideAndClick(casualJournalRow);
         page.waitForTimeout(DEMO_STEP_PAUSE_MS);
 
-        // SCENE 5: Switch to Stubs View -> Snapshot Recordings & Flip to STUBS MODE
-        cursor.glideAndClick(page.locator("#nav-tab-stubs"));
-        page.waitForSelector("#tab-stub-detail.active");
-        page.waitForSelector("#project-lifecycle-bar:not(.hidden)");
+        // SCENE 5: Snapshot Recordings from Journal -> Enable recorded stubs in Stubs View
+        page.waitForSelector("#btn-journal-snapshot-filtered:not([disabled])");
+        cursor.glideAndClick(page.locator("#btn-journal-snapshot-filtered"));
+        page.waitForSelector("#btn-journal-snapshot-filtered:has-text('Snapshotted')");
         page.waitForTimeout(600);
 
-        page.onceDialog(Dialog::accept);
-        cursor.glideAndClick(page.locator("#btn-project-snapshot"));
+        cursor.glideAndClick(page.locator("#nav-tab-stubs"));
+        page.waitForSelector("#tab-stub-detail.active");
         page.waitForFunction("() => document.getElementById('btn-filter-disabled')?.textContent.includes('7')");
-        page.waitForTimeout(800);
+        page.waitForTimeout(600);
 
-        cursor.glideAndClick(page.locator("#btn-project-mode-toggle"));
-        page.waitForSelector("#project-mode-badge:has-text('STUBS MODE')");
+        cursor.glideAndClick(page.locator("#btn-filter-active"));
+        page.waitForSelector("#stub-list .stub-card");
+        page.locator("#chk-select-all").check();
+        cursor.glideAndClick(page.locator("#btn-bulk-disable"));
+        page.waitForFunction("() => document.getElementById('btn-filter-active')?.textContent.includes('(0)')");
+
+        cursor.glideAndClick(page.locator("#btn-filter-disabled"));
+        page.locator("#search-box").fill("RECORDED");
+        page.waitForSelector(".stub-card:has-text('RECORDED')");
+        page.locator("#chk-select-all").check();
+        cursor.glideAndClick(page.locator("#btn-bulk-enable"));
+        page.locator("#search-box").fill("");
+        cursor.glideAndClick(page.locator("#btn-filter-all"));
         page.waitForSelector(".stub-card:has-text('RECORDED')");
 
         // Inspect recorded Casual stub card
@@ -187,8 +192,9 @@ class BankingDemoVideoRecordingTest {
         // Reset journal before offline run
         cursor.glideAndClick(page.locator("#nav-tab-journal"));
         page.waitForSelector("#tab-journal.active");
-        page.onceDialog(Dialog::accept);
         cursor.glideAndClick(page.locator("#btn-reset-journal"));
+        page.waitForSelector("#modal-confirm:not(.hidden)");
+        cursor.glideAndClick(page.locator("#btn-confirm-accept"));
         page.waitForFunction("() => document.querySelectorAll('#journal-list tr.journal-row').length === 0");
         page.waitForTimeout(600);
 

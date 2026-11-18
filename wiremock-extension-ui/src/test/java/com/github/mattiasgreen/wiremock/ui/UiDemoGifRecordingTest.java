@@ -399,6 +399,12 @@ public class UiDemoGifRecordingTest {
             recordFrame(page, encoder, 1100);
 
             page.locator("#btn-bulk-delete").click();
+            page.waitForSelector("#modal-confirm:not(.hidden)");
+            page.locator("#btn-confirm-accept").click();
+            page.waitForSelector(
+                    "#modal-confirm",
+                    new Page.WaitForSelectorOptions()
+                            .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
             page.waitForSelector(".stub-list .empty-state");
             recordFrame(page, encoder, 1400);
 
@@ -475,7 +481,28 @@ public class UiDemoGifRecordingTest {
                                         example: CONFIRMED
                     """;
 
-            page.locator("#openapi-spec-content").fill(openApiYaml);
+            page.locator("#btn-openapi-edit-workspace").click();
+            page.waitForSelector("#modal-document-workspace:not(.hidden)");
+            if (page.locator("#workspace-editor-pane").isHidden()) {
+                page.locator("#btn-workspace-edit-root").click();
+                page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+            }
+            com.microsoft.playwright.Locator editorInput =
+                    page.locator("#workspace-code-editor-host [data-testid='code-editor-input']");
+            if ("TEXTAREA".equals(editorInput.evaluate("el => el.tagName"))) {
+                editorInput.fill(openApiYaml);
+            } else {
+                editorInput.evaluate(
+                        "(el, val) => { el.textContent = val; el.dispatchEvent(new Event('input', { bubbles: true })); }",
+                        openApiYaml);
+            }
+            page.locator("#btn-workspace-apply-section").click();
+            page.waitForSelector("#workspace-viewer-pane:not(.hidden)");
+            page.locator("#btn-workspace-save").click();
+            page.waitForSelector(
+                    "#modal-document-workspace",
+                    new Page.WaitForSelectorOptions()
+                            .setState(com.microsoft.playwright.options.WaitForSelectorState.HIDDEN));
             recordFrame(page, encoder, 1800);
 
             // Step 5: Generate Stubs from OpenAPI spec

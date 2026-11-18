@@ -47,38 +47,31 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         page.locator("#btn-filter-proto-amqp").click();
         Locator amqpItems = page.locator(".queues-dest-item");
         assertThat(amqpItems.count()).isEqualTo(1);
-        assertThat(amqpItems.first().textContent()).contains("payments.requests");
+        assertThat(amqpItems.first().textContent()).contains("orders.inbound");
         assertThat(amqpItems.first().textContent()).contains("AMQP");
 
         // Click Casual filter
         page.locator("#btn-filter-proto-casual").click();
         Locator casualItems = page.locator(".queues-dest-item");
-        assertThat(casualItems.count()).isEqualTo(1);
-        assertThat(casualItems.first().textContent()).contains("billing.forward");
+        assertThat(casualItems.count()).isEqualTo(2);
+        assertThat(casualItems.first().textContent()).contains("billing.q");
         assertThat(casualItems.first().textContent()).contains("CASUAL");
-
-        // Click IBM MQ filter
-        page.locator("#btn-filter-proto-ibmmq").click();
-        Locator ibmMqItems = page.locator(".queues-dest-item");
-        assertThat(ibmMqItems.count()).isEqualTo(1);
-        assertThat(ibmMqItems.first().textContent()).contains("DEV.QUEUE.1");
-        assertThat(ibmMqItems.first().textContent()).contains("IBMMQ");
 
         // Reset to All
         page.locator("#btn-filter-proto-all").click();
         assertThat(page.locator(".queues-dest-item").count()).isGreaterThanOrEqualTo(4);
 
         // Search channel by free text
-        page.locator("#queues-channel-search").fill("payment");
+        page.locator("#queues-channel-search").fill("inbound");
         assertThat(page.locator(".queues-dest-item").count()).isEqualTo(1);
-        assertThat(page.locator(".queues-dest-item").first().textContent()).contains("payments.requests");
+        assertThat(page.locator(".queues-dest-item").first().textContent()).contains("orders.inbound");
 
         page.locator("#queues-channel-search").fill("");
         assertThat(page.locator(".queues-dest-item").count()).isGreaterThanOrEqualTo(4);
     }
 
     @Test
-    @DisplayName("Should inspect peeked messages, filter with boolean queries, and open Polyglot Lens")
+    @DisplayName("Should inspect peeked messages, filter with boolean queries, and open Document Workspace")
     void testMessageInspectionAndPolyglotLens() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?demo=true#queues");
         page.waitForSelector("#tab-queues.active");
@@ -88,10 +81,10 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector(".queues-message-row");
 
         Locator rows = page.locator(".queues-message-row");
-        assertThat(rows.count()).isEqualTo(3);
+        assertThat(rows.count()).isEqualTo(1);
 
         // Test boolean search across payload and keys
-        page.locator("#queues-message-search").fill("ORD-8821");
+        page.locator("#queues-message-search").fill("ORD-9942");
         assertThat(page.locator(".queues-message-row").count()).isEqualTo(1);
 
         page.locator("#queues-message-search").fill("Acme AND 1250");
@@ -102,29 +95,27 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         assertThat(page.locator("#queues-messages-tbody").textContent()).contains("No messages found");
 
         page.locator("#queues-message-search").fill("");
-        assertThat(page.locator(".queues-message-row").count()).isEqualTo(3);
+        assertThat(page.locator(".queues-message-row").count()).isEqualTo(1);
 
-        // Click Lens on the first row
+        // Click Lens on the first row -> opens Document Workspace
         Locator firstLensBtn = page.locator(".btn-msg-lens").first();
         firstLensBtn.click();
 
-        page.waitForSelector("#modal-payload-lens:not(.hidden)");
-        Locator modalLens = page.locator("#modal-payload-lens");
-        assertThat(modalLens.isVisible()).isTrue();
+        page.waitForSelector("#modal-document-workspace:not(.hidden)");
+        Locator modalWorkspace = page.locator("#modal-document-workspace");
+        assertThat(modalWorkspace.isVisible()).isTrue();
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("ORD-9942");
+        assertThat(page.locator("#workspace-viewer-pane").innerText()).contains("legacyXmlInvoice");
 
-        Locator editor = page.locator("#payload-lens-editor");
-        assertThat(editor.inputValue()).contains("ORD-8821");
-        assertThat(editor.inputValue()).contains("legacyXmlInvoice");
-
-        // Close Lens Modal
-        page.locator("#btn-cancel-payload-lens").click();
+        // Close Document Workspace
+        page.locator("#btn-close-workspace").click();
         page.waitForSelector(
-                "#modal-payload-lens", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
-        assertThat(modalLens.isVisible()).isFalse();
+                "#modal-document-workspace", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        assertThat(modalWorkspace.isVisible()).isFalse();
     }
 
     @Test
-    @DisplayName("Should expand message drawer and purge destination via confirmation modal")
+    @DisplayName("Should expand message drawer and purge destination via #modal-confirm")
     void testMessageDrawerAndPurgeModal() {
         page.navigate(wireMockServer.baseUrl() + "/__admin/ui/?demo=true#queues");
         page.waitForSelector("#tab-queues.active");
@@ -137,20 +128,17 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         page.waitForSelector(".queues-drawer-row");
         Locator drawer = page.locator(".queues-drawer-row");
         assertThat(drawer.isVisible()).isTrue();
-        assertThat(drawer.textContent()).contains("Headers");
+        assertThat(drawer.textContent()).contains("Message Details:");
         assertThat(drawer.textContent()).contains("Payload Preview");
+        assertThat(drawer.textContent()).contains("ORD-9942");
 
-        // Click Purge All button
+        // Click Purge All button -> opens #modal-confirm
         page.locator("#btn-queues-purge").click();
-        page.waitForSelector("#modal-queues-purge:not(.hidden)");
-        Locator modalPurge = page.locator("#modal-queues-purge");
-        assertThat(modalPurge.isVisible()).isTrue();
-        assertThat(page.locator("#queues-purge-target-name").textContent()).contains("orders.events");
+        page.waitForSelector("#modal-confirm:not(.hidden)");
+        assertThat(page.locator("#confirm-modal-message").textContent()).contains("orders.events");
 
-        // Confirm Purge
-        page.locator("#btn-confirm-queues-purge").click();
-        page.waitForSelector(
-                "#modal-queues-purge", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        // Confirm Purge via #btn-confirm-accept
+        acceptConfirmModal();
 
         // Destination should now have 0 messages
         assertThat(page.locator(".queues-message-row").count()).isEqualTo(0);

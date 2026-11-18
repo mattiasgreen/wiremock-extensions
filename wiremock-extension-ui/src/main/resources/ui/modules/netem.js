@@ -4,6 +4,8 @@
  */
 
 import { state } from './state.js';
+import { escapeHtml } from './dom.js';
+import { confirmDialog, showToast } from './dialog.js';
 import { doFetch } from './api.js';
 
 let journalRefreshTimer = null;
@@ -47,7 +49,14 @@ export function initNetEmTab() {
   const resetAllBtn = document.getElementById('btn-netem-reset-all');
   if (resetAllBtn) {
     resetAllBtn.addEventListener('click', async () => {
-      if (confirm('Reset all NetEm toxics? Traffic will return to normal.')) {
+      const outcome = await confirmDialog({
+        title: 'Reset NetEm Toxics',
+        message: 'Reset all NetEm toxics? Traffic will return to normal.',
+        confirmLabel: 'Reset All',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (outcome === 'confirm') {
         await resetAllToxics();
       }
     });
@@ -450,7 +459,7 @@ function updateAttributeInputs(type) {
 async function submitNewToxic() {
   const name = document.getElementById('netem-toxic-name')?.value?.trim();
   if (!name) {
-    alert('Please enter a unique toxic name.');
+    showToast('Please enter a unique toxic name.', { type: 'error' });
     return;
   }
   const type = document.getElementById('netem-toxic-type')?.value;
@@ -500,18 +509,9 @@ async function submitNewToxic() {
       await loadNetEmStatus();
     } else {
       const err = await res.json().catch(() => ({}));
-      alert(`Failed to add toxic: ${err.error || res.statusText}`);
+      showToast(`Failed to add toxic: ${err.error || res.statusText}`, { type: 'error' });
     }
   } catch (e) {
-    alert(`Error: ${e.message}`);
+    showToast(`Error: ${e.message}`, { type: 'error' });
   }
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

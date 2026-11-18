@@ -233,13 +233,105 @@ public abstract class AbstractUiPlaywrightTest {
     }
 
     protected void waitForStubEditorOpen() {
-        page.waitForSelector("#stub-editor-modal:not(.hidden)");
+        page.waitForSelector("#modal-document-workspace:not(.hidden)");
+    }
+
+    protected void saveStubWorkspaceAndWaitClosed() {
+        if (!page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-apply-section").click();
+            page.waitForSelector("#workspace-viewer-pane:not(.hidden)");
+        }
+        page.locator("#btn-workspace-save").click();
+        page.waitForSelector(
+                "#modal-document-workspace", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
     }
 
     protected void saveStubEditorAndWaitClosed() {
-        page.locator("#btn-save-editor").click();
-        page.waitForSelector(
-                "#stub-editor-modal", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+        saveStubWorkspaceAndWaitClosed();
+    }
+
+    protected void setCodeEditorContent(String text) {
+        Locator input = page.locator("#workspace-code-editor-host [data-testid='code-editor-input']");
+        input.waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
+        String tag = (String) input.evaluate("el => el.tagName");
+        if ("TEXTAREA".equals(tag)) {
+            input.fill(text);
+        } else {
+            input.evaluate(
+                    "(el, val) => { el.textContent = val; el.dispatchEvent(new Event('input', { bubbles: true })); }",
+                    text);
+        }
+    }
+
+    protected String getCodeEditorContent() {
+        Locator input = page.locator("#workspace-code-editor-host [data-testid='code-editor-input']");
+        input.waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
+        String tag = (String) input.evaluate("el => el.tagName");
+        if ("TEXTAREA".equals(tag)) {
+            return input.inputValue();
+        }
+        return (String) input.evaluate("el => el.textContent || ''");
+    }
+
+    protected void editWorkspaceRootJson(String json) {
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent(json);
+        page.locator("#btn-workspace-apply-section").click();
+        page.waitForSelector("#workspace-viewer-pane:not(.hidden)");
+    }
+
+    protected void setTesterRequestBodyViaWorkspace(String body) {
+        page.locator("#btn-tester-edit-workspace").click();
+        page.waitForSelector("#modal-document-workspace:not(.hidden)");
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent(body);
+        saveStubWorkspaceAndWaitClosed();
+    }
+
+    protected void setOpenApiSpecViaWorkspace(String spec) {
+        page.locator("#btn-openapi-edit-workspace").click();
+        page.waitForSelector("#modal-document-workspace:not(.hidden)");
+        if (page.locator("#workspace-editor-pane").isHidden()) {
+            page.locator("#btn-workspace-edit-root").click();
+            page.waitForSelector("#workspace-editor-pane:not(.hidden)");
+        }
+        setCodeEditorContent(spec);
+        saveStubWorkspaceAndWaitClosed();
+    }
+
+    protected void acceptConfirmModal() {
+        page.waitForSelector("#modal-confirm:not(.hidden)");
+        page.locator("#btn-confirm-accept").click();
+        page.waitForSelector("#modal-confirm", new Page.WaitForSelectorOptions().setState(WaitForSelectorState.HIDDEN));
+    }
+
+    protected void openStubCopyMenu() {
+        if (page.locator("#stub-copy-menu").isHidden()) {
+            page.locator("#btn-stub-copy-menu").click();
+            page.waitForSelector("#stub-copy-menu:not(.hidden)");
+        }
+    }
+
+    protected void openSettingsModal(String tabName) {
+        String norm = tabName == null ? "target" : tabName.trim().toLowerCase(Locale.ROOT);
+        if ("target".equals(norm)) {
+            page.locator("#btn-target-host").click();
+        } else {
+            page.locator("#btn-open-settings").click();
+        }
+        page.waitForSelector("#modal-settings:not(.hidden)");
+        if (!"target".equals(norm) && !"headers".equals(norm)) {
+            page.locator("#settings-tab-" + norm).click();
+        } else if ("headers".equals(norm)) {
+            page.locator("#settings-tab-headers").click();
+        }
+        page.waitForSelector("#settings-panel-" + norm + ":not(.hidden)");
     }
 
     protected void openOpenApiModal() {
@@ -261,7 +353,7 @@ public abstract class AbstractUiPlaywrightTest {
     }
 
     protected void selectProject(String projectName) {
-        page.locator("#project-filter-select").selectOption(projectName);
+        page.locator("#search-box").fill(projectName == null ? "" : projectName);
     }
 
     protected void selectStatusFilter(String status) {

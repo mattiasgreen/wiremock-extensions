@@ -7,7 +7,7 @@ import { elements } from './dom.js';
 import { apiGet, doFetch, detectCapabilities } from './api.js';
 import { isStubParked } from './stub-catalog.js';
 import { renderScenarios } from './scenarios.js';
-import { renderProjectSelector, updateFilterCounts } from './projects.js';
+import { updateFilterCounts } from './stubs.js';
 import { updateBulkToolbar } from './bulk-actions.js';
 import { loadTesterHistoryFromStorage } from './tester.js';
 import { applyRouteFromUrl } from './router.js';
@@ -130,7 +130,6 @@ export function loadData() {
     .then(() => Promise.all([loadMappings(), loadJournal()]))
     .then(() => {
       if (uiActions.renderStubList) uiActions.renderStubList();
-      renderProjectSelector();
       updateFilterCounts();
       updateBulkToolbar();
       const stubs = state.currentStubs || [];
