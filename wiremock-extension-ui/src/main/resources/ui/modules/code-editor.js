@@ -430,7 +430,13 @@ function createHighlightApiAdapter(containerEl, initialValue, initialFormat, rea
       format = fmt;
       updateHighlights(textNode.data);
     },
-    focus: () => preEl.focus(),
+    focus: () => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => preEl.focus({ preventScroll: true }));
+      } else {
+        preEl.focus({ preventScroll: true });
+      }
+    },
     destroy: () => {
       preEl.removeEventListener('scroll', onScroll);
       preEl.removeEventListener('input', onInput);

@@ -64,12 +64,20 @@ export function toggleJournalDetail(reqId, updateRoute = true) {
 
 export { getRequestVerdict, getRequestResolution, detectRequestProtocol };
 
+function formatJournalTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '-';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
 let scrollListenerAttached = false;
 let eventsDelegated = false;
+let lastJournalRenderKey = '';
 
 function buildRowHtml(req) {
   const isExpanded = req.id === state.expandedRequestId;
-  const time = req.request && req.request.loggedDate ? new Date(req.request.loggedDate).toLocaleTimeString() : '-';
+  const time = formatJournalTime(req.request && req.request.loggedDate);
   const method = (req.request && req.request.method) || '-';
   const url = (req.request && req.request.url) || '-';
   const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 404;
@@ -366,6 +374,7 @@ function appendMoreRows() {
   const nextBatch = requestJournal.nextVisibleBatch(50);
   if (nextBatch.length === 0) return;
 
+  lastJournalRenderKey = '';
   const tempTbody = document.createElement('tbody');
   tempTbody.innerHTML = nextBatch.map(req => buildRowHtml(req)).join('');
   while (tempTbody.firstChild) {
@@ -883,16 +892,28 @@ export function renderJournal(resetLimit = true) {
   updateCountDisplay();
 
   if (total === 0) {
+    let emptyMsg;
     if (unmatchedOnly || verdictFilter === 'unmatched') {
-      elements.journalList.innerHTML = '<tr><td colspan="9" class="text-center">No unmatched requests recorded.</td></tr>';
+      emptyMsg = 'No unmatched requests recorded.';
     } else if (filter || verdictFilter !== 'all' || protocolFilter !== 'all' || sinceMs !== null || untilMs !== null) {
-      elements.journalList.innerHTML = '<tr><td colspan="9" class="text-center">No matching requests found.</td></tr>';
+      emptyMsg = 'No matching requests found.';
     } else {
-      elements.journalList.innerHTML = '<tr><td colspan="9" class="text-center">No requests recorded yet.</td></tr>';
+      emptyMsg = 'No requests recorded yet.';
     }
+    const emptyKey = `empty:${emptyMsg}`;
+    if (lastJournalRenderKey === emptyKey && elements.journalList.childElementCount > 0) {
+      return;
+    }
+    lastJournalRenderKey = emptyKey;
+    elements.journalList.innerHTML = `<tr><td colspan="9" class="text-center">${emptyMsg}</td></tr>`;
     return;
   }
 
+  const renderKey = `${state.expandedRequestId || ''}|${itemsToRender.map(req => req.id).join(',')}`;
+  if (lastJournalRenderKey === renderKey && elements.journalList.childElementCount > 0) {
+    return;
+  }
+  lastJournalRenderKey = renderKey;
   elements.journalList.innerHTML = itemsToRender.map(req => buildRowHtml(req)).join('');
 }
 

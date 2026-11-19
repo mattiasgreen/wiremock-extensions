@@ -14,6 +14,7 @@ import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.TestInstance;
 
 /**
@@ -35,6 +36,7 @@ public abstract class AbstractUiPlaywrightTest {
     protected static final List<String> httpErrors = Collections.synchronizedList(new ArrayList<>());
 
     private static boolean initialized = false;
+    private UiDevToolsProfiler activeProfiler;
 
     static synchronized Browser getSharedBrowser() {
         if (browser == null) {
@@ -84,7 +86,7 @@ public abstract class AbstractUiPlaywrightTest {
     }
 
     @BeforeEach
-    void setUpEach() {
+    void setUpEach(TestInfo testInfo) {
         consoleLogs.clear();
         consoleErrors.clear();
         pageErrors.clear();
@@ -93,6 +95,13 @@ public abstract class AbstractUiPlaywrightTest {
         context = browser.newContext(
                 new Browser.NewContextOptions().setPermissions(List.of("clipboard-read", "clipboard-write")));
         page = context.newPage();
+
+        String profileTestId = testInfo.getTestClass().map(Class::getSimpleName).orElse("UnknownSuite")
+                + "."
+                + testInfo.getTestMethod()
+                        .map(java.lang.reflect.Method::getName)
+                        .orElse("test");
+        activeProfiler = UiDevToolsProfiler.startIfEnabled(context, page, profileTestId);
 
         page.onConsoleMessage(msg -> {
             String text = "[" + msg.type() + "] " + msg.text();
@@ -131,6 +140,10 @@ public abstract class AbstractUiPlaywrightTest {
             assertThat(pageErrors).as("Uncaught page errors in test").isEmpty();
             assertThat(consoleErrors).as("Browser console errors in test").isEmpty();
         } finally {
+            if (activeProfiler != null) {
+                activeProfiler.stopAndRecord();
+                activeProfiler = null;
+            }
             if (context != null) {
                 context.close();
                 context = null;

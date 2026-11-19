@@ -75,7 +75,16 @@
     </header>
 
     <main class="main-container" data-active-tab="tab-stub-detail">
-      <!-- Sidebar / Stub List (Persistent for Stubs Explorer & HTTP Tester) -->
+      <script>
+        (function() {
+          var h = (window.location.hash || '').replace(/^#/, '').split('?')[0].toLowerCase();
+          var map = { journal: 'tab-journal', tester: 'tab-tester', scenarios: 'tab-scenarios', netem: 'tab-netem', queues: 'tab-queues' };
+          if (map[h] && document.currentScript && document.currentScript.parentElement) {
+            document.currentScript.parentElement.setAttribute('data-active-tab', map[h]);
+          }
+        })();
+      </script>
+      <!-- Sidebar / Stub List -->
       <aside class="sidebar" id="sidebar-stubs" data-testid="sidebar-stubs">
         <div class="search-bar">
           <input type="text" id="search-box" data-testid="search-box" placeholder="Filter stubs by URL, header, metadata, or JSON (supports AND, OR)..." autocomplete="off">
