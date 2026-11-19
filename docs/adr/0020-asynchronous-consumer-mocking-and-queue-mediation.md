@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-While ADR 0009 established the foundation for asynchronous messaging, queue bridging, and producer sinks (`KafkaWireSink`, `AsyncMessagePublishingListener`), enterprise systems under test (SUT) spend equal—if not greater—time acting as **message consumers**:
+While [ADR 0029](0029-async-messaging-and-queue-mocking.md) established the foundation for asynchronous messaging, queue bridging, and producer sinks (`KafkaWireSink`, `AsyncMessagePublishingListener`), enterprise systems under test (SUT) spend equal—if not greater—time acting as **message consumers**:
 - Framework-managed consumer groups (`@KafkaListener`, Quarkus SmallRye `@Incoming`, `consumer.poll(...)`).
 - Enterprise JMS / AMQP 1.0 message listeners (`@JmsListener`, Spring AMQP, Qpid JMS).
 - Classic IBM MQ clients communicating over proprietary binary TCP channels (`SVRCONN` port 1414).

@@ -357,35 +357,68 @@ Handles enterprise integration pipelines where XML SOAP envelopes or legacy payl
 
 ---
 
-### 5.5. Priority Bridge Rule with Regex Capture Group Rewriting (`$1`)
+### 5.5. Priority Bridge Rules with Regex Capture Group Rewriting (`$1`)
 
-Defines a dynamic queue bridging rule. Inbound traffic matching `orders.standard.(.*)` is rewritten to `upstream.orders.$1` and forwarded to the live ActiveMQ Artemis broker:
+Defines dynamic queue/topic bridging rules using `AsyncMetadata` (`"mode": "PROXY"`, `channelPattern`, `proxyChannel`, and `proxyBroker`). Higher-priority local mock stubs (e.g. `priority: 1–10`) intercept matching traffic first, while lower-priority bridge rules (`priority: 100`) rewrite and forward unhandled traffic to an upstream broker.
+
+#### AMQP 1.0 / ActiveMQ Artemis Bridge
+
+Inbound traffic matching `orders.standard.(.*)` is rewritten to `upstream.orders.$1` and forwarded to the upstream AMQP broker:
 
 ```json
 {
-  "name": "Priority Bridge Rule - Standard Orders Rewriting",
+  "name": "Priority Bridge Rule - AMQP Standard Orders Rewriting",
   "priority": 100,
   "request": {
     "method": "CONSUME",
     "urlPattern": "/__async/amqp/orders\\.standard\\.(.*)"
   },
   "response": {
-    "status": 200,
-    "headers": {
-      "X-Async-Target-Channel": "upstream.orders.$1",
-      "X-Async-Proxy-Mode": "bridge"
-    }
+    "status": 200
   },
   "metadata": {
     "async": {
-      "mode": "bridge",
-      "priority": 100,
-      "sourcePattern": "orders\\.standard\\.(.*)",
-      "targetDestination": "upstream.orders.$1"
+      "protocol": "amqp",
+      "mode": "PROXY",
+      "channelPattern": "orders\\.standard\\.(.*)",
+      "proxyChannel": "upstream.orders.$1",
+      "proxyBroker": "amqp://127.0.0.1:5672"
     }
   }
 }
 ```
+
+#### Kafka Topic Bridge
+
+Inbound records matching `events.raw.(.*)` are rewritten to `events.upstream.$1` and forwarded to a live Kafka cluster:
+
+```json
+{
+  "name": "Priority Bridge Rule - Kafka Topic Rewriting",
+  "priority": 100,
+  "request": {
+    "method": "CONSUME",
+    "urlPattern": "/__async/kafka/events\\.raw\\.(.*)"
+  },
+  "response": {
+    "status": 200
+  },
+  "metadata": {
+    "async": {
+      "protocol": "kafka",
+      "mode": "PROXY",
+      "channelPattern": "events\\.raw\\.(.*)",
+      "proxyChannel": "events.upstream.$1",
+      "proxyBroker": "kafka://127.0.0.1:9092"
+    }
+  }
+}
+```
+
+> [!TIP]
+> See end-to-end runnable bridge and broker integration tests in `wiremock-examples`:
+> - [`EmbeddedArtemisAmqpIntegrationTest.java`](../wiremock-examples/src/test/java/com/github/mattiasgreen/wiremock/examples/EmbeddedArtemisAmqpIntegrationTest.java)
+> - [`AsyncMessagingBundleIntegrationTest.java`](../wiremock-examples/src/test/java/com/github/mattiasgreen/wiremock/examples/async/AsyncMessagingBundleIntegrationTest.java)
 
 ---
 
@@ -472,17 +505,63 @@ Connects directly to modern IBM MQ Queue Managers over standard AMQP channels wi
 }
 ```
 
+### 5.8. Consumer Feed Stub (`metadata.async.feed`)
+
+Declares staged mock records (`AsyncFeedDirective`) to feed into a destination when a System Under Test subscribes (`trigger` defaults to `"on-subscribe"`):
+
+```json
+{
+  "name": "Kafka Consumer Feed - Staged Price Updates",
+  "request": {
+    "method": "CONSUME",
+    "urlPath": "/__async/kafka/pricing.updates"
+  },
+  "response": {
+    "status": 200
+  },
+  "metadata": {
+    "async": {
+      "protocol": "kafka",
+      "channel": "pricing.updates",
+      "feed": {
+        "protocol": "kafka",
+        "destination": "pricing.updates",
+        "trigger": "on-subscribe",
+        "delayMs": 25,
+        "records": [
+          {
+            "key": "SKU-100",
+            "payload": "{\"sku\":\"SKU-100\",\"price\":49.90,\"currency\":\"EUR\"}",
+            "headers": {
+              "x-event-type": "PriceUpdated"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 6. Admin API Endpoints
 
-The extension exposes management routes under `/__admin/async/` for health monitoring and dynamic test orchestration:
+The extension exposes management routes under `/__admin/async/` (implemented in `AsyncAdminEndpoint`) for health monitoring, broker connection management, destination inspection, and dynamic test orchestration:
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/__admin/async/status` | Returns active sinks, connection lease counters, and consumed/produced metrics. |
+| `GET` | `/__admin/async/status` | Returns active sinks, Kafka sink port, async stub count, and consumed/produced/proxied counters. |
 | `POST` | `/__admin/async/publish` | Injects a synthetic outbound message into a destination queue or topic for test harness coordination. |
-| `POST` | `/__admin/async/sinks/kafka` | Dynamically starts or reconfigures the in-process Netty Kafka wire sink. |
+| `POST` | `/__admin/async/sinks/kafka` | Dynamically starts or stops the in-process Netty Kafka wire sink (`{"action": "start"\|"stop", "port": 9092}`). |
+| `GET` | `/__admin/async/connections` | Lists all registered broker connections (sanitized, with credentials redacted). |
+| `POST` | `/__admin/async/connections` | Registers one or more broker connections (`id` required) in `AsyncBrokerRegistry`. |
+| `DELETE` | `/__admin/async/connections/{id}` | Removes a registered broker connection by ID (`204` on success, `404` if not found). |
+| `GET` | `/__admin/async/destinations` | Lists all discovered destinations across registered brokers and in-process sinks. |
+| `GET` | `/__admin/async/destinations/{protocol}/{name}/messages` | Peeks up to 50 messages from the specified destination without consuming them. |
+| `POST` | `/__admin/async/destinations/{protocol}/{name}/messages` | Publishes a message directly to the specified protocol destination (`201` on success). |
+| `DELETE` | `/__admin/async/destinations/{protocol}/{name}/messages/{id}` | Deletes a single message by ID from the specified destination (`204` on success, `404` if not found). |
+| `DELETE` | `/__admin/async/destinations/{protocol}/{name}` | Purges all messages from the specified destination (`204`). |
 
 ### Core `StubStore` Evaluation & Request Journal Recording
 
@@ -520,9 +599,9 @@ curl -X POST http://localhost:8080/__admin/async/publish \
   - Pretty-prints and auto-unnesets multi-layered JSON, XML, Base64, and CDATA payloads.
   - Full-fidelity inspection with zero vertical scrollbars or layout voids.
 - **OpenTelemetry & Prometheus Scrape Route (`/__admin/metrics/prometheus`)**:
-  - `wiremock_requests_total{rpc_system="kafka", rpc_service="orders.events"}`
-  - `wiremock_async_messages_consumed_total{protocol="amqp", channel="payments.requests"}`
-  - `wiremock_async_messages_produced_total{protocol="kafka", destination="notifications.broadcast"}`
+  - `wiremock_requests_total{protocol="kafka", rpc_system="kafka", rpc_service="orders.events", ...}`
+  - `wiremock_request_duration_ms{protocol="amqp", rpc_system="amqp", rpc_service="payments.requests", ...}`
+  - See [ADR 0029: Async Messaging and Queue Mocking](../docs/adr/0029-async-messaging-and-queue-mocking.md) for the full architectural design.
 
 ---
 

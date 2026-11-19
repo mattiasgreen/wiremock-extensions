@@ -47,3 +47,7 @@ We introduce `wiremock-extension-json-logging`, a high-throughput, structured si
 ### Negative / Trade-offs
 - High request volumes generate large log streams; requires log rotation or sampling in high-load benchmark environments.
 - Request/response bodies require truncation thresholds to avoid exceeding container stdout pipe buffers.
+
+## Amendment
+
+Runtime Logback level control was added via `LoggingAdminEndpoint` (`GET`/`PUT` `/__admin/logging/levels`) and the `LOG_LEVEL` environment variable, allowing operators to adjust logger verbosity dynamically without restarting WireMock Standalone.

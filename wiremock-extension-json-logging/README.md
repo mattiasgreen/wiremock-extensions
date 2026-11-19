@@ -10,18 +10,19 @@ Furthermore, tracking distributed requests across microservices requires propaga
 
 ## How It Addresses the Problem
 
-The extension listens to request completion events via WireMock's `RequestFilterV2` and `PostServeAction` SPI:
+The extension listens to request completion events via WireMock's `RequestFilterV2` (`MdcRequestFilter`) and `ServeEventListener` (`JsonLoggingListener`) SPI:
 - Normalizes incoming HTTP request headers into snake_case attributes.
 - Injects normalized headers into the SLF4J Mapped Diagnostic Context (MDC) during request execution.
-- Emits a single structured JSON event per request containing timestamps, duration, match status, stub name, and sanitized request/response summaries.
+- Emits a single structured JSON event (`WireMockLogEvent`) per request containing timestamps, duration, match status, protocol/traffic classification, client IP, stub identifiers, upstream target, and sanitized request/response summaries.
 - Clears the MDC immediately after the request finishes to avoid thread context pollution in Jetty's thread pool.
 
 ## Features
 
 - **Single-Line JSON Output**: Structured JSON log format optimized for automated log ingestion.
+- **Traffic & Diagnostic Enrichment (`WireMockLogEvent`)**: Populates `protocol` (`http`, `casual`, `kafka`, `amqp`, `async`), `traffic_type` (`stubbed`, `proxied`, `unmatched`, `fault`), `target_upstream` (for proxied requests), `stub_id`, `stub_name`, `unmatched_reason` (for unmatched 404s), and `request.clientIp` (propagated from HTTP `X-Forwarded-For` / socket peer or Casual TCP peer IP).
 - **Header Extraction & Normalization**: Automatically extracts headers like `X-Correlation-Id`, `X-Request-Id`, `X-Tenant-Id`, and `traceparent`, converting them to clean keys (`x_correlation_id`, `x_tenant_id`).
 - **Standard vs. Verbose Mode**:
-  - *Standard mode* (default): Emits request method, URL, headers, status code, duration, and match status.
+  - *Standard mode* (default): Emits request method, URL, `request.clientIp`, headers, status code, duration, and match status.
   - *Verbose mode* (`--verbose` flag or `-Dwiremock.verbose.json=true`): Includes full request and response bodies directly in the JSON object.
 - **Runtime Logback Level Control (`/__admin/logging/levels` & `LOG_LEVEL`)**:
   - Dynamically inspect, update, and reset Logback logger levels at runtime via the WireMock Admin API or configure initial package levels on startup via the `LOG_LEVEL` environment variable (or `-Dlog.level` / `-Dwiremock.log.level`).
@@ -35,12 +36,16 @@ The extension listens to request completion events via WireMock's `RequestFilter
   "event": "wiremock_request_served",
   "duration_ms": 14.0,
   "matched": true,
+  "protocol": "http",
+  "traffic_type": "stubbed",
   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
   "span_id": "00f067aa0ba902b7",
+  "stub_id": "8c5d8b2a-1e4f-4d92-9f43-6a2b7a9e1c34",
   "stub_name": "Get User Profile",
   "request": {
     "method": "GET",
     "url": "/api/v1/users/123",
+    "clientIp": "10.24.0.18",
     "headers": {
       "X-Correlation-Id": "corr-9921",
       "X-Tenant-Id": "acme",
@@ -55,13 +60,15 @@ The extension listens to request completion events via WireMock's `RequestFilter
 }
 ```
 
+When a request is proxied, `target_upstream` is included with the upstream base URL; when unmatched (`"matched": false`), `unmatched_reason` is populated with the diagnostic summary.
+
 ## Usage
 
 ### Dependency Coordinates
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.14.0'
 ```
 
 **Maven**:
@@ -69,7 +76,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-json-logging</artifactId>
-    <version>1.2.0</version>
+    <version>1.14.0</version>
 </dependency>
 ```
 
@@ -78,7 +85,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.2.0'
 Add the extension JAR to the classpath alongside WireMock Standalone. The extension will automatically be discovered via Java SPI:
 
 ```bash
-java -cp "wiremock-extension-json-logging-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-json-logging-1.14.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080 \
   --verbose

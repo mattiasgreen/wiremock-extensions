@@ -1,5 +1,7 @@
 # Asynchronous Messaging & Queue Mocking Specification
 
+> **Implementation Module**: [`wiremock-extension-async`](../../wiremock-extension-async/README.md) *(Beta — single unified module housing the Kafka wire sink, AMQP 1.0 client/broker, optional `compileOnly` IBM MQ SVRCONN driver, HTTP-to-async trigger listener, and queue bridge)*
+
 ## 1. Overview & Core Philosophy
 
 This specification establishes the architectural foundation for asynchronous event-driven and queue-based mocking in `wiremock-extensions`. It brings the full fidelity of WireMock Standalone—dynamic stub matching, templated response synthesis, fault injection, the Request Journal, and the Web Console UI—to asynchronous enterprise message brokers.
@@ -49,7 +51,7 @@ Async stubs are standard WireMock `StubMapping` documents. Transport configurati
     "headers": {
       "content-type": "application/json",
       "X-Async-Correlation-Id": "{{request.headers.X-Async-Correlation-Id}}",
-      "X-Async-Reply-Channel": "${request.headers.X-Async-Reply-To}",
+      "X-Async-Reply-Channel": "{{request.headers.X-Async-Reply-To}}",
       "x-processed-by": "wiremock-async-engine"
     },
     "jsonBody": {
@@ -160,8 +162,8 @@ Every consumed message generates a `ServeEvent` record:
 
 ### Web Console Presentation
 In the Web Console UI (`/__admin/ui`):
-- **Request Journal Rows**: Render with `CONSUME` badges alongside protocol badges (`AMQP 1.0`, `Kafka`, `Casual Queue`, `IBM MQ`).
-- **Drawer Left Pane**: Inbound message headers and payload, rendered in the Canonical Payload Surface with dual-layer highlighting and recursive auto-unnesting.
+- **Request Journal Rows**: Render with `CONSUME` badges alongside protocol badges (`AMQP`, `KAFKA`, `CASUAL`, `IBMMQ`).
+- **Drawer Left Pane**: Inbound message headers and payload, rendered in `PolyglotViewer` with syntax highlighting, recursive auto-unnesting, and `#modal-document-workspace` drill-down.
 - **Drawer Right Pane**: Produced reply headers and payload, or `SINK (Fire-and-Forget) - ACKED` status badge.
 
 ---
@@ -192,33 +194,34 @@ Solves the competing-consumer problem across Kafka, IBM MQ, and RabbitMQ without
 3. **Queue Names Identical**: Both systems interact with `orders.inbound` and `orders.responses`.
 4. **Mock vs. Proxy**:
    - When a mock stub matches, WireMock consumes the message and replies to System A. System B never sees the message.
-   - When in proxy mode (`"metadata.async.mode": "proxy"`), WireMock forwards the message across the bridge to System B, captures System B's reply, returns it to System A, and records a harvested stub into the Catalog.
+   - When configured as a proxy bridge rule in `metadata.async` (`"mode": "PROXY"` with `channelPattern`, `proxyChannel`, and `proxyBroker`), WireMock rewrites and forwards the message across the bridge to System B, records a `🔀 BRIDGED` (`PROXIED`) `ServeEvent` (or `502` `ASYNC_PROXY_ERROR` on upstream failure), and supports 1-click offline stub harvesting.
 
 ### 5.2. Topology 2: In-Process Netty Gateways
 
 For protocols with clean wire framing, WireMock hosts in-process Netty TCP endpoints:
 - **Casual Queue** (`wiremock-extension-casual`): Port 7772, intercepting `ENQUEUE (6100)` and `DEQUEUE (6200)` frames.
-- **AMQP 1.0** (`wiremock-extension-amqp`): Port 5672, accepting client links directly into memory.
-- **In-Process Kafka Sink** (`wiremock-extension-kafka-sink`): Port 9092, accepting producer connections directly.
+- **In-Process Kafka Sink & AMQP 1.0** (`wiremock-extension-async`): Accepts native Kafka producer wire connections (`bootstrap.servers=localhost:9092`) and AMQP 1.0 client links directly inside the WireMock process.
 
 ---
 
 ## 6. Protocol Drivers & Concurrency Architecture
 
-### 6.1. AMQP 1.0 Driver (`wiremock-extension-amqp`)
-- **Engine**: Apache Qpid ProtonJ2 (`protonj2-client:1.4.0`).
-- **Footprint**: < 1.0 MB incremental JAR size (shares Netty 4 transport with Casual module).
+All async protocol drivers, in-process wire sinks, and queue bridges are packaged in the single **`wiremock-extension-async`** module (except Casual Queues, which live in `wiremock-extension-casual`).
+
+### 6.1. AMQP 1.0 Driver (inside `wiremock-extension-async`)
+- **Engine**: Apache Qpid ProtonJ2 (`protonj2-client`).
+- **Footprint**: < 1.0 MB incremental JAR size (shares Netty 4 transport with `wiremock-extension-casual`).
 - **Concurrency**: Fully non-blocking; virtual threads unmount cleanly during lock waits without carrier-thread pinning.
 - **Brokers Supported**: ActiveMQ Artemis, RabbitMQ (with AMQP 1.0 plugin), Azure Service Bus, IBM MQ 9.3+ LTS.
 
-### 6.2. Apache Kafka Driver (`wiremock-extension-kafka`)
-- **Engine**: Official `org.apache.kafka:kafka-clients:3.9.0`.
+### 6.2. Apache Kafka Driver (inside `wiremock-extension-async`)
+- **Engine**: Official `org.apache.kafka:kafka-clients`.
 - **Dedicated Poller Pattern**:
   - `KafkaConsumer.poll()` runs on a dedicated platform thread to safeguard consumer group heartbeats and prevent carrier-thread pinning from internal `synchronized` blocks.
   - Consumed record batches are dispatched immediately to unbounded virtual worker threads (`Thread.ofVirtual().start(...)`) for stub matching, journal recording, and reply publishing via thread-safe `KafkaProducer`.
 
-### 6.3. In-Process Kafka Sink (`wiremock-extension-kafka-sink`)
-- **Engine**: Pure Netty ByteBuf frame codec (< 500 lines Java 21, < 2 MB memory overhead).
+### 6.3. In-Process Kafka Wire Sink (inside `wiremock-extension-async`)
+- **Engine**: Pure Netty ByteBuf frame codec (< 2 MB memory overhead).
 - **Wire APIs Supported**:
   - `ApiVersions (18)`: Version negotiation with KIP-511 compliant v0 header.
   - `Metadata (3)`: Reports WireMock node 0 as leader for requested topics and partitions.
@@ -226,45 +229,23 @@ For protocols with clean wire framing, WireMock hosts in-process Netty TCP endpo
   - `Produce (0)`: Ingests `RecordBatch v2` with Castagnoli CRC32C validation.
 
 ### 6.4. Casual Queue (`wiremock-extension-casual`)
-- **Engine**: Upstream `casualcore/casual-java` 3.7.3 integration.
+- **Engine**: Upstream `casualcore/casual-java` integration.
 - **Features**: Direct handling of `ENQUEUE_REQUEST (6100)` and `DEQUEUE_REQUEST (6200)` with full XA 2PC transaction coordinator enlistment.
 
-### 6.5. IBM MQ Connectivity Strategy
+### 6.5. IBM MQ Connectivity Strategy (Optional `compileOnly` + `fatJarIbmMq`)
 - **Tier 1 (Built-In Default)**: Connects to modern IBM MQ 9.3+ LTS via the pure AMQP 1.0 driver (`amqp://host:5672/DEV.QUEUE.1`) with zero proprietary dependencies.
-- **Tier 2 (Pluggable Native SVRCONN)**: Modular `wiremock-extension-ibmmq` implementing the driver SPI over `jakarta.jms`. Compiled with `provided` scope for `com.ibm.mq.jakarta.client`. Dispatches operations on a bounded platform thread pool to isolate internal carrier-thread pinning.
+- **Tier 2 (Optional Native SVRCONN)**: `wiremock-extension-async` declares `com.ibm.mq:com.ibm.mq.allclient` as `compileOnly` and auto-registers `IbmMqMessageBroker` (`protocol = "ibmmq"`) via reflection when `com.ibm.mq.jms.MQConnectionFactory` is present on the classpath. In `wiremock-extension-bundle`, `./gradlew fatJar` builds the lean standalone JAR without IBM MQ libraries, while `./gradlew fatJarIbmMq` builds the standalone JAR with IBM MQ bundled.
 
 ---
 
-## 7. Dynamic Connection Manager (`AsyncConnectionManager`)
+## 7. Dynamic Connection Manager & Broker Registry
 
-- **URI-Based Reference Counting**: Connection leases are tracked by normalized broker URI.
-- **Lifecycle Hooks**:
-  - Stub Added/Enabled: Leases connection and attaches channel consumer.
-  - Stub Disabled/Deleted: Detaches channel consumer and decrements lease.
-  - Zero Leases: Connection enters 30-second idle cooldown before graceful closure.
-- **Fault Recovery**: Disconnections trigger an exponential backoff reconnect loop (initial 500ms, max 30s) on a virtual thread.
+- **Broker Registry (`AsyncBrokerRegistry`)**: Manages remote cluster connection coordinates, credentials, and client pools via `/__admin/async/connections`, decoupling broker infrastructure from stub mapping files.
+- **URI-Based Reference Counting**: Connection leases are tracked by normalized broker URI with idle cooldown cleanup and exponential backoff reconnects on virtual threads.
 
 ---
 
-## 8. AsyncAPI v3 Contract Ingestion
+## 8. Observability & Control Plane
 
-- **Operations Inversion**:
-  - Client `send` operation ➔ Synthesizes a WireMock `CONSUME` stub on that channel.
-  - Client `receive` operation ➔ Synthesizes an event publisher or reply definition with schema-generated payload examples.
-- **Seams**:
-  - Admin API: `POST /__admin/asyncapi/import`
-  - Zero-Compile CLI: `wm asyncapi import <spec.yaml>`
-
----
-
-## 9. Observability & OpenTelemetry Metrics
-
-Integrated with `wiremock-extension-otel`:
-- **Gauges**:
-  - `wiremock_async_connections_active{protocol, broker}`
-  - `wiremock_async_subscribers_active{protocol, channel}`
-- **Counters**:
-  - `wiremock_async_messages_consumed_total{protocol, channel, status}`
-  - `wiremock_async_messages_produced_total{protocol, channel}`
-  - `wiremock_async_reconnects_total{protocol, broker}`
-- **Distributed Tracing**: Injects and extracts W3C `traceparent` headers across all message transports.
+- **Synthetic `ServeEvent` Pipeline**: All consumed, published, bridged, and failed (`502`) async exchanges flow through WireMock's standard Request Journal (`/__admin/requests`, `/__admin/ui/api/requests`) and `wiremock-extension-otel` request metrics (`wiremock_requests_total` and latency histograms) with W3C `traceparent` propagation.
+- **Admin API**: Runtime status, Kafka sink control, synthetic publishing, broker connections, and destination browsing/purging are exposed under `/__admin/async/{status,publish,sinks/kafka,connections,destinations}` (see [`wiremock-extension-async/README.md`](../../wiremock-extension-async/README.md) for full examples and schemas).

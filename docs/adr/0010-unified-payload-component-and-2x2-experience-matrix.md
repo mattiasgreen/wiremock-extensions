@@ -4,7 +4,7 @@ Date: 2026-11-08
 
 ## Status
 
-Accepted (Supersedes Section 2 `Editor Experience Mode` of [ADR 0009](0009-dual-layer-code-editor-and-viewport-layout-hardening.md))
+Superseded by [ADR 0030](0030-unified-polyglot-document-workspace-and-css-highlights-editor.md)
 
 ## Context
 

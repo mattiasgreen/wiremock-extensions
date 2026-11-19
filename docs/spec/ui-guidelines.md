@@ -28,7 +28,7 @@ The UI must guide and support teams as they migrate remote dependencies—**grad
 │                                          ▼                                              │
 │  Stage 2: Harvest & Go Offline (Static Stubs Baseline)                                  │
 │    Extract recorded Journal traffic into per-service stub collections.                  │
-│    Flip peripheral services from LIVE PROXY ──► STUBS MODE while complex core           │
+│    Enable harvested stubs and park proxy routes per service while complex core          │
 │    services remain proxied (Hybrid Simulation).                                         │
 │                                          │                                              │
 │                                          ▼                                              │
@@ -90,11 +90,14 @@ Every UI screen and button placement must optimize these four end-to-end flows:
    * Instead, clicking **`➕ Create Stub from Request`** opens the **Unified Document Workspace** (`#modal-document-workspace`) pre-populated with the captured request's `method`, `url`, and `bodyPatterns`, with the response defaulted to `200 OK` for immediate viewer inspection, section editing, and activation.
 4. **Verify**: Clicking **`🚀 Replay in Tester`** loads the exact captured request into the Multi-Protocol Tester to confirm the new stub responds with `200 OK`.
 
-### Workflow C: Matched Stub & Correlation-ID Session Debugging (`Journal` $\leftrightarrow$ `Stub` $\leftrightarrow$ `Tester`)
+### Workflow C: Matched Stub, Caller Source & Correlation-ID Session Debugging (`Journal` $\leftrightarrow$ `Stub` $\leftrightarrow$ `Tester`)
 1. **Bidirectional Navigation**:
    * From a **Stub** in the Stubs tab: Clicking **`🔍 View in Journal`** switches to the Request Journal filtered to that stub's URL/ID.
    * From a **`📌 STUB`** entry in the Request Journal: Clicking the matched stub name (**`🔗 Inspect Stub`**) jumps directly to the Stubs tab with that mapping selected.
-2. **Correlation-ID Lens (`X-Correlation-Id`)**:
+2. **Caller Source Chip Filtering (`.btn-journal-filter-source`)**:
+   * Each Request Journal row renders the resolved caller hostname/IP in `td.journal-source-cell` as a clickable chip (`.btn-journal-filter-source`).
+   * Clicking a source chip immediately filters the Request Journal to that caller (`src:`/`ip:`/`host:` boolean query syntax) so operators can isolate traffic from a specific microservice, gateway, or test runner in one click.
+3. **Correlation-ID Lens (`X-Correlation-Id`)**:
    * Parallel JUnit/Cucumber tests isolate state and chaos using `X-Correlation-Id`.
    * Whenever a request in the Journal carries `X-Correlation-Id`, display it as a clickable chip so the engineer can filter the entire Journal (and NetEm transfer log) to that single test execution's trace in one click.
 
@@ -130,7 +133,7 @@ To scale `wiremock-extension-ui` without introducing `npm`, Webpack, Vite, or Re
 * Keep modules strictly single-responsibility and domain-scoped:
   * **Core Infrastructure**: `state.js` (reactive state + URL sync), `dom.js` (cached static selectors + HTML escaping), `api.js` (pure `fetch` wrapper + proxy header injection + explicit dynamic Demo Mode loader), `router.js` (hash deep-linking), `capabilities.js` (remote feature probing & graceful degradation), `dialog.js` (`showToast`, `confirmDialog`), `settings.js` (4-tab `#modal-settings`).
   * **Polyglot & Workspace Editor Stack**: `charset-codec.js` (charset detection & Base64 codec for `UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`, `US-ASCII`), `pseudo-json.js` (Java `Map.toString()` `{k=v}` KV parser/formatter), `highlighter.js` (formatters, validators, syntax highlighters, and `tokenizeOffsets`), `polyglot-ast.js` (exact `[start, end]` span discovery + `applyNestedPathEdit` splicing), `polyglot-viewer.js` (read-only/editable foldable tree renderer with zero disabled Edit buttons), `code-editor.js` (default `highlight-api` `<pre contenteditable="plaintext-only">` + `CSS.highlights` with hot-swappable `legacy-duallayer` fallback), `document-workspace.js` (unified `#modal-document-workspace` viewer-first controller).
-  * **Feature Verticals**: `stub-catalog.js`, `stubs.js`, `lifecycle.js`, `projects.js`, `journal.js`, `request-journal.js`, `tester.js` (`PROTOCOL_ADAPTERS` registry), `scenarios.js`, `queues.js`, `netem.js`, `openapi.js`, `import-export.js`, `bulk-actions.js`, `dispatcher.js`, `app-loader.js`, `filter.js`, `base64.js`, and lazy Demo Mode (`demo-backend.js` + live-generated `demo-snapshot.js`).
+  * **Feature Verticals**: `stub-catalog.js`, `stubs.js`, `lifecycle.js`, `journal.js`, `request-journal.js`, `tester.js` (`PROTOCOL_ADAPTERS` registry), `scenarios.js`, `queues.js`, `netem.js`, `openapi.js`, `import-export.js`, `bulk-actions.js`, `dispatcher.js`, `app-loader.js`, `filter.js`, `base64.js`, and lazy Demo Mode (`demo-backend.js` + live-generated `demo-snapshot.js`).
 * **Single Source of Truth for Static Demo**: `wiremock-extension-ui/src/main/resources/ui/` is the **only** directory where UI files are authored. Never commit duplicated copies of UI scripts into `docs/site/demo/` (it is gitignored and assembled at CI build time by `.github/workflows/pages.yml`).
 * **Zero Marketing Assets in Classpath**: Never store documentation GIFs, pitch decks, or Playwright reference PNGs under `src/main/resources/ui/`. Keep them in `docs/` so the production JAR remains `< 200 KB`.
 

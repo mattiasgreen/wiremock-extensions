@@ -26,12 +26,14 @@ Always choose the fastest verification loop that covers your edit:
    ./gradlew :wiremock-extension-ui:test --tests "UiStubsAndLifecyclePlaywrightTest.testInitialPageLoadAndStubsListing" -q --console=plain
    ```
    - Domain suites (inheriting from `AbstractUiPlaywrightTest` or standalone):
-     - `UiStubsAndLifecyclePlaywrightTest`: Stubs catalog, boolean filter, create/edit/clone, enable/disable, bulk actions, projects.
+     - `UiStubsAndLifecyclePlaywrightTest`: Stubs catalog, boolean filter, create/edit/clone, enable/disable, bulk actions.
      - `UiJournalAndTesterPlaywrightTest`: Multi-Protocol Tester, presets/history, Request Journal filtering, resolutions/triage.
-     - `UiOpenApiPlaywrightTest`: OpenAPI YAML/JSON import, live proxy recording, project mode flip, POST example synthesis.
+     - `UiOpenApiPlaywrightTest`: OpenAPI YAML/JSON import, live proxy recording, journal snapshot, individual stub toggle, POST example synthesis.
      - `UiPayloadEditorPlaywrightTest`: Unified Document Workspace, `PolyglotViewer`, `CodeEditor` (`highlight-api` + `legacy-duallayer`), charset round-tripping, and span-exact splicing.
      - `UiDemoModePlaywrightTest` & `UiVanillaWireMockPlaywrightTest`: Explicit Demo Mode showcase (`demo-snapshot.js`) and vanilla WireMock graceful degradation.
+     - `UiPerformancePlaywrightTest`: CDP tab-switching, DOM node churn, layout reflow, heap, and long-task performance profiling.
      - `UiScenariosAndStatefulPlaywrightTest`, `UiNetEmPlaywrightTest`, `UiQueuesAndTopicsPlaywrightTest`, `UiCasualTesterPlaywrightTest`, `UiChainedWorkflowPlaywrightTest`.
+   - **Opt-in CDP E2E Profiler (`UiDevToolsProfiler`)**: Pass `-Dui.profile=true` to any Playwright E2E run to capture per-test V8 `.cpuprofile` files and an aggregated `profile-summary.md` under `wiremock-extension-ui/build/reports/profiles/`.
 5. **Console Proxy & Demo Snapshot Loops**:
    ```bash
    ./gradlew :wiremock-extension-ui:test --tests "WireMockConsoleProxyTest" -q --console=plain
@@ -93,12 +95,13 @@ Keep these DOM selector contracts intact across `index.html`, `modules/dom.js`, 
      - `app.js`: Slim composition root registering route handlers, invoking module initializers, and exposing unit-test exports.
 
 2. **Backend & Static Asset Services (`src/main/java/.../ui/`)**:
-   - `StubLifecycleService` & `StubLifecycleAdminEndpoint`: Stateless priority-tier lifecycle coordinator exposing `/__admin/lifecycle/{status,snapshots,snapshot-template,projects/{project}/mode}`.
+   - `StubLifecycleService` & `StubLifecycleAdminEndpoint`: Stateless priority-tier lifecycle coordinator exposing `/__admin/lifecycle/{status,snapshots,snapshot-template}` (individual and bulk enable/disable use WireMock's native `/__admin/mappings/{id}`).
    - `UiAssetLoader` & `UiAdminApiEndpoint`: Serves static console assets, `/__admin/ui/version`, and enriched `/__admin/ui/api/requests` (`ClientSourceResolver`, `JournalFilterService`, `JournalQueryMatcher`).
    - `WireMockConsoleProxy`: Self-contained zero-dependency JDK 21 reverse proxy & static asset server for JEP 330 / `wm proxy` / `:wiremock-extension-ui:runProxy`.
 
 3. **Test Harness & Seams (`src/test/java/.../ui/`)**:
-   - `AbstractUiPlaywrightTest`: Shared headless Chromium instance and `UiDriver` domain seam across domain Playwright suites.
+   - `AbstractUiPlaywrightTest` & `UiDevToolsProfiler`: Shared headless Chromium instance, `UiDriver` domain seam, and opt-in CDP profiler (`-Dui.profile=true` -> `wiremock-extension-ui/build/reports/profiles/*.cpuprofile` + `profile-summary.md`).
+   - `UiPerformancePlaywrightTest`: Dedicated CDP performance test asserting bounded DOM churn, layout reflows, and long tasks across SPA tab transitions.
    - `UiAssetAndContractTest`: Verifies static asset paths, relative ES6 imports (no circular imports involving `stubs.js`), and DOM ID contracts.
    - `UiModuleUnitTest`: In-browser headless unit test suite verifying ES6 modules directly.
    - `DemoSnapshotGenerator` & `DemoSnapshotContractTest`: Boots an in-process `WireMockServer` to generate `modules/demo-snapshot.js` (`:wiremock-extension-ui:generateDemoSnapshot`) and verifies schema fidelity.

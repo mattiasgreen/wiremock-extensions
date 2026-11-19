@@ -101,10 +101,12 @@ Showing 3 of 3 stubs.
 ```
 
 ### C. Live Request Journal Tailing (`wm tail`)
-Streams or displays recent request journal events with HTTP method badges, response status codes, and roundtrip duration:
+Streams or displays recent request journal events with an 18-character caller `Source` column (resolved short hostname with normalized IP fallback), HTTP method badges, response status codes, and roundtrip duration.
+
+`wm tail` queries `/__admin/ui/api/requests` for enriched `sourceIp` / `sourceHost` metadata and automatically falls back to `/__admin/requests` on `404` when targeting a vanilla WireMock server.
 
 ```bash
-# Snapshot: view last 10 requests
+# Snapshot: view last 20 requests (default limit: 20 in snapshot mode, 10 in -f follow mode)
 wm tail
 
 # Live Follow Mode: continuously stream incoming traffic
@@ -113,18 +115,28 @@ wm tail -f
 # Filter to unmatched requests (404s) with candidate near-miss diffs
 wm tail -u -f --diff
 
+# Filter by caller source, method, status, regex path, and boolean logic
+wm tail "src:10.0.0.15 and method=POST"
+wm tail "host:billing or ip:127.0.0.1"
+wm tail "status=500 and path~/api/v[0-9]+/orders and not /health"
+
 # Limit number of entries and specify poll interval
 wm tail -f -n 25 --interval 500
 ```
+
+Supported tail filter expressions:
+- **Caller Source**: `src:<val>`, `source:<val>`, `ip:<val>`, `host:<val>`, `clientip:<val>` (matches resolved hostname or normalized IP; `=` and `:` are interchangeable).
+- **HTTP Attributes**: `method=<METHOD>`, `status=<CODE>`, `path=<substring>` / `url=<substring>`, `path~<regex>`, or bare tokens (`GET`, `404`, `/cases`).
+- **Boolean Operators**: `and` / `&&`, `or` / `||`, and `not ` / `!`.
 
 Output:
 ```
 Streaming traffic from: http://localhost:8080 (Ctrl+C to stop)
 Filtering: Unmatched (404) requests only
 
-[10:14:02] GET     200      12ms  /api/v1/cases
-[10:14:05] POST    201      45ms  /api/v1/cases
-[10:14:08] GET     404       2ms  /api/v1/casses-typo            ⚠️ UNMATCHED
+[10:14:02] localhost          GET     200      12ms  /api/v1/cases
+[10:14:05] checkout-svc       POST    201      45ms  /api/v1/cases
+[10:14:08] 10.24.8.19         GET     404       2ms  /api/v1/casses-typo            ⚠️ UNMATCHED
        └─ Nearest stub match candidate / diff available in Web UI
 ```
 
@@ -154,6 +166,17 @@ wm proxy http://localhost:8080 19840
 ```
 - Serves the official Vanilla ES6 Single-Page Web UI at `http://localhost:19840/__admin/ui/`.
 - Transparently proxies administrative calls and application traffic to the target WireMock instance.
+
+### F. Command Aliases & Version Flag
+
+| Command | Aliases | Purpose |
+| :--- | :--- | :--- |
+| `info` | `status` | Probe WireMock connectivity and detected extension capabilities. |
+| `stubs` | `list`, `ls` | List and filter registered stubs. |
+| `tail` | `traffic`, `journal` | View or stream request journal events with caller source enrichment. |
+| `toxics` | `chaos`, `netem` | Inspect active `tcp-netem` proxies and network impairments. |
+| `proxy` | `ui` | Launch `WireMockConsoleProxy` reverse proxy and Web UI server. |
+| `--version` | `-v` | Print CLI version and exit. |
 
 ---
 

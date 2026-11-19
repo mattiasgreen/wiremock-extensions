@@ -8,7 +8,7 @@ When using WireMock as a mock server in performance tests, integration environme
 
 ## How It Addresses the Problem
 
-This extension registers a WireMock `PostServeAction` listener backed by an in-process OpenTelemetry SDK meter. Every served request increments request counters and records latency distributions in real time.
+This extension registers a WireMock `ServeEventListener` (`OtelMetricsListener`) backed by an in-process OpenTelemetry SDK meter. Every served request increments request counters and records latency distributions in real time.
 
 An admin endpoint is mounted at `GET /__admin/metrics/prometheus` via WireMock's `AdminApiExtension` SPI, allowing Prometheus agents or OpenTelemetry Collectors to scrape metrics directly without requiring sidecars or external metric collectors.
 
@@ -32,17 +32,18 @@ Incoming Request ─────────┼──► Proxied (Forwarded to u
 
 - **Standard Prometheus Scrape Endpoint**: Accessible at `GET /__admin/metrics/prometheus` (and alias `GET /__admin/metrics`) in standard Prometheus/OpenMetrics text exposition format.
 - **Protocol & Traffic Breakdown**:
-  - `protocol`: Protocol discriminator (`http`, `casual`, `grpc`).
+  - `protocol`: Protocol discriminator (`http`, `casual`, `kafka`, `amqp`, `async`, `grpc`).
   - `traffic_type`: Traffic routing mode (`stubbed`, `proxied`, `unmatched`, `fault`).
 - **Request Counters (`wiremock_requests_total`)**: Labeled by:
-  - `protocol`: Protocol name (`http`, `casual`, `grpc`)
+  - `protocol`: Protocol name (`http`, `casual`, `kafka`, `amqp`, `async`, `grpc`)
   - `traffic_type`: Execution outcome (`stubbed`, `proxied`, `unmatched`, `fault`)
   - `wiremock_matched`: Match status (`true` or `false`)
   - `wiremock_stub_name`: Associated stub name (if defined)
-  - `http_request_method`: HTTP method for HTTP protocol (`GET`, `POST`, etc.)
-  - `http_response_status_code`: HTTP status code for HTTP protocol (`200`, `404`, `500`, etc.)
+  - `http_request_method`: HTTP method for non-Casual traffic (`GET`, `POST`, `CONSUME`, etc.)
+  - `http_response_status_code`: HTTP status code for non-Casual traffic (`200`, `404`, `500`, etc.)
   - `target_upstream`: Proxied backend base URL (for `proxied` traffic)
-  - `rpc_service` & `casual_error_state`: Service name and XATMI error state for Casual protocol
+  - `rpc_system` & `rpc_service`: Set for Casual (`rpc_system="casual"`, `rpc_service="<service>"`) as well as async messaging protocols (`rpc_system="kafka"|"amqp"|"async"`, `rpc_service="<channel>"` derived from `X-Async-Channel` or `/__async/<protocol>/<channel>`)
+  - `casual_error_state`: XATMI error state for Casual protocol
 - **Latency Histograms**:
   - `wiremock_request_duration_ms`: Total execution duration in milliseconds.
   - `wiremock_upstream_duration_ms`: Dedicated histogram for upstream wait time on proxied traffic.
@@ -50,7 +51,11 @@ Incoming Request ─────────┼──► Proxied (Forwarded to u
 - **Runtime Capacity & Health Gauges**:
   - `wiremock_journal_size_requests`: Active in-memory request journal count.
   - `wiremock_journal_capacity`: Configured journal limit (`-1` if unbounded).
-  - `wiremock_stubs{status="active"}`: Total registered active stub mappings.
+  - `wiremock_stubs_total{status="active"}`: Total registered active stub mappings.
+- **TCP NetEm Observable Instruments** (automatically populated when `wiremock-extension-tcp-netem` is active):
+  - `wiremock_netem_connections_active{proxy="<name>"}`: Active client TCP connections on each NetEm proxy.
+  - `wiremock_netem_transfers_total{proxy="<name>", outcome="normal|impaired", toxic="none|any|<toxic>"}`: Total transfers processed through each NetEm proxy broken down by outcome and toxic.
+  - `wiremock_netem_bytes_transferred_total{proxy="<name>", direction="upstream|downstream", outcome="normal|impaired"}`: Total bytes transferred through each NetEm proxy by direction and outcome.
 - **Distributed Tracing (W3C, Casual RPC & OTLP)**:
   - Automatically extracts incoming W3C `traceparent` and `tracestate` headers to preserve parent-child trace context across both HTTP and Casual JSON requests.
   - Generates OpenTelemetry `SERVER` spans:
@@ -95,9 +100,22 @@ wiremock_journal_size_requests 67
 # TYPE wiremock_journal_capacity gauge
 wiremock_journal_capacity -1
 
-# HELP wiremock_stubs Total number of stub mappings in WireMock
-# TYPE wiremock_stubs gauge
-wiremock_stubs{status="active"} 12
+# HELP wiremock_stubs_total Total number of stub mappings in WireMock
+# TYPE wiremock_stubs_total gauge
+wiremock_stubs_total{status="active"} 12
+
+# HELP wiremock_netem_connections_active Active client connections on NetEm proxy
+# TYPE wiremock_netem_connections_active gauge
+wiremock_netem_connections_active{proxy="wiremock-netem"} 2
+
+# HELP wiremock_netem_transfers_total Total transfers processed through NetEm proxy
+# TYPE wiremock_netem_transfers_total counter
+wiremock_netem_transfers_total{outcome="normal",proxy="wiremock-netem",toxic="none"} 120.0
+wiremock_netem_transfers_total{outcome="impaired",proxy="wiremock-netem",toxic="latency"} 15.0
+
+# HELP wiremock_netem_bytes_transferred_total Total bytes transferred through NetEm proxy
+# TYPE wiremock_netem_bytes_transferred_total counter
+wiremock_netem_bytes_transferred_total{direction="downstream",outcome="normal",proxy="wiremock-netem"} 49152.0
 ```
 
 ## OTLP Exporter Configuration & Deployment Options
@@ -127,7 +145,7 @@ The extension supports dual deployment modes: **Pull (Prometheus scraping)** and
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.14.0'
 ```
 
 **Maven**:
@@ -135,7 +153,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
 <dependency>
     <groupId>io.github.mattiasgreen</groupId>
     <artifactId>wiremock-extension-otel</artifactId>
-    <version>1.2.0</version>
+    <version>1.14.0</version>
 </dependency>
 ```
 
@@ -144,7 +162,7 @@ implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.2.0'
 Place the extension JAR on the classpath alongside WireMock Standalone:
 
 ```bash
-java -cp "wiremock-extension-otel-1.2.0.jar:wiremock-standalone-3.12.1.jar" \
+java -cp "wiremock-extension-otel-1.14.0.jar:wiremock-standalone-3.12.1.jar" \
   com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
   --port 8080
 ```

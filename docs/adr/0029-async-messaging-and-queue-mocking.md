@@ -1,4 +1,4 @@
-# 9. Asynchronous Messaging, Queue Mocking, and Protocol Mediation
+# 29. Asynchronous Messaging, Queue Mocking, and Protocol Mediation
 
 Date: 2026-11-08
 

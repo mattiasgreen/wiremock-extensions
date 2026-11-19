@@ -35,14 +35,17 @@ We introduce an automated **Browser CDP Performance Quality Gate** integrated di
    - Isolates internal payload DOM tree mutations from triggering document-level reflows and style recalculation cascades across surrounding navigation tabs and sidebars.
 
 4. **Hard Outer Loop Performance Budgets**:
-   - Every `./gradlew check` and CI run strictly enforces:
-     - **Zero Long Tasks**: `assertThat(longTasks).isEmpty()` during user interactions (tab switching, payload formatting, response rendering, and inspector tab toggling).
-     - **DOM Node Budget**: Total active document DOM nodes must remain under 10,000 elements (`assertThat(nodes).isLessThan(10000.0)`).
-     - **Cumulative Layout Duration**: Total time spent in browser layout during editor/viewer workflows must remain under 1.0 second (`assertThat(layoutDuration).isLessThan(1.0)`).
-     - **Heap Memory Limit**: Active V8 JS heap must remain well below 50 MB.
+   - Every `./gradlew check` and CI run strictly enforces via `UiPerformancePlaywrightTest`:
+     - **Zero Severe Long Tasks (`>= 100 ms`)**: `assertThat(severeLongTasks).isEmpty()` during interactive user workflows (tab switching, payload formatting, response rendering, and inspector tab toggling), while logging all `> 50 ms` Long Tasks for visibility.
+     - **DOM Node Budget**: Total active document DOM nodes must remain under 10,000 elements (`assertThat(finalNodes).isLessThan(10000.0)`).
+     - **Cumulative Layout Duration**: Total time spent in browser layout during editor/viewer workflows must remain under 3.0 seconds (`assertThat(layoutDurationSec).isLessThan(3.0)`).
+     - **Heap Memory Limit**: Active V8 JS heap must remain well below 50 MB (`assertThat(jsHeapUsedMb).isLessThan(50.0)`).
+
+5. **Opt-In CDP Suite Profiler (`UiDevToolsProfiler`)**:
+   - Running Playwright UI suites with `-Dui.profile=true` attaches `UiDevToolsProfiler` across test executions, sampling V8 CPU profiles at 100 µs intervals (`.cpuprofile`), capturing CDP performance metrics, Long Tasks (`> 50 ms`), and Cumulative Layout Shift (`CLS`), and writing an aggregated `profile-summary.md` report on JVM shutdown.
 
 ## Consequences
 
-- **Guaranteed UI Responsiveness**: Any new UI feature, highlighter modification, or layout reflow bug that causes a main thread freeze (>50 ms) or DOM explosion immediately breaks CI.
+- **Guaranteed UI Responsiveness**: Any new UI feature, highlighter modification, or layout reflow bug that causes a severe main-thread stall (`>= 100 ms`) or DOM explosion immediately breaks CI.
 - **Fast Test Execution**: The entire CDP performance test suite completes in under 3 seconds in headless Chromium.
-- **Predictable Scalability**: Large stub bodies and live journal responses render smoothly without lag or memory leaks.
+- **Predictable Scalability**: Large stub bodies and live journal responses render smoothly without lag or memory leaks, with on-demand `.cpuprofile` and `profile-summary.md` diagnostics available via `-Dui.profile=true`.
