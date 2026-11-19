@@ -35,7 +35,8 @@ import { openStubEditorFromRequest, openStubEditor } from './lifecycle.js';
 import {
   getSnapshotStubTemplate,
   doFetch,
-  snapshotFilteredRecordings
+  snapshotFilteredRecordings,
+  fetchJournalRequestDetail
 } from './api.js';
 import { loadExcludedJsonPaths } from './settings.js';
 
@@ -50,11 +51,56 @@ export function registerJournalLoader(fn) {
   loadJournalFn = fn;
 }
 
+const loadingRequestIds = new Set();
+const inFlightDetailRequests = new Map();
+
+export function ensureFullRequest(reqId) {
+  if (!reqId) return Promise.resolve(null);
+  const existing = requestJournal.findById(reqId);
+  if (!existing || !existing.summaryOnly) {
+    return Promise.resolve(existing || null);
+  }
+  if (inFlightDetailRequests.has(reqId)) {
+    return inFlightDetailRequests.get(reqId);
+  }
+  loadingRequestIds.add(reqId);
+  const promise = fetchJournalRequestDetail(reqId)
+    .then(fullEvent => {
+      if (fullEvent) {
+        return requestJournal.hydrateRequest(reqId, fullEvent) || existing;
+      }
+      return existing;
+    })
+    .catch(err => {
+      console.warn('Failed to lazy-fetch journal request detail:', err);
+      return existing;
+    })
+    .finally(() => {
+      loadingRequestIds.delete(reqId);
+      inFlightDetailRequests.delete(reqId);
+    });
+  inFlightDetailRequests.set(reqId, promise);
+  return promise;
+}
+
+function hydrateAndRender(reqId) {
+  if (!reqId) return;
+  const existing = requestJournal.findById(reqId);
+  if (!existing || !existing.summaryOnly) return;
+  ensureFullRequest(reqId).then(() => {
+    lastJournalRenderKey = '';
+    if (state.expandedRequestId === reqId) {
+      renderJournal(false);
+    }
+  });
+}
+
 export function toggleJournalDetail(reqId, updateRoute = true) {
   if (state.expandedRequestId === reqId) {
     state.expandedRequestId = null;
   } else {
     state.expandedRequestId = reqId;
+    hydrateAndRender(reqId);
   }
   renderJournal(false);
   if (updateRoute) {
@@ -197,6 +243,18 @@ function buildRowHtml(req) {
   `;
 
   if (isExpanded) {
+    if (req.summaryOnly) {
+      html += `
+        <tr class="journal-detail-loading-row" data-request-id="${req.id}" data-testid="journal-detail-loading-row">
+          <td colspan="9">
+            <div class="journal-detail-content" style="padding: 16px; color: var(--text-muted);" data-testid="journal-detail-loading">
+              ⏳ Loading full request &amp; response details...
+            </div>
+          </td>
+        </tr>
+      `;
+      return html;
+    }
     const reqHeadersHtml = highlightJson(reqHeaders);
     const reqBodyRaw = (req.request && (req.request.body || req.request.bodyAsBase64)) || '';
     const reqFmt = reqBodyRaw ? detectFormat(reqBodyRaw) : 'text';
@@ -606,7 +664,7 @@ function setupEventDelegation() {
     if (toTesterBtn) {
       e.stopPropagation();
       const targetId = toTesterBtn.getAttribute('data-id') || (toTesterBtn.dataset && toTesterBtn.dataset.id);
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (req && req.request) {
         const reqHeaders = req.request.headers || {};
         const url = req.request.url || '';
@@ -652,7 +710,7 @@ function setupEventDelegation() {
     if (copyCurlBtn) {
       e.stopPropagation();
       const targetId = copyCurlBtn.getAttribute('data-id') || (copyCurlBtn.dataset && copyCurlBtn.dataset.id);
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (req && req.request) {
         const cmd = generateCurl(req.request.method || 'GET', req.request.url || '/', req.request.headers || {}, req.request.body || '');
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -668,7 +726,7 @@ function setupEventDelegation() {
     if (copyJavaBtn) {
       e.stopPropagation();
       const targetId = copyJavaBtn.getAttribute('data-id') || (copyJavaBtn.dataset && copyJavaBtn.dataset.id);
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (req && req.request) {
         const status = (req.response && req.response.status) || (req.responseDefinition && req.responseDefinition.status) || 200;
         const resBody = (req.response && req.response.body) || (req.responseDefinition && req.responseDefinition.body) || '';
@@ -713,7 +771,7 @@ function setupEventDelegation() {
     if (createStubBtn) {
       e.stopPropagation();
       const targetId = createStubBtn.getAttribute('data-id') || (createStubBtn.dataset && createStubBtn.dataset.id);
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (req && req.request) {
         openStubEditorFromRequest(req.request);
       }
@@ -724,7 +782,7 @@ function setupEventDelegation() {
     if (copyReqBtn) {
       e.stopPropagation();
       const targetId = copyReqBtn.getAttribute('data-id') || (copyReqBtn.dataset && copyReqBtn.dataset.id);
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (req) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(JSON.stringify(req.request, null, 2)).catch(() => {});
@@ -739,7 +797,7 @@ function setupEventDelegation() {
     if (copyRespBtn) {
       e.stopPropagation();
       const targetId = copyRespBtn.getAttribute('data-id') || (copyRespBtn.dataset && copyRespBtn.dataset.id);
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (req) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(JSON.stringify(req.response || req.responseDefinition, null, 2)).catch(() => {});
@@ -830,7 +888,7 @@ function setupEventDelegation() {
         }
       }
 
-      const req = requestJournal.findById(targetId);
+      const req = await ensureFullRequest(targetId);
       if (!req) return;
 
       const stubData = buildSnapshotStubMapping(req);
@@ -909,7 +967,12 @@ export function renderJournal(resetLimit = true) {
     return;
   }
 
-  const renderKey = `${state.expandedRequestId || ''}|${itemsToRender.map(req => req.id).join(',')}`;
+  const expandedReq = state.expandedRequestId ? requestJournal.findById(state.expandedRequestId) : null;
+  if (expandedReq && expandedReq.summaryOnly && !loadingRequestIds.has(expandedReq.id)) {
+    hydrateAndRender(expandedReq.id);
+  }
+  const expandedState = expandedReq ? (expandedReq.summaryOnly ? 'sum' : 'full') : 'none';
+  const renderKey = `${state.expandedRequestId || ''}:${expandedState}|${itemsToRender.map(req => req.id).join(',')}`;
   if (lastJournalRenderKey === renderKey && elements.journalList.childElementCount > 0) {
     return;
   }

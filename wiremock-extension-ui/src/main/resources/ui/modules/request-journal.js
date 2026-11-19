@@ -79,7 +79,9 @@ export function getRequestVerdict(req) {
   const transformers = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.transformers)
     || (req.responseDefinition && req.responseDefinition.transformers) || [];
   const resBody = (req.stubMapping && req.stubMapping.response && req.stubMapping.response.body) || '';
-  const isTemplated = transformers.includes('response-template') || (typeof resBody === 'string' && resBody.includes('{{'));
+  const isTemplated = Boolean(req.stubMapping && req.stubMapping.response && req.stubMapping.response.isTemplated)
+    || transformers.includes('response-template')
+    || (typeof resBody === 'string' && resBody.includes('{{'));
   return {
     key: 'stub',
     type: 'stubbed',
@@ -121,17 +123,64 @@ export class RequestJournal {
     this._requests = [];
     this._meta = null;
     this._serverFiltered = false;
+    this._serverQuery = '';
+    this._hydratedById = new Map();
+    this._maxHydratedCache = 100;
     this._lastFiltered = [];
     this._visibleCount = 50;
     this._pageSize = 50;
   }
 
-  setRequests(requests = [], meta = null, serverFiltered = false) {
-    this._requests = Array.isArray(requests) ? requests : [];
+  setRequests(requests = [], meta = null, serverFiltered = false, serverQuery = '') {
+    const incoming = Array.isArray(requests) ? requests : [];
+    this._requests = incoming.map(req => {
+      if (req && req.id && req.summaryOnly && this._hydratedById.has(req.id)) {
+        const cached = this._hydratedById.get(req.id);
+        return {
+          ...cached,
+          sourceIp: req.sourceIp || cached.sourceIp || '',
+          sourceHost: req.sourceHost || cached.sourceHost || '',
+          summaryOnly: false
+        };
+      }
+      return req;
+    });
     this._meta = meta || null;
     this._serverFiltered = Boolean(serverFiltered);
+    this._serverQuery = (serverQuery || '').trim();
     this._lastFiltered = [...this._requests];
     this._visibleCount = this._pageSize;
+  }
+
+  hydrateRequest(id, fullEvent) {
+    if (!id || !fullEvent) return null;
+    const existing = this.findById(id);
+    const hydrated = {
+      ...fullEvent,
+      id: fullEvent.id || id,
+      sourceIp: fullEvent.sourceIp || (existing && existing.sourceIp) || '',
+      sourceHost: fullEvent.sourceHost || (existing && existing.sourceHost) || '',
+      summaryOnly: false
+    };
+    if (this._hydratedById.has(id)) {
+      this._hydratedById.delete(id);
+    } else if (this._hydratedById.size >= this._maxHydratedCache) {
+      const oldestKey = this._hydratedById.keys().next().value;
+      if (oldestKey !== undefined) this._hydratedById.delete(oldestKey);
+    }
+    this._hydratedById.set(id, hydrated);
+
+    const replaceIn = (arr) => {
+      const idx = arr.findIndex(r => r && r.id === id);
+      if (idx >= 0) arr[idx] = hydrated;
+    };
+    replaceIn(this._requests);
+    replaceIn(this._lastFiltered);
+    return hydrated;
+  }
+
+  clearHydratedCache() {
+    this._hydratedById.clear();
   }
 
   getRequests() {
@@ -184,6 +233,7 @@ export class RequestJournal {
         }
       }
       if (!filter) return true;
+      if (this._serverFiltered && filter === this._serverQuery) return true;
       return matchesJournalEntry(r, filter, `${verdict.key} ${verdict.type} ${verdict.label} ${proto}`);
     });
     return this._lastFiltered;

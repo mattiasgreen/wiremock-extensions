@@ -92,7 +92,8 @@
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
 | **Snapshot Traffic** | `POST` | `/__admin/lifecycle/snapshots` | Filtered / project-scoped snapshot specification |
 | **Synthesize Template Stub** | `POST` | `/__admin/lifecycle/snapshot-template` | Serve-event template synthesis payload |
-| **Fetch Journal** | `GET` | `/__admin/ui/api/requests?q={query}&limit={limit}` (fallback `/__admin/requests`) | Server-side enriched journal entries with `sourceIp`, `sourceHost`, verdict, and boolean search (`src:`, `ip:`, `host:`). |
+| **Fetch Journal** | `GET` | `/__admin/ui/api/requests?q={query}&limit={limit}&summary=true` (fallback `/__admin/requests`) | Server-side enriched journal summary entries (`sourceIp`, `sourceHost`, verdict, headers, timing) without heavy bodies; supports boolean search (`src:`, `ip:`, `host:`). |
+| **Fetch Journal Detail** | `GET` | `/__admin/ui/api/requests/{id}` (fallback `/__admin/requests/{id}`) | Full `ServeEvent` with request/response bodies and caller source enrichment, lazy-fetched on row expand or action. |
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
 | **Reset Scenarios** | `POST` | `/__admin/scenarios/reset` | None |

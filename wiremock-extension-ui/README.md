@@ -77,7 +77,8 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
   - `GET /__admin/lifecycle/status`: Capability health probe (`{"status":"UP"}`).
   - `POST /__admin/lifecycle/snapshots`: Unified traffic-to-stub snapshot endpoint supporting whole-project (`{"project":"..."}` or `_all`) and filtered request-ID captures (`{"requestIds":[...]}`).
   - `POST /__admin/lifecycle/snapshot-template`: Generates an editable `StubMapping` template from a single journal event.
-  - `GET /__admin/ui/api/requests`: Server-side journal search and caller source enrichment (`sourceIp`, `sourceHost`) supporting query parameters `q`, `verdict`, `unmatched`, `status`, `since`, `until`, and `limit` (`1`–`1000`, default `100`).
+  - `GET /__admin/ui/api/requests`: Server-side journal search and caller source enrichment (`sourceIp`, `sourceHost`) supporting query parameters `q`, `verdict`, `unmatched`, `status`, `since`, `until`, `limit` (`1`–`1000`, default `100`), and `summary=true` (omits request/response/stub bodies for lightweight list payloads).
+  - `GET /__admin/ui/api/requests/{id}`: Lazy-fetches a single full `ServeEvent` with complete request/response bodies and caller source enrichment on row expansion or collapsed-row actions (gracefully falls back to `GET /__admin/requests/{id}` on vanilla WireMock servers).
 
 - **URL Addressability, Swagger UI & Developer Hot-Reloading (`UiAssetLoader`)**:
   - Tabs, selected stubs, and journal filters synchronize with the URL hash (`#stubs?stubId=...`, `#journal?q=...`), while Tester share links encode full request state on click (`#btn-tester-share-link`).

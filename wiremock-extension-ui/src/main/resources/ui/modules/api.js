@@ -342,4 +342,10 @@ export function getSnapshotStubTemplate(requestId, project = null, excludedJsonP
   });
 }
 
+export function fetchJournalRequestDetail(requestId) {
+  const encodedId = encodeURIComponent(requestId);
+  return apiGet(`/__admin/ui/api/requests/${encodedId}`)
+    .catch(() => apiGet(`/__admin/requests/${encodedId}`));
+}
+
 export { detectCapabilities };
