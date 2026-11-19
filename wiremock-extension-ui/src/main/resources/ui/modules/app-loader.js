@@ -35,6 +35,7 @@ export function loadJournal() {
 
   const params = new URLSearchParams();
   params.set('limit', limit);
+  params.set('summary', 'true');
   if (q) params.set('q', q);
   if (verdict && verdict !== 'all') params.set('verdict', verdict);
   if (unmatchedOnly) params.set('unmatched', 'true');
@@ -48,7 +49,7 @@ export function loadJournal() {
       if (seq !== journalFetchSeq) return;
       state.journalMeta = data.meta || null;
       state.journalServerFiltered = true;
-      requestJournal.setRequests(data.requests || [], data.meta || null, true);
+      requestJournal.setRequests(data.requests || [], data.meta || null, true, q);
       if (elements.statRequests) {
         elements.statRequests.textContent =
           data.meta && data.meta.total !== undefined ? data.meta.total : requestJournal.getTotalCount();

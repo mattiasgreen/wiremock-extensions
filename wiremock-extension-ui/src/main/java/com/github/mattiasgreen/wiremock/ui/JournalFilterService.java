@@ -196,6 +196,19 @@ public class JournalFilterService {
     }
 
     /**
+     * Resolves a single caller IP address to its cached reverse-DNS hostname, or empty string if unresolvable.
+     *
+     * @param sourceIp normalized source IP address
+     * @return resolved hostname or {@code ""}
+     */
+    public String resolveSourceHost(String sourceIp) {
+        if (sourceIp == null || sourceIp.isBlank()) {
+            return "";
+        }
+        return sourceResolver.resolveHosts(Set.of(sourceIp)).getOrDefault(sourceIp, "");
+    }
+
+    /**
      * Classifies a {@link ServeEvent} into one of the core verdicts:
      * {@code "unmatched"}, {@code "proxied"}, or {@code "stub"}.
      *

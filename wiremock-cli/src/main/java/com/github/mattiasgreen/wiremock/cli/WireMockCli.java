@@ -259,8 +259,10 @@ public final class WireMockCli {
         }
 
         do {
-            String endpoint =
-                    useUiEndpoint ? "/__admin/ui/api/requests?limit=" + limit : "/__admin/requests?limit=" + limit;
+            String summarySuffix = filterExpr.isBlank() ? "&summary=true" : "";
+            String endpoint = useUiEndpoint
+                    ? "/__admin/ui/api/requests?limit=" + limit + summarySuffix
+                    : "/__admin/requests?limit=" + limit;
             HttpResponse<String> resp = sendGet(client, serverUrl, endpoint);
             if (useUiEndpoint && resp.statusCode() == 404) {
                 useUiEndpoint = false;
