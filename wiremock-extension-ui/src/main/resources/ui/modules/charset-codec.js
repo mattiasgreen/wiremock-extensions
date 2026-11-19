@@ -298,6 +298,10 @@ function base64ToBytes(b64Str) {
   }
 }
 
+const UTF8_FATAL_DECODER = typeof TextDecoder !== 'undefined'
+  ? new TextDecoder('utf-8', { fatal: true })
+  : null;
+
 /**
  * Decodes a Base64 string while respecting declared XML prolog charsets or non-UTF-8 single-byte encodings.
  *
@@ -325,7 +329,9 @@ export function decodeBase64WithCharset(b64Str) {
 
   // 2. Try strict UTF-8
   try {
-    const utf8Text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const utf8Text = UTF8_FATAL_DECODER
+      ? UTF8_FATAL_DECODER.decode(bytes)
+      : new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     return { text: utf8Text, charset: detectCharset(utf8Text), bytes };
   } catch (_) {
     // 3. Fallback: check if printable single-byte text (WINDOWS-1252 vs ISO-8859-1)

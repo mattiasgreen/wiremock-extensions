@@ -521,33 +521,60 @@ export function clearTesterHistory() {
   renderTesterHistory();
 }
 
+function formatTesterTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+let testerHistoryDelegated = false;
+let renderedHistoryItems = [];
+let lastTesterHistoryKey = '';
+
+function ensureTesterHistoryDelegation() {
+  if (testerHistoryDelegated || !elements.testerHistoryList) return;
+  testerHistoryDelegated = true;
+  elements.testerHistoryList.addEventListener('click', (e) => {
+    const card = e.target.closest('.history-item');
+    if (!card) return;
+    const idx = Number(card.getAttribute('data-history-idx'));
+    const item = Number.isInteger(idx) ? renderedHistoryItems[idx] : null;
+    if (!item) return;
+    elements.testerHistoryList.querySelectorAll('.history-item.active').forEach(el => el.classList.remove('active'));
+    card.classList.add('active');
+    restoreHistoryItem(item);
+  });
+}
+
 export function renderTesterHistory() {
   if (!elements.testerHistoryList) return;
+  ensureTesterHistoryDelegation();
   const totalCount = state.testerHistory.length;
   if (elements.testerHistoryCount) elements.testerHistoryCount.textContent = totalCount;
   if (elements.testerHistoryCollapsedCount) elements.testerHistoryCollapsedCount.textContent = totalCount;
 
   const filter = (state.testerHistoryProtocolFilter || 'all').toLowerCase();
   const items = filter === 'all' ? state.testerHistory : state.testerHistory.filter(i => (i.protocol || 'http').toLowerCase() === filter);
+  const renderKey = `${filter}|${totalCount}|${items.length}|${items[0]?.timestamp || ''}|${items[items.length - 1]?.timestamp || ''}`;
+  if (renderKey === lastTesterHistoryKey) return;
+  lastTesterHistoryKey = renderKey;
+  renderedHistoryItems = items;
+
   if (items.length === 0) {
     elements.testerHistoryList.innerHTML = `<div class="empty-state text-small">${totalCount === 0 ? 'No requests sent yet.' : `No ${filter.toUpperCase()} requests recorded.`}</div>`;
     return;
   }
 
-  elements.testerHistoryList.innerHTML = '';
-  items.forEach((item, index) => {
-    const card = document.createElement('div');
-    card.className = 'history-item';
-    card.setAttribute('data-history-idx', index);
-    card.setAttribute('data-testid', 'history-item');
+  const html = items.map((item, index) => {
     const proto = (item.protocol || 'http').toLowerCase();
     const methodOrOp = item.method || (proto === 'casual' ? 'CALL' : (proto === 'kafka' ? 'PRODUCE' : (proto === 'amqp' ? 'PUBLISH' : 'GET')));
     const isErr = item.status === 'ERR' || item.status === 'ERROR' || (typeof item.status === 'number' && item.status >= 400);
     const statusCls = isErr ? (item.status >= 500 || item.status === 'ERR' || item.status === 'ERROR' ? 'status-500' : 'status-400') : 'status-200';
-    const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+    const timeStr = formatTesterTime(item.timestamp);
     const displayUrl = item.url || item.destination || item.serviceName || '/';
 
-    card.innerHTML = `
+    return `<div class="history-item" data-history-idx="${index}" data-testid="history-item">
       <div class="history-item-top">
         <span class="protocol-badge proto-${proto}">${proto.toUpperCase()}</span>
         <span class="http-badge badge-${methodOrOp.toLowerCase()}">${escapeHtml(methodOrOp)}</span>
@@ -556,14 +583,9 @@ export function renderTesterHistory() {
       </div>
       <div class="history-item-url" title="${escapeHtml(displayUrl)}">${escapeHtml(displayUrl)}</div>
       <div class="history-item-meta"><span>${item.duration || 0} ms</span><span>${formatBytes(item.size || 0)}</span></div>
-    `;
-    card.addEventListener('click', () => {
-      document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
-      card.classList.add('active');
-      restoreHistoryItem(item);
-    });
-    elements.testerHistoryList.appendChild(card);
-  });
+    </div>`;
+  }).join('');
+  elements.testerHistoryList.innerHTML = html;
 }
 
 export function restoreHistoryItem(item) {

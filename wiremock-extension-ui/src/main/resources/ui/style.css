@@ -344,6 +344,7 @@ body {
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
   transition: background-color 0.1s ease;
+  contain: layout style;
 }
 
 .stub-card:hover {
@@ -453,6 +454,7 @@ body {
   padding: 20px;
   height: 100%;
   min-width: 0;
+  contain: layout style;
 }
 
 .tab-content.active {

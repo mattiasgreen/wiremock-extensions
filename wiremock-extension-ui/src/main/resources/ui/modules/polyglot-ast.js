@@ -549,37 +549,41 @@ function analyzeJsonStringLiteral(lit, maxDepth, currentDepth, basePath, idx) {
   }
 
   // 3. Base64-encoded JSON, XML, KV, or printable Text
-  const b64Decoded = decodeBase64WithCharset(val);
-  if (b64Decoded && b64Decoded.text && b64Decoded.text.length >= 3) {
-    const decodedText = b64Decoded.text;
-    const innerFormat = detectFormat(decodedText);
-    const isPrintable = isPrintableText(decodedText);
+  if (val.length >= 8) {
     const cleanedB64 = val.trim().replace(/[\r\n\s]+/g, '');
-    const isGenuineBase64 = /^[A-Za-z0-9+/_-]{8,}={0,2}$/.test(cleanedB64);
+    const isGenuineBase64 = cleanedB64.length >= 8 && cleanedB64.length % 4 !== 1 && /^[A-Za-z0-9+/_-]{8,}={0,2}$/.test(cleanedB64);
+    if (isGenuineBase64) {
+      const b64Decoded = decodeBase64WithCharset(cleanedB64);
+      if (b64Decoded && b64Decoded.text && b64Decoded.text.length >= 3) {
+        const decodedText = b64Decoded.text;
+        const innerFormat = detectFormat(decodedText);
+        const isPrintable = isPrintableText(decodedText);
 
-    const isMatch = (innerFormat === 'json' || innerFormat === 'xml' || innerFormat === 'kv') ||
-      (innerFormat === 'text' && isPrintable && isGenuineBase64 && cleanedB64.length >= 24 && isMostlyAsciiText(decodedText));
+        const isMatch = (innerFormat === 'json' || innerFormat === 'xml' || innerFormat === 'kv') ||
+          (innerFormat === 'text' && isPrintable && cleanedB64.length >= 24 && isMostlyAsciiText(decodedText));
 
-    if (isMatch) {
-      const children = (innerFormat !== 'text' && currentDepth + 1 < maxDepth)
-        ? discoverEmbeddedPayloads(decodedText, maxDepth, currentDepth + 1, lit.path)
-        : [];
-      return {
-        id: makeNodeId(currentDepth, idx, span.start, lit.path),
-        path: lit.path,
-        parentPath: basePath,
-        key: lit.key,
-        format: innerFormat,
-        encoding: b64Decoded.charset === 'UTF-8' ? 'BASE64_UTF8' : 'BASE64',
-        charset: b64Decoded.charset,
-        span,
-        rawValue: val,
-        unescapedValue: decodedText,
-        formattedValue: formatPayload(decodedText),
-        wireStyle: decodedText.trim().includes('\n') ? 'multiline' : 'compact',
-        byteLength: utf8ByteLength(val),
-        children
-      };
+        if (isMatch) {
+          const children = (innerFormat !== 'text' && currentDepth + 1 < maxDepth)
+            ? discoverEmbeddedPayloads(decodedText, maxDepth, currentDepth + 1, lit.path)
+            : [];
+          return {
+            id: makeNodeId(currentDepth, idx, span.start, lit.path),
+            path: lit.path,
+            parentPath: basePath,
+            key: lit.key,
+            format: innerFormat,
+            encoding: b64Decoded.charset === 'UTF-8' ? 'BASE64_UTF8' : 'BASE64',
+            charset: b64Decoded.charset,
+            span,
+            rawValue: val,
+            unescapedValue: decodedText,
+            formattedValue: formatPayload(decodedText),
+            wireStyle: decodedText.trim().includes('\n') ? 'multiline' : 'compact',
+            byteLength: utf8ByteLength(val),
+            children
+          };
+        }
+      }
     }
   }
 

@@ -152,3 +152,7 @@ rootProject.tasks.matching { it.name.startsWith('spotless') }.configureEach {
     mustRunAfter tasks.named('syncDemoSite')
 }
 
+tasks.named('test') {
+    systemProperty 'ui.profile', System.getProperty('ui.profile', 'false')
+}
+

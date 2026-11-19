@@ -3,7 +3,6 @@ package com.github.mattiasgreen.wiremock.ui;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.microsoft.playwright.CDPSession;
@@ -298,34 +297,24 @@ public class UiPerformancePlaywrightTest extends AbstractUiPlaywrightTest {
             System.out.printf("  -> Duration: %s ms (start: %s ms)%n", task.get("durationMs"), task.get("startTimeMs"));
         }
 
-        // Extract top functions from CPU profile
-        if (cpuProfile != null && cpuProfile.has("nodes")) {
+        // Extract top functions from CPU profile (unwrap CDP Profiler.stop { profile: { nodes, samples, timeDeltas } })
+        JsonObject profileObj =
+                (cpuProfile != null && cpuProfile.has("profile")) ? cpuProfile.getAsJsonObject("profile") : cpuProfile;
+        if (profileObj != null && profileObj.has("nodes")) {
             System.out.println("------------------------------------------------------------------------");
-            System.out.println("TOP CPU FUNCTIONS (Samples Count):");
-            Map<String, Integer> functionHitCounts = new HashMap<>();
-            JsonArray nodes = cpuProfile.getAsJsonArray("nodes");
-            for (JsonElement nodeEl : nodes) {
-                JsonObject node = nodeEl.getAsJsonObject();
-                if (node.has("callFrame")) {
-                    JsonObject frame = node.getAsJsonObject("callFrame");
-                    String fn = frame.get("functionName").getAsString();
-                    String url = frame.get("url").getAsString();
-                    if (!fn.isEmpty() && !fn.equals("(root)") && !fn.equals("(program)")) {
-                        int hitCount =
-                                node.has("hitCount") ? node.get("hitCount").getAsInt() : 0;
-                        if (hitCount > 0) {
-                            String key = fn + " (" + (url.contains("/") ? url.substring(url.lastIndexOf('/') + 1) : url)
-                                    + ")";
-                            functionHitCounts.merge(key, hitCount, Integer::sum);
-                        }
-                    }
-                }
-            }
-
-            functionHitCounts.entrySet().stream()
-                    .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                    .limit(8)
-                    .forEach(e -> System.out.printf("  %-45s : %d hits%n", e.getKey(), e.getValue()));
+            System.out.println("TOP CPU FUNCTIONS (Self-Time & Samples):");
+            Map<String, UiDevToolsProfiler.FunctionStats> fnStats = UiDevToolsProfiler.analyzeProfile(profileObj);
+            fnStats.entrySet().stream()
+                    .sorted(Comparator.comparingLong((Map.Entry<String, UiDevToolsProfiler.FunctionStats> e) ->
+                                    e.getValue().selfMicros())
+                            .reversed())
+                    .limit(10)
+                    .forEach(e -> System.out.printf(
+                            Locale.ROOT,
+                            "  %-52s : %7.2f ms (%d samples)%n",
+                            e.getKey(),
+                            e.getValue().selfMicros() / 1000.0,
+                            e.getValue().hits()));
         }
         System.out.println("========================================================================\n");
     }
