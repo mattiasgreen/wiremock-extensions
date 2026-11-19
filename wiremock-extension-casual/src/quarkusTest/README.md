@@ -41,18 +41,15 @@ This directory (`src/quarkusTest/`) contains the isolated 3-node integration tes
 
 ### Startup Sequence (`@BeforeEach`)
 1. **Node 3 — `UpstreamDomainNode` (Starts 1st)**:
-   * Binds a Netty [`CasualServer`](../../main/java/se/laz/casual/server/CasualServer.java) to an ephemeral TCP port (`127.0.0.1:<upstreamPort>`).
-   * Registers the `casual/example` service (`TransactionType.AUTOMATIC`) and implements [`CasualTransactionHandler`](../../main/java/se/laz/casual/server/CasualTransactionHandler.java).
+   * Binds a Netty [`CasualServer`](../main/java/com/github/mattiasgreen/wiremock/casual/CasualServer.java) to an ephemeral TCP port (`127.0.0.1:<upstreamPort>`).
+   * Registers the `casual/example` service (`TransactionType.AUTOMATIC`) and implements [`CasualServer.TransactionHandler`](../main/java/com/github/mattiasgreen/wiremock/casual/CasualServer.java).
    * Maintains an in-memory XA Resource Manager ledger (`getServiceCallCount()`, `getPreparedXids()`, `getCommittedXids()`, `getRolledBackXids()`) so tests can assert whether global transactions actually committed or rolled back on the upstream server.
 2. **Node 2 — `CasualWireMockGateway` + `WireMockServer` (Starts 2nd)**:
-   * Starts an embedded `WireMockServer` on a dynamic HTTP port.
-   * Starts [`CasualWireMockGateway`](../../main/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGateway.java) on an ephemeral TCP port (`127.0.0.1:<mitmPort>`) configured with:
-     * `.upstream("127.0.0.1", upstreamNode.getPort())`
-     * `.recordStubs(true)`
-     * `.recordFaults(true)`
-     * `.recordNotFound(false)`
+   * Starts an embedded `WireMockServer` on a dynamic HTTP port (with `TcpNetEmAdminEndpoint` registered).
+   * Starts [`CasualWireMockGateway`](../main/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGateway.java) on an ephemeral TCP port (`127.0.0.1:<mitmPort>`) wired directly in-process via `.port(0).wireMockServer(wireMockServer).build()`.
+   * Seeds a catch-all stub-driven proxy route (`POST /__casual/services/.*`, priority `10`) with metadata `{"mode": "proxy", "targetBaseUrl": "casual://127.0.0.1:<upstreamPort>"}` so higher-priority local stubs override upstream forwarding automatically.
 3. **Node 1 — `ClientInitiatorNode` (Starts 3rd)**:
-   * Connects a [`CasualTcpClient`](../../main/java/se/laz/casual/client/CasualTcpClient.java) to `127.0.0.1:<mitmPort>` and performs the `DOMAIN_CONNECT_REQUEST` / `DOMAIN_CONNECT_REPLY` handshake.
+   * Connects a [`CasualClient`](../main/java/com/github/mattiasgreen/wiremock/casual/CasualClient.java) to `127.0.0.1:<mitmPort>` and performs the `DOMAIN_CONNECT_REQUEST` / `DOMAIN_CONNECT_REPLY` handshake.
    * Provides `executeInTransaction(serviceName, jsonPayload)` which models the Narayana/JTA + `casual-jca` 2PC coordinator lifecycle:
      1. Allocates a unique global `Xid` (`gtrid-quarkus-N`, `bqual-quarkus-N`, formatId `42`).
      2. Sends `SERVICE_CALL_REQUEST` carrying the `Xid` and JSON buffer.

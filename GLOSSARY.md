@@ -101,7 +101,7 @@ The operational contract where WireMock's protocol ingress blocks acknowledgment
 _Avoid_: async forward, background relay, optimistic ack
 
 **Compensating Queue Edit**:
-The workflow of modifying an unconsumed or log-based message by opening it in the Polyglot Payload Lens, editing document layers with cascading serialization, and publishing a successor replacement record (with optional cancellation, dequeue, or tombstoning of the superseded message).
+The workflow of modifying an unconsumed or log-based message by opening it in the Document Workspace (`PolyglotViewer` + `CodeEditor`), editing document layers with span-exact splicing, and publishing a successor replacement record (with optional cancellation, dequeue, or tombstoning of the superseded message).
 _Avoid_: in-place wire edit, log mutation, dirty patch
 
 **Declarative Broker Configuration**:
@@ -135,7 +135,7 @@ An in-process module that partitions standard WireMock mappings into active (`pr
 _Avoid_: stub state bag, stub cache, stub list manager
 
 **Stub Lifecycle Service**:
-A stateless domain module managing native WireMock mapping priority tiers (`5` active stub, `10` active proxy, `50` `offline-guard`, `>= 100` parked via `metadata.previousPriority`), `switchProjectMode` (`POST /__admin/lifecycle/projects/{project}/mode`), and deduplicated serve-event snapshot conversions (`POST /__admin/lifecycle/snapshots`, `POST /__admin/lifecycle/snapshot-template`) directly on standard `/__admin/mappings/{id}` records.
+A stateless domain module managing native WireMock mapping priority tiers (`5` active stub, `10` active proxy, `50` `offline-guard`, `>= 100` parked via `metadata.previousPriority`) and deduplicated serve-event snapshot conversions (`POST /__admin/lifecycle/snapshots`, `POST /__admin/lifecycle/snapshot-template`) directly on standard `/__admin/mappings/{id}` records.
 _Avoid_: disabled stub store manager, lifecycle helper, recording converter
 
 **UI Static Asset Resolver**:
@@ -146,77 +146,29 @@ _Avoid_: asset helper, file server, web resource loader
 A high-level test seam encapsulating console navigation, tab switching, stub/journal query evaluation, modal interactions, and assertion waiting without coupling test suites to raw DOM selectors or arbitrary sleep timeouts.
 _Avoid_: page object boilerplate, playwright helper, UI tester fixture
 
-**Payload Unnesting Engine**:
-A domain module that recursively detects, extracts, and parses embedded JSON, XML, Java Map / Key-Value (`{key=val}`), or Base64 documents inside JSON string properties or XML text/CDATA nodes while preserving structural path addressing and guessing character encodings.
+**Document Workspace**:
+The unified fullscreen modal workbench (`#modal-document-workspace`, `document-workspace.js`) shared across Stubs, Tester Request Payloads, OpenAPI specs, Bundles, and Queue Messages. Opens viewer-first (`DOCUMENT_VIEWER` via `PolyglotViewer`) and transitions to focused `SECTION_EDITOR` (`CodeEditor`) with ancestor breadcrumb navigation, wire-style controls (`auto`, `compact`, `multiline`), dirty-state tracking (`#workspace-dirty-badge`), and root commit/discard confirmation.
+_Avoid_: maximized payload viewport, nested payload lens, popup editor, sub-modal
+
+**`PolyglotViewer`**:
+The canonical read-only and editable foldable tree renderer (`polyglot-viewer.js`) mounted across Stub Detail, Request Journal, Multi-Protocol Tester, Queues, and Document Workspace. Renders syntax-highlighted `Rich` and `Raw` views, format/charset/size descriptor badges, collapsible nested payload cards with single-delegated events, `📋 Copy`, and `⛶ Open in Workspace` (emitting zero disabled Edit buttons on read-only surfaces).
+_Avoid_: canonical payload surface, unified payload component, payload lens, custom preview panel
+
+**`PolyglotAST`**:
+The recursive payload unnesting and span-exact splicing engine (`polyglot-ast.js`, paired with `charset-codec.js` and `pseudo-json.js`) that detects embedded JSON, XML, Java `Map.toString()` KV (`{k=v}`), and Base64 payloads with character-encoding detection (`UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`, `US-ASCII`), recording exact `[start, end]` character spans so `applyNestedPathEdit` splices leaf edits back up the ancestor chain without `.replace()` collisions.
 _Avoid_: string unescaper, regex payload cleaner, nested parser
 
-**Maximized Payload Viewport**:
-A full-window (100vw × 100vh) overlay viewport wrapping a Canonical Payload Surface with breadcrumb navigation, format descriptors, and action toolbars, providing distraction-free inspection and editing of root documents or unnested child payloads with full syntax highlighting and inline unnested blocks.
-_Avoid_: nested payload lens, popup editor, sub-modal, raw string editor
-
-**Auto-Unnested Payload**:
-An inline presentation of an escaped nested JSON, XML, Key-Value, or Base64 document rendered directly within the parent syntax flow, expanded and auto-indented by default with a format badge, subtle gutter marking, and action controls to allow immediate reading without manual unrolling.
-_Avoid_: auto-expanded string, unpacked blob, inlined object, payload lens
-
-**Truncated Payload Preview**:
-An inline syntax-highlighted representation of an escaped nested JSON, XML, Key-Value, or Base64 document rendered within the parent syntax flow when collapsed or folded, featuring a format badge and hover actions to inspect or unfold without disrupting document geometry.
-_Avoid_: string ellipsis, clipped text, collapsed string, block preview box
-
-**Detected Embedded Payloads Bar**:
-A live overlay toolbar attached to editable JSON/XML textareas that surfaces actionable pills for every nested escaped or Base64-encoded payload discovered in the current editor content.
-_Avoid_: helper bar, payload banner, editor chips
+**`CodeEditor` (`highlight-api`)**:
+The zero-dependency syntax-highlighted editor component (`code-editor.js`) hosted inside `#modal-document-workspace`. Defaults to `<pre contenteditable="plaintext-only">` painted via the CSS Custom Highlight API (`CSS.highlights` + `tokenizeOffsets`), with a hot-swappable `legacy-duallayer` (`<textarea>` + backdrop `<pre>`) fallback toggle (`#workspace-engine-toggle`).
+_Avoid_: fake code editor, dual-layer textarea wrapper, syntax input box
 
 **Container Encoding Envelope**:
-The structural metadata recorded when unnesting an inner payload (`JSON_STRING`, `XML_ENTITY_TEXT`, `XML_CDATA`, `BASE64_UTF8`, `BASE64`, plus detected character encoding such as `UTF-8`, `ISO-8859-1`, or `KOI8-R`, and original compactness), governing how an edited child payload is re-encoded into its parent layer during round-tripping.
+The structural metadata recorded by `PolyglotAST` when unnesting an inner payload (`JSON_STRING`, `XML_ENTITY_TEXT`, `XML_CDATA`, `BASE64_UTF8`, `BASE64`, plus detected character encoding and original compact vs. multi-line style), governing how an edited child section is re-encoded into its parent layer during round-tripping.
 _Avoid_: escape mode, encoding flag, wrapper type
 
-**Canonical Payload Surface**:
-The unified UI presentation and editing component shared across all console panels (Stub Catalog detail, Stub Editor form and raw modes, Request Journal rows, and Unified Multi-Protocol Tester), standardizing dual view/edit modes, syntax highlighting, format/charset/size badges, recursive auto-unnested previews, and fullscreen maximize actions.
-_Avoid_: code box, custom textarea, raw editor pane
-
-**Unified Payload Component**:
-The single canonical UI component instance mounted identically across View Stub cards, Edit Stub modal panels, Maximized Viewports, Testers, and Journal entries. Encapsulates the 2×2 state engine, the standard header toolbar, live nested block unescaping/re-escaping, and bidirectional synchronization.
-_Avoid_: custom viewer, preview panel, raw text container
-
-**2×2 Payload Experience Matrix**:
-The orthogonal state grid governing payload presentation and manipulation across all console surfaces: Mode Axis (`Rich`: unescaped, formatted, indented vs. `Raw`: escaped, unindented wire representation) and Action Axis (`View`: read-only `<pre><code>` vs. `Edit`: Dual-Layer Code Editor), yielding four explicit states (`Rich View`, `Rich Edit`, `Raw View`, `Raw Edit`) with syntax highlighting active across all four.
-_Avoid_: display switcher, format mode grid, editor toggle matrix
-
-**In-Place Block Editing**:
-The capability within the Unified Payload Component to click `[ ✏️ Edit ]` on any header (the root document header or any nested subsection header) and swap only that level's `<pre>` container in-line into an auto-growing Dual-Layer Code Editor (`overflow-y: hidden`, zero internal vertical scrollbars) containing only that level's unescaped text (or wire text in `Raw` mode), with `[ ✓ Apply | ✕ Cancel ]` controls that validate, re-encode, and transiently update the in-memory `Root Document Session` before returning to the foldable polyglot tree viewer.
-_Avoid_: nested edit popup, inline string unescaper, sub-editor modal
-
-**Root Document Session**:
-The top-scope state descriptor (`{ rootText, editable, readOnlyReason, onUpdateRoot, context }`) owned by a console surface (such as a WireMock Stub JSON in the Stub Editor, a Request Body in the Unified Multi-Protocol Tester, or an immutable payload in the Request Journal / Stub Catalog) and propagated down through every recursive child node and across any Fullscreen Maximized Viewport layer. Permanent save/discard actions apply strictly to the Root Document at the top-level surface, whereas `[ ✓ Apply ]` on any header level performs a transient in-memory update to the Root Document.
-_Avoid_: modal state bag, local textarea state, nested save callback
-
-**Hierarchical In-Line Editing**:
-The uniform interaction pattern where every level of a polyglot document tree (root header and nested subsection headers alike) displays the identical toolbar (`[ 🎨 Rich | 📝 Raw ] [ ✏️ Edit ] [ 📋 Copy ] [ ⛶ Maximize ]`), allowing targeted in-line editing at any level when `editable: true` or rendering `[ ✏️ Edit ]` as `disabled` with an explicit contextual tooltip (`readOnlyReason`) when `editable: false`.
-_Avoid_: modal-only nested editing, hidden edit buttons, separate viewer and editor widgets
-
-**Dual-Layer Code Editor**:
-A zero-dependency editor component coupling a foreground `<textarea>` (configured with transparent text, visible caret, and spellcheck disabled) with a background `<pre class="editor-backdrop"><code>` layer running `highlightPayload()`, with locked font metrics and scroll synchronization across both `Rich Edit` and `Raw Edit`.
-_Avoid_: fake code editor, syntax textarea, custom input box
-
-**Code Input Editor Adapter**:
-A reusable adapter at the Canonical Payload Surface seam that equips native textareas (such as OpenAPI specifications, WireMock Scenario definitions, and JSON bundle imports) with Dual-Layer syntax highlighting, format prettifying, live error diagnostics, and fullscreen maximize capabilities.
-_Avoid_: textarea wrapper, editor helper, code enhancer
-
-**Editor Experience Mode**:
-The Mode Axis (`rich` vs. `raw`) of the 2×2 Payload Experience Matrix, toggling between unescaped/formatted/indented representation (`rich`) and wire-exact escaped/unindented representation (`raw`) while preserving syntax highlighting in both modes.
-_Avoid_: editor view switch, textarea toggle, plain-text fallback toggle
-
-**Fullscreen Maximized Viewport**:
-A full-window (100vw × 100vh) overlay viewport wrapping a Canonical Payload Surface with breadcrumb navigation, format descriptors, and action toolbars, providing distraction-free inspection and editing of root documents or unnested child payloads.
-_Avoid_: big modal, fullscreen dialog, zoom popup
-
-**Viewport Navigation Stack**:
-The LIFO (last-in, first-out) state container managing layered Fullscreen Maximized Viewports when drilling into nested payloads, where each nested lens stacks above its parent and pressing `Escape` pops only the topmost layer.
-_Avoid_: modal history, lens queue, popup stack
-
-**Contextual Save Handler**:
-The strategy module dispatching unsaved edits in a Canonical Payload Surface to their domain destination based on origin context (updating in-memory stubs, prompting to snapshot historical journal entries as stubs, updating tester request editors, or re-escaping child nodes back into parent container envelopes).
-_Avoid_: save callback, custom save switch, submit router
+**`wiremock-cli` / `WireMockConsoleProxy`**:
+The zero-compile JDK 21 JEP 330 terminal CLI (`wiremock-cli`, invoked via `./wiremock-cli/bin/wm` for `info`, `stubs`, `tail`, `toxics`, `proxy`) and the headless reverse-proxy console server (`WireMockConsoleProxy`, housed in `wiremock-extension-ui` and launched via `wm proxy`) that serves `/__admin/ui/` against remote WireMock targets without browser CORS restrictions.
+_Avoid_: CLI wrapper, standalone UI proxy script
 
 **UI Performance Quality Gate**:
 An automated outer loop verification seam in headless Chromium that instruments the Chrome DevTools Protocol (`Performance`, `Profiler`) and in-page `PerformanceObserver` to enforce strict client-side performance budgets: zero Long Tasks (>50ms) during user interactions, bounded DOM element generation, and isolated CSS layout containment.
@@ -259,8 +211,12 @@ The automatic background adjustment of cluster dictionary assignments and stored
 _Avoid_: journal defrag, store rebalancing, memory garbage clean
 
 **Traffic Classification**:
-An immutable domain representation derived from a WireMock `ServeEvent` and `Request` that encapsulates protocol detection (`http`, `casual`, `grpc`), routing outcome (`stubbed`, `proxied`, `fault`, `unmatched`), upstream proxy target, RPC service/error metadata, and elapsed duration.
+An immutable domain representation derived from a WireMock `ServeEvent` and `Request` that encapsulates protocol detection (`http`, `casual`, `async`), routing outcome (`stubbed`, `proxied`, `fault`, `unmatched`), upstream proxy target, RPC service/error metadata, and elapsed duration.
 _Avoid_: request inspector, traffic sniffer, protocol detector
+
+**`ClientSourceResolver`**:
+The caller-identity module (`wiremock-extension-common`) that extracts the effective caller IP (`X-Forwarded-For` first hop -> `X-Real-IP` -> socket `clientIp`) and performs non-blocking reverse-DNS lookups on virtual threads with a bounded batch wait and 15-minute positive/negative TTL cache (fast-pathing loopback to `localhost`), powering the Request Journal `Source` column and `src:`/`ip:`/`host:` search predicates.
+_Avoid_: IP helper, DNS util, client address parser
 
 ### Unified Multi-Protocol Tester & Workbench
 
@@ -269,7 +225,7 @@ A single consolidated interactive workbench in the WireMock Console UI capable o
 _Avoid_: HTTP tester, Casual tester, multi-tab tester
 
 **Multi-Protocol Dispatch Workbench**:
-The shared execution controller that morphs address bar inputs and headers drawers dynamically to match the selected protocol (HTTP URL/method, Kafka topic/key, AMQP destination/correlation-id, Casual service/buffer-type) while preserving the underlying DualLayerCodeEditor and PayloadLens across all transports.
+The shared execution controller that morphs address bar inputs and headers drawers dynamically to match the selected protocol (HTTP URL/method, Kafka topic/key, AMQP destination/correlation-id, Casual service/buffer-type) while preserving `PolyglotViewer` and `#modal-document-workspace` (`CodeEditor`) across all transports.
 _Avoid_: request bar, protocol switcher, input form
 
 **Protocol-Native Settlement Inspector**:

@@ -15,8 +15,6 @@ A collection of lightweight, production-grade extensions for [WireMock](https://
 > 🌐 **Documentation & Interactive Demo**: Visit [https://mattiasgreen.github.io/wiremock-extensions/](https://mattiasgreen.github.io/wiremock-extensions/) for our product landing page, interactive live console sandbox, and technical docs.
 >
 > 📹 **Video Tour**: Watch the [Progressive Simulation Walkthrough](https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm) (HTTP REST + Casual 2PC offline transition).
->
-> 📋 **Roadmap & Architecture Backlog**: See [TODO.md](TODO.md) for current progress and future release milestones.
 
 Each extension is **modular and standalone**: you can pick and choose only the extensions you need, or use the all-in-one bundle to include everything.
 
@@ -30,10 +28,11 @@ Each extension is **modular and standalone**: you can pick and choose only the e
 | **`wiremock-extension-openapi`** | OpenAPI 3.0 / 3.1 specification parser and stub synthesizer with `POST /__admin/openapi/import` route and format-aware mock data generation. | [Module README](wiremock-extension-openapi/README.md) |
 | **`wiremock-extension-tcp-netem`** | In-process Layer 4 TCP network emulator & fault injector (Toxiproxy re-implementation in Java 21 Virtual Threads) with dual-ingress architecture and zero blast-radius correlation-id scoping. | [Module README](wiremock-extension-tcp-netem/README.md) |
 | **`wiremock-extension-casual`** | In-process Casual (XATMI / Tuxedo) Domain Gateway for simulating distributed transaction and legacy RPC architectures with transparent proxying and failure injection. | [Module README](wiremock-extension-casual/README.md) |
-| **`wiremock-extension-async`** *(Beta)* | In-process Kafka Netty wire sink, AMQP/queue bridge, synthetic journal mediation, and HTTP async triggers. | [Module README](wiremock-extension-async/README.md) |
+| **`wiremock-extension-async`** *(Beta)* | In-process Kafka Netty wire sink, AMQP/IBM MQ queue bridge, synthetic journal mediation, and HTTP async triggers. | [Module README](wiremock-extension-async/README.md) |
 | **`wiremock-extension-journal`** *(Beta)* | High-density memory-bounded request journal powered by adaptive Zstandard dictionary compression, dynamic structural clustering, and JVM headroom anti-OOM guard. | [Module README](wiremock-extension-journal/README.md) |
-| **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, OpenAPI spec importer, scenario DAG state machine visualizer, request journal, async queue explorer, and unified Multi-Protocol Tester (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
-| **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
+| **`wiremock-extension-ui`** | Embedded WireMock Console web UI at `/__admin/ui/` with stub explorer, Unified Document Workspace, OpenAPI importer, scenario DAG visualizer, request journal with caller source resolution, async queue explorer, Multi-Protocol Tester, and headless `WireMockConsoleProxy` (zero external dependencies). | [Module README](wiremock-extension-ui/README.md) |
+| **`wiremock-extension-bundle`** | Umbrella module aggregating all extensions into a single JAR with unified SPI auto-discovery, standalone fat-JARs (`fatJar` / `fatJarIbmMq`), and a local dev runner. | [Module README](wiremock-extension-bundle/README.md) |
+| **`wiremock-cli`** | Zero-compile JDK 21 JEP 330 terminal CLI (`wm`) for capability probing, boolean stub search, live journal tailing (`src:`/`ip:`/`host:`), NetEm toxic inspection, and launching `WireMockConsoleProxy`. | [Module README](wiremock-cli/README.md) |
 | **`wiremock-examples`** | Complete Case Management System reference implementation demonstrating isolated native scenario modeling (`CaseLifecycle-<caseId>`), parallel case collision pitfalls, and Playwright verification. | [Examples Subproject](wiremock-examples/README.md) |
 
 ## Quick Preview
@@ -49,7 +48,7 @@ Watch how a multi-protocol enterprise system (combining HTTP REST and binary Cas
 > 📹 **[Watch / Download Progressive Simulation Tour Video (WebM)](https://github.com/mattiasgreen/wiremock-extensions/releases/latest/download/banking-progressive-simulation-tour.webm)** *(Hosted on GitHub Releases, zero git bloat)*
 >
 > 1. **Live Proxy Recording**: SUT interacts with live Case Management, CRM, and Casual 2PC billing services while WireMock records every call into the unified journal.
-> 2. **1-Click Harvest & Flip**: Harvest captured sessions into deterministic stubs and switch project routes from `LIVE PROXY` to `STUBS MODE`.
+> 2. **1-Click Harvest & Park**: Harvest captured sessions into deterministic stubs (`#btn-journal-snapshot-filtered`), enable recorded stubs, and park proxy routes via priority tiers.
 > 3. **100% Offline Replay**: Terminate upstream backend services completely; the exact same customer journey replays with 100% fidelity and local 2PC transaction synthesis.
 
 ## Building
@@ -146,106 +145,44 @@ Now build normally:
 
 ## Usage Options
 
-### 1. Standalone Executable Fat-JAR & Docker
+### 1. All-in-One Bundle, Standalone Fat-JAR & Docker
 
-Build a self-contained executable JAR combining WireMock Standalone, all extensions, and auto-registration:
-
-```bash
-# Build fat-jar
-./gradlew fatJar
-```
-
-#### Launch Directly (As-Is)
-
-```bash
-java -jar wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar --port 8080
-```
-
-Or run standard WireMock CLI options via `wiremock.Run`:
-
-```bash
-java -cp wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar wiremock.Run --port 8080 --verbose
-```
-
-#### Launch with Docker
-
-Build and run with the included root `Dockerfile`:
-
-```bash
-# 1. Build the fat jar
-./gradlew fatJar
-
-# 2. Build image
-docker build -t wiremock-suite .
-
-# 3. Run container (HTTP 8080, NetEm 8081, Casual 7772)
-docker run -it --rm -p 8080:8080 -p 8081:8081 -p 7772:7772 wiremock-suite
-
-# 4. Or mount host directories for mappings and files
-docker run -it --rm -p 8080:8080 \
-  -v $(pwd)/mappings:/home/wiremock/mappings \
-  -v $(pwd)/__files:/home/wiremock/__files \
-  wiremock-suite --port 8080 --verbose
-```
-
-### 2. All-in-One Bundle Coordinate
-
-If you want all extensions together as a project dependency:
+For all extensions together with Java SPI auto-discovery:
 
 **Gradle**:
 ```groovy
-implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.7.0'
+implementation 'io.github.mattiasgreen:wiremock-extension-bundle:1.14.0'
 ```
 
-**WireMock Standalone CLI**:
+**Standalone Executable Fat-JAR**:
 ```bash
-java -cp "wiremock-extension-bundle-1.7.0.jar:wiremock-standalone-3.12.1.jar" \
-  com.github.tomakehurst.wiremock.standalone.WireMockServerRunner \
-  --port 8080 \
-  --verbose
+./gradlew fatJar # Lean standalone JAR (or ./gradlew fatJarIbmMq to bundle IBM MQ SVRCONN client)
+java -jar wiremock-extension-bundle/build/libs/wiremock-extension-bundle-*-standalone.jar --port 8080
 ```
+
+See [wiremock-extension-bundle/README.md](wiremock-extension-bundle/README.md) for full Maven/Gradle coordinates, WireMock CLI classpath launch, Docker image build/run commands, and zero-build consumer runner instructions.
 
 All extensions auto-register via Java Service Provider Interface (SPI):
 - Web UI: `http://localhost:8080/__admin/ui/`
 - Prometheus Metrics: `http://localhost:8080/__admin/metrics/prometheus`
 - OpenAPI Spec Importer: `http://localhost:8080/__admin/openapi/import`
-- Casual Config API: `http://localhost:8080/__admin/casual/config`
-- Casual TCP Gateway: `casual://127.0.0.1:7772`
+- Casual Config API & TCP Gateway: `http://localhost:8080/__admin/casual/config` / `casual://127.0.0.1:7772`
+- Async Status & Destinations: `http://localhost:8080/__admin/async/status`
+- Compressed Journal Stats: `http://localhost:8080/__admin/journal/stats`
 - Admin API: `http://localhost:8080/__admin/mappings`
 
 ### 2. Individual Extensions
 
 Each extension can be used independently without pulling in the others:
 
-- **JSON Logging Only**:
-  ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.7.0'
-  ```
-  See [wiremock-extension-json-logging/README.md](wiremock-extension-json-logging/README.md) for details.
-
-- **OpenTelemetry & Prometheus Only**:
-  ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.7.0'
-  ```
-  See [wiremock-extension-otel/README.md](wiremock-extension-otel/README.md) for details.
-
-- **Web UI Only**:
-  ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.7.0'
-  ```
-  See [wiremock-extension-ui/README.md](wiremock-extension-ui/README.md) for details.
-
-- **L4 TCP Network Emulation & Chaos Only**:
-  ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.7.0'
-  ```
-  See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md) for architecture, Toxiproxy API endpoints, and journal configuration.
-
-- **Casual (XATMI / Tuxedo) Domain Gateway Only**:
-  ```groovy
-  implementation 'io.github.mattiasgreen:wiremock-extension-casual:1.7.0'
-  ```
-  See [wiremock-extension-casual/README.md](wiremock-extension-casual/README.md) for stub-driven dynamic proxying, multi-upstream 2PC stickiness, and buffer mediation.
+- **JSON Logging Only**: `implementation 'io.github.mattiasgreen:wiremock-extension-json-logging:1.14.0'` — [README](wiremock-extension-json-logging/README.md)
+- **OpenTelemetry & Prometheus Only**: `implementation 'io.github.mattiasgreen:wiremock-extension-otel:1.14.0'` — [README](wiremock-extension-otel/README.md)
+- **OpenAPI Importer Only**: `implementation 'io.github.mattiasgreen:wiremock-extension-openapi:1.14.0'` — [README](wiremock-extension-openapi/README.md)
+- **Web UI Only**: `implementation 'io.github.mattiasgreen:wiremock-extension-ui:1.14.0'` — [README](wiremock-extension-ui/README.md)
+- **L4 TCP Network Emulation & Chaos Only**: `implementation 'io.github.mattiasgreen:wiremock-extension-tcp-netem:1.14.0'` — [README](wiremock-extension-tcp-netem/README.md)
+- **Casual (XATMI / Tuxedo) Domain Gateway Only**: `implementation 'io.github.mattiasgreen:wiremock-extension-casual:1.14.0'` — [README](wiremock-extension-casual/README.md)
+- **Async Messaging & Queue Bridge Only** *(Beta)*: `implementation 'io.github.mattiasgreen:wiremock-extension-async:1.14.0'` — [README](wiremock-extension-async/README.md)
+- **Adaptive Zstandard Request Journal Only** *(Beta)*: `implementation 'io.github.mattiasgreen:wiremock-extension-journal:1.14.0'` — [README](wiremock-extension-journal/README.md)
 
   #### Dual-Ingress Architecture & Port Separation
   `tcp-netem` implements an in-process Dual-Ingress pattern using Java 21 Virtual Threads:
@@ -298,9 +235,9 @@ Extending WireMock Standalone, port configuration follows a clean separation of 
   * `WIREMOCK_NETEM_PORT`: Layer 4 TCP NetEm ingress port (default: `8081`).
   * `WIREMOCK_CASUAL_PORT`: Netty Casual (XATMI) domain gateway TCP port (default: `7772`).
 
-### 5. Live Proxy & Traffic Recording Testing (Dual-Server Setup)
+### 5. Live Proxy, Traffic Recording & Console UI Walkthrough (Dual-Server Setup)
 
-To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, and Project Lifecycle workflow:
+To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, Unified Document Workspace, and Multi-Protocol workflows:
 
 1. **Start the simulated Upstream Mock Service** (Port `8089`):
    ```bash
@@ -313,136 +250,36 @@ To test the complete OpenAPI Live Proxying, Traffic Snapshot Recording, and Proj
 3. **Open the WireMock Console UI**:
    Navigate to [http://localhost:8080/__admin/ui/](http://localhost:8080/__admin/ui/).
 4. **Import OpenAPI Specification in Live Proxy Mode**:
-   - Click **Import Spec / Bundle** in the top navigation.
-   - Select **Live Proxy & Recording** mode.
-   - Paste an OpenAPI specification containing an upstream path (e.g. `/api/v1/live-catalog`).
-   - Set the Upstream Base URL to `http://localhost:8089` and set the Project Name to `Catalog Service`.
-   - Click **Import as Live Proxies**.
+   - In the **Stubs** sidebar, click **📥 Import** and open the OpenAPI import flow.
+   - Select **Live Proxy & Recording** mode, paste an OpenAPI spec containing an upstream path (e.g. `/api/v1/live-catalog`), set the Upstream Base URL to `http://localhost:8089`, and import.
 5. **Live Test via Multi-Protocol Tester**:
-   - Select the newly imported proxy stub (`[GET] /api/v1/live-catalog`).
-   - Click **⚡ Test Stub** to load it into the Multi-Protocol Tester.
-   - Click **Send Request**. The request is proxied through WireMock to the upstream service (`8089`) returning live upstream data!
-6. **Snapshot Traffic into Parked Stubs**:
-   - Return to the **Stubs** tab and select the `Catalog Service` project filter.
-   - The **Project Lifecycle Bar** displays `LIVE PROXY`.
-   - Click **📷 Snapshot Live Traffic**. The proxied traffic from the Request Journal is captured and parked (`priority >= 100`) as a replay stub.
-   - Click the **Parked** filter pill to inspect the captured authentic response.
-7. **Switch to Stubs Mode & Go Offline**:
-   - In the Project Lifecycle Bar, click **Switch to Stubs Mode**.
-   - The project mode badge flips to `STUBS MODE` (proxy stubs are parked at `priority >= 100`, recorded stubs are activated).
-   - Terminate the upstream service (Ctrl+C on port `8089`).
-   - Re-send the request in the Multi-Protocol Tester: it is now served completely offline from the recorded stub!
+   - Select the newly imported proxy stub (`[GET] /api/v1/live-catalog`) and click **⚡ Test** to load it into the **Multi-Protocol Tester** (supports HTTP, Kafka, AMQP, and Casual XATMI).
+   - Click **Send Request**. The request is proxied through WireMock to the upstream service (`8089`) returning live upstream data.
+6. **Inspect Caller Source & Snapshot Traffic in Request Journal**:
+   - Switch to the **Request Journal** tab to view the `🌐 PROXIED` entry alongside its resolved **Source** column (short hostname + IP, filterable via `src:`, `ip:`, `host:` or by clicking a source chip).
+   - Click **📸 Snapshot Filtered Proxied** (`#btn-journal-snapshot-filtered`) or **📸 Snapshot Stub** on an individual row to save captured responses as parked (`priority >= 100`) replay stubs.
+7. **Inspect/Edit in Document Workspace & Go Offline**:
+   - Return to the **Stubs** tab and filter by **Disabled** (parked `priority >= 100`) to inspect the captured stub. Click **✏️ Edit** to open it in the fullscreen **Unified Document Workspace** (`#modal-document-workspace`) for polyglot tree inspection and span-exact section editing.
+   - Enable the recorded stub and park the proxy route via the Stubs sidebar (`#btn-toggle-stub` or bulk actions).
+   - Terminate the upstream service (Ctrl+C on port `8089`) and re-send the request in the Multi-Protocol Tester: it is now served 100% offline (`📌 STUB`).
+8. **Explore Async Queues & Topics**:
+   - Open the **📬 Queues & Topics** tab to browse live Kafka/AMQP/Casual/In-Memory destinations, inspect polyglot message payloads in `#modal-document-workspace`, publish compensating messages, or purge queues.
 
-### 6. Zero-Build Consumer Runner
+## Shipped Simulator Stack Capabilities
 
-You can run WireMock Standalone with the complete extension bundle loaded in any empty folder using a single minimal `build.gradle` file, without cloning or building this repository:
+All simulator stack extensions run in-process inside WireMock Standalone (sub-second startup, zero external sidecar containers):
 
-```groovy
-plugins {
-    id 'application'
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    runtimeOnly 'org.wiremock:wiremock-standalone:3.12.1'
-    runtimeOnly 'io.github.mattiasgreen:wiremock-extension-bundle:1.7.0'
-}
-
-application {
-    mainClass = 'com.github.tomakehurst.wiremock.standalone.WireMockServerRunner'
-}
-```
-
-Run with:
-```bash
-gradle run --args="--port 8080 --verbose"
-```
-
-Because all extensions implement `ExtensionFactory` via Java SPI, WireMock automatically discovers and loads the Web UI, metrics, and OpenAPI endpoints on startup.
-
-### 7. Docker Reference Architecture
-
-To deploy a containerized mock server with the extension bundle, you can assemble an image directly using published artifacts:
-
-```dockerfile
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /wiremock
-
-ARG WIREMOCK_VERSION=3.12.1
-ARG BUNDLE_VERSION=1.7.0
-
-RUN wget -q "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar" -O wiremock.jar \
- && wget -q "https://repo1.maven.org/maven2/io/github/mattiasgreen/wiremock-extension-bundle/${BUNDLE_VERSION}/wiremock-extension-bundle-${BUNDLE_VERSION}.jar" -O bundle.jar
-
-EXPOSE 8080 8081 7772
-ENTRYPOINT ["java", "-cp", "wiremock.jar:bundle.jar", "com.github.tomakehurst.wiremock.standalone.WireMockServerRunner", "--port", "8080"]
-```
-
-## Roadmap & Unified Simulator Stack
-
-The suite is expanding into a **zero-sprawl Simulator Stack** running entirely in-process inside WireMock (sub-second startup, zero external container dependencies), alongside complete embedded control plane and stub lifecycle management.
-
-> 📘 **Full Architecture Blueprint**: Read [docs/simulator-stack-architecture.md](docs/simulator-stack-architecture.md) for technical design details, and [TODO.md](TODO.md) for release phasing.
-
-### 1. Multi-Protocol Simulator Stack Modules
-
-* **✅ 🌪️ Network Chaos & Fault Injection (`wiremock-extension-tcp-netem`) [AVAILABLE]**:
-  * Native re-implementation of Shopify's Toxiproxy in modern **Java 21 Virtual Threads** (`Thread.ofVirtual()`), running directly inside WireMock without external Go sidecars.
-  * Dual-Ingress architecture: Port 8081 NetEm forwarding to Port 8080 WireMock Core.
-  * All 7 toxics supported: `latency` (with jitter), `bandwidth` throttling, `slow_close`, `timeout` (black hole), `reset_peer` (TCP RST via `setSoLinger(true,0)`), `slicer` (packet fragmentation), and `limit_data`.
-  * Zero blast-radius parallel testing via `X-Correlation-Id` scoping and declarative `metadata.netem` stubs.
-  * High-throughput circular event journal and Web UI NetEm console with one-click presets ("3G Mobile", "Flaky Wi-Fi", "Chaos Monkey").
-
-* **✅ 🏛️ Casual (XATMI / Tuxedo) Domain Gateway & 2PC Simulation (`wiremock-extension-casual`) [AVAILABLE]**:
-  * In-process Layer 7 Tuxedo / Casual domain gateway on raw TCP (Port 7772) built on Netty without JEE containers or C++ domain brokers.
-  * Stub-driven dynamic proxying (`targetBaseUrl: casual://host:port`) with in-memory microsecond stub probing.
-  * Multi-upstream 2PC XA transaction stickiness (`Xid` tracking across distributed upstreams).
-  * Human-readable buffer mediation: FML (`.FIELDED`/`CFIELD/`) ↔ structured JSON via `FieldedTypeBuffer`, `CSTRING/` null terminators, and `JSON` text in Request Journal.
-  * Synthetic XA Resource Manager (`XA_OK` voting) for severed or offline upstream servers.
-
-* **📬 AsyncAPI & Event-Driven Mocking (`wiremock-extension-asyncapi`)**:
-  * Ingest AsyncAPI 2.x and 3.x specifications (`asyncapi.yaml`) via `POST /__admin/asyncapi/import` and synthesize mock event publishers and schema payload generators.
-  * Native WebSockets (`ws://...`) and Server-Sent Events (`GET /__async/channels/{name}` SSE) with zero external message broker containers.
-  * In-memory Virtual Topic Broker supporting pub/sub channels, topic wildcards (`orders.*`), offset cursors, and consumer group simulation.
-  * Bidirectional HTTP ⇄ Event triggers: automatically publish async events when HTTP endpoints are called, or fire webhooks when events are produced.
-
-* **🪝 Asynchronous Callbacks & Webhooks (`wiremock-extension-webhooks`)**:
-  * Automatic OpenAPI 3.0/3.1 `callbacks` parsing: synthesizes `202 Accepted` stubs paired with asynchronous webhook deliveries to dynamic URLs like `{{jsonPath request.body '$.callbackUrl'}}`.
-  * Native Scenario workflow triggers: emit out-of-band callbacks upon WireMock scenario transitions or Java `ServeEventListener` hooks.
-  * Webhook Outbox Journal: UI audit log tracking dispatched callbacks, target endpoints, delivery status, retries, and an interactive "Trigger / Replay Now" button.
-
-### 2. Embedded Control Plane & Web UI Authoring
-
-* **Visual Stub Creator & Live Editor**:
-  * Rich modal interface for authoring new stubs or editing existing mappings directly in the web UI without manual JSON authoring.
-  * Visual builders for URL matchers (`urlEqualTo`, `urlPathMatching`, `urlPattern`), header/query parameter grids, and multi-mode response body editors (JSON, Raw text, base64 binary).
-  * Direct synchronization with WireMock Admin API (`POST /__admin/mappings`, `PUT /__admin/mappings/{id}`) with instantaneous UI updates.
-* **Bulk Stub Portfolio Management**:
-  * One-Click Export: download all active mappings, scenarios, and dynamic models into a portable `stubs-bundle.json`.
-  * Drag-and-Drop Bulk Import: upload stub bundles with conflict resolution strategies (Overwrite, Append, Skip).
-  * State Snapshots & Checkpoints: save and restore named mock server checkpoints for deterministic, repeatable test suites.
-* **Live Proxy Recording & Journal Promotion**:
-  * Configure upstream reverse-proxy targets directly from the web console.
-  * Smart recording filters by URL pattern, method, and headers with automated ID regex parameterization.
-  * One-click promotion of any captured request in the Request Journal into a permanent stub mapping.
-
-### 3. Advanced OpenAPI & Scenario Synthesis
-
-* **State Machine & Scenario Inference**:
-  * Infer WireMock scenario progressions from resource lifecycles (e.g., `POST /items` transitioning `Started` to `CREATED`, followed by `GET /items/{id}` and `DELETE /items/{id}`).
-  * Support OpenAPI vendor extensions (`x-wiremock-scenario`, `x-wiremock-required-state`, `x-wiremock-new-state`, `x-wiremock-priority`).
-* **Dynamic Response Templating & Realistic Data**:
-  * Integrated Handlebars expressions (`{{request.path.[0]}}`, `{{now}}`, `{{randomValue type='UUID'}}`) directly inside synthesized OpenAPI responses.
-  * Zero-dependency realistic mock data helpers (`{{random.email}}`, `{{random.name}}`, `{{random.creditCard}}`).
-
-### 4. Enterprise Security & Networking
-
-* [ ] **Configurable Outbound HTTPS Certificate Validation**: Support per-project and per-stub toggles to enforce strict upstream SSL/TLS certificate validation or configure custom truststores/CAs when proxying.
-* [ ] **Dynamic Downstream Certificate Generation**: In-memory dynamic TLS certificate forging for arbitrary proxy hostnames in forward browser proxy mode.
+* **🌪️ L4 TCP Network Chaos & Fault Injection (`wiremock-extension-tcp-netem`)**:
+  * Native Java 21 Virtual Threads re-implementation of Toxiproxy with Dual-Ingress (`8081` → `8080`), all 7 toxics (`latency`, `bandwidth`, `slow_close`, `timeout`, `reset_peer`, `slicer`, `limit_data`), `X-Correlation-Id` / stream-pattern / IP-CIDR scoping, circular event journal, and Web UI presets. See [wiremock-extension-tcp-netem/README.md](wiremock-extension-tcp-netem/README.md).
+* **🏛️ Casual (XATMI / Tuxedo) Domain Gateway & 2PC Simulation (`wiremock-extension-casual`)**:
+  * In-process Netty TCP gateway (Port `7772`) with stub-driven dynamic proxying (`targetBaseUrl: casual://host:port`), multi-upstream 2PC XA transaction stickiness, schema-less Fielded (`.FIELDED`/`CFIELD/`) ↔ JSON buffer mediation, Casual Queue (`ENQUEUE`/`DEQUEUE`) mediation, and synthetic XA voting for offline replay. See [wiremock-extension-casual/README.md](wiremock-extension-casual/README.md).
+* **📬 Asynchronous Messaging & Queue Mocking (`wiremock-extension-async`, Beta)**:
+  * Unified single-module async engine supporting in-process Netty Kafka wire sink, AMQP 1.0 (`protonj2`), optional `compileOnly` IBM MQ (`SVRCONN` via `fatJarIbmMq`), HTTP-to-async triggers (`metadata.async.produce`), regex priority queue bridging (`"mode": "PROXY"`, `channelPattern`/`proxyChannel`/`proxyBroker`), synthetic `ServeEvent` journaling (`CONSUME /__async/<protocol>/<channel>`), and the Web Console **Queues & Topics** explorer. See [wiremock-extension-async/README.md](wiremock-extension-async/README.md).
+* **🗜️ Adaptive Zstandard Request Journal (`wiremock-extension-journal`, Beta)**:
+  * Memory-bounded `RequestJournalStore` (`CompressedStores`) with per-cluster Zstandard dictionary training, retroactive compaction, transient on-demand decompression, indexed search (`/__admin/journal/search`), and real-time JVM headroom anti-OOM FIFO pruning. See [wiremock-extension-journal/README.md](wiremock-extension-journal/README.md).
+* **💻 Zero-Compile Terminal CLI & Console Proxy (`wiremock-cli`)**:
+  * JDK 21 JEP 330 CLI (`./wiremock-cli/bin/wm`) for `wm info`, boolean `wm stubs`, live `wm tail` with caller `src:`/`ip:`/`host:` filtering, `wm toxics`, and `wm proxy` (launching `WireMockConsoleProxy` from `wiremock-extension-ui`). See [wiremock-cli/README.md](wiremock-cli/README.md).
 
 ## License
 
-[Apache License 2.0](LICENSE)
+Apache License 2.0

@@ -1,4 +1,10 @@
-# 0009. Adaptive Zstandard Journal Compression
+# 28. Adaptive Zstandard Journal Compression
+
+Date: 2026-11-08
+
+## Status
+
+Accepted
 
 ## Context
 

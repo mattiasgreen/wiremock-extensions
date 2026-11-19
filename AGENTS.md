@@ -18,9 +18,9 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
 | **`wiremock-extension-casual`** | In-process Netty XATMI / Casual protocol TCP gateway, L7 proxy recording, and 2PC/XA transaction participant/forwarding. | `CasualWireMockGateway`, `se.laz.casual.*` standalone client/server | [`casual/AGENTS.md`](wiremock-extension-casual/AGENTS.md) |
 | **`wiremock-extension-async`** | In-process Kafka Netty wire sink, AMQP/queue bridge, synthetic journal mediation, and HTTP async triggers (Beta). | `AdminApiExtension` (`AsyncAdminEndpoint`), `ServeEventListener` (`AsyncMessagePublishingListener`) | [`async/AGENTS.md`](wiremock-extension-async/AGENTS.md) |
 | **`wiremock-extension-journal`** | In-process adaptive Zstandard dictionary request journal with real-time JVM headroom anti-OOM guard. | `Stores` (`CompressedStores`), `RequestJournalStore`, `AdminApiExtension` (`JournalAdminEndpoint`) | [`journal/AGENTS.md`](wiremock-extension-journal/AGENTS.md) |
-| **`wiremock-extension-ui`** | Embedded Vanilla ES6 Web SPA at `/__admin/ui/`, stateless priority-tier lifecycle service, and headless `WireMockConsoleProxy`. | `AdminApiExtension` (`UiAdminApiEndpoint`, `StubLifecycleAdminEndpoint`) | [`ui/AGENTS.md`](wiremock-extension-ui/AGENTS.md) |
+| **`wiremock-extension-ui`** | Embedded Vanilla ES6 Web SPA at `/__admin/ui/`, stateless priority-tier lifecycle service, and headless `WireMockConsoleProxy`. | `AdminApiExtension` (`UiAdminApiEndpoint`, `StubLifecycleAdminEndpoint`), `WireMockConsoleProxy` | [`ui/AGENTS.md`](wiremock-extension-ui/AGENTS.md) |
 | **`wiremock-extension-bundle`** | Meta-jar aggregating extensions with SPI auto-discovery (`META-INF/services/...ExtensionFactory`) + `StandaloneDevServer`. | Meta-packaging & standalone JavaExec runner | Root rules |
-| **`wiremock-cli`** | Lightweight, zero-compile CLI & proxy client powered by JDK 21 JEP 330 for terminal observability, stub search, traffic tailing, and NetEm toxic inspection. | JEP 330 standalone runner (`wm`), `WireMockCli`, `WireMockConsoleProxy` | Root rules |
+| **`wiremock-cli`** | Lightweight, zero-compile CLI client powered by JDK 21 JEP 330 for terminal observability, stub search, traffic tailing, and NetEm toxic inspection. | JEP 330 standalone runner (`wm`), `WireMockCli` (`wm proxy` invokes `WireMockConsoleProxy` from `wiremock-extension-ui`) | Root rules |
 | **`wiremock-examples`** | Case Management reference implementation modeling stateful FSM scenarios and parallel isolation tests. | Reference implementation & integration test suite | Root rules |
 
 ---
@@ -74,6 +74,7 @@ Global guidelines, architecture topology, and workflows for autonomous coding ag
   - Delegate broad codebase searches or inspection of large test/HTML files (>30 KB) to the `research` subagent (`Model: "flash"`) so raw file dumps do not bloat the main planner context.
   - Use concurrent `self` subagents for independent parallel tasks (e.g., updating `docs/spec/` documentation while running module verification tests).
 - **On-Demand Workspace Skills (`.agents/skills/`)**:
+  Workspace-local skills live under `.agents/skills/` (consult the directory for the full set, including general workflow skills such as `tdd`, `code-review`, `diagnosing-bugs`, `grilling`, `pr`, `prototype`, `research`, `wizard`, and `writing-for-agents`). Key project-specific runbooks include:
   - **`feature-pr-lifecycle`**: Activate when creating, verifying, opening PRs, monitoring CI, and merging feature branches to `main`.
   - **`release-and-media`**: Activate when managing release-please PR approvals, tracking releases, and publishing zero-bloat demo video assets.
   - **`ux-audit-and-snapshots`**: Activate when designing, modifying, or reviewing UI features (5-Phase Senior Loop, `captureUiSnapshots`, multimodal inspection, and 5 Lenses UX review).

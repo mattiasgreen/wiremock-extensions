@@ -21,7 +21,7 @@ Re-implements Shopify's Toxiproxy primitives natively inside the JVM using **Jav
 * **High-Throughput Lock-Free Circular Journal**: Pre-allocated ring buffer in `AtomicReferenceArray` tracking transfer sizes, latency, client IP, target scope, and toxic verdicts without object churning or heap fragmentation.
 * **Declarative Stub Mapping Metadata**: Define network impairments directly inside WireMock stub mapping JSON under `metadata.netem`.
 * **Toxiproxy v2 REST API Compatibility**: Exposes endpoints compatible with official Toxiproxy SDKs (`/proxies`, `/proxies/{name}/toxics`, `/proxies/reset`).
-* **Dedicated NetEm Admin Routes**: `/__admin/tcp-netem/proxies`, `/__admin/tcp-netem/reset`, and one-click presets (`3G_MOBILE`, `FLAKY_WIFI`, `BLACK_HOLE`, `CHAOS_MONKEY`).
+* **Dedicated NetEm Admin Routes**: `/__admin/tcp-netem/proxies`, `/__admin/tcp-netem/journal`, `/__admin/tcp-netem/reset`, and one-click presets defined in `NetEmPreset` (`3G_MOBILE` [aliases: `MOBILE_3G`, `3G`], `FLAKY_WIFI` [alias: `WIFI`], `BLACK_HOLE` [alias: `TIMEOUT`], `CHAOS_MONKEY` [alias: `CHAOS`]).
 
 ---
 
@@ -116,9 +116,10 @@ Extending WireMock Standalone (where the main HTTP port is configured via standa
 | `DELETE` | `/__admin/tcp-netem/proxies/{name}` | Stop and remove a proxy. |
 | `POST` | `/__admin/tcp-netem/proxies/{name}/toxics` | Add or update a toxic impairment on the proxy (`pattern`, `patternType`, `clientIp`). |
 | `DELETE` | `/__admin/tcp-netem/proxies/{name}/toxics/{toxic}` | Remove an active toxic from the proxy. |
-| `POST` | `/__admin/tcp-netem/proxies/{name}/presets/{preset}` | Apply a preset (`3G_MOBILE`, `FLAKY_WIFI`, `BLACK_HOLE`, `CHAOS_MONKEY`). |
-| `GET` | `/__admin/tcp-netem/proxies/{name}/journal` | Query recorded network events. Supports `?limit=100` and `?scope=...` (or `?correlationId=...`). |
-| `DELETE` | `/__admin/tcp-netem/proxies/{name}/journal` | Clear the circular event journal for this proxy. |
+| `POST` | `/__admin/tcp-netem/proxies/{name}/presets/{preset}` | Apply a `NetEmPreset` (`3G_MOBILE` / `MOBILE_3G` / `3G`, `FLAKY_WIFI` / `WIFI`, `BLACK_HOLE` / `TIMEOUT`, `CHAOS_MONKEY` / `CHAOS`). |
+| `GET` | `/__admin/tcp-netem/journal` | Query the global circular event journal. Supports `?limit=100` and `?scope=...` (or `?correlationId=...`). |
+| `DELETE` | `/__admin/tcp-netem/journal` | Clear the global circular event journal. |
+| `POST` | `/__admin/tcp-netem/journal/reset` | Reset/clear the global circular event journal (POST alias). |
 | `POST` | `/__admin/tcp-netem/reset` | Clear all toxics and re-enable all proxies globally. |
 
 ---

@@ -4,7 +4,7 @@ Date: 2026-11-08
 
 ## Status
 
-Accepted
+Superseded by [ADR 0030](0030-unified-polyglot-document-workspace-and-css-highlights-editor.md)
 
 ## Context
 

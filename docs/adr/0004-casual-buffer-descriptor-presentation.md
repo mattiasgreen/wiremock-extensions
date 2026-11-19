@@ -25,13 +25,11 @@ We introduce the **Casual Buffer Descriptor** presentation model across all Casu
    - When the buffer type and syntax format are identical (e.g. a `JSON` buffer containing `JSON` payload):
      Deduplicate to avoid stutter: render `[CASUAL JSON · <SIZE>]` (e.g. `[CASUAL JSON · 0.4 KB]`).
 2. **Unified Surface Coverage**:
-   - **Casual Tester Request Editor**: Live badge above `#casual-request-payload` updating on user typing and `#casual-buffer-type` changes.
-   - **Casual Tester Response Inspector**: Top-level badge above `#casual-response-body` displaying returned buffer type and payload syntax.
+   - **Unified Tester (Casual Protocol Mode)**: Live badge above the Casual request editor and response inspector reflecting the selected buffer type and detected payload syntax.
    - **Request Journal Detail**: Top-level badge on both Request Body and Response Body headers for any request classified with `isCasual` (using `x-casual-buffer-type`).
-   - **Stubs Master-Detail Viewer**: Top-level badge (`#stub-top-pill`) for any stub matching `/__casual/services/*` or metadata `protocol: 'casual'`.
+   - **Stubs Master-Detail Viewer**: Top-level badge for any stub matching `/__casual/services/*` or metadata `protocol: 'casual'`.
 3. **Interactive Capabilities**:
-   - Clicking the badge continues to toggle between expanded and collapsed presentation.
-   - Hovering reveals the `[🔍 Lens]` button to open the full payload in the Nested Payload Lens.
+   - Clicking the badge continues to toggle between expanded and collapsed presentation, with full inspection and editing integrated into the unified Document Workspace (`#modal-document-workspace`).
 
 ## Consequences
 

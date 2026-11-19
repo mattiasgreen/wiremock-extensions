@@ -33,7 +33,7 @@ We introduce `wiremock-extension-ui`, an embedded Single-Page Application (SPA) 
   - **HTTP & Casual Testers**: Built-in request execution console with syntax-highlighted Dual-Layer editors, format detection, and history presets.
   - **OpenAPI Manager**: YAML/JSON spec ingestion and live reverse-proxy recording.
   - **Scenarios Visualizer**: Interactive DAG graph showing state transitions and FSM states.
-  - **Dynamic State Simulation**: In-memory state inspection and AST rule evaluation.
+  - **Queues & Topics**: Cross-protocol asynchronous destination explorer, message inspection, and broker connection registry.
   - **TCP NetEm Chaos**: L4 transport and L7 traffic impairment control.
 
 ### 3. Lightweight Maven Packaging (< 200 KB)
@@ -46,7 +46,7 @@ We introduce `wiremock-extension-ui`, an embedded Single-Page Application (SPA) 
 ### 5. Multi-Tiered Verification Loop
 - **Tier 0**: Zero-rebuild live disk hot-reloading for rapid UI development.
 - **Tier 1**: Static asset contract & import path validation (`UiAssetAndContractTest`).
-- **Tier 2**: In-browser headless ES6 module unit tests via Nashorn/Playwright (`UiModuleUnitTest`).
+- **Tier 2**: In-browser headless ES6 module unit tests via headless Playwright Chromium (`UiModuleUnitTest`).
 - **Tier 3**: End-to-end domain Playwright test suites (`Ui*PlaywrightTest`).
 
 ## Consequences

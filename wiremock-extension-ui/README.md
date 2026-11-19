@@ -28,18 +28,17 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
   - Choice between **Synthetic Stubs** (format-aware data generator) and **Live Transparent Proxy** (proxies requests to upstream live service with auto-discovered `servers:` block).
   - Direct handoff into the full-width Multi-Protocol Tester, with request/response inspector and collapsible execution history sidebar.
 
-- **Live Proxy Recording & Project Lifecycle**:
-  - Group stubs and proxies into distinct **Projects**.
-  - **One-Click Snapshot Recording**: Record actual traffic forwarded to the upstream service directly from the request journal into captured stubs parked at `priority >= 100` (`DISABLED`) so they do not collide with active proxying.
-  - **Project Mode Flip**: Toggle between **LIVE PROXY** mode and offline **STUBS MODE** in one click via native priority tiers (`metadata.previousPriority` round-trip).
+- **Live Proxy Recording & Priority-Tier Lifecycle**:
+  - **One-Click Snapshot Recording**: Capture actual traffic forwarded to an upstream service directly from the request journal (`#btn-journal-snapshot-filtered` or per-row `📸 Snapshot Stub`) into deterministic stubs parked at `priority >= 100` (`DISABLED`) so they do not collide with active proxying.
+  - **Individual & Bulk Enable/Disable**: Activate or park individual stubs or visibility-scoped bulk selections via WireMock's native `/__admin/mappings/{id}` priority tiers (`metadata.previousPriority` round-trip) to transition seamlessly from live proxying to offline replay.
 
 ![OpenAPI Spec Import & End-to-End Workflow Demo](../docs/images/demo-openapi-import.gif)
 
 - **Stub Explorer, Unified Document Workspace & Polyglot Payload Engine**:
-  - Filter stubs instantly by HTTP method, URL pattern, stub name, project, lifecycle state (`All` / `Active` / `Disabled`), and boolean expressions (`AND`, `OR`), with visibility-scoped bulk actions (`getVisibleSelectedStubIds`).
+  - Filter stubs instantly by HTTP method, URL pattern, stub name, lifecycle state (`All` / `Active` / `Disabled`), and boolean expressions (`AND`, `OR`), with visibility-scoped bulk actions (`getVisibleSelectedStubIds`).
   - **Unified Document Workspace (`#modal-document-workspace`)**: `➕ New`, `✏️ Edit`, `📄 Duplicate`, and `⛶ Open in Workspace` open in the foldable **Polyglot Tree Viewer** (`polyglot-viewer.js`) first—auto-unnesting embedded JSON, XML (CDATA/entities), Java `Map.toString()` `{k=v}` KV (`pseudo-json.js`), and Base64 payloads with charset detection (`UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `KOI8-R`, `US-ASCII` via `charset-codec.js`).
   - **Focused Section Editor & Exact-Span Splicing**: Clicking `✏️ Edit Document` or `✏️ Edit Section` transitions into `code-editor.js` (defaulting in-memory to `<pre contenteditable="plaintext-only">` + `CSS.highlights`, with hot-swappable fallback to the dual-layer `<textarea>` engine). Clicking `✓ Apply Section` splices edits back using exact `[start, end]` character spans (`polyglot-ast.js`, preserving compact vs. multi-line wire style) before `💾 Save`.
-  - Clean Stub Detail toolbar with grouped `📋 Copy ▾` (`Copy cURL`, `Copy Java`, `Copy JSON`) and `••• More ▾` (`Duplicate`, `Delete`) menus, Promise-based confirmation dialogs (`#modal-confirm`), and non-blocking toast notifications (`#toast-container`).
+  - Clean Stub Detail toolbar with grouped `📋 Copy ▾` (`Copy cURL`, `Copy Java`, `Copy JSON`), inline `Duplicate` and `Delete` action buttons, Promise-based confirmation dialogs (`#modal-confirm`), and non-blocking toast notifications (`#toast-container`).
   - **⚡ Test Stub** button transitions directly into the full-width Multi-Protocol Tester with pre-populated URL, method, headers, and body.
 
 - **Unified Multi-Protocol Request Tester (`PROTOCOL_ADAPTERS`)**:
@@ -51,9 +50,10 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 ![Stubs and HTTP Tester Demo](../docs/images/demo-stubs-and-tester.gif)
 
 - **Request Journal Viewer & Snapshot Recording**:
-  - Search and filter recorded requests by method, URL, caller source (`src:` / `ip:` / `host:` with async reverse-DNS hostname resolution), protocol (`HTTP`, `Kafka`, `AMQP`, `Casual`), or verdict (`PROXIED`, `BRIDGED`, `STUB`, `STUB · TPL`, `UNMATCHED`, `PROXY_ERROR`).
+  - Search and filter recorded requests by method, URL, caller source (`src:` / `ip:` / `host:` with async reverse-DNS hostname resolution), **Time Range** (`since` / `until`), protocol (`HTTP`, `Kafka`, `AMQP`, `Casual`), or verdict (`PROXIED`, `BRIDGED`, `STUB`, `STUB · TPL`, `UNMATCHED`, `PROXY_ERROR`).
+  - Dedicated **`Source`** column displaying the caller's resolved `shortHost` with automatic normalized IP fallback (`X-Forwarded-For` -> `X-Real-IP` -> `clientIp`).
   - Expandable inline inspector with `PolyglotViewer` trees, Document Workspace drill-down, and interactive Base64 `[Raw]` / `[Decoded]` toggle pills.
-  - **1-Click Exact-Match Snapshotting**: Save proxied requests as static offline stubs (`📸 Snapshot Stub`) with configurable JSON path exclusions, preventing collision when multiple requests target the same endpoint.
+  - **1-Click Exact-Match Snapshotting**: Save proxied requests as static offline stubs (`📸 Snapshot Stub` or `#btn-journal-snapshot-filtered`) with configurable JSON path exclusions, preventing collision when multiple requests target the same endpoint.
 
 ![Request Journal Demo](../docs/images/demo-request-journal.gif)
 
@@ -63,6 +63,12 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
 
 ![Scenarios DAG Visualizer Demo](../docs/images/demo-scenarios-dag.gif)
 
+- **TCP NetEm (`#nav-tab-netem`)**:
+  - Configure and inspect Layer 4 TCP network impairments (latency, jitter, bandwidth throttling, packet slicing, timeout, connection reset) on active NetEm proxies and review impaired traffic in the NetEm journal.
+
+- **Queues & Topics (`#nav-tab-queues`)**:
+  - Browse Kafka topics and AMQP 1.0 queues, inspect captured async messages, publish test payloads, and manage external broker connections (`#modal-queues-brokers`).
+
 - **Unified Console Settings & Explicit Lazy Demo Mode**:
   - 4-tab Settings modal (`#modal-settings`) combining **Target Host** (plus the 7-extension Detected Server Capabilities matrix), **Persistent Headers**, **JSON Exclusions**, and clipboard **Import / Export** config sync.
   - Explicit **Demo Mode** (`?demo=true`, `file://`, `github.io`, or `✨ Demo Mode` button) dynamically loads `demo-backend.js` and `demo-snapshot.js` (generated from a live in-process `WireMockServer` via `:wiremock-extension-ui:generateDemoSnapshot`) with zero silent error failover.
@@ -71,8 +77,7 @@ This extension embeds a pure vanilla ES6 Single-Page Application directly inside
   - `GET /__admin/lifecycle/status`: Capability health probe (`{"status":"UP"}`).
   - `POST /__admin/lifecycle/snapshots`: Unified traffic-to-stub snapshot endpoint supporting whole-project (`{"project":"..."}` or `_all`) and filtered request-ID captures (`{"requestIds":[...]}`).
   - `POST /__admin/lifecycle/snapshot-template`: Generates an editable `StubMapping` template from a single journal event.
-  - `POST /__admin/lifecycle/projects/{project}/mode`: Switches a project (or `_all`) between `proxy` and `stubs` modes using priority-tier parking.
-  - `GET /__admin/ui/api/requests`: Server-side journal search and caller source enrichment (`sourceIp`, `sourceHost`).
+  - `GET /__admin/ui/api/requests`: Server-side journal search and caller source enrichment (`sourceIp`, `sourceHost`) supporting query parameters `q`, `verdict`, `unmatched`, `status`, `since`, `until`, and `limit` (`1`–`1000`, default `100`).
 
 - **URL Addressability, Swagger UI & Developer Hot-Reloading (`UiAssetLoader`)**:
   - Tabs, selected stubs, and journal filters synchronize with the URL hash (`#stubs?stubId=...`, `#journal?q=...`), while Tester share links encode full request state on click (`#btn-tester-share-link`).
@@ -145,15 +150,20 @@ java wiremock-extension-ui/src/main/java/com/github/mattiasgreen/wiremock/ui/Wir
 ./gradlew :wiremock-extension-ui:runProxy -Pwiremock.url=http://localhost:8080
 ```
 
-### Automated Verification & Demo Snapshot Generation
+### Automated Verification, CDP Profiling & Demo Snapshot Generation
 
 ```bash
 # Run static contracts, ES6 unit tests, and Playwright E2E suites
 ./gradlew :wiremock-extension-ui:test
 
+# Run Playwright E2E suites with opt-in Chromium DevTools Protocol (CDP) profiling
+./gradlew :wiremock-extension-ui:test -Dui.profile=true
+
 # Regenerate demo-snapshot.js from a live in-process WireMockServer
 ./gradlew :wiremock-extension-ui:generateDemoSnapshot
 ```
+
+When `-Dui.profile=true` is enabled, `UiDevToolsProfiler` attaches a CDP session to each Playwright E2E test and writes individual V8 `.cpuprofile` files alongside an aggregated `profile-summary.md` (top JS hotspots, script/layout/style durations, DOM nodes, heap, long tasks, and CLS) to `wiremock-extension-ui/build/reports/profiles/`.
 
 ## Verification Pyramid
 
@@ -165,5 +175,5 @@ While honoring the **Zero NPM / Zero JS Bundlers** constraint, verification span
    - `WireMockConsoleProxyTest`: Verifies standalone reverse proxy forwarding, CORS headers, and static asset loading.
 2. **In-Browser Headless ES6 Unit Tests (`UiModuleUnitTest`)**:
    - Directly imports and verifies ES6 modules inside headless Chromium: `filter.js` (including `src:` / `ip:` / `host:` and Java/JS parity), `charset-codec.js`, `pseudo-json.js`, `polyglot-ast.js`, `document-workspace.js`, `bulk-actions.js`, `settings.js`, `stub-catalog.js`, `request-journal.js`, `tester.js`, `queues.js`, and `demo-backend.js`.
-3. **Domain Playwright E2E Suites (`AbstractUiPlaywrightTest` & Specialized Specs)**:
-   - `UiStubsAndLifecyclePlaywrightTest`, `UiJournalAndTesterPlaywrightTest`, `UiOpenApiPlaywrightTest`, `UiPayloadEditorPlaywrightTest`, `UiDemoModePlaywrightTest`, `UiVanillaWireMockPlaywrightTest`, `UiScenariosAndStatefulPlaywrightTest`, `UiNetEmPlaywrightTest`, `UiQueuesAndTopicsPlaywrightTest`, and `UiCasualTesterPlaywrightTest`.
+3. **Domain Playwright E2E & Performance Suites (`AbstractUiPlaywrightTest` & Specialized Specs)**:
+   - `UiStubsAndLifecyclePlaywrightTest`, `UiJournalAndTesterPlaywrightTest`, `UiOpenApiPlaywrightTest`, `UiPayloadEditorPlaywrightTest`, `UiDemoModePlaywrightTest`, `UiVanillaWireMockPlaywrightTest`, `UiScenariosAndStatefulPlaywrightTest`, `UiNetEmPlaywrightTest`, `UiQueuesAndTopicsPlaywrightTest`, `UiCasualTesterPlaywrightTest`, and `UiPerformancePlaywrightTest` (CDP layout/reflow, DOM churn, and long-task profiling).

@@ -92,7 +92,6 @@
 | **Delete Stub** | `DELETE` | `/__admin/mappings/{id}` | None |
 | **Snapshot Traffic** | `POST` | `/__admin/lifecycle/snapshots` | Filtered / project-scoped snapshot specification |
 | **Synthesize Template Stub** | `POST` | `/__admin/lifecycle/snapshot-template` | Serve-event template synthesis payload |
-| **Toggle Project Mode** | `POST` | `/__admin/lifecycle/projects/{project}/mode` | `{"mode": "stubs" \| "proxy"}` |
 | **Fetch Journal** | `GET` | `/__admin/ui/api/requests?q={query}&limit={limit}` (fallback `/__admin/requests`) | Server-side enriched journal entries with `sourceIp`, `sourceHost`, verdict, and boolean search (`src:`, `ip:`, `host:`). |
 | **Clear Journal** | `DELETE` | `/__admin/requests` | None |
 | **Fetch Scenarios** | `GET` | `/__admin/scenarios` | None |
@@ -108,12 +107,19 @@
 | **Clear NetEm Journal**| `DELETE` | `/__admin/tcp-netem/journal` | None |
 | **Reset All NetEm** | `POST` | `/__admin/tcp-netem/reset` | None |
 | **Probe Otel Metrics** | `GET` | `/__admin/metrics/prometheus` | None |
+| **Runtime Log Levels** | `GET`/`PUT`/`POST` | `/__admin/logging/levels` | Plain-text Logback logger level query/update (`logger=LEVEL`) |
+| **Reset Log Levels** | `POST` | `/__admin/logging/reset` | Restores configured startup Logback levels |
 | **Probe UI Version** | `GET` | `/__admin/ui/version` | Version, branch, and commit metadata JSON |
-| **Probe Casual Gateway** | `GET` | `/__admin/casual/config` | Casual gateway port and status |
+| **Probe / Update Casual Gateway** | `GET`/`POST`/`PUT` | `/__admin/casual/config` | Casual gateway port, upstream, and status |
+| **Reset Casual Config** | `POST` | `/__admin/casual/reset` | Resets dynamic Casual gateway configuration |
 | **Execute Casual Call** | `POST` | `/__admin/casual/call` | Service name, bufferType, payload, headers, optional host/port |
+| **Discover Casual Services** | `POST` | `/__admin/casual/discover` | Queries remote/local Casual domain services and queues |
 | **Probe Async Messaging** | `GET` | `/__admin/async/status` | Async engine status, Kafka sink port, broker count |
+| **Start / Configure Kafka Sink** | `POST` | `/__admin/async/sinks/kafka` | Starts or reconfigures the in-process Netty Kafka wire sink |
 | **Publish / Inspect Async** | `GET`/`POST`/`DELETE` | `/__admin/async/{publish,destinations,connections}` | Async queue publishing, destination inspection/purge, broker connections |
 | **Probe Compressed Journal** | `GET` | `/__admin/journal/stats` | Zstd journal compression and JVM memory metrics |
+| **Compact / Rebalance Journal** | `POST` | `/__admin/journal/{compact,rebalance}` | Triggers dictionary compaction or cluster rebalancing |
+| **Search Compressed Journal** | `GET` | `/__admin/journal/search?query={q}` | Indexed full-text search across compressed journal entries |
 
 ---
 
@@ -128,6 +134,6 @@
 | :--- | :--- | :--- |
 | **Probe Instance Capabilities** | `wm info [-s <url>]` | Probes core WireMock version and extension matrix (`tcp-netem`, `otel`, `ui`). |
 | **List & Search Stubs** | `wm stubs [expr] [--json]` | Displays formatted stubs catalog or JSON. Supports boolean expressions (`"GET and /cases"`, `"status=disabled"`). |
-| **Stream Request Journal** | `wm tail [-f] [-u] [-n <N>] [-q <expr>]` | Live streams incoming requests with caller source (`IP`/`host`), status badges, latency, `src:`/`ip:`/`host:` filtering, and near-miss diagnostics on 404s. |
+| **Stream Request Journal** | `wm tail [expr] [-f] [-u] [-n <N>]` | Live streams incoming requests with caller source (`IP`/`host`), status badges, latency, positional boolean filter expressions (including `src:`, `ip:`, `host:`), and near-miss diagnostics on 404s. |
 | **Inspect Network Toxics** | `wm toxics [--json]` | Inspects active L4 TCP proxies and toxics; outputs clean fallback notice if `tcp-netem` is not installed. |
-| **Launch Console Proxy** | `wm proxy [target] [port]` | Launches headless console reverse proxy and web UI server at `http://localhost:19840/__admin/ui/`. |
+| **Launch Console Proxy** | `wm proxy [target] [port]` | Launches headless console reverse proxy (`WireMockConsoleProxy` from `wiremock-extension-ui`) and web UI server at `http://localhost:19840/__admin/ui/`. |

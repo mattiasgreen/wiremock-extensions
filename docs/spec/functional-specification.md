@@ -60,7 +60,7 @@
 
 ## 2. Core Functional Capabilities
 
-1. **Service-Scoped Exploration & Gradual Hybrid Simulation**: Search by text and boolean expressions (`AND`, `OR`) across URL, method, name, headers, body patterns, and metadata. Group stubs and proxy routes by remote service (`metadata.project`, e.g., `erp-system`, `crm-service`, `billing-platform`). Switch individual services between `LIVE PROXY` and `STUBS MODE` so manual testers and runtime-parameterized BDD/JUnit suites can run fully integrated, hybrid, or fully simulated without modifying test code.
+1. **Service-Scoped Exploration & Gradual Hybrid Simulation**: Search by text and boolean expressions (`AND`, `OR`) across URL, method, name, headers, body patterns, and metadata. Group stubs and proxy routes by remote service (`metadata.project`, e.g., `erp-system`, `crm-service`, `billing-platform`). Enable harvested stubs and park proxy routes via native priority tiers (`priority < 100` vs. `priority >= 100`) so manual testers and runtime-parameterized BDD/JUnit suites can run fully integrated, hybrid, or fully simulated without modifying test code.
 2. **Lifecycle Manipulation**: Toggle active/parked state (`priority` tiers on `/__admin/mappings/{id}`) without destroying mappings. Add new stubs or catch-all proxy routes from templates. Duplicate existing stubs. Delete stubs with user assurance.
 3. **Ad-Hoc Request Replay (Multi-Protocol Tester)**: Execute arbitrary HTTP, Casual, Kafka, or AMQP requests against the mock server. Preset rapid headers (`Content-Type: application/json`, `Authorization: Bearer <token>`, `X-Correlation-Id`). Record and navigate execution history.
 4. **Traffic Observability, Harvesting & Triage (Request Journal)**: Live stream of served traffic clearly badged as `PROXIED`, `STUB`, or `UNMATCHED`. Server-side isolation of unmatched traffic (`?unmatched=true`), configurable journal fetch limit, and progressive/lazy DOM rendering. Snapshot `PROXIED` responses into offline service stubs (`/__admin/lifecycle/snapshots`, `/__admin/lifecycle/snapshot-template`); promote `UNMATCHED` 404 requests directly into the Unified Document Workspace (`Create Stub from Request`); replay any entry in the Multi-Protocol Tester; export as cURL or Java `stubFor()` DSL.
@@ -81,7 +81,7 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** only the `POST /api/cases` stub with that correlation ID is displayed.
 - **When** the user filters using boolean expressions `"cases AND CORR-1234"` or `"health OR CORR-1234"`.
 - **Then** the catalog evaluates the boolean predicate across both shallow and deep attributes (headers, body patterns, metadata).
-- **When** the user filters by status `"Parked"`.
+- **When** the user filters by status `"Disabled"` (parked).
 - **Then** only `/health` is visible.
 - **When** the user clears the search filter and selects status `"All"`.
 - **Then** all three stubs are visible.
@@ -152,7 +152,7 @@ These stories define the **inviolable acceptance criteria** for any client front
   - Async Queues & Topics tab (`#nav-tab-queues`) remains visible in the navigation bar and `wiremock-extension-async` is reported as `Not Installed` in the capabilities matrix when `/__admin/async/status` is absent.
   - Casual protocol dispatch (`#btn-tester-send` when `proto=casual`) is styled as `.cap-disabled` with `#casual-cap-missing-banner` when `wiremock-extension-casual` is absent.
   - Metrics link (`#link-metrics`) is styled as `.cap-disabled`.
-  - Recording snapshot & project mode controls (`#btn-project-snapshot`, `#btn-project-mode-toggle`, `#btn-journal-snapshot-filtered`, `.btn-snapshot-req`) are styled as `.cap-disabled` when `/__admin/lifecycle/status` is unavailable, while native priority-tier stub parking (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk enable/disable via `/__admin/mappings/{id}`) remains enabled even on vanilla WireMock.
+  - Recording snapshot controls (`#btn-journal-snapshot-filtered`, `.btn-snapshot-req`) are styled as `.cap-disabled` when `/__admin/lifecycle/status` is unavailable, while native priority-tier stub parking (`#btn-filter-disabled`, `#btn-toggle-stub`, bulk enable/disable via `/__admin/mappings/{id}`) remains enabled even on vanilla WireMock.
   - Core WireMock features (Stubs Catalog, Request Journal, HTTP Tester, Scenarios) remain 100% operational with zero console exceptions.
 - **When** the user opens Settings on the Target Host tab (`#btn-target-host` -> `#modal-settings`).
 - **Then** the modal displays the Detected Server Capabilities matrix (`#target-capabilities-section`) showing active capability counts (e.g. `1/7 active (Degraded)` vs `All 7 extensions active`) and clear `Active` / `Not Installed` status badges (`data-testid="cap-badge-{key}"`) for each capability.
@@ -179,7 +179,7 @@ These stories define the **inviolable acceptance criteria** for any client front
 
 ### Story 12: Multi-Protocol Progressive Simulation (HTTP REST + Casual XATMI/2PC)
 - **Given** a 3-node enterprise topology: Customer Portal & Product System SUT (Node 1), WireMock MITM Gateway (Node 2), and Upstream Backend Server B (Node 3) hosting HTTP Case Management, HTTP CRM, and Casual 2PC Billing.
-- **When** the scenario runs in `LIVE PROXY` mode against live Server B.
+- **When** the scenario runs through active live proxy routes forwarding to Server B.
 - **Then** the customer applies for a product, receives an offer, approves purchase, and is billed via Casual 2PC transaction (`tpcall("billing/charge")` within global `Xid` with `prepare` and `commit`).
 - **And** the Unified Request Journal captures all 7 downstream calls as `🌐 PROXIED`, displaying protocol badge `CASUAL` and status `OK` for Casual XATMI calls without conflating with HTTP `POST` or `200`.
 - **When** the operator snapshots live recordings from the Request Journal (`#btn-journal-snapshot-filtered`), enables the recorded stubs, and parks the proxy stubs via the Stubs sidebar (`#bulk-actions-bar` / `#btn-toggle-stub`).
@@ -188,18 +188,9 @@ These stories define the **inviolable acceptance criteria** for any client front
 - **Then** the entire customer application, offer, approval, Casual 2PC billing, and sales order flow completes successfully offline from recorded stubs.
 - **And** the Unified Request Journal verifies all 7 calls were served locally with resolution `📌 STUB`, while Upstream Server B received zero traffic.
 
-### Story 13: Distributed Session Recording & Compound Correlation Patterns ("Snowball Harvesting")
-- **Given** a multi-tier distributed transaction initiated by a customer request with `X-Correlation-Id: abc-123`.
-- **When** the test harness starts a recording session via `POST /__admin/simulations/sessions/start` with a compound predicate matching `X-Correlation-Id`, case URL patterns, or customer ID.
-- **Then** WireMock dynamically tracks all matching inbound requests.
-- **When** the upstream service issues a response containing new entity identifiers (e.g. `caseId: CASE-9876`, `invoiceId: INV-5544`).
-- **Then** the dynamic causal expansion engine ("snowball harvesting") automatically registers the new IDs into the active session filter in real time.
-- **When** subsequent asynchronous background workers, webhooks, or Casual 2PC transactions invoke downstream services referencing `CASE-9876` or `INV-5544` without the original root correlation ID.
-- **Then** WireMock automatically captures and attaches them to the transitive session trace.
-- **When** the user clicks "Cluster Causal Trace" in the Request Journal UI.
-- **Then** the UI isolates and renders the transitive call tree across all participating HTTP and Casual endpoints.
-- **When** the user exports the session as a Simulation Bundle.
-- **Then** a portable bundle (`.json`/`.zip`) is generated containing all stubs, fixtures, and state transitions, ready to be committed to Git and replayed 100% offline in CI.
+### Story 13: Distributed Session Recording & Compound Correlation Patterns ("Snowball Harvesting") *(Planned / Not Yet Implemented)*
+- **Status**: Future design concept; no session-harvesting Admin API or UI causal-tree cluster view is currently implemented.
+- **Intended Flow**: Start a compound recording session matching `X-Correlation-Id`, URL patterns, or entity IDs; dynamically expand captured IDs (e.g. `caseId`, `invoiceId`) discovered in upstream responses to correlate transitive HTTP and Casual 2PC calls; inspect the transitive call tree in the Request Journal; and export a portable simulation bundle for offline CI replay.
 
 ### Story 14: In-Process Casual (XATMI) Domain Gateway, Discovery Aggregation, and Fast-Fail Proxying
 - **Given** WireMock is running with the `wiremock-extension-casual` gateway listening on a raw TCP port, and active WireMock proxy stubs specifying `targetBaseUrl: casual://<host>:<port>`.

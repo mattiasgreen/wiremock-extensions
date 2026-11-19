@@ -57,14 +57,30 @@ The `wiremock-examples` module includes an end-to-end 3-node banking reference h
 
 #### Walkthrough Scenario:
 1. **Live Proxy Recording**: SUT submits application and confirms purchase with live backend servers. WireMock captures all HTTP calls and binary `CASUAL` `OK` frames into the unified request journal.
-2. **1-Click Harvest & Flip**: With one click in the Web UI, captured sessions are harvested into deterministic stubs, and project routes instantly switch from `LIVE PROXY` to `STUBS MODE`.
+2. **Journal Snapshot & Bulk Enable/Disable**: In the Web UI Request Journal, click **Snapshot Filtered** (`#btn-journal-snapshot-filtered`) to harvest captured proxied calls into deterministic parked stubs (`priority >= 100`), then use the Stubs Explorer bulk enable/disable controls to activate the captured stubs and park the live proxy routes.
 3. **100% Offline Replay**: The upstream backend server is terminated completely. Replaying the identical application and purchase journey succeeds 100% from local stubs with local 2PC transaction synthesis.
+
+## Integration & Recording Test Suites
+
+| Test Suite | Focus |
+| :--- | :--- |
+| **`CaseSystemIntegrationTest`** | Stateful Case Management FSM lifecycle, parallel scenario isolation, journal verification, and Playwright DAG visualizer checks. |
+| **`BankingProgressiveSimulationTest` & `BankingProgressiveSimulationPlaywrightTest`** | 3-node HTTP + Casual XATMI 2PC progressive simulation from live proxying to 100% offline stub replay (API & Playwright Web UI). |
+| **`NetEmResilienceParallelIntegrationTest`** | Concurrent Resilience4j CircuitBreaker and Retry verification against `wiremock-extension-tcp-netem` L4 fault injection. |
+| **`EmbeddedArtemisAmqpIntegrationTest`** | End-to-end AMQP 1.0 messaging bridge and Qpid ProtonJ2 client verification against an embedded ActiveMQ Artemis broker. |
+| **`AsyncMessagingBundleIntegrationTest`** | In-process Kafka Netty wire sink, HTTP-to-async triggers, and synthetic journal mediation using `wiremock-extension-async`. |
+| **`CrossExtensionSynergyIntegrationTest`** | Full-suite integration combining `wiremock-extension-async` triggers, `wiremock-extension-journal` Zstandard dictionary compression, and core WireMock stubs. |
+| **`ExampleStubsBundleTest`** | Validates importing and invoking the checked-in `example-stubs.json` and `casual-proxy-stub.json` bundles against a live `WireMockServer`. |
+| **`BankingDemoVideoRecordingTest`** | Tagged `@Tag("recording")` Playwright harness recording the WebM tour for the 3-node Banking Progressive Simulation. |
 
 ## Running the Examples
 
 ```bash
-# Run the integration test suite
+# Run all integration test suites
 ./gradlew :wiremock-examples:test
+
+# Record the Banking Progressive Simulation WebM demo video tour
+./gradlew :wiremock-examples:recordDemoVideos
 ```
 
 ## Example Stubs Bundle
@@ -88,8 +104,8 @@ curl -X POST http://localhost:8080/__admin/mappings \
 
 #### Option B: Via WireMock Console Web UI
 1. Navigate to the Web UI at [http://localhost:8080/__admin/ui/](http://localhost:8080/__admin/ui/).
-2. Click **Import Spec / Bundle** in the top navigation bar.
-3. Switch to the **WireMock Bundle** tab.
+2. Click **📥 Import** in the Stubs sidebar.
+3. Switch to the **📦 WireMock JSON Bundle** tab.
 4. Paste the JSON bundle contents below and click **Import Bundle**.
 
 ### Copy-Pasteable Bundle JSON

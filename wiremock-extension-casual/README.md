@@ -17,6 +17,8 @@ Enables WireMock to act as an in-process Casual Domain Gateway listening on a ra
 * **Transparent L7 Proxy Forwarding**: Seamlessly forwards unmatched service requests over TCP to an upstream real or secondary Casual domain.
 * **Automatic Record-and-Replay**: Automatically captures forwarded upstream calls into persistent WireMock stubs (`recordStubs`), allowing test suites to be recorded once and replayed completely offline.
 * **Full XATMI Failure Mode & Transaction Simulation**: Comprehensive simulation of all 18 XATMI error states, custom user return codes (`urcode`), and distributed transaction rollback states.
+* **Casual Queue Mediation (`ENQUEUE` / `DEQUEUE`)**: In-memory transactional FIFO queue simulation (`CasualQueueStore`) with 2PC/XA commit & rollback enlistment, configurable retry limits/delays, automatic `<queue>.error` dead-letter queue (DLQ) routing, and Request Journal mediation (`ENQUEUE /__casual/queues/<name>/enqueue` and `DEQUEUE /__casual/queues/<name>/dequeue`).
+* **TCP Peer IP Propagation**: Extracts the remote TCP client IP (`extractClientIp`, stripping IPv6 zone identifiers) and propagates it into the mediated WireMock `ServeEvent`, enabling accurate `clientIp` reporting in the Request Journal, JSON logs, and OpenTelemetry `client.address` span attributes.
 * **Hierarchical Observability**: Multi-tier SLF4J logging (`DEBUG` for inbound/outbound frame correlation and stub matches, `TRACE` for packet size inspection and canonical 128-byte hex dumps).
 
 ---
@@ -368,7 +370,7 @@ Here is the complete inner loop for proxying live Casual interactions, recording
        }
      }'
    ```
-   *UI Alternative*: In the WireMock Console Web UI at [http://localhost:8080/__admin/ui](http://localhost:8080/__admin/ui), open the **Request Journal** tab and click **Snapshot / Harvest**, or click the project mode pill (backed by `POST /__admin/lifecycle/projects/{project}/mode`) to switch from **LIVE PROXY** to **STUBS**.
+   *UI Alternative*: In the WireMock Console Web UI at [http://localhost:8080/__admin/ui](http://localhost:8080/__admin/ui), open the **Request Journal** tab and click **Snapshot / Harvest** to promote recorded live proxy interactions into offline stubs.
 
 5. **Verify Recorded Offline Stubs**:
    WireMock automatically synthesizes offline stubs:
@@ -396,7 +398,17 @@ The Casual extension supports lightweight configuration via environment properti
 | **Casual Enabled** | `WIREMOCK_CASUAL_ENABLED` | `true` | Enables or disables the Casual TCP gateway. |
 | **Upstream Timeout** | `WIREMOCK_CASUAL_UPSTREAM_TIMEOUT` | `4` | Upstream timeout in seconds before failing fast. |
 
-### B. Admin API REST Control Plane (`/__admin/casual/config`)
+### B. Admin API REST Control Plane (`/__admin/casual/*`)
+
+`CasualAdminEndpoint` exposes runtime configuration, reset, live invocation, and service discovery routes:
+
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/__admin/casual/config` | Returns current gateway configuration (`enabled`, `port`, `running`). |
+| `POST` / `PUT` | `/__admin/casual/config` | Updates Casual gateway configuration at runtime. |
+| `POST` | `/__admin/casual/reset` | Resets Casual gateway configuration back to initial startup defaults. |
+| `POST` | `/__admin/casual/call` | Executes a live Casual `tpcall` (`service`, `payload`, `bufferType`, optional `payloadEncoding: "hex"`, `host`, `port`, `timeoutSeconds`, `charset`, `headers`) and returns decoded response metadata and payload. |
+| `POST` | `/__admin/casual/discover` | Sends a `DOMAIN_DISCOVERY_REQUEST` (`host`, `port`, `timeoutSeconds`, optional `services` list) to inspect advertised Casual services. |
 
 Inspect the Casual gateway state at runtime:
 ```bash
@@ -410,6 +422,20 @@ Returns `200 OK`:
   "running": true
 }
 ```
+
+### C. Casual Queue Mediation & 2PC / DLQ Semantics
+
+`CasualWireMockGateway` mediates Casual queue operations (`CasualEnqueueRequestMessage` / `CasualDequeueRequestMessage`) through `CasualQueueStore` and records every operation into WireMock's Request Journal:
+
+- **Synthetic Journal Routes**:
+  - `ENQUEUE /__casual/queues/<name>/enqueue` (headers: `X-WireMock-Protocol: casual`, `X-Casual-Queue: <name>`, `X-Casual-Operation: enqueue`, optional `X-Casual-Xid`)
+  - `DEQUEUE /__casual/queues/<name>/dequeue` (returns `200` with dequeued payload or `204` when empty; headers: `X-WireMock-Protocol: casual`, `X-Casual-Queue: <name>`, `X-Casual-Operation: dequeue`, optional `X-Casual-Xid`)
+- **2PC / XA Enlistment**: Transactional enqueues and dequeues participate in `PREPARE_REQUEST`, `COMMIT_REQUEST`, and `REQUEST_ROLLBACK` via `CasualQueueStore`. Committed enqueues become visible to consumers; rolled-back dequeues are redelivered according to queue retry settings.
+- **Retry & `.error` Dead-Letter Queue (DLQ)**: Each queue tracks retry counts (`DEFAULT_RETRIES = 3`) and retry backoff (`DEFAULT_RETRY_DELAY_MS = 1000`). Messages exhausting retries are routed to `<queue>.error` (surfaced with `dlq: true` via `CasualDestinationProvider`).
+
+### D. TCP Peer IP Propagation (`extractClientIp`)
+
+When a Casual client connects over TCP, `CasualWireMockGateway.extractClientIp(SocketAddress)` extracts the peer IP address from `InetSocketAddress` (stripping any IPv6 scope/zone suffix such as `%eth0`) and attaches it to the mediated WireMock request. This ensures `clientIp` is accurately recorded in the Request Journal, `wiremock-extension-json-logging` (`request.clientIp`), and `wiremock-extension-otel` (`client.address`).
 
 ---
 
@@ -565,8 +591,8 @@ curl -X POST http://localhost:8080/__admin/lifecycle/snapshots \
 The test suite covers comprehensive unit, integration, and E2E scenarios across multiple test sets:
 
 * **Unit & Fail-Fast Tests**:
-  * [`CasualBufferUtilsTest`](src/test/java/se/laz/casual/api/buffer/CasualBufferUtilsTest.java): JSON detection (`.json/`, `JSON`), Base64 wrapping/unwrapping, and hex dump formatting.
-  * [`CasualServerFailFastTest`](src/test/java/se/laz/casual/server/CasualServerFailFastTest.java): Netty `EmbeddedChannel` tests verifying immediate channel closure on unhandled frames or pipeline exceptions.
+  * [`CasualBufferUtilsTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualBufferUtilsTest.java): JSON detection (`.json/`, `JSON`), Base64 wrapping/unwrapping, and hex dump formatting.
+  * [`CasualServerFailFastTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualServerFailFastTest.java): Netty `EmbeddedChannel` tests verifying immediate channel closure on unhandled frames or pipeline exceptions.
   * [`CasualConfigurationTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualConfigurationTest.java): Environment variable, system property precedence, and upstream auto-enablement.
   * [`CasualAdminEndpointTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualAdminEndpointTest.java): Admin API REST control plane (`/__admin/casual/config` and `/reset`) runtime updates.
 * **Gateway Suite (26 Scenarios)** in [`CasualWireMockGatewayTest`](src/test/java/com/github/mattiasgreen/wiremock/casual/CasualWireMockGatewayTest.java):
@@ -691,8 +717,7 @@ sequenceDiagram
 
 ## 13. Future Roadmap & Native Matching Engine
 
-See [`TODO.md`](TODO.md) for detailed architectural evaluations, including:
-* **In-Process WireMock `Request` Adapter**: Bypassing HTTP loopback sockets to evaluate directly against WireMock’s in-memory `StubMappings` for sub-millisecond ($\sim 50\mu\text{s}$) latency.
+Planned enhancements under evaluation include:
 * **Native Custom Matchers**: Adding a `RequestMatcherExtension` (`CasualFieldedMatcher`) to unpack and match on `.FIELDED` / FML binary buffers without requiring string conversions.
 * **Upstream Contributions**: Upstreaming standalone Java SE Netty client and server components to `casualcore/casual-java`.
 

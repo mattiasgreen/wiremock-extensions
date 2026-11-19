@@ -1,4 +1,6 @@
-# Native Priority Tiers for Stub Parking and Project Modes
+# 26. Native Priority Tiers for Stub Parking and Project Modes
+
+Date: 2026-11-11
 
 ## Context
 Previously, disabling or parking a stub removed the mapping from WireMock's active `Admin` store and held it inside an in-memory `DisabledStubStore`, exposed via seven custom shadow CRUD endpoints (`/__admin/stubs/{id}/disable`, `/__admin/stubs/{id}/enable`, `/__admin/stubs/{id}/toggle`, `/__admin/stubs/disabled`, `/__admin/stubs/disabled/{id}`, and `/__admin/stubs/bulk`). This created split-brain state: restarting WireMock discarded parked stubs, external JSON exports omitted disabled mappings unless merged through UI-only logic, vanilla WireMock instances appeared to lack basic stub toggle controls, and CLI/Casual adapters had to duplicate queries across active and shadow stores.
@@ -27,3 +29,7 @@ Previously, disabling or parking a stub removed the mapping from WireMock's acti
 ## Consequences
 - **Positive**: Single source of truth in WireMock's native mapping store; zero restart state loss; full JSON export/import portability; native UI toggle/bulk support on vanilla WireMock; removal of ~600 lines of shadow-store synchronization glue.
 - **Trade-offs**: In the absence of a base proxy rule (`priority 10`) or `offline-guard` catch-all (`priority 50`), WireMock will still match a `priority >= 100` stub if no higher-priority stub matches the URL. Operators requiring hard isolation add an `offline-guard` stub (provided as a UI editor template) or explicit impossible request matcher.
+
+## Amendment (2026-11-18)
+
+`switchProjectMode` and the `POST /__admin/lifecycle/projects/{project}/mode` endpoint were removed in commit `befdcd9` to eliminate project-level mode flipping complexity. The four canonical native priority tiers (`5`, `10`, `50`, `>= 100`) and single/bulk stub parking via standard `/__admin/mappings/{id}` remain canonical.

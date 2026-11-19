@@ -1,5 +1,7 @@
 # ADR 0027: Retire Stateful AST Extension in Favor of Native Scenarios and Code Doubles
 
+Date: 2026-11-11
+
 **Status**: Accepted
 **Supersedes**: [ADR 0019](0019-in-memory-stateful-ast-simulation-and-crossing-line.md)
 

@@ -29,8 +29,8 @@ We consolidate all protocol testing tools into a single, unified **Multi-Protoco
      - **AMQP**: Operation (`PUBLISH`), Destination/Queue input (`orders.inbound`), Correlation ID input (`test-corr-101`), Reply-To queue input (`orders.replies`), and `🚀 Publish Message`.
      - **Casual**: Operation (`CALL`, `ENQUEUE`, `DEQUEUE`), Host & Port inputs, Buffer Type dropdown (`JSON`, `FIELDED`, `CSTRING`, `X_OCTET`), Service/Queue name input, and `🔌 Execute Casual`.
 
-2. **Shared Payload Editor (`DualLayerCodeEditor` & `PayloadLens`)**:
-   - The rich payload editor is shared seamlessly across all protocols, providing format auto-detection (JSON, XML, text, hex bytes), payload nesting previews, and formatters.
+2. **Shared Payload Editor (`CodeEditor`, `PolyglotViewer` & `DocumentWorkspace`)**:
+   - The rich payload viewer and workspace editor are shared seamlessly across all protocols, providing format auto-detection (JSON, XML, text, hex bytes), polyglot unnesting previews, and formatters.
    - Dynamic headers and properties drawers adjust per protocol (HTTP request headers, Kafka record headers, AMQP application properties, Casual XATMI call flags).
 
 3. **Protocol-Native Settlement Inspector**:
@@ -58,5 +58,5 @@ We consolidate all protocol testing tools into a single, unified **Multi-Protoco
 ## Consequences
 
 - **Positive**: Eliminates tab sprawl; creates a coherent, unified developer testing experience across synchronous, asynchronous, and legacy RPC architectures.
-- **Positive**: Reuses the high-density `DualLayerCodeEditor` and `PayloadLens` across all four protocol transports without code duplication.
+- **Positive**: Reuses the high-density `CodeEditor`, `PolyglotViewer`, and `DocumentWorkspace` across all four protocol transports without code duplication.
 - **Positive**: Simplifies end-to-end integration testing and automated verification.

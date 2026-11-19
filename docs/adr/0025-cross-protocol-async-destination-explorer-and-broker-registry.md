@@ -1,4 +1,6 @@
-# Cross-Protocol Async Destination Explorer and Broker Connection Registry
+# 25. Cross-Protocol Async Destination Explorer and Broker Connection Registry
+
+Date: 2026-11-11
 
 ## Context
 As asynchronous messaging expands across Kafka, AMQP 1.0, Casual XATMI Queues, and in-memory channels, developers require visual observability into queues, topics, and staged messages without operating broker-specific CLI tools. At the same time, bridge topologies that forward test traffic to remote Kafka clusters, enterprise AMQP brokers (ActiveMQ Artemis, IBM MQ), or Casual domains need authenticated network connectivity without leaking infrastructure secrets into Git-committed stub mapping files.
@@ -23,8 +25,8 @@ As asynchronous messaging expands across Kafka, AMQP 1.0, Casual XATMI Queues, a
 5. **Detached Non-Committing Kafka Inspection**:
    Peek recent messages from remote Kafka topics using an ephemeral, detached consumer with manual partition assignment and backwards seek from high-water marks (`seekToEnd - N`). Offsets are never committed, ensuring zero interference with production or SUT consumer group coordination.
 
-6. **Compensating Queue Editing & Polyglot Payload Lens Integration**:
-   Integrate message inspection and editing with the existing **Polyglot Payload Lens** (`#modal-payload-lens`):
+6. **Compensating Queue Editing & Document Workspace Integration**:
+   Integrate message inspection and editing with the unified **Document Workspace** (`#modal-document-workspace`):
    - **Local In-Memory / Staged Feeds**: Supports in-place payload and header updates.
    - **Remote Streams & Immutable Logs**: Formalize editing as a **Compensating Queue Edit** ("Modify & Re-Publish"), where the modified payload is published as a successor record (with optional original message cancellation or tombstoning).
    - Multi-layered nested unnesting (JSON, XML SOAP strings, Base64, fielded buffers) automatically re-serializes and cascades edits up to the root document.
