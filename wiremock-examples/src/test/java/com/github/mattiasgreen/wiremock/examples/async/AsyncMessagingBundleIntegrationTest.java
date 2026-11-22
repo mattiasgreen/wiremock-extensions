@@ -7,11 +7,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaProduceRecord;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
+import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -25,6 +28,7 @@ import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -43,14 +47,24 @@ class AsyncMessagingBundleIntegrationTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private WireMockServer server;
+    private AsyncEngine asyncEngine;
     private HttpClient httpClient;
 
     @BeforeEach
     void setUp() {
-        AsyncEngine.getInstance().reset();
-        server =
-                new WireMockServer(WireMockConfiguration.options().dynamicPort().extensionScanningEnabled(true));
+        AtomicReference<WireMockServices> servicesRef = new AtomicReference<>();
+        server = new WireMockServer(WireMockConfiguration.options()
+                .dynamicPort()
+                .extensionScanningEnabled(true)
+                .extensions((ExtensionFactory) services -> {
+                    servicesRef.set(services);
+                    return List.of();
+                }));
         server.start();
+        asyncEngine = servicesRef.get().getExtensions().ofType(AsyncAdminEndpoint.class).values().stream()
+                .findFirst()
+                .orElseThrow()
+                .getEngine();
         httpClient =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     }
@@ -60,7 +74,6 @@ class AsyncMessagingBundleIntegrationTest {
         if (server != null && server.isRunning()) {
             server.stop();
         }
-        AsyncEngine.getInstance().reset();
     }
 
     @Test
@@ -83,8 +96,8 @@ class AsyncMessagingBundleIntegrationTest {
     @DisplayName("Should ingest records from real KafkaProducer into In-Process Kafka Wire Sink")
     void shouldIngestKafkaRecordsViaEngineSink() throws Exception {
         List<KafkaProduceRecord> records = Collections.synchronizedList(new ArrayList<>());
-        AsyncEngine.getInstance().startKafkaSink(0, records::add);
-        int sinkPort = AsyncEngine.getInstance().getKafkaSinkPort();
+        asyncEngine.startKafkaSink(0, records::add);
+        int sinkPort = asyncEngine.getKafkaSinkPort();
 
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "127.0.0.1:" + sinkPort);
@@ -101,7 +114,7 @@ class AsyncMessagingBundleIntegrationTest {
             assertThat(records).hasSize(2);
             assertThat(records.get(0).value()).isEqualTo("{\"order\":\"ORD-1\"}");
             assertThat(records.get(1).value()).isEqualTo("{\"order\":\"ORD-2\"}");
-            assertThat(AsyncEngine.getInstance().getMessagesConsumed()).isEqualTo(2L);
+            assertThat(asyncEngine.getMessagesConsumed()).isEqualTo(2L);
 
             // Verify authentic ServeEvents ingested into WireMock core RequestJournal
             List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> serveEvents = server.getAllServeEvents();
@@ -115,7 +128,7 @@ class AsyncMessagingBundleIntegrationTest {
     @DisplayName("Should trigger asynchronous callback message on HTTP POST 202 completion")
     void shouldTriggerAsyncCallbackOnHttpCompletion() throws Exception {
         BlockingQueue<AsyncMessage> queue = new LinkedBlockingQueue<>();
-        AsyncEngine.getInstance().registerPublisher("payments.callbacks", (dest, msg) -> queue.offer(msg));
+        asyncEngine.registerPublisher("payments.callbacks", (dest, msg) -> queue.offer(msg));
 
         server.stubFor(
                 post(urlEqualTo("/api/v1/payments"))

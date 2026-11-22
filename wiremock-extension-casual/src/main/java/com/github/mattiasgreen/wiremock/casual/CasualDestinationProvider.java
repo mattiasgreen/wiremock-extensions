@@ -24,16 +24,10 @@ import java.util.function.Supplier;
 public class CasualDestinationProvider implements DestinationProvider {
 
     private final Supplier<Optional<CasualQueueStore>> localStoreSupplier;
-    private final Supplier<AsyncBrokerRegistry> brokerRegistrySupplier;
-
-    public CasualDestinationProvider() {
-        this(
-                () -> CasualRegistry.getInstance().getGateway().map(CasualWireMockGateway::getQueueStore),
-                AsyncBrokerRegistry::getInstance);
-    }
+    private final Supplier<Optional<AsyncBrokerRegistry>> brokerRegistrySupplier;
 
     public CasualDestinationProvider(Supplier<Optional<CasualQueueStore>> localStoreSupplier) {
-        this(localStoreSupplier, AsyncBrokerRegistry::getInstance);
+        this(localStoreSupplier, Optional::empty);
     }
 
     public CasualDestinationProvider(
@@ -43,15 +37,15 @@ public class CasualDestinationProvider implements DestinationProvider {
 
     public CasualDestinationProvider(
             Supplier<Optional<CasualQueueStore>> localStoreSupplier,
-            Supplier<AsyncBrokerRegistry> brokerRegistrySupplier) {
+            Supplier<Optional<AsyncBrokerRegistry>> brokerRegistrySupplier) {
         this.localStoreSupplier = Objects.requireNonNull(localStoreSupplier, "localStoreSupplier must not be null");
         this.brokerRegistrySupplier =
                 Objects.requireNonNull(brokerRegistrySupplier, "brokerRegistrySupplier must not be null");
     }
 
-    private static Supplier<AsyncBrokerRegistry> supplyFixedRegistry(AsyncBrokerRegistry brokerRegistry) {
+    private static Supplier<Optional<AsyncBrokerRegistry>> supplyFixedRegistry(AsyncBrokerRegistry brokerRegistry) {
         Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
-        return () -> brokerRegistry;
+        return () -> Optional.of(brokerRegistry);
     }
 
     @Override
@@ -210,8 +204,12 @@ public class CasualDestinationProvider implements DestinationProvider {
     }
 
     private List<BrokerConnection> listRemoteCasualConnections() {
+        Optional<AsyncBrokerRegistry> registryOpt = brokerRegistrySupplier.get();
+        if (registryOpt == null || registryOpt.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<BrokerConnection> resolved = new ArrayList<>();
-        for (BrokerConnection conn : brokerRegistrySupplier.get().listConnections()) {
+        for (BrokerConnection conn : registryOpt.get().listConnections()) {
             if ("casual".equals(conn.protocol().toLowerCase(Locale.ROOT))) {
                 resolved.add(conn.resolveWithEnv());
             }

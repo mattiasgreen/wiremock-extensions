@@ -7,12 +7,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.mattiasgreen.wiremock.journal.store.CompressedStores;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.common.SingleRootFileSource;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
+import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -23,6 +26,7 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,17 +46,26 @@ class CrossExtensionSynergyIntegrationTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private WireMockServer server;
+    private AsyncEngine asyncEngine;
     private HttpClient httpClient;
 
     @BeforeEach
     void setUp() {
-        AsyncEngine.getInstance().reset();
+        AtomicReference<WireMockServices> servicesRef = new AtomicReference<>();
         WireMockConfiguration options = WireMockConfiguration.options()
                 .dynamicPort()
                 .withStores(new CompressedStores(new SingleRootFileSource(".")))
-                .extensionScanningEnabled(true);
+                .extensionScanningEnabled(true)
+                .extensions((ExtensionFactory) services -> {
+                    servicesRef.set(services);
+                    return List.of();
+                });
         server = new WireMockServer(options);
         server.start();
+        asyncEngine = servicesRef.get().getExtensions().ofType(AsyncAdminEndpoint.class).values().stream()
+                .findFirst()
+                .orElseThrow()
+                .getEngine();
 
         httpClient =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
@@ -63,7 +76,6 @@ class CrossExtensionSynergyIntegrationTest {
         if (server != null && server.isRunning()) {
             server.stop();
         }
-        AsyncEngine.getInstance().reset();
     }
 
     @Test
@@ -82,7 +94,7 @@ class CrossExtensionSynergyIntegrationTest {
 
         // 2. Configure a stub mapping with Async trigger metadata
         BlockingQueue<AsyncMessage> asyncQueue = new LinkedBlockingQueue<>();
-        AsyncEngine.getInstance().registerPublisher("notifications.broadcast", (dest, msg) -> asyncQueue.offer(msg));
+        asyncEngine.registerPublisher("notifications.broadcast", (dest, msg) -> asyncQueue.offer(msg));
 
         server.stubFor(
                 post(urlEqualTo("/api/v1/orders"))

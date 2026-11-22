@@ -21,7 +21,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,15 +30,12 @@ import org.slf4j.LoggerFactory;
  * Ingests single connection descriptors or batch JSON arrays with upsert semantics,
  * and masks plaintext secrets while preserving declarative ${VAR_NAME} tokens on export.
  */
-public final class AsyncBrokerRegistry {
+public final class AsyncBrokerRegistry implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AsyncBrokerRegistry.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Set<String> SENSITIVE_KEYS =
             Set.of("password", "secret", "sasl.jaas.config", "key", "token", "credential");
-
-    private static final AtomicReference<AsyncBrokerRegistry> LATEST_INSTANCE =
-            new AtomicReference<>(new AsyncBrokerRegistry());
 
     private final Map<String, BrokerConnection> connections = new ConcurrentHashMap<>();
     private final Map<String, MessageBroker> pooledBrokers = new ConcurrentHashMap<>();
@@ -76,14 +72,6 @@ public final class AsyncBrokerRegistry {
 
     public static AsyncBrokerRegistry create() {
         return new AsyncBrokerRegistry();
-    }
-
-    public static AsyncBrokerRegistry getInstance() {
-        return LATEST_INSTANCE.get();
-    }
-
-    public static void setDefault(AsyncBrokerRegistry registry) {
-        LATEST_INSTANCE.set(Objects.requireNonNull(registry, "registry must not be null"));
     }
 
     public static AsyncBrokerRegistry createForTest() {
@@ -198,6 +186,11 @@ public final class AsyncBrokerRegistry {
     public void clear() {
         clearPools();
         connections.clear();
+    }
+
+    @Override
+    public void close() {
+        clearPools();
     }
 
     private void clearPools() {

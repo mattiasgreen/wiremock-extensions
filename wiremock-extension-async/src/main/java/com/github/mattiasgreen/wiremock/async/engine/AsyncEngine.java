@@ -36,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -53,7 +52,6 @@ import org.slf4j.LoggerFactory;
 public class AsyncEngine implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AsyncEngine.class);
-    private static final AtomicReference<AsyncEngine> LATEST_INSTANCE = new AtomicReference<>(new AsyncEngine());
 
     private static final List<String> BUILT_IN_PROTOCOLS = List.of("in-memory", "kafka", "amqp", "ibmmq");
 
@@ -77,30 +75,18 @@ public class AsyncEngine implements AutoCloseable {
     private KafkaWireSink kafkaSink;
     private AmqpServer amqpServer;
 
-    private AsyncEngine() {
-        this(AsyncBrokerRegistry.getInstance());
-    }
-
     private AsyncEngine(AsyncBrokerRegistry brokerRegistry) {
         this.testBroker = new InMemoryMessageBroker("default-test-broker");
         this.upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");
         this.brokerRegistry = Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
     }
 
-    public static AsyncEngine getInstance() {
-        return LATEST_INSTANCE.get();
-    }
-
     public static AsyncEngine create() {
         return new AsyncEngine(AsyncBrokerRegistry.create());
     }
 
-    public static void setDefault(AsyncEngine engine) {
-        LATEST_INSTANCE.set(Objects.requireNonNull(engine, "engine must not be null"));
-    }
-
     public static AsyncEngine create(MessageBroker testBroker, MessageBroker upstreamBroker) {
-        return create(testBroker, upstreamBroker, AsyncBrokerRegistry.getInstance());
+        return create(testBroker, upstreamBroker, AsyncBrokerRegistry.create());
     }
 
     public static AsyncEngine create(
@@ -1012,6 +998,27 @@ public class AsyncEngine implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        reset();
+        running.set(false);
+        for (Thread t : activeSubscriptions) {
+            t.interrupt();
+        }
+        activeSubscriptions.clear();
+        stopKafkaSink();
+        stopAmqpServer();
+        closeBrokerQuietly(testBroker);
+        closeBrokerQuietly(upstreamBroker);
+        if (brokerRegistry != null) {
+            brokerRegistry.close();
+        }
+    }
+
+    private static void closeBrokerQuietly(MessageBroker broker) {
+        if (broker instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                LOG.debug("[ASYNC-ENGINE] Error closing message broker: {}", e.getMessage());
+            }
+        }
     }
 }

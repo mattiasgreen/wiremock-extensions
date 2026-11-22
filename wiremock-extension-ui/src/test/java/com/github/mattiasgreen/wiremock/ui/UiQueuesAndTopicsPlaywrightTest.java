@@ -149,7 +149,7 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
     @DisplayName("Should inspect and update live destination via WireMock Async Admin API")
     void testLiveWireMockAsyncDestinationIntegration() {
         // Publish a message to in-memory broker
-        AsyncEngine engine = AsyncEngine.getInstance();
+        AsyncEngine engine = asyncEngine;
         AsyncMessage liveMsg = AsyncMessage.builder()
                 .id("msg-live-1")
                 .protocol("in-memory")

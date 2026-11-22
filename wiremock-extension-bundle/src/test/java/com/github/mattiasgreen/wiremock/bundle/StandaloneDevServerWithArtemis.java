@@ -5,14 +5,19 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 
+import com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint;
 import com.github.mattiasgreen.wiremock.async.amqp.AmqpMessageBroker;
-import com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry;
 import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.destination.AsyncDestination;
 import com.github.mattiasgreen.wiremock.async.destination.DestinationProvider;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.mattiasgreen.wiremock.journal.store.CompressedStores;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.common.SingleRootFileSource;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.extension.ExtensionFactory;
+import com.github.tomakehurst.wiremock.extension.WireMockServices;
 import java.io.File;
 import java.nio.file.Files;
 import java.time.Instant;
@@ -22,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.activemq.artemis.api.core.QueueConfiguration;
 import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.core.config.Configuration;
@@ -68,10 +74,24 @@ public class StandaloneDevServerWithArtemis {
                 .setRoutingType(RoutingType.ANYCAST)
                 .setDurable(false));
 
-        // Start WireMock Standalone
-        WireMockServer wireMockServer = StandaloneDevServer.startServer(port, rootDir);
+        // Start WireMock Standalone and resolve its server-scoped AsyncEngine
+        String effectiveRootDir = (rootDir != null && !rootDir.isBlank()) ? rootDir : ".";
+        AtomicReference<WireMockServices> servicesRef = new AtomicReference<>();
+        WireMockServer wireMockServer = new WireMockServer(WireMockConfiguration.options()
+                .port(port)
+                .usingFilesUnderDirectory(effectiveRootDir)
+                .withStores(new CompressedStores(new SingleRootFileSource(effectiveRootDir)))
+                .extensionScanningEnabled(true)
+                .extensions((ExtensionFactory) services -> {
+                    servicesRef.set(services);
+                    return List.of();
+                }));
+        wireMockServer.start();
 
-        // Register Broker Connection in Registry
+        AsyncEngine asyncEngine = servicesRef.get().getExtensions().ofType(AsyncAdminEndpoint.class).values().stream()
+                .findFirst()
+                .orElseThrow()
+                .getEngine();
         BrokerConnection artemisConn = new BrokerConnection(
                 "embedded-artemis",
                 "amqp",
@@ -81,16 +101,16 @@ public class StandaloneDevServerWithArtemis {
                         "amqp.idleTimeout", "30000",
                         "client.id", "wm-artemis-client",
                         "amqp.protocol", "1.0"));
-        AsyncBrokerRegistry.getInstance().register(artemisConn);
+        asyncEngine.getBrokerRegistry().register(artemisConn);
 
         // In-memory Artemis destination provider
         ArtemisDestinationProvider artemisProvider = new ArtemisDestinationProvider(artemisServer);
-        AsyncEngine.getInstance().registerDestinationProvider(artemisProvider);
+        asyncEngine.registerDestinationProvider(artemisProvider);
 
         // Configure Upstream broker in AsyncEngine to bridge to Artemis
         AmqpMessageBroker upstreamBroker =
                 new AmqpMessageBroker("artemis-upstream", "amqp://127.0.0.1:" + ARTEMIS_AMQP_PORT);
-        AsyncEngine.getInstance().setBrokers(AsyncEngine.getInstance().getTestBroker(), upstreamBroker);
+        asyncEngine.setBrokers(asyncEngine.getTestBroker(), upstreamBroker);
 
         // Seed initial sample messages with nested polyglot payloads
         String xmlInvoice =
