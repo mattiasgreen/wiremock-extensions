@@ -8,12 +8,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
@@ -47,43 +47,40 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
-import org.apache.kafka.common.record.SimpleRecord;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Netty ChannelHandler that decodes Kafka wire protocol requests and replies
- * using Kafka's official request/response data models and protocol engine.
+ * Thin Netty ChannelHandler that decodes Kafka wire protocol frames and delegates all topic-log
+ * and consumer-group state to a shared {@link KafkaTopicLogCoordinator}.
  */
 public class KafkaWireCodec extends ByteToMessageDecoder {
 
     private static final Logger LOG = LoggerFactory.getLogger(KafkaWireCodec.class);
 
     private final int port;
+    private final KafkaTopicLogCoordinator coordinator;
     private final Consumer<KafkaProduceRecord> recordConsumer;
-    private final Map<String, AtomicLong> topicOffsets = new ConcurrentHashMap<>();
-    private final Map<String, List<KafkaProduceRecord>> topicRecords = new ConcurrentHashMap<>();
-    private final Map<String, AtomicLong> committedOffsets = new ConcurrentHashMap<>();
-    private final Map<String, String> memberSubscribedTopics = new ConcurrentHashMap<>();
 
     public KafkaWireCodec(int port, Consumer<KafkaProduceRecord> recordConsumer) {
+        this(port, new KafkaTopicLogCoordinator(), recordConsumer);
+    }
+
+    public KafkaWireCodec(int port, KafkaTopicLogCoordinator coordinator, Consumer<KafkaProduceRecord> recordConsumer) {
         this.port = port;
-        this.recordConsumer = recordConsumer;
+        this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
+        this.recordConsumer = Objects.requireNonNullElse(recordConsumer, r -> {});
     }
 
     public void stageRecord(KafkaProduceRecord record) {
-        if (record != null) {
-            String topic = record.topic();
-            topicRecords
-                    .computeIfAbsent(topic, k -> new CopyOnWriteArrayList<>())
-                    .add(record);
-            AtomicLong offset = topicOffsets.computeIfAbsent(topic + ":" + record.partition(), k -> new AtomicLong(0));
-            offset.set(Math.max(offset.get(), record.offset() + 1));
-        }
+        coordinator.stage(record);
     }
 
     @Override
@@ -204,7 +201,12 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
             }
         }
         if (requestedTopics.isEmpty()) {
-            requestedTopics.add("orders.events");
+            Set<String> knownTopics = coordinator.listTopics();
+            if (knownTopics.isEmpty()) {
+                requestedTopics.add("orders.events");
+            } else {
+                requestedTopics.addAll(knownTopics);
+            }
         }
 
         for (String topic : requestedTopics) {
@@ -272,10 +274,10 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
             try {
                 var sub = ConsumerProtocol.deserializeSubscription(ByteBuffer.wrap(clientProtocolMetadata));
                 if (sub.topics() != null && !sub.topics().isEmpty()) {
-                    memberSubscribedTopics.put(memberId, sub.topics().get(0));
+                    coordinator.recordMemberSubscription(memberId, sub.topics());
                 }
             } catch (RuntimeException e) {
-                LOG.debug("[KAFKA-SINK] Unable to parse subscription metadata: {}", e.getMessage());
+                LOG.debug("[KAFKA-SINK] Unable to parse subscription metadata: {}", sanitizeLog(e.getMessage()));
             }
         }
 
@@ -299,13 +301,32 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
     private void handleSyncGroup(
             ChannelHandlerContext ctx, RequestHeader header, ByteBufferAccessor accessor, short version) {
         SyncGroupRequestData req = new SyncGroupRequestData(accessor, version);
-        String topic = memberSubscribedTopics.getOrDefault(req.memberId(), "orders.events");
+        byte[] rawAssignment = null;
 
-        ConsumerPartitionAssignor.Assignment assignment =
-                new ConsumerPartitionAssignor.Assignment(List.of(new TopicPartition(topic, 0)));
-        ByteBuffer assignmentBuffer = ConsumerProtocol.serializeAssignment(assignment);
-        byte[] rawAssignment = new byte[assignmentBuffer.remaining()];
-        assignmentBuffer.get(rawAssignment);
+        if (req.assignments() != null) {
+            for (SyncGroupRequestData.SyncGroupRequestAssignment a : req.assignments()) {
+                if (req.memberId().equals(a.memberId()) && a.assignment() != null && a.assignment().length > 0) {
+                    rawAssignment = a.assignment();
+                    break;
+                }
+            }
+        }
+
+        if (rawAssignment == null) {
+            List<String> subscribedTopics = coordinator.getMemberSubscription(req.memberId());
+            List<TopicPartition> partitions = new ArrayList<>();
+            if (subscribedTopics.isEmpty()) {
+                partitions.add(new TopicPartition("orders.events", 0));
+            } else {
+                for (String topic : subscribedTopics) {
+                    partitions.add(new TopicPartition(topic, 0));
+                }
+            }
+            ConsumerPartitionAssignor.Assignment assignment = new ConsumerPartitionAssignor.Assignment(partitions);
+            ByteBuffer assignmentBuffer = ConsumerProtocol.serializeAssignment(assignment);
+            rawAssignment = new byte[assignmentBuffer.remaining()];
+            assignmentBuffer.get(rawAssignment);
+        }
 
         SyncGroupResponseData data = new SyncGroupResponseData()
                 .setErrorCode((short) 0)
@@ -332,13 +353,13 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
             ListOffsetsResponseData.ListOffsetsTopicResponse tResp =
                     new ListOffsetsResponseData.ListOffsetsTopicResponse().setName(t.name());
             for (ListOffsetsRequestData.ListOffsetsPartition p : t.partitions()) {
-                AtomicLong offset = topicOffsets.getOrDefault(t.name() + ":" + p.partitionIndex(), new AtomicLong(0));
+                long offset = coordinator.listOffset(t.name(), p.partitionIndex(), p.timestamp());
                 tResp.partitions()
                         .add(new ListOffsetsResponseData.ListOffsetsPartitionResponse()
                                 .setPartitionIndex(p.partitionIndex())
                                 .setErrorCode((short) 0)
                                 .setTimestamp(-1L)
-                                .setOffset(offset.get())
+                                .setOffset(offset)
                                 .setLeaderEpoch(0));
             }
             data.topics().add(tResp);
@@ -356,7 +377,7 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
             OffsetCommitResponseData.OffsetCommitResponseTopic tResp =
                     new OffsetCommitResponseData.OffsetCommitResponseTopic().setName(t.name());
             for (OffsetCommitRequestData.OffsetCommitRequestPartition p : t.partitions()) {
-                committedOffsets.put(t.name() + ":" + p.partitionIndex(), new AtomicLong(p.committedOffset()));
+                coordinator.commitOffset(req.groupId(), t.name(), p.partitionIndex(), p.committedOffset());
                 tResp.partitions()
                         .add(new OffsetCommitResponseData.OffsetCommitResponsePartition()
                                 .setPartitionIndex(p.partitionIndex())
@@ -379,17 +400,33 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
                 OffsetFetchResponseData.OffsetFetchResponseTopic tResp =
                         new OffsetFetchResponseData.OffsetFetchResponseTopic().setName(t.name());
                 for (int partition : t.partitionIndexes()) {
-                    AtomicLong committed = committedOffsets.getOrDefault(t.name() + ":" + partition, new AtomicLong(0));
+                    long committed = coordinator.fetchCommittedOffset(req.groupId(), t.name(), partition);
                     tResp.partitions()
                             .add(new OffsetFetchResponseData.OffsetFetchResponsePartition()
                                     .setPartitionIndex(partition)
-                                    .setCommittedOffset(committed.get())
+                                    .setCommittedOffset(committed)
                                     .setCommittedLeaderEpoch(0)
                                     .setMetadata(null)
                                     .setErrorCode((short) 0));
                 }
                 data.topics().add(tResp);
             }
+        } else {
+            Map<String, OffsetFetchResponseData.OffsetFetchResponseTopic> byTopic = new LinkedHashMap<>();
+            for (Map.Entry<KafkaTopicLogCoordinator.TopicPartitionKey, Long> entry :
+                    coordinator.fetchAllCommittedOffsets(req.groupId()).entrySet()) {
+                KafkaTopicLogCoordinator.TopicPartitionKey tp = entry.getKey();
+                OffsetFetchResponseData.OffsetFetchResponseTopic tResp = byTopic.computeIfAbsent(
+                        tp.topic(), name -> new OffsetFetchResponseData.OffsetFetchResponseTopic().setName(name));
+                tResp.partitions()
+                        .add(new OffsetFetchResponseData.OffsetFetchResponsePartition()
+                                .setPartitionIndex(tp.partition())
+                                .setCommittedOffset(entry.getValue())
+                                .setCommittedLeaderEpoch(0)
+                                .setMetadata(null)
+                                .setErrorCode((short) 0));
+            }
+            data.topics().addAll(byTopic.values());
         }
 
         sendResponse(ctx, header, data);
@@ -406,50 +443,20 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
                     new FetchResponseData.FetchableTopicResponse().setTopic(topic.topic());
 
             for (FetchRequestData.FetchPartition partition : topic.partitions()) {
-                List<KafkaProduceRecord> staged = topicRecords.getOrDefault(topic.topic(), Collections.emptyList());
-                List<KafkaProduceRecord> matching = new ArrayList<>();
-                for (KafkaProduceRecord r : staged) {
-                    if (r.partition() == partition.partition() && r.offset() >= partition.fetchOffset()) {
-                        matching.add(r);
-                    }
-                }
-
-                AtomicLong latestOffset =
-                        topicOffsets.getOrDefault(topic.topic() + ":" + partition.partition(), new AtomicLong(0));
-                long highWatermark = latestOffset.get();
+                KafkaTopicLogCoordinator.FetchSlice slice =
+                        coordinator.fetch(topic.topic(), partition.partition(), partition.fetchOffset());
 
                 FetchResponseData.PartitionData pData = new FetchResponseData.PartitionData()
                         .setPartitionIndex(partition.partition())
                         .setErrorCode((short) 0)
-                        .setHighWatermark(highWatermark)
-                        .setLastStableOffset(highWatermark)
-                        .setLogStartOffset(0L);
+                        .setHighWatermark(slice.highWatermark())
+                        .setLastStableOffset(slice.highWatermark())
+                        .setLogStartOffset(slice.logStartOffset());
 
-                if (matching.isEmpty()) {
+                if (slice.records().isEmpty()) {
                     pData.setRecords(MemoryRecords.EMPTY);
                 } else {
-                    List<SimpleRecord> simpleRecords = new ArrayList<>();
-                    for (KafkaProduceRecord r : matching) {
-                        byte[] keyBytes = r.key() != null ? r.key().getBytes(StandardCharsets.UTF_8) : new byte[0];
-                        byte[] valBytes = r.value() != null ? r.value().getBytes(StandardCharsets.UTF_8) : new byte[0];
-                        Header[] headers =
-                                new Header[r.headers() != null ? r.headers().size() : 0];
-                        if (r.headers() != null) {
-                            int hIdx = 0;
-                            for (Map.Entry<String, String> h : r.headers().entrySet()) {
-                                headers[hIdx++] = new RecordHeader(
-                                        h.getKey(),
-                                        h.getValue() != null
-                                                ? h.getValue().getBytes(StandardCharsets.UTF_8)
-                                                : new byte[0]);
-                            }
-                        }
-                        simpleRecords.add(new SimpleRecord(System.currentTimeMillis(), keyBytes, valBytes, headers));
-                    }
-
-                    MemoryRecords batch = MemoryRecords.withRecords(
-                            matching.get(0).offset(), Compression.NONE, simpleRecords.toArray(new SimpleRecord[0]));
-                    pData.setRecords(batch);
+                    pData.setRecords(buildMemoryRecords(slice.records()));
                 }
 
                 tResp.partitions().add(pData);
@@ -458,6 +465,34 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
         }
 
         sendResponse(ctx, header, data);
+    }
+
+    private static MemoryRecords buildMemoryRecords(List<KafkaProduceRecord> records) {
+        long baseOffset = records.get(0).offset();
+        int estimatedSize = 1024;
+        for (KafkaProduceRecord r : records) {
+            estimatedSize += r.key().length() + r.value().length() + 128;
+        }
+        try (MemoryRecordsBuilder builder = MemoryRecords.builder(
+                ByteBuffer.allocate(estimatedSize),
+                RecordBatch.CURRENT_MAGIC_VALUE,
+                Compression.NONE,
+                TimestampType.CREATE_TIME,
+                baseOffset)) {
+            for (KafkaProduceRecord r : records) {
+                byte[] keyBytes = r.key().getBytes(StandardCharsets.UTF_8);
+                byte[] valBytes = r.value().getBytes(StandardCharsets.UTF_8);
+                Header[] headers = new Header[r.headers().size()];
+                int hIdx = 0;
+                for (Map.Entry<String, String> h : r.headers().entrySet()) {
+                    headers[hIdx++] = new RecordHeader(
+                            h.getKey(),
+                            h.getValue() != null ? h.getValue().getBytes(StandardCharsets.UTF_8) : new byte[0]);
+                }
+                builder.appendWithOffset(r.offset(), r.timestamp(), keyBytes, valBytes, headers);
+            }
+            return builder.build();
+        }
     }
 
     private void handleProduce(
@@ -470,12 +505,8 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
                     new ProduceResponseData.TopicProduceResponse().setName(t.name());
 
             for (ProduceRequestData.PartitionProduceData p : t.partitionData()) {
-                long baseOffset = 0L;
+                long baseOffset = -1L;
                 if (p.records() instanceof Records records) {
-                    AtomicLong offsetCounter =
-                            topicOffsets.computeIfAbsent(t.name() + ":" + p.index(), k -> new AtomicLong(0));
-                    baseOffset = offsetCounter.get();
-
                     for (Record r : records.records()) {
                         String key = r.hasKey()
                                 ? StandardCharsets.UTF_8.decode(r.key()).toString()
@@ -492,15 +523,16 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
                             }
                         }
 
-                        long offset = offsetCounter.getAndIncrement();
-                        KafkaProduceRecord rec =
-                                new KafkaProduceRecord(t.name(), p.index(), key, value, headers, offset, r.timestamp());
-                        stageRecord(rec);
-
-                        if (recordConsumer != null) {
-                            recordConsumer.accept(rec);
+                        KafkaProduceRecord appended =
+                                coordinator.append(t.name(), p.index(), key, value, headers, r.timestamp());
+                        if (baseOffset < 0L) {
+                            baseOffset = appended.offset();
                         }
+                        recordConsumer.accept(appended);
                     }
+                }
+                if (baseOffset < 0L) {
+                    baseOffset = coordinator.highWatermark(t.name(), p.index());
                 }
 
                 tResp.partitionResponses()
@@ -509,11 +541,15 @@ public class KafkaWireCodec extends ByteToMessageDecoder {
                                 .setErrorCode((short) 0)
                                 .setBaseOffset(baseOffset)
                                 .setLogAppendTimeMs(System.currentTimeMillis())
-                                .setLogStartOffset(0L));
+                                .setLogStartOffset(coordinator.logStartOffset(t.name(), p.index())));
             }
             data.responses().add(tResp);
         }
 
         sendResponse(ctx, header, data);
+    }
+
+    private static String sanitizeLog(String value) {
+        return value == null ? "" : value.replace('\r', '_').replace('\n', '_');
     }
 }

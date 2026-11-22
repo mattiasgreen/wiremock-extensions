@@ -76,6 +76,17 @@ class KafkaWireSinkTest {
 
             assertThat(received.get(1).key()).isEqualTo("order-102");
             assertThat(received.get(1).value()).isEqualTo("{\"orderId\":\"102\",\"amount\":89.50}");
+
+            // Produced records must immediately be visible in the shared log for Explorer peek/delete/purge
+            assertThat(sink.getStagedRecords())
+                    .extracting(KafkaProduceRecord::recordId)
+                    .containsExactly("orders.events:0:0", "orders.events:0:1");
         }
+    }
+
+    @Test
+    @DisplayName("Should run Netty event loops on platform threads rather than virtual threads")
+    void shouldRunNettyEventLoopsOnPlatformThreads() throws Exception {
+        assertThat(sink.isEventLoopVirtual()).isFalse();
     }
 }
