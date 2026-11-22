@@ -36,4 +36,18 @@ public record KafkaProduceRecord(
     public static KafkaProduceRecord of(String topic, String key, String value) {
         return new KafkaProduceRecord(topic, 0, key, value, Collections.emptyMap(), 0L, System.currentTimeMillis());
     }
+
+    /**
+     * Returns the stable monotonic record identifier derived from topic, partition, and offset.
+     */
+    public String recordId() {
+        return topic + ":" + partition + ":" + offset;
+    }
+
+    /**
+     * Returns a copy of this record with the assigned monotonic partition offset.
+     */
+    public KafkaProduceRecord withOffset(long assignedOffset) {
+        return new KafkaProduceRecord(topic, partition, key, value, headers, assignedOffset, timestamp);
+    }
 }
