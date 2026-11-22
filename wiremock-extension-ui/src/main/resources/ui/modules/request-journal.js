@@ -58,6 +58,8 @@ export function getRequestVerdict(req) {
     || (req.response && req.response.headers && req.response.headers['Matched-Stub-Name']);
   if (isProxyMode) {
     const isAsync = (req.request && req.request.url && req.request.url.startsWith('/__async/'))
+      || Boolean(getHeader(resHeaders, 'x-async-protocol'))
+      || Boolean(req.request && req.request.headers && getHeader(req.request.headers, 'x-async-protocol'))
       || Boolean(getHeader(resHeaders, 'x-wiremock-async-protocol'))
       || Boolean(req.request && req.request.headers && getHeader(req.request.headers, 'x-wiremock-async-protocol'));
     const isBridged = isAsync;
@@ -106,10 +108,14 @@ export function detectRequestProtocol(req) {
   if (isCasual) return 'casual';
   const isAsync = Boolean(
     getHeader(reqHeaders, 'x-async-channel') ||
+    getHeader(reqHeaders, 'x-async-protocol') ||
+    getHeader(reqHeaders, 'x-async-destination') ||
+    getHeader(reqHeaders, 'x-wiremock-async-protocol') ||
     url.startsWith('/__async/')
   );
   if (isAsync) {
     const proto = (getHeader(reqHeaders, 'x-async-protocol')
+      || getHeader(reqHeaders, 'x-wiremock-async-protocol')
       || (url.startsWith('/__async/') ? url.split('/')[2] : 'async') || 'async').toLowerCase();
     return proto;
   }

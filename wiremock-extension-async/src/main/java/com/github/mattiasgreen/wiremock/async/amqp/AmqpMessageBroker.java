@@ -151,14 +151,28 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
                     sender.close();
                     return;
                 }
-            } catch (ClientException e) {
+            } catch (ClientException | RuntimeException e) {
+                resetOutboundConnectionQuietly();
                 String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
-                LOG.warn("[AMQP-BROKER] Live send failed to {}, falling back to local queue: {}", brokerUri, sanitized);
+                LOG.error("[AMQP-BROKER] Live send failed to {} for channel {}: {}", brokerUri, channel, sanitized);
+                throw new IllegalStateException(
+                        "AMQP delivery failed to " + brokerUri + " [" + channel + "]: " + sanitized, e);
             }
         }
 
-        // Local fallback / in-process queuing
+        // Local in-process queuing when no remote brokerUri is configured
         localQueues.computeIfAbsent(channel, k -> new ArrayDeque<>()).add(message);
+    }
+
+    private synchronized void resetOutboundConnectionQuietly() {
+        if (outboundConnection != null) {
+            try {
+                outboundConnection.close();
+            } catch (Exception e) {
+                LOG.debug("[AMQP-BROKER] Error resetting outbound connection: {}", e.getMessage());
+            }
+            outboundConnection = null;
+        }
     }
 
     @Override

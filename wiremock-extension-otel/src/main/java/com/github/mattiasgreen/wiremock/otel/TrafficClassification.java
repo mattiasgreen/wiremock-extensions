@@ -143,10 +143,16 @@ public record TrafficClassification(
                 } else {
                     rpcStatus = "OK";
                 }
-            } else if ("kafka".equals(protocol) || "amqp".equals(protocol) || "async".equals(protocol)) {
+            } else if ("kafka".equals(protocol)
+                    || "amqp".equals(protocol)
+                    || "ibmmq".equals(protocol)
+                    || "in-memory".equals(protocol)
+                    || "async".equals(protocol)) {
                 rpcSystem = protocol;
                 if (request.header("X-Async-Channel").isPresent()) {
                     rpcService = request.header("X-Async-Channel").firstValue();
+                } else if (request.header("X-Async-Destination").isPresent()) {
+                    rpcService = request.header("X-Async-Destination").firstValue();
                 } else if (request.getUrl() != null && request.getUrl().startsWith("/__async/")) {
                     String sub = request.getUrl().substring("/__async/".length());
                     int slashIdx = sub.indexOf('/');
@@ -158,7 +164,10 @@ public record TrafficClassification(
                         rpcService = sub;
                     }
                 }
-                rpcStatus = "OK";
+                boolean hasAsyncError = response != null
+                        && response.getHeaders() != null
+                        && response.getHeaders().getHeader("X-Async-Error").isPresent();
+                rpcStatus = (hasAsyncError || statusCode >= 500) ? "ERROR" : "OK";
             }
         }
 

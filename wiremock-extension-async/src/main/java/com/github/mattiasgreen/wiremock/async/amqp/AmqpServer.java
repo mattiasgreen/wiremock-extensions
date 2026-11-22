@@ -141,7 +141,7 @@ public class AmqpServer implements AutoCloseable {
         return boundPort > 0 && channelFuture != null && channelFuture.channel().isActive();
     }
 
-    public void stageFeedMessage(String queue, AsyncMessage message) {
+    public synchronized void stageFeedMessage(String queue, AsyncMessage message) {
         if (queue == null || message == null) {
             return;
         }
@@ -303,8 +303,12 @@ public class AmqpServer implements AutoCloseable {
                 c.setContainerId("wiremock-amqp-server");
                 c.open();
             });
+            connection.closeHandler(Connection::close);
 
-            connection.sessionOpenHandler(Session::open);
+            connection.sessionOpenHandler(session -> {
+                session.closeHandler(Session::close);
+                session.open();
+            });
 
             // Client consuming from server: server is Sender
             connection.senderOpenHandler(sender -> {
@@ -326,8 +330,14 @@ public class AmqpServer implements AutoCloseable {
                 }
 
                 sender.localDetachHandler(s -> activeSenders.remove(s));
-                sender.detachHandler(s -> activeSenders.remove(s));
-                sender.closeHandler(s -> activeSenders.remove(s));
+                sender.detachHandler(s -> {
+                    activeSenders.remove(s);
+                    s.detach();
+                });
+                sender.closeHandler(s -> {
+                    activeSenders.remove(s);
+                    s.close();
+                });
             });
 
             // Client producing to server: server is Receiver
@@ -338,6 +348,8 @@ public class AmqpServer implements AutoCloseable {
                 }
                 receiver.open();
                 receiver.addCredit(100);
+                receiver.detachHandler(r -> r.detach());
+                receiver.closeHandler(r -> r.close());
 
                 receiver.deliveryReadHandler(delivery -> {
                     if (!delivery.isPartial()) {

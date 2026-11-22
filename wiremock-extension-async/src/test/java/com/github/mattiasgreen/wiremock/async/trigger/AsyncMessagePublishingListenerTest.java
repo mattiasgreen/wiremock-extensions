@@ -91,4 +91,42 @@ class AsyncMessagePublishingListenerTest {
                 .isEqualTo("{\"orderId\":\"ORD-9912\",\"customer\":\"Alice\",\"status\":\"PROCESSING\"}");
         assertThat(msg.headers()).containsEntry("x-event-type", "OrderSubmitted");
     }
+
+    @Test
+    @DisplayName("Should terminate cleanly when interpolated jsonPath value contains a self-referential placeholder")
+    void shouldTerminateCleanlyOnSelfReferentialJsonPathValue() throws Exception {
+        String selfRefValue = "{{jsonPath request.body '$.customer'}}";
+        wireMockServer.stubFor(
+                post(urlEqualTo("/api/v1/orders/self-ref"))
+                        .willReturn(aResponse()
+                                .withStatus(202)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("{\"orderId\":\"ORD-SELF\"}"))
+                        .withMetadata(
+                                Map.of(
+                                        "async",
+                                        Map.of(
+                                                "produce",
+                                                List.of(
+                                                        Map.of(
+                                                                "destination", "orders.selfref",
+                                                                "protocol", "kafka",
+                                                                "key", "{{jsonPath response.body '$.orderId'}}",
+                                                                "payload",
+                                                                        "{\"customer\":\"{{jsonPath request.body '$.customer'}}\",\"orderId\":\"{{jsonPath response.body '$.orderId'}}\"}"))))));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/orders/self-ref"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"customer\":\"" + selfRefValue + "\"}"))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(202);
+
+        AsyncMessage msg = publishedQueue.poll(2, TimeUnit.SECONDS);
+        assertThat(msg).isNotNull();
+        assertThat(msg.destination()).isEqualTo("orders.selfref");
+        assertThat(msg.payload()).isEqualTo("{\"customer\":\"" + selfRefValue + "\",\"orderId\":\"ORD-SELF\"}");
+    }
 }

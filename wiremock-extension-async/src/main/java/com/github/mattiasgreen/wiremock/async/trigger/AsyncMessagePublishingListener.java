@@ -149,8 +149,9 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
                     String fieldName = text.substring(idx + placeholderPrefix.length(), endQuote);
                     JsonNode val = root.get(fieldName);
                     String replacement = val != null ? (val.isValueNode() ? val.asText() : val.toString()) : "";
+                    int nextSearchStart = idx + replacement.length();
                     text = text.substring(0, idx) + replacement + text.substring(endBrace + 2);
-                    idx = text.indexOf(placeholderPrefix);
+                    idx = text.indexOf(placeholderPrefix, nextSearchStart);
                     continue;
                 }
             }
