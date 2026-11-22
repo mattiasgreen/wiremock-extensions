@@ -83,6 +83,7 @@ public class AsyncEngine implements AutoCloseable {
     private volatile Consumer<ServeEvent> journalConsumer;
     private volatile MessageBroker testBroker;
     private volatile MessageBroker upstreamBroker;
+    private volatile boolean usingDefaultUpstreamBroker = true;
     private volatile AsyncBrokerRegistry brokerRegistry;
     private volatile KafkaWireSink kafkaSink;
     private volatile AmqpServer amqpServer;
@@ -146,7 +147,10 @@ public class AsyncEngine implements AutoCloseable {
             try {
                 journalConsumer.accept(event);
             } catch (Exception e) {
-                LOG.error("[ASYNC-ENGINE] Failed to record ServeEvent in journal consumer: {}", e.getMessage(), e);
+                LOG.error(
+                        "[ASYNC-ENGINE] Failed to record ServeEvent in journal consumer: {}",
+                        sanitizeForLog(e.getMessage()),
+                        e);
             }
         }
     }
@@ -157,11 +161,24 @@ public class AsyncEngine implements AutoCloseable {
                 kafkaSink.close();
             }
             KafkaWireSink sink = new KafkaWireSink(port, record -> {
+                String correlationId = "";
+                String replyTo = "";
+                for (Map.Entry<String, String> header : record.headers().entrySet()) {
+                    if ("x-correlation-id".equalsIgnoreCase(header.getKey())
+                            || "correlationId".equalsIgnoreCase(header.getKey())) {
+                        correlationId = header.getValue();
+                    } else if ("x-reply-to".equalsIgnoreCase(header.getKey())
+                            || "replyTo".equalsIgnoreCase(header.getKey())) {
+                        replyTo = header.getValue();
+                    }
+                }
                 AsyncMessage inbound = AsyncMessage.builder()
                         .id(record.recordId())
                         .protocol("kafka")
                         .destination(record.topic())
                         .key(record.key())
+                        .correlationId(correlationId)
+                        .replyTo(replyTo)
                         .payload(record.value())
                         .headers(record.headers())
                         .partition(record.partition())
@@ -486,6 +503,7 @@ public class AsyncEngine implements AutoCloseable {
     public void setBrokers(MessageBroker testBroker, MessageBroker upstreamBroker) {
         this.testBroker = Objects.requireNonNull(testBroker, "testBroker must not be null");
         this.upstreamBroker = Objects.requireNonNull(upstreamBroker, "upstreamBroker must not be null");
+        this.usingDefaultUpstreamBroker = false;
     }
 
     public MessageBroker getTestBroker() {
@@ -562,7 +580,11 @@ public class AsyncEngine implements AutoCloseable {
                     try {
                         consumer.accept(msg);
                     } catch (Exception e) {
-                        LOG.error("[ASYNC-ENGINE] Subscriber error on channel {}: {}", channel, e.getMessage(), e);
+                        LOG.error(
+                                "[ASYNC-ENGINE] Subscriber error on channel {}: {}",
+                                sanitizeForLog(channel),
+                                sanitizeForLog(e.getMessage()),
+                                e);
                     }
                 } else {
                     try {
@@ -629,17 +651,11 @@ public class AsyncEngine implements AutoCloseable {
 
         for (StubMapping stub : candidates) {
             AsyncMetadata meta = AsyncMetadata.from(stub.getMetadata()).orElseThrow();
-            if (!isAsyncRoutableStub(stub, meta)) {
+            if (!isAsyncRoutableStub(stub, meta)
+                    || !matchesCommonCriteria(stub, meta, channel, msg, syntheticRequest)) {
                 continue;
             }
             if (meta.mode() == AsyncMode.PROXY) {
-                if (!meta.channel().isBlank() && !meta.channel().equals(channel)) {
-                    continue;
-                }
-                if (!matchesRequestHeaders(stub.getRequest(), syntheticRequest)
-                        || !matchesRequestBody(stub.getRequest(), msg.payload())) {
-                    continue;
-                }
                 String patternStr = !meta.channelPattern().isBlank()
                         ? meta.channelPattern()
                         : (!meta.channel().isBlank() ? Pattern.quote(meta.channel()) : "");
@@ -669,7 +685,7 @@ public class AsyncEngine implements AutoCloseable {
                     forwardUpstreamOrRecord502(ruleName, channel, targetBroker, targetChannel, forwarded, stub);
                     return true;
                 }
-            } else if (matchesMockStub(stub, meta, channel, msg, syntheticRequest)) {
+            } else if (matchesMockChannelAndUrl(stub, meta, channel, syntheticRequest)) {
                 String replyBody = resolveMockReplyBody(stub, meta);
                 int status = stub.getResponse() != null && stub.getResponse().getStatus() > 0
                         ? stub.getResponse().getStatus()
@@ -716,18 +732,28 @@ public class AsyncEngine implements AutoCloseable {
         if (requestMsg.replyTo() == null || requestMsg.replyTo().isBlank()) {
             return;
         }
+        String proto = normalizePublishProtocol(requestMsg.protocol());
+        Map<String, String> replyHeaders = new LinkedHashMap<>();
+        if (requestMsg.correlationId() != null && !requestMsg.correlationId().isBlank()) {
+            replyHeaders.put("x-correlation-id", requestMsg.correlationId());
+        }
         AsyncMessage reply = AsyncMessage.builder()
-                .protocol(requestMsg.protocol())
+                .protocol(proto)
+                .key(requestMsg.key())
                 .correlationId(requestMsg.correlationId())
                 .destination(requestMsg.replyTo())
+                .headers(replyHeaders)
                 .payload(replyBody)
                 .build();
         messagesProduced.incrementAndGet();
-        if ("amqp".equalsIgnoreCase(requestMsg.protocol()) && amqpServer != null && amqpServer.isRunning()) {
-            amqpServer.stageFeedMessage(requestMsg.replyTo(), reply);
-        } else if ("kafka".equalsIgnoreCase(requestMsg.protocol()) && kafkaSink != null && kafkaSink.isRunning()) {
-            kafkaSink.stageRecord(KafkaProduceRecord.of(requestMsg.replyTo(), requestMsg.key(), replyBody));
-        } else {
+        boolean delivered = false;
+        for (DestinationProvider adapter : resolveAdapters(proto)) {
+            if (adapter.publishMessage(requestMsg.replyTo(), reply)) {
+                delivered = true;
+                break;
+            }
+        }
+        if (!delivered) {
             testBroker.send(requestMsg.replyTo(), reply);
         }
     }
@@ -782,11 +808,17 @@ public class AsyncEngine implements AutoCloseable {
         return url != null && url.startsWith("/__async/");
     }
 
-    private static boolean matchesMockStub(
+    private static boolean matchesCommonCriteria(
             StubMapping stub, AsyncMetadata meta, String channel, AsyncMessage msg, ImmutableRequest syntheticRequest) {
         if (!meta.channel().isBlank() && !meta.channel().equals(channel)) {
             return false;
         }
+        RequestPattern req = stub.getRequest();
+        return matchesRequestHeaders(req, syntheticRequest) && matchesRequestBody(req, msg.payload());
+    }
+
+    private static boolean matchesMockChannelAndUrl(
+            StubMapping stub, AsyncMetadata meta, String channel, ImmutableRequest syntheticRequest) {
         if (!meta.channelPattern().isBlank() && !Pattern.matches(meta.channelPattern(), channel)) {
             return false;
         }
@@ -801,10 +833,7 @@ public class AsyncEngine implements AutoCloseable {
                 return false;
             }
         }
-        if (!matchesRequestHeaders(req, syntheticRequest)) {
-            return false;
-        }
-        return matchesRequestBody(req, msg.payload());
+        return true;
     }
 
     private static boolean matchesRequestHeaders(RequestPattern req, ImmutableRequest syntheticRequest) {
@@ -918,6 +947,10 @@ public class AsyncEngine implements AutoCloseable {
                     }
                 }
             }
+            if (usingDefaultUpstreamBroker) {
+                throw new IllegalStateException(
+                        "Unknown proxyBroker '" + sanitizeForLog(targetBroker) + "': not found in AsyncBrokerRegistry");
+            }
         }
         return upstreamBroker;
     }
@@ -951,10 +984,10 @@ public class AsyncEngine implements AutoCloseable {
         recordServeEvent(se);
         LOG.error(
                 "[ASYNC-PROXY-ERROR] Bridge [{}] failed forwarding [{}] to [{}]: {}",
-                ruleName,
-                targetChannel,
-                brokerLabel,
-                errorDetail);
+                sanitizeForLog(ruleName),
+                sanitizeForLog(targetChannel),
+                sanitizeForLog(brokerLabel),
+                sanitizeForLog(errorDetail));
     }
 
     public boolean processOutboundReply(String replyChannel, String originalMatchKeyword) {
@@ -1037,6 +1070,7 @@ public class AsyncEngine implements AutoCloseable {
         }
         testBroker = new InMemoryMessageBroker("default-test-broker");
         upstreamBroker = new InMemoryMessageBroker("default-upstream-broker");
+        usingDefaultUpstreamBroker = true;
         stopKafkaSink();
         stopAmqpServer();
     }
@@ -1063,8 +1097,12 @@ public class AsyncEngine implements AutoCloseable {
             try {
                 closeable.close();
             } catch (Exception e) {
-                LOG.debug("[ASYNC-ENGINE] Error closing message broker: {}", e.getMessage());
+                LOG.debug("[ASYNC-ENGINE] Error closing message broker: {}", sanitizeForLog(e.getMessage()));
             }
         }
+    }
+
+    private static String sanitizeForLog(String value) {
+        return Objects.toString(value, "").replaceAll("[\r\n]", "");
     }
 }

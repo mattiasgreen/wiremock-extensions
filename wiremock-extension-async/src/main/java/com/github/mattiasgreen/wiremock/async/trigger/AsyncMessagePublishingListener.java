@@ -61,6 +61,11 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
         }
 
         AsyncMetadata metadata = maybeMetadata.get();
+        String requestBody =
+                serveEvent.getRequest() != null ? serveEvent.getRequest().getBodyAsString() : "";
+        String responseBody =
+                serveEvent.getResponse() != null ? serveEvent.getResponse().getBodyAsString() : "";
+
         if (metadata.feed() != null
                 && "call-triggered".equalsIgnoreCase(metadata.feed().trigger())) {
             for (com.github.mattiasgreen.wiremock.async.model.AsyncFeedRecord rec :
@@ -68,9 +73,9 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
                 AsyncMessage message = AsyncMessage.builder()
                         .destination(metadata.feed().destination())
                         .protocol(metadata.feed().protocol())
-                        .key(rec.key())
-                        .payload(rec.payload())
-                        .headers(rec.headers())
+                        .key(interpolate(rec.key(), requestBody, responseBody))
+                        .payload(interpolate(rec.payload(), requestBody, responseBody))
+                        .headers(interpolateHeaders(rec.headers(), requestBody, responseBody))
                         .build();
                 messagePublisher.accept(metadata.feed().destination(), message);
             }
@@ -79,11 +84,6 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
         if (metadata.produce().isEmpty()) {
             return;
         }
-
-        String requestBody =
-                serveEvent.getRequest() != null ? serveEvent.getRequest().getBodyAsString() : "";
-        String responseBody =
-                serveEvent.getResponse() != null ? serveEvent.getResponse().getBodyAsString() : "";
 
         for (AsyncProduceDirective directive : metadata.produce()) {
             Thread.ofVirtual().name("async-produce-", 0).start(() -> {
@@ -94,11 +94,8 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
 
                     String evaluatedKey = interpolate(directive.key(), requestBody, responseBody);
                     String evaluatedPayload = interpolate(directive.payload(), requestBody, responseBody);
-
-                    Map<String, String> evaluatedHeaders = new HashMap<>();
-                    for (Map.Entry<String, String> h : directive.headers().entrySet()) {
-                        evaluatedHeaders.put(h.getKey(), interpolate(h.getValue(), requestBody, responseBody));
-                    }
+                    Map<String, String> evaluatedHeaders =
+                            interpolateHeaders(directive.headers(), requestBody, responseBody);
 
                     AsyncMessage message = AsyncMessage.builder()
                             .id(UUID.randomUUID().toString())
@@ -117,6 +114,15 @@ public class AsyncMessagePublishingListener implements ServeEventListener {
                 }
             });
         }
+    }
+
+    private Map<String, String> interpolateHeaders(
+            Map<String, String> headers, String requestBody, String responseBody) {
+        Map<String, String> evaluatedHeaders = new HashMap<>();
+        for (Map.Entry<String, String> h : headers.entrySet()) {
+            evaluatedHeaders.put(h.getKey(), interpolate(h.getValue(), requestBody, responseBody));
+        }
+        return evaluatedHeaders;
     }
 
     private String interpolate(String template, String requestBody, String responseBody) {

@@ -46,3 +46,6 @@ We deepened both modules through architectural restructuring:
   - Transparent Zstandard compression and dictionary training on async traffic.
   - Zero-DOM protocol dispatcher allows direct unit testing without DOM fixtures.
   - Eliminated shallow wrappers and circular module dependencies.
+
+## Amendment (2026-11-22)
+- `AsyncEngine` now composes built-in wire-server (`InMemoryDestinationAdapter`, `KafkaWireSinkDestinationAdapter`, `AmqpServerDestinationAdapter`), `AsyncBrokerRegistry` (`BrokerRegistryDestinationAdapter`), and SPI `DestinationProvider` adapters in a non-shadowing chain for unified destination discovery, peeking, deletion, purging, publishing, and mock reply delivery.

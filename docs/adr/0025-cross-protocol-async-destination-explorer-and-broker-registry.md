@@ -42,3 +42,6 @@ Accepted
 - Infrastructure credentials and connection pools live in a central, declarative GitOps registry, decoupling environment setup from portable test stubs.
 - Message inspection and editing on immutable streams (Kafka) adhere to log-native semantics ("Modify & Re-Publish") rather than corrupting wire guarantees.
 - Zero NPM and zero new backend JAR dependencies are introduced (`org.apache.kafka:kafka-clients:3.9.0` and `org.apache.qpid:protonj2-client:1.4.0` are already in the classpath).
+
+## Amendment (2026-11-22)
+- `AsyncEngine` now composes built-in wire-server, `AsyncBrokerRegistry`, and SPI `DestinationProvider` adapters without shadowing, so local wire sinks, pooled remote registry connections, and external SPI providers (e.g. Casual) are aggregated and dispatched through a single adapter resolution seam.

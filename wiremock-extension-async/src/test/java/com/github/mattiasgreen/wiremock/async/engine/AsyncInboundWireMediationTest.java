@@ -204,4 +204,69 @@ class AsyncInboundWireMediationTest {
                     .isEqualTo("amqp-msg-2");
         });
     }
+
+    @Test
+    @DisplayName("Kafka mock reply routed via DestinationProvider preserves correlationId and key")
+    void shouldPreserveCorrelationIdOnKafkaMockReply() throws Exception {
+        StubMapping mockStub = post(urlMatching("/__async/.*"))
+                .withName("kafka-reply-mock")
+                .atPriority(5)
+                .withRequestBody(containing("PING"))
+                .willReturn(aResponse().withStatus(200).withBody("{\"status\":\"PONG\"}"))
+                .withMetadata(Map.of("async", Map.of("mode", "mock", "protocol", "kafka", "channel", "orders.req")))
+                .build();
+        engine.getStubStore().add(mockStub);
+
+        engine.startKafkaSink(0, null);
+        int port = engine.getKafkaSinkPort();
+
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "127.0.0.1:" + port);
+        props.put(ProducerConfig.ACKS_CONFIG, "1");
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
+            ProducerRecord<String, String> req = new ProducerRecord<>("orders.req", "key-42", "{\"op\":\"PING\"}");
+            req.headers().add("x-correlation-id", "corr-kafka-99".getBytes(StandardCharsets.UTF_8));
+            req.headers().add("x-reply-to", "orders.replies".getBytes(StandardCharsets.UTF_8));
+            producer.send(req).get(5, TimeUnit.SECONDS);
+        }
+
+        List<AsyncMessage> replies = engine.peekMessages("kafka", "orders.replies", 10);
+        assertThat(replies).hasSize(1);
+        AsyncMessage reply = replies.get(0);
+        assertThat(reply.payload()).isEqualTo("{\"status\":\"PONG\"}");
+        assertThat(reply.key()).isEqualTo("key-42");
+        assertThat(reply.correlationId()).isEqualTo("corr-kafka-99");
+        assertThat(reply.headers()).containsEntry("x-correlation-id", "corr-kafka-99");
+    }
+
+    @Test
+    @DisplayName("Unknown explicit proxyBroker on default engine records 502 with X-Async-Error")
+    void shouldRecord502WhenExplicitProxyBrokerIsUnknown() {
+        engine.addBridgeRule("Unknown Broker Rule", 10, "orders\\.(.*)", "missing-corp-broker", "upstream.$1");
+
+        engine.getTestBroker()
+                .send(
+                        "orders.eu",
+                        AsyncMessage.builder()
+                                .protocol("in-memory")
+                                .destination("orders.eu")
+                                .payload("{\"id\":1}")
+                                .build());
+
+        assertThat(engine.processInbound("orders.eu")).isTrue();
+        assertThat(engine.getProxyErrors()).isEqualTo(1);
+        assertThat(capturedEvents).hasSize(1);
+        ServeEvent errorEvent = capturedEvents.get(0);
+        assertThat(errorEvent.getResponseDefinition().getStatus()).isEqualTo(502);
+        assertThat(errorEvent
+                        .getResponse()
+                        .getHeaders()
+                        .getHeader("X-Async-Error")
+                        .firstValue())
+                .contains("Unknown proxyBroker")
+                .contains("missing-corp-broker");
+    }
 }

@@ -129,4 +129,56 @@ class AsyncMessagePublishingListenerTest {
         assertThat(msg.destination()).isEqualTo("orders.selfref");
         assertThat(msg.payload()).isEqualTo("{\"customer\":\"" + selfRefValue + "\",\"orderId\":\"ORD-SELF\"}");
     }
+
+    @Test
+    @DisplayName("Should interpolate jsonBody, key, and headers on call-triggered metadata.async.feed records")
+    void shouldInterpolateJsonBodyAndHeadersOnCallTriggeredFeed() throws Exception {
+        wireMockServer.stubFor(
+                post(urlEqualTo("/api/v1/orders/feed"))
+                        .willReturn(aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", "application/json")
+                                .withBody("{\"orderId\":\"ORD-FEED-7\",\"state\":\"CREATED\"}"))
+                        .withMetadata(
+                                Map.of(
+                                        "async",
+                                        Map.of(
+                                                "feed",
+                                                Map.of(
+                                                        "protocol", "kafka",
+                                                        "destination", "orders.feed.events",
+                                                        "trigger", "call-triggered",
+                                                        "records",
+                                                                List.of(
+                                                                        Map.of(
+                                                                                "key",
+                                                                                        "{{jsonPath response.body '$.orderId'}}",
+                                                                                "headers",
+                                                                                        Map.of(
+                                                                                                "x-customer",
+                                                                                                "{{jsonPath request.body '$.customer'}}"),
+                                                                                "jsonBody",
+                                                                                        Map.of(
+                                                                                                "orderId",
+                                                                                                "{{jsonPath response.body '$.orderId'}}",
+                                                                                                "customer",
+                                                                                                "{{jsonPath request.body '$.customer'}}"))))))));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/orders/feed"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"customer\":\"Bob\"}"))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        AsyncMessage msg = publishedQueue.poll(2, TimeUnit.SECONDS);
+        assertThat(msg).isNotNull();
+        assertThat(msg.destination()).isEqualTo("orders.feed.events");
+        assertThat(msg.protocol()).isEqualTo("kafka");
+        assertThat(msg.key()).isEqualTo("ORD-FEED-7");
+        assertThat(msg.headers()).containsEntry("x-customer", "Bob");
+        assertThat(msg.payload()).contains("\"orderId\":\"ORD-FEED-7\"").contains("\"customer\":\"Bob\"");
+    }
 }

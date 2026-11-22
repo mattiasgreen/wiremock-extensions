@@ -102,9 +102,10 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
                 outboundConnection = protonClient.connect(host, port, options);
                 LOG.info("[AMQP-BROKER] Connected outbound AMQP client to {}:{}", host, port);
             } catch (Exception e) {
-                String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
-                LOG.error("[AMQP-BROKER] Failed to connect outbound AMQP client to {}: {}", brokerUri, sanitized);
-                throw new ClientException("Cannot connect to AMQP broker: " + brokerUri, e);
+                String safeUri = sanitizeBrokerUri(brokerUri);
+                String sanitized = sanitizeForLog(e.getMessage());
+                LOG.error("[AMQP-BROKER] Failed to connect outbound AMQP client to {}: {}", safeUri, sanitized);
+                throw new ClientException("Cannot connect to AMQP broker: " + safeUri, e);
             }
         }
         return outboundConnection;
@@ -153,10 +154,12 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
                 }
             } catch (ClientException | RuntimeException e) {
                 resetOutboundConnectionQuietly();
-                String sanitized = Objects.toString(e.getMessage(), "").replaceAll("[\r\n]", "");
-                LOG.error("[AMQP-BROKER] Live send failed to {} for channel {}: {}", brokerUri, channel, sanitized);
+                String safeUri = sanitizeBrokerUri(brokerUri);
+                String safeChannel = sanitizeForLog(channel);
+                String sanitized = sanitizeForLog(e.getMessage());
+                LOG.error("[AMQP-BROKER] Live send failed to {} for channel {}: {}", safeUri, safeChannel, sanitized);
                 throw new IllegalStateException(
-                        "AMQP delivery failed to " + brokerUri + " [" + channel + "]: " + sanitized, e);
+                        "AMQP delivery failed to " + safeUri + " [" + safeChannel + "]: " + sanitized, e);
             }
         }
 
@@ -169,7 +172,7 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
             try {
                 outboundConnection.close();
             } catch (Exception e) {
-                LOG.debug("[AMQP-BROKER] Error resetting outbound connection: {}", e.getMessage());
+                LOG.debug("[AMQP-BROKER] Error resetting outbound connection: {}", sanitizeForLog(e.getMessage()));
             }
             outboundConnection = null;
         }
@@ -218,7 +221,10 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
                     receiver.close();
                 }
             } catch (Exception e) {
-                LOG.debug("[AMQP-BROKER] Live poll timeout or error on channel {}: {}", channel, e.getMessage());
+                LOG.debug(
+                        "[AMQP-BROKER] Live poll timeout or error on channel {}: {}",
+                        sanitizeForLog(channel),
+                        sanitizeForLog(e.getMessage()));
             }
         }
 
@@ -296,7 +302,7 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
             try {
                 outboundConnection.close();
             } catch (Exception e) {
-                LOG.debug("[AMQP-BROKER] Error closing outbound connection: {}", e.getMessage());
+                LOG.debug("[AMQP-BROKER] Error closing outbound connection: {}", sanitizeForLog(e.getMessage()));
             }
             outboundConnection = null;
         }
@@ -304,9 +310,33 @@ public class AmqpMessageBroker implements MessageBroker, AutoCloseable {
             try {
                 protonClient.close();
             } catch (Exception e) {
-                LOG.debug("[AMQP-BROKER] Error closing client: {}", e.getMessage());
+                LOG.debug("[AMQP-BROKER] Error closing client: {}", sanitizeForLog(e.getMessage()));
             }
             protonClient = null;
+        }
+    }
+
+    private static String sanitizeForLog(String value) {
+        return Objects.toString(value, "").replaceAll("[\r\n]", "");
+    }
+
+    private static String sanitizeBrokerUri(String rawUri) {
+        if (rawUri == null || rawUri.isBlank()) {
+            return "";
+        }
+        String noCrlf = sanitizeForLog(rawUri);
+        try {
+            URI parsed = URI.create(noCrlf);
+            if (parsed.getRawUserInfo() == null) {
+                return noCrlf;
+            }
+            String scheme = parsed.getScheme() != null ? parsed.getScheme() + "://" : "";
+            String host = parsed.getHost() != null ? parsed.getHost() : "";
+            String port = parsed.getPort() > 0 ? ":" + parsed.getPort() : "";
+            String path = parsed.getRawPath() != null ? parsed.getRawPath() : "";
+            return scheme + "***@" + host + port + path;
+        } catch (IllegalArgumentException e) {
+            return noCrlf.replaceAll("(?<=://)[^/@]+@", "***@");
         }
     }
 }
