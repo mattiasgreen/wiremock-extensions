@@ -141,10 +141,21 @@ public final class ServeEventTrafficSupport {
             return "casual";
         }
 
-        if (hasHeader(request, "X-Async-Channel") || (url != null && url.startsWith("/__async/"))) {
+        if (hasHeader(request, "X-Async-Channel")
+                || hasHeader(request, "X-Async-Protocol")
+                || hasHeader(request, "X-Async-Destination")
+                || hasHeader(request, "X-WireMock-Async-Protocol")
+                || (url != null && url.startsWith("/__async/"))) {
             HttpHeader asyncProto = findHeader(request, "X-Async-Protocol");
             if (asyncProto != null && asyncProto.isPresent() && asyncProto.firstValue() != null) {
                 String value = asyncProto.firstValue().trim().toLowerCase(Locale.ROOT);
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+            HttpHeader legacyAsyncProto = findHeader(request, "X-WireMock-Async-Protocol");
+            if (legacyAsyncProto != null && legacyAsyncProto.isPresent() && legacyAsyncProto.firstValue() != null) {
+                String value = legacyAsyncProto.firstValue().trim().toLowerCase(Locale.ROOT);
                 if (!value.isEmpty()) {
                     return value;
                 }

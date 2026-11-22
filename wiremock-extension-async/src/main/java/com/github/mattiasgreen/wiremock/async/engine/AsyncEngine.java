@@ -13,11 +13,16 @@ import com.github.mattiasgreen.wiremock.async.destination.InMemoryDestinationAda
 import com.github.mattiasgreen.wiremock.async.destination.KafkaWireSinkDestinationAdapter;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaProduceRecord;
 import com.github.mattiasgreen.wiremock.async.kafka.KafkaWireSink;
+import com.github.mattiasgreen.wiremock.async.model.AsyncFeedRecord;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMetadata;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMode;
+import com.github.mattiasgreen.wiremock.async.model.AsyncProduceDirective;
 import com.github.tomakehurst.wiremock.client.WireMock;
+import com.github.tomakehurst.wiremock.http.HttpHeader;
+import com.github.tomakehurst.wiremock.http.ImmutableRequest;
 import com.github.tomakehurst.wiremock.matching.ContentPattern;
+import com.github.tomakehurst.wiremock.matching.MultiValuePattern;
 import com.github.tomakehurst.wiremock.matching.RequestPattern;
 import com.github.tomakehurst.wiremock.matching.StringValuePattern;
 import com.github.tomakehurst.wiremock.store.InMemoryStubMappingStore;
@@ -152,20 +157,17 @@ public class AsyncEngine implements AutoCloseable {
                 kafkaSink.close();
             }
             KafkaWireSink sink = new KafkaWireSink(port, record -> {
-                messagesConsumed.incrementAndGet();
-                ServeEvent se = AsyncServeEventMediation.buildServeEvent(
-                        "kafka",
-                        record.topic(),
-                        record.key(),
-                        null,
-                        null,
-                        record.headers(),
-                        record.value(),
-                        200,
-                        "{\"status\":\"ACKNOWLEDGED\",\"protocol\":\"kafka\",\"topic\":\"" + record.topic() + "\"}",
-                        null,
-                        null);
-                recordServeEvent(se);
+                AsyncMessage inbound = AsyncMessage.builder()
+                        .id(record.recordId())
+                        .protocol("kafka")
+                        .destination(record.topic())
+                        .key(record.key())
+                        .payload(record.value())
+                        .headers(record.headers())
+                        .partition(record.partition())
+                        .offset(record.offset())
+                        .build();
+                mediateInboundMessage(inbound, false, "ACKNOWLEDGED");
                 if (recordConsumer != null) {
                     recordConsumer.accept(record);
                 }
@@ -210,20 +212,17 @@ public class AsyncEngine implements AutoCloseable {
             if (amqpServer != null && amqpServer.isRunning()) {
                 amqpServer.close();
             }
-            AmqpServer server = new AmqpServer(port, msg -> {
-                messagesConsumed.incrementAndGet();
-                ServeEvent se = AsyncServeEventMediation.fromAsyncMessage(
-                        msg,
-                        200,
-                        "{\"status\":\"SETTLED\",\"protocol\":\"amqp\",\"destination\":\"" + msg.destination() + "\"}",
-                        null,
-                        null);
-                recordServeEvent(se);
-                testBroker.send(msg.destination(), msg);
-                if (messageConsumer != null) {
-                    messageConsumer.accept(msg);
-                }
-            });
+            AmqpServer server = new AmqpServer(
+                    port,
+                    msg -> Thread.ofVirtual().name("async-amqp-inbound-", 0).start(() -> {
+                        boolean mediated = mediateInboundMessage(msg, false, "SETTLED");
+                        if (!mediated) {
+                            testBroker.send(msg.destination(), msg);
+                        }
+                        if (messageConsumer != null) {
+                            messageConsumer.accept(msg);
+                        }
+                    }));
             server.start();
             amqpServer = server;
         }
@@ -559,10 +558,7 @@ public class AsyncEngine implements AutoCloseable {
             while (running.get() && !Thread.currentThread().isInterrupted()) {
                 AsyncMessage msg = testBroker.poll(channel);
                 if (msg != null) {
-                    messagesConsumed.incrementAndGet();
-                    ServeEvent se = AsyncServeEventMediation.fromAsyncMessage(
-                            msg, 200, "{\"status\":\"CONSUMED\",\"destination\":\"" + channel + "\"}", null, null);
-                    recordServeEvent(se);
+                    mediateInboundMessage(msg, false, "CONSUMED");
                     try {
                         consumer.accept(msg);
                     } catch (Exception e) {
@@ -584,8 +580,9 @@ public class AsyncEngine implements AutoCloseable {
 
     /**
      * Pulls the next message from the test broker and evaluates active WireMock {@link StubMapping}s
-     * declaring {@code metadata.async} in ascending priority order (skipping parked stubs with
-     * priority {@code >= 100}). Unmatched messages fall back to default upstream proxy forwarding.
+     * declaring {@code metadata.async} in ascending priority order (honoring {@code priority <= 100}
+     * and skipping parked stubs with priority {@code > 100}). Unmatched messages fall back to default
+     * upstream proxy forwarding.
      *
      * @param channel channel name to process
      * @return true if a message was processed, false if the queue was empty
@@ -595,11 +592,34 @@ public class AsyncEngine implements AutoCloseable {
         if (msg == null) {
             return false;
         }
+        mediateInboundMessage(msg, true, "ACKNOWLEDGED");
+        return true;
+    }
+
+    /**
+     * Unified inbound mediation entry point for wire servers (Kafka, AMQP), queue subscriptions,
+     * and {@link #processInbound(String)}.
+     *
+     * @return {@code true} if an async stub or bridge rule (or default upstream fallback) handled the message
+     */
+    private boolean mediateInboundMessage(
+            AsyncMessage msg, boolean fallbackToDefaultUpstream, String defaultAckStatus) {
+        String channel = Objects.requireNonNullElse(msg.destination(), "");
         messagesConsumed.incrementAndGet();
+
+        ImmutableRequest syntheticRequest = AsyncServeEventMediation.buildSyntheticRequest(
+                msg.protocol(),
+                channel,
+                msg.id(),
+                msg.key(),
+                msg.correlationId(),
+                msg.replyTo(),
+                msg.headers(),
+                msg.payload());
 
         List<StubMapping> candidates = stubStore
                 .getAll()
-                .filter(s -> s != null && (s.getPriority() == null || s.getPriority() < 100))
+                .filter(s -> s != null && (s.getPriority() == null || s.getPriority() <= 100))
                 .filter(s -> AsyncMetadata.from(s.getMetadata()).isPresent())
                 .sorted(Comparator.comparingInt((StubMapping s) -> s.getPriority() != null ? s.getPriority() : 5)
                         .thenComparingInt(s -> AsyncMetadata.from(s.getMetadata())
@@ -614,6 +634,10 @@ public class AsyncEngine implements AutoCloseable {
             }
             if (meta.mode() == AsyncMode.PROXY) {
                 if (!meta.channel().isBlank() && !meta.channel().equals(channel)) {
+                    continue;
+                }
+                if (!matchesRequestHeaders(stub.getRequest(), syntheticRequest)
+                        || !matchesRequestBody(stub.getRequest(), msg.payload())) {
                     continue;
                 }
                 String patternStr = !meta.channelPattern().isBlank()
@@ -645,19 +669,15 @@ public class AsyncEngine implements AutoCloseable {
                     forwardUpstreamOrRecord502(ruleName, channel, targetBroker, targetChannel, forwarded, stub);
                     return true;
                 }
-            } else if (matchesMockStub(stub, meta, channel, msg)) {
+            } else if (matchesMockStub(stub, meta, channel, msg, syntheticRequest)) {
                 String replyBody = resolveMockReplyBody(stub, meta);
                 int status = stub.getResponse() != null && stub.getResponse().getStatus() > 0
                         ? stub.getResponse().getStatus()
                         : 200;
-                AsyncMessage reply = AsyncMessage.builder()
-                        .correlationId(msg.correlationId())
-                        .destination(msg.replyTo())
-                        .payload(replyBody)
-                        .build();
                 ServeEvent se = AsyncServeEventMediation.buildServeEvent(
                         msg.protocol(),
                         channel,
+                        msg.id(),
                         msg.key(),
                         msg.correlationId(),
                         msg.replyTo(),
@@ -666,19 +686,77 @@ public class AsyncEngine implements AutoCloseable {
                         status,
                         replyBody,
                         null,
+                        null,
                         stub);
                 recordServeEvent(se);
-                if (msg.replyTo() != null && !msg.replyTo().isBlank()) {
-                    messagesProduced.incrementAndGet();
-                    testBroker.send(msg.replyTo(), reply);
-                }
+                deliverMockReply(msg, replyBody);
+                dispatchInboundTriggers(meta);
                 return true;
             }
         }
 
-        // Default Fallback Proxy Mode: Forward to upstream broker
-        forwardUpstreamOrRecord502("default", channel, "", channel, msg, null);
-        return true;
+        if (fallbackToDefaultUpstream) {
+            forwardUpstreamOrRecord502("default", channel, "", channel, msg, null);
+            return true;
+        }
+
+        String safeProtocol = (msg.protocol() != null && !msg.protocol().isBlank()) ? msg.protocol() : "async";
+        ServeEvent se = AsyncServeEventMediation.fromAsyncMessage(
+                msg,
+                200,
+                "{\"status\":\"" + defaultAckStatus + "\",\"protocol\":\"" + safeProtocol + "\",\"destination\":\""
+                        + channel + "\"}",
+                null,
+                null);
+        recordServeEvent(se);
+        return false;
+    }
+
+    private void deliverMockReply(AsyncMessage requestMsg, String replyBody) {
+        if (requestMsg.replyTo() == null || requestMsg.replyTo().isBlank()) {
+            return;
+        }
+        AsyncMessage reply = AsyncMessage.builder()
+                .protocol(requestMsg.protocol())
+                .correlationId(requestMsg.correlationId())
+                .destination(requestMsg.replyTo())
+                .payload(replyBody)
+                .build();
+        messagesProduced.incrementAndGet();
+        if ("amqp".equalsIgnoreCase(requestMsg.protocol()) && amqpServer != null && amqpServer.isRunning()) {
+            amqpServer.stageFeedMessage(requestMsg.replyTo(), reply);
+        } else if ("kafka".equalsIgnoreCase(requestMsg.protocol()) && kafkaSink != null && kafkaSink.isRunning()) {
+            kafkaSink.stageRecord(KafkaProduceRecord.of(requestMsg.replyTo(), requestMsg.key(), replyBody));
+        } else {
+            testBroker.send(requestMsg.replyTo(), reply);
+        }
+    }
+
+    private void dispatchInboundTriggers(AsyncMetadata meta) {
+        if (meta.feed() != null && "call-triggered".equalsIgnoreCase(meta.feed().trigger())) {
+            for (AsyncFeedRecord rec : meta.feed().records()) {
+                AsyncMessage feedMsg = AsyncMessage.builder()
+                        .destination(meta.feed().destination())
+                        .protocol(meta.feed().protocol())
+                        .key(rec.key())
+                        .payload(rec.payload())
+                        .headers(rec.headers())
+                        .build();
+                publish(meta.feed().destination(), feedMsg);
+            }
+        }
+        for (AsyncProduceDirective directive : meta.produce()) {
+            if (!directive.destination().isBlank()) {
+                AsyncMessage produced = AsyncMessage.builder()
+                        .destination(directive.destination())
+                        .protocol(directive.protocol())
+                        .key(directive.key())
+                        .payload(directive.payload())
+                        .headers(directive.headers())
+                        .build();
+                publish(directive.destination(), produced);
+            }
+        }
     }
 
     private static boolean isAsyncRoutableStub(StubMapping stub, AsyncMetadata meta) {
@@ -704,7 +782,8 @@ public class AsyncEngine implements AutoCloseable {
         return url != null && url.startsWith("/__async/");
     }
 
-    private static boolean matchesMockStub(StubMapping stub, AsyncMetadata meta, String channel, AsyncMessage msg) {
+    private static boolean matchesMockStub(
+            StubMapping stub, AsyncMetadata meta, String channel, AsyncMessage msg, ImmutableRequest syntheticRequest) {
         if (!meta.channel().isBlank() && !meta.channel().equals(channel)) {
             return false;
         }
@@ -717,13 +796,37 @@ public class AsyncEngine implements AutoCloseable {
             if (exactUrl != null && !exactUrl.endsWith("/" + channel)) {
                 return false;
             }
+            String urlPattern = req.getUrlPattern() != null ? req.getUrlPattern() : req.getUrlPathPattern();
+            if (urlPattern != null && !Pattern.matches(urlPattern, syntheticRequest.getUrl())) {
+                return false;
+            }
         }
+        if (!matchesRequestHeaders(req, syntheticRequest)) {
+            return false;
+        }
+        return matchesRequestBody(req, msg.payload());
+    }
+
+    private static boolean matchesRequestHeaders(RequestPattern req, ImmutableRequest syntheticRequest) {
+        if (req == null || req.getHeaders() == null || req.getHeaders().isEmpty()) {
+            return true;
+        }
+        for (Map.Entry<String, MultiValuePattern> entry : req.getHeaders().entrySet()) {
+            HttpHeader header = syntheticRequest.header(entry.getKey());
+            if (!entry.getValue().match(header).isExactMatch()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean matchesRequestBody(RequestPattern req, String payload) {
         List<ContentPattern<?>> bodyPatterns = req != null ? req.getBodyPatterns() : null;
         if (bodyPatterns != null && !bodyPatterns.isEmpty()) {
-            String payload = Objects.requireNonNullElse(msg.payload(), "");
+            String safePayload = Objects.requireNonNullElse(payload, "");
             for (ContentPattern<?> pattern : bodyPatterns) {
                 if (pattern instanceof StringValuePattern stringPattern
-                        && !stringPattern.match(payload).isExactMatch()) {
+                        && !stringPattern.match(safePayload).isExactMatch()) {
                     return false;
                 }
             }
@@ -765,11 +868,13 @@ public class AsyncEngine implements AutoCloseable {
         }
 
         try {
-            upstreamBroker.send(targetChannel, forwarded);
+            MessageBroker resolvedBroker = resolveUpstreamBroker(targetBroker);
+            resolvedBroker.send(targetChannel, forwarded);
             messagesProxied.incrementAndGet();
             ServeEvent se = AsyncServeEventMediation.buildServeEvent(
                     forwarded.protocol(),
                     sourceChannel,
+                    forwarded.id(),
                     forwarded.key(),
                     forwarded.correlationId(),
                     forwarded.replyTo(),
@@ -778,6 +883,7 @@ public class AsyncEngine implements AutoCloseable {
                     200,
                     "{\"status\":\"BRIDGED\",\"destination\":\"" + targetChannel + "\"}",
                     proxiedTarget,
+                    null,
                     matchedStub);
             recordServeEvent(se);
         } catch (RuntimeException e) {
@@ -795,6 +901,27 @@ public class AsyncEngine implements AutoCloseable {
         }
     }
 
+    private MessageBroker resolveUpstreamBroker(String targetBroker) {
+        if (targetBroker != null && !targetBroker.isBlank()) {
+            AsyncBrokerRegistry registry = brokerRegistry;
+            if (registry != null) {
+                Optional<MessageBroker> byId = registry.getOrCreateBroker(targetBroker);
+                if (byId.isPresent()) {
+                    return byId.get();
+                }
+                for (BrokerConnection conn : registry.listConnections()) {
+                    if (targetBroker.equals(conn.name()) || targetBroker.equals(conn.endpoint())) {
+                        Optional<MessageBroker> byAlias = registry.getOrCreateBroker(conn.id());
+                        if (byAlias.isPresent()) {
+                            return byAlias.get();
+                        }
+                    }
+                }
+            }
+        }
+        return upstreamBroker;
+    }
+
     private void recordUpstream502(
             String ruleName,
             String sourceChannel,
@@ -810,6 +937,7 @@ public class AsyncEngine implements AutoCloseable {
         ServeEvent se = AsyncServeEventMediation.buildServeEvent(
                 msg.protocol(),
                 sourceChannel,
+                msg.id(),
                 msg.key(),
                 msg.correlationId(),
                 msg.replyTo(),
@@ -818,6 +946,7 @@ public class AsyncEngine implements AutoCloseable {
                 502,
                 errorBody,
                 proxiedTarget,
+                errorDetail,
                 matchedStub);
         recordServeEvent(se);
         LOG.error(

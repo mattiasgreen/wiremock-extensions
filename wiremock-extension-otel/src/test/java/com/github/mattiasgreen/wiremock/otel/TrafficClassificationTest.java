@@ -163,6 +163,51 @@ class TrafficClassificationTest {
     }
 
     @Test
+    @DisplayName("Classify ibmmq and in-memory async protocols with canonical headers and X-Async-Error")
+    void shouldClassifyIbmMqAndInMemoryAsyncProtocols() throws Exception {
+        server.stubFor(post(urlEqualTo("/__async/ibmmq/PAYMENTS.IN"))
+                .willReturn(aResponse()
+                        .withStatus(502)
+                        .withHeader("X-Async-Error", "MQRC_UNKNOWN_OBJECT_NAME")
+                        .withBody("{\"error\":\"ASYNC_PROXY_ERROR\"}")));
+        server.stubFor(post(urlEqualTo("/__async/in-memory/orders.local")).willReturn(okJson("{\"status\":\"OK\"}")));
+
+        HttpRequest mqReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__async/ibmmq/PAYMENTS.IN"))
+                .header("X-Async-Protocol", "ibmmq")
+                .header("X-Async-Channel", "PAYMENTS.IN")
+                .header("X-Async-Message-Id", "msg-mq-1")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"amount\":42}"))
+                .build();
+        assertThat(httpClient.send(mqReq, HttpResponse.BodyHandlers.ofString()).statusCode())
+                .isEqualTo(502);
+
+        HttpRequest memReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__async/in-memory/orders.local"))
+                .header("X-Async-Protocol", "in-memory")
+                .header("X-Async-Channel", "orders.local")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"id\":\"1\"}"))
+                .build();
+        assertThat(httpClient.send(memReq, HttpResponse.BodyHandlers.ofString()).statusCode())
+                .isEqualTo(200);
+
+        List<ServeEvent> events = server.getAllServeEvents();
+        assertThat(events).hasSize(2);
+
+        TrafficClassification memTc = TrafficClassification.from(events.get(0));
+        assertThat(memTc.protocol()).isEqualTo("in-memory");
+        assertThat(memTc.rpcSystem()).isEqualTo("in-memory");
+        assertThat(memTc.rpcService()).isEqualTo("orders.local");
+        assertThat(memTc.rpcStatus()).isEqualTo("OK");
+
+        TrafficClassification mqTc = TrafficClassification.from(events.get(1));
+        assertThat(mqTc.protocol()).isEqualTo("ibmmq");
+        assertThat(mqTc.rpcSystem()).isEqualTo("ibmmq");
+        assertThat(mqTc.rpcService()).isEqualTo("PAYMENTS.IN");
+        assertThat(mqTc.rpcStatus()).isEqualTo("ERROR");
+    }
+
+    @Test
     @DisplayName("Classify Proxied and Fault responses")
     void shouldClassifyProxiedAndFaultResponses() throws Exception {
         WireMockServer upstream =
