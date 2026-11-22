@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.net.URI;
@@ -42,7 +41,6 @@ class AsyncAdminEndpointTest {
         if (wireMockServer != null && wireMockServer.isRunning()) {
             wireMockServer.stop();
         }
-        AsyncEngine.getInstance().setJournalConsumer(null);
     }
 
     @Test

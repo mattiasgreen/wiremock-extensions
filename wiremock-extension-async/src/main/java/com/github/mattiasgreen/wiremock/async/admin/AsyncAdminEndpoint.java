@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * AdminApiExtension contributing Admin API routes for asynchronous messaging status,
@@ -32,38 +31,54 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
     public static final String EXTENSION_NAME = "async-admin-endpoint";
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
-    private final Supplier<AsyncEngine> engineSupplier;
-    private final Supplier<AsyncBrokerRegistry> brokerRegistrySupplier;
+    private final AsyncEngine engine;
+    private final AsyncBrokerRegistry brokerRegistry;
 
     public AsyncAdminEndpoint() {
-        this.engineSupplier = AsyncEngine::getInstance;
-        this.brokerRegistrySupplier = AsyncBrokerRegistry::getInstance;
+        this(AsyncEngine.create());
     }
 
     public AsyncAdminEndpoint(AsyncEngine engine) {
-        Objects.requireNonNull(engine, "engine must not be null");
-        this.engineSupplier = () -> engine;
-        this.brokerRegistrySupplier = engine::getBrokerRegistry;
+        this(engine, Objects.requireNonNull(engine, "engine must not be null").getBrokerRegistry());
     }
 
     public AsyncAdminEndpoint(AsyncEngine engine, AsyncBrokerRegistry brokerRegistry) {
-        Objects.requireNonNull(engine, "engine must not be null");
-        Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
-        this.engineSupplier = () -> engine;
-        this.brokerRegistrySupplier = () -> brokerRegistry;
+        this.engine = Objects.requireNonNull(engine, "engine must not be null");
+        this.brokerRegistry = Objects.requireNonNull(brokerRegistry, "brokerRegistry must not be null");
+    }
+
+    public AsyncEngine getEngine() {
+        return engine;
+    }
+
+    public AsyncBrokerRegistry getBrokerRegistry() {
+        return brokerRegistry;
     }
 
     private AsyncEngine engine() {
-        return engineSupplier.get();
+        return engine;
     }
 
     private AsyncBrokerRegistry brokerRegistry() {
-        return brokerRegistrySupplier.get();
+        return brokerRegistry;
     }
 
     @Override
     public String getName() {
         return EXTENSION_NAME;
+    }
+
+    @Override
+    public void stop() {
+        AsyncEngine currentEngine = engine();
+        if (currentEngine != null) {
+            currentEngine.close();
+        }
+        AsyncBrokerRegistry currentRegistry = brokerRegistry();
+        if (currentRegistry != null
+                && (currentEngine == null || currentRegistry != currentEngine.getBrokerRegistry())) {
+            currentRegistry.close();
+        }
     }
 
     @Override
