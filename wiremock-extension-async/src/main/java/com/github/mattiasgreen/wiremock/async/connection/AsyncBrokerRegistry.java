@@ -21,7 +21,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,18 +30,17 @@ import org.slf4j.LoggerFactory;
  * Ingests single connection descriptors or batch JSON arrays with upsert semantics,
  * and masks plaintext secrets while preserving declarative ${VAR_NAME} tokens on export.
  */
-public final class AsyncBrokerRegistry {
+public final class AsyncBrokerRegistry implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AsyncBrokerRegistry.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Set<String> SENSITIVE_KEYS =
             Set.of("password", "secret", "sasl.jaas.config", "key", "token", "credential");
 
-    private static final AtomicReference<AsyncBrokerRegistry> LATEST_INSTANCE =
-            new AtomicReference<>(new AsyncBrokerRegistry());
+    private record PooledBroker(BrokerConnection connection, MessageBroker broker) {}
 
     private final Map<String, BrokerConnection> connections = new ConcurrentHashMap<>();
-    private final Map<String, MessageBroker> pooledBrokers = new ConcurrentHashMap<>();
+    private final Map<String, PooledBroker> pooledBrokers = new ConcurrentHashMap<>();
     private final Map<String, Function<BrokerConnection, MessageBroker>> brokerFactories = new ConcurrentHashMap<>();
 
     private AsyncBrokerRegistry() {
@@ -78,14 +76,6 @@ public final class AsyncBrokerRegistry {
         return new AsyncBrokerRegistry();
     }
 
-    public static AsyncBrokerRegistry getInstance() {
-        return LATEST_INSTANCE.get();
-    }
-
-    public static void setDefault(AsyncBrokerRegistry registry) {
-        LATEST_INSTANCE.set(Objects.requireNonNull(registry, "registry must not be null"));
-    }
-
     public static AsyncBrokerRegistry createForTest() {
         return create();
     }
@@ -97,14 +87,14 @@ public final class AsyncBrokerRegistry {
     }
 
     public void reset() {
-        clearPools();
         connections.clear();
+        clearPools();
     }
 
     public void register(BrokerConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
-        evictAndCloseBroker(connection.id());
         connections.put(connection.id(), connection);
+        evictAndCloseBroker(connection.id());
         String safeId = connection.id().replaceAll("[\r\n]", "");
         LOG.info("[ASYNC-REGISTRY] Registered broker connection [{}] ({})", safeId, connection.protocol());
     }
@@ -120,16 +110,37 @@ public final class AsyncBrokerRegistry {
         if (connectionId == null) {
             return Optional.empty();
         }
-        BrokerConnection conn = connections.get(connectionId);
-        if (conn == null || conn.endpoint().isBlank()) {
+        BrokerConnection current = connections.get(connectionId);
+        if (current == null || current.endpoint().isBlank()) {
             return Optional.empty();
         }
-        Function<BrokerConnection, MessageBroker> factory =
-                brokerFactories.get(conn.protocol().toLowerCase(Locale.ROOT));
-        if (factory == null) {
-            return Optional.empty();
+        PooledBroker fast = pooledBrokers.get(connectionId);
+        if (fast != null && fast.connection().equals(current)) {
+            return Optional.of(fast.broker());
         }
-        return Optional.ofNullable(pooledBrokers.computeIfAbsent(connectionId, id -> factory.apply(conn)));
+        PooledBroker resolved = pooledBrokers.compute(connectionId, (id, existing) -> {
+            BrokerConnection latest = connections.get(id);
+            if (latest == null || latest.endpoint().isBlank()) {
+                if (existing != null) {
+                    closeBrokerQuietly(id, existing.broker());
+                }
+                return null;
+            }
+            if (existing != null && existing.connection().equals(latest)) {
+                return existing;
+            }
+            if (existing != null) {
+                closeBrokerQuietly(id, existing.broker());
+            }
+            Function<BrokerConnection, MessageBroker> factory =
+                    brokerFactories.get(latest.protocol().toLowerCase(Locale.ROOT));
+            if (factory == null) {
+                return null;
+            }
+            MessageBroker created = factory.apply(latest);
+            return created != null ? new PooledBroker(latest, created) : null;
+        });
+        return resolved != null ? Optional.of(resolved.broker()) : Optional.empty();
     }
 
     public Map<BrokerConnection, MessageBroker> getOrCreateBrokersByProtocol(String protocol) {
@@ -191,13 +202,19 @@ public final class AsyncBrokerRegistry {
         if (id == null) {
             return false;
         }
+        boolean removed = connections.remove(id) != null;
         evictAndCloseBroker(id);
-        return connections.remove(id) != null;
+        return removed;
     }
 
     public void clear() {
-        clearPools();
         connections.clear();
+        clearPools();
+    }
+
+    @Override
+    public void close() {
+        clearPools();
     }
 
     private void clearPools() {
@@ -207,8 +224,14 @@ public final class AsyncBrokerRegistry {
     }
 
     private void evictAndCloseBroker(String id) {
-        MessageBroker removed = pooledBrokers.remove(id);
-        if (removed instanceof AutoCloseable closeable) {
+        PooledBroker removed = pooledBrokers.remove(id);
+        if (removed != null) {
+            closeBrokerQuietly(id, removed.broker());
+        }
+    }
+
+    private void closeBrokerQuietly(String id, MessageBroker broker) {
+        if (broker instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
             } catch (Exception e) {

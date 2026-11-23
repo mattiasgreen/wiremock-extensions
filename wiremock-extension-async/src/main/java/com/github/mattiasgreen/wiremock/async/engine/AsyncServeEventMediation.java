@@ -23,23 +23,26 @@ import java.util.Map;
  */
 public final class AsyncServeEventMediation {
 
+    public static final String HEADER_ASYNC_PROTOCOL = "X-Async-Protocol";
+    public static final String HEADER_ASYNC_CHANNEL = "X-Async-Channel";
+    public static final String HEADER_ASYNC_MESSAGE_ID = "X-Async-Message-Id";
+    public static final String HEADER_ASYNC_ERROR = "X-Async-Error";
+    public static final String HEADER_LEGACY_PROTOCOL = "X-WireMock-Async-Protocol";
+    public static final String HEADER_LEGACY_DESTINATION = "X-Async-Destination";
+
     private AsyncServeEventMediation() {}
 
-    public static ServeEvent buildServeEvent(
+    public static ImmutableRequest buildSyntheticRequest(
             String protocol,
             String destination,
+            String messageId,
             String key,
             String correlationId,
             String replyTo,
             Map<String, String> customHeaders,
-            String payload,
-            int statusCode,
-            String responseBody,
-            String proxiedFrom,
-            StubMapping stubMapping) {
-
+            String payload) {
         String safeProtocol = (protocol != null && !protocol.isBlank()) ? protocol.toLowerCase(Locale.ROOT) : "async";
-        String safeDest = (destination != null) ? destination : "unknown";
+        String safeDest = (destination != null && !destination.isBlank()) ? destination : "unknown";
         String url = "/__async/" + safeProtocol + "/" + safeDest;
         String absoluteUrl = "http://localhost:8080" + url;
 
@@ -49,9 +52,14 @@ public final class AsyncServeEventMediation {
 
         List<HttpHeader> reqHeadersList = new ArrayList<>();
         reqHeadersList.add(new HttpHeader("Content-Type", isJson ? "application/json" : "text/plain; charset=UTF-8"));
-        reqHeadersList.add(new HttpHeader("X-WireMock-Async-Protocol", safeProtocol));
-        reqHeadersList.add(new HttpHeader("X-Async-Destination", safeDest));
+        reqHeadersList.add(new HttpHeader(HEADER_ASYNC_PROTOCOL, safeProtocol));
+        reqHeadersList.add(new HttpHeader(HEADER_ASYNC_CHANNEL, safeDest));
+        reqHeadersList.add(new HttpHeader(HEADER_LEGACY_PROTOCOL, safeProtocol));
+        reqHeadersList.add(new HttpHeader(HEADER_LEGACY_DESTINATION, safeDest));
 
+        if (messageId != null && !messageId.isBlank()) {
+            reqHeadersList.add(new HttpHeader(HEADER_ASYNC_MESSAGE_ID, messageId));
+        }
         if (key != null && !key.isBlank()) {
             reqHeadersList.add(new HttpHeader("X-Async-Key", key));
         }
@@ -71,11 +79,62 @@ public final class AsyncServeEventMediation {
 
         HttpHeaders requestHeaders = new HttpHeaders(reqHeadersList);
 
-        ImmutableRequest.Builder reqBuilder = ImmutableRequest.create()
+        return ImmutableRequest.create()
                 .withMethod(RequestMethod.POST)
                 .withAbsoluteUrl(absoluteUrl)
                 .withHeaders(requestHeaders)
-                .withBody(safePayload.getBytes(StandardCharsets.UTF_8));
+                .withBody(safePayload.getBytes(StandardCharsets.UTF_8))
+                .build();
+    }
+
+    public static ServeEvent buildServeEvent(
+            String protocol,
+            String destination,
+            String key,
+            String correlationId,
+            String replyTo,
+            Map<String, String> customHeaders,
+            String payload,
+            int statusCode,
+            String responseBody,
+            String proxiedFrom,
+            StubMapping stubMapping) {
+        return buildServeEvent(
+                protocol,
+                destination,
+                null,
+                key,
+                correlationId,
+                replyTo,
+                customHeaders,
+                payload,
+                statusCode,
+                responseBody,
+                proxiedFrom,
+                null,
+                stubMapping);
+    }
+
+    public static ServeEvent buildServeEvent(
+            String protocol,
+            String destination,
+            String messageId,
+            String key,
+            String correlationId,
+            String replyTo,
+            Map<String, String> customHeaders,
+            String payload,
+            int statusCode,
+            String responseBody,
+            String proxiedFrom,
+            String asyncError,
+            StubMapping stubMapping) {
+
+        String safeProtocol = (protocol != null && !protocol.isBlank()) ? protocol.toLowerCase(Locale.ROOT) : "async";
+        String safeDest = (destination != null && !destination.isBlank()) ? destination : "unknown";
+
+        ImmutableRequest syntheticRequest = buildSyntheticRequest(
+                safeProtocol, safeDest, messageId, key, correlationId, replyTo, customHeaders, payload);
 
         String safeRespBody = (responseBody != null) ? responseBody : "";
         boolean isRespJson =
@@ -84,10 +143,18 @@ public final class AsyncServeEventMediation {
         List<HttpHeader> respHeadersList = new ArrayList<>();
         respHeadersList.add(
                 new HttpHeader("Content-Type", isRespJson ? "application/json" : "text/plain; charset=UTF-8"));
-        respHeadersList.add(new HttpHeader("X-WireMock-Async-Protocol", safeProtocol));
-        respHeadersList.add(new HttpHeader("X-Async-Destination", safeDest));
+        respHeadersList.add(new HttpHeader(HEADER_ASYNC_PROTOCOL, safeProtocol));
+        respHeadersList.add(new HttpHeader(HEADER_ASYNC_CHANNEL, safeDest));
+        respHeadersList.add(new HttpHeader(HEADER_LEGACY_PROTOCOL, safeProtocol));
+        respHeadersList.add(new HttpHeader(HEADER_LEGACY_DESTINATION, safeDest));
+        if (messageId != null && !messageId.isBlank()) {
+            respHeadersList.add(new HttpHeader(HEADER_ASYNC_MESSAGE_ID, messageId));
+        }
         if (proxiedFrom != null && !proxiedFrom.isBlank()) {
             respHeadersList.add(new HttpHeader("X-Async-Bridged-To", proxiedFrom));
+        }
+        if (asyncError != null && !asyncError.isBlank()) {
+            respHeadersList.add(new HttpHeader(HEADER_ASYNC_ERROR, asyncError));
         }
 
         HttpHeaders responseHeaders = new HttpHeaders(respHeadersList);
@@ -109,7 +176,7 @@ public final class AsyncServeEventMediation {
                 .headers(responseHeaders)
                 .body(safeRespBody.getBytes(StandardCharsets.UTF_8));
 
-        ServeEvent serveEvent = ServeEvent.of(reqBuilder.build()).withResponseDefinition(responseDef);
+        ServeEvent serveEvent = ServeEvent.of(syntheticRequest).withResponseDefinition(responseDef);
         if (stubMapping != null) {
             serveEvent = serveEvent.withStubMapping(stubMapping);
         }
@@ -121,12 +188,23 @@ public final class AsyncServeEventMediation {
 
     public static ServeEvent fromAsyncMessage(
             AsyncMessage msg, int statusCode, String responseBody, String proxiedFrom, StubMapping stub) {
+        return fromAsyncMessage(msg, statusCode, responseBody, proxiedFrom, null, stub);
+    }
+
+    public static ServeEvent fromAsyncMessage(
+            AsyncMessage msg,
+            int statusCode,
+            String responseBody,
+            String proxiedFrom,
+            String asyncError,
+            StubMapping stub) {
         if (msg == null) {
             return null;
         }
         return buildServeEvent(
                 msg.protocol(),
                 msg.destination(),
+                msg.id(),
                 msg.key(),
                 msg.correlationId(),
                 msg.replyTo(),
@@ -135,6 +213,7 @@ public final class AsyncServeEventMediation {
                 statusCode,
                 responseBody,
                 proxiedFrom,
+                asyncError,
                 stub);
     }
 }

@@ -104,6 +104,40 @@ class FatJarSmokeTest {
                     HttpResponse.BodyHandlers.ofString());
             assertThat(netemResp.statusCode()).isEqualTo(200);
 
+            // 5b. Verify Async Extension status, shaded Netty Kafka wire sink startup, and publish
+            HttpResponse<String> asyncStatusResp = HTTP_CLIENT.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://127.0.0.1:" + httpPort + "/__admin/async/status"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(asyncStatusResp.statusCode()).isEqualTo(200);
+            assertThat(asyncStatusResp.body()).contains("\"status\":\"UP\"");
+
+            HttpResponse<String> startKafkaSinkResp = HTTP_CLIENT.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://127.0.0.1:" + httpPort + "/__admin/async/sinks/kafka"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString("{\"action\":\"start\",\"port\":0}"))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(startKafkaSinkResp.statusCode()).isEqualTo(200);
+            assertThat(startKafkaSinkResp.body()).contains("\"kafkaSinkRunning\":true");
+
+            HttpResponse<String> asyncPublishResp = HTTP_CLIENT.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create("http://127.0.0.1:" + httpPort + "/__admin/async/publish"))
+                            .header("Content-Type", "application/json")
+                            .POST(
+                                    HttpRequest.BodyPublishers.ofString(
+                                            "{\"protocol\":\"kafka\",\"destination\":\"fatjar.smoke.topic\",\"key\":\"FJ-1\",\"payload\":\"{\\\"smoke\\\":true}\"}"))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(asyncPublishResp.statusCode()).isEqualTo(200);
+            assertThat(asyncPublishResp.body())
+                    .contains("\"published\":true")
+                    .contains("\"destination\":\"fatjar.smoke.topic\"");
+
             // 6. Create and invoke a dynamic stub mapping
             String stubJson =
                     """

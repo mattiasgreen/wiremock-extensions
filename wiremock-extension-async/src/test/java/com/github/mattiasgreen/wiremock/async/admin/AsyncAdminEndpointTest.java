@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.net.URI;
@@ -15,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +42,6 @@ class AsyncAdminEndpointTest {
         if (wireMockServer != null && wireMockServer.isRunning()) {
             wireMockServer.stop();
         }
-        AsyncEngine.getInstance().setJournalConsumer(null);
     }
 
     @Test
@@ -270,5 +269,154 @@ class AsyncAdminEndpointTest {
         // Verify empty
         HttpResponse<String> afterDelResp = httpClient.send(getMsgs, HttpResponse.BodyHandlers.ofString());
         assertThat(MAPPER.readTree(afterDelResp.body()).get("count").asInt()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName(
+            "Should route /async/publish, /async/destinations/.../messages, and HTTP produce triggers canonically with headers, counters, and ServeEvents")
+    void shouldRouteAllPublishPathsCanonicallyWithHeadersCountersAndServeEvents() throws Exception {
+        // Start local Kafka wire sink via Admin API
+        HttpResponse<String> sinkResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/sinks/kafka"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"action\":\"start\",\"port\":0}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(sinkResp.statusCode()).isEqualTo(200);
+
+        String topic = "orders.canonical";
+
+        // 1. Publish via POST /__admin/async/publish
+        String publishPayload =
+                """
+                {
+                  "destination": "orders.canonical",
+                  "protocol": "kafka",
+                  "key": "k-1",
+                  "correlationId": "corr-1",
+                  "replyTo": "orders.replies",
+                  "headers": { "x-source": "admin-publish" },
+                  "payload": "{\\"step\\":1}"
+                }
+                """;
+        HttpResponse<String> pubResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/publish"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(publishPayload))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(pubResp.statusCode()).isEqualTo(200);
+
+        // 2. Publish via POST /__admin/async/destinations/{protocol}/{name}/messages
+        String destPayload =
+                """
+                {
+                  "key": "k-2",
+                  "correlationId": "corr-2",
+                  "replyTo": "orders.replies",
+                  "headers": { "x-source": "destination-explorer" },
+                  "payload": "{\\"step\\":2}"
+                }
+                """;
+        HttpResponse<String> destResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(
+                                wireMockServer.baseUrl() + "/__admin/async/destinations/kafka/" + topic + "/messages"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(destPayload))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(destResp.statusCode()).isEqualTo(201);
+
+        // 3. Publish via HTTP-triggered metadata.async.produce
+        wireMockServer.stubFor(post(urlEqualTo("/api/v1/trigger-order"))
+                .willReturn(aResponse()
+                        .withStatus(202)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"orderId\":\"ORD-3\"}"))
+                .withMetadata(Map.of(
+                        "async",
+                        Map.of(
+                                "produce",
+                                List.of(Map.of(
+                                        "destination", topic,
+                                        "protocol", "kafka",
+                                        "key", "{{jsonPath response.body '$.orderId'}}",
+                                        "payload",
+                                                "{\"step\":3,\"orderId\":\"{{jsonPath response.body '$.orderId'}}\"}",
+                                        "headers", Map.of("x-source", "http-trigger")))))));
+
+        HttpResponse<String> httpTriggerResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl() + "/api/v1/trigger-order"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(httpTriggerResp.statusCode()).isEqualTo(202);
+
+        // Wait briefly for virtual-thread HTTP trigger dispatch to complete
+        long deadline = System.currentTimeMillis() + 5_000;
+        JsonNode peekedJson = null;
+        while (System.currentTimeMillis() < deadline) {
+            HttpResponse<String> peekResp = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/destinations/kafka/" + topic
+                                    + "/messages"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(peekResp.statusCode()).isEqualTo(200);
+            peekedJson = MAPPER.readTree(peekResp.body());
+            if (peekedJson.get("count").asInt() >= 3) {
+                break;
+            }
+            Thread.sleep(25);
+        }
+
+        assertThat(peekedJson).isNotNull();
+        assertThat(peekedJson.get("count").asInt()).isEqualTo(3);
+
+        JsonNode m0 = peekedJson.get("messages").get(0);
+        JsonNode m1 = peekedJson.get("messages").get(1);
+        JsonNode m2 = peekedJson.get("messages").get(2);
+        assertThat(m0.get("id").asText()).isEqualTo("orders.canonical:0:0");
+        assertThat(m0.get("headers").get("x-source").asText()).isEqualTo("admin-publish");
+        assertThat(m0.get("headers").get("x-correlation-id").asText()).isEqualTo("corr-1");
+        assertThat(m1.get("id").asText()).isEqualTo("orders.canonical:0:1");
+        assertThat(m1.get("headers").get("x-source").asText()).isEqualTo("destination-explorer");
+        assertThat(m1.get("headers").get("x-correlation-id").asText()).isEqualTo("corr-2");
+        assertThat(m2.get("id").asText()).isEqualTo("orders.canonical:0:2");
+        assertThat(m2.get("headers").get("x-source").asText()).isEqualTo("http-trigger");
+
+        // Verify messagesProduced counter updated across all 3 publish paths
+        JsonNode statusJson = MAPPER.readTree(httpClient
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/status"))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString())
+                .body());
+        assertThat(statusJson.get("messagesProduced").asLong()).isEqualTo(3L);
+
+        // Verify all 3 publishes recorded Synthetic Async ServeEvents
+        long asyncServeEvents = wireMockServer.getAllServeEvents().stream()
+                .filter(se -> ("/__async/kafka/" + topic).equals(se.getRequest().getUrl()))
+                .count();
+        assertThat(asyncServeEvents).isEqualTo(3L);
+
+        // Verify deleting a peeked Kafka record by its returned stable id succeeds via HTTP Admin API
+        HttpResponse<String> delKafkaResp = httpClient.send(
+                HttpRequest.newBuilder()
+                        .uri(URI.create(wireMockServer.baseUrl()
+                                + "/__admin/async/destinations/kafka/" + topic + "/messages/"
+                                + m0.get("id").asText()))
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(delKafkaResp.statusCode()).isEqualTo(204);
     }
 }

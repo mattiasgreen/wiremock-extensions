@@ -22,8 +22,7 @@ public record AsyncFeedRecord(String key, String payload, Map<String, String> he
         String key = (String) map.getOrDefault("key", "");
         String payload = (String) map.getOrDefault("payload", map.get("body"));
         if (payload == null && map.containsKey("jsonBody")) {
-            Object jsonBody = map.get("jsonBody");
-            payload = jsonBody != null ? jsonBody.toString() : "";
+            payload = AsyncProduceDirective.serializeJsonBody(map.get("jsonBody"));
         }
 
         Map<String, String> headers = Collections.emptyMap();

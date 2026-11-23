@@ -1,5 +1,7 @@
 package com.github.mattiasgreen.wiremock.async.model;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -18,6 +20,8 @@ import java.util.Objects;
  */
 public record AsyncProduceDirective(
         String destination, String protocol, String key, String payload, long delayMs, Map<String, String> headers) {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public AsyncProduceDirective {
         destination = Objects.requireNonNullElse(destination, "");
@@ -38,8 +42,7 @@ public record AsyncProduceDirective(
         String key = (String) map.getOrDefault("key", "");
         String payload = (String) map.getOrDefault("payload", map.get("body"));
         if (payload == null && map.containsKey("jsonBody")) {
-            Object jsonBody = map.get("jsonBody");
-            payload = jsonBody != null ? jsonBody.toString() : "";
+            payload = serializeJsonBody(map.get("jsonBody"));
         }
 
         long delayMs = 0L;
@@ -60,5 +63,19 @@ public record AsyncProduceDirective(
         }
 
         return new AsyncProduceDirective(destination, protocol, key, payload, delayMs, headers);
+    }
+
+    static String serializeJsonBody(Object jsonBody) {
+        if (jsonBody == null) {
+            return "";
+        }
+        if (jsonBody instanceof String s) {
+            return s;
+        }
+        try {
+            return MAPPER.writeValueAsString(jsonBody);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Failed to serialize jsonBody to JSON: " + e.getMessage(), e);
+        }
     }
 }

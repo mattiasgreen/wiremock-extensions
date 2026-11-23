@@ -82,6 +82,9 @@ public class KafkaMessageBroker implements MessageBroker, AutoCloseable {
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
             props.put(ProducerConfig.ACKS_CONFIG, "1");
             props.put(ProducerConfig.RETRIES_CONFIG, 1);
+            props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
+            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 4000);
+            props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 5000);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "wiremock-kafka-bridge-" + name);
             props.putAll(properties);
 

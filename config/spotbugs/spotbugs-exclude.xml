@@ -37,14 +37,6 @@
         <Class name="com.github.mattiasgreen.wiremock.otel.WireMockTelemetryEngine"/>
         <Bug pattern="MS_EXPOSE_REP"/>
     </Match>
-    <Match>
-        <Class name="com.github.mattiasgreen.wiremock.async.engine.AsyncEngine"/>
-        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
-    </Match>
-    <Match>
-        <Class name="com.github.mattiasgreen.wiremock.async.connection.AsyncBrokerRegistry"/>
-        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
-    </Match>
 
     <!-- Exclude CLI file reading operations for CasualClient and CasualCli -->
     <Match>

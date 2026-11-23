@@ -34,6 +34,7 @@ public abstract class AbstractUiPlaywrightTest {
     protected static final List<String> consoleErrors = Collections.synchronizedList(new ArrayList<>());
     protected static final List<String> pageErrors = Collections.synchronizedList(new ArrayList<>());
     protected static final List<String> httpErrors = Collections.synchronizedList(new ArrayList<>());
+    protected static com.github.mattiasgreen.wiremock.async.engine.AsyncEngine asyncEngine;
 
     private static boolean initialized = false;
     private UiDevToolsProfiler activeProfiler;
@@ -69,6 +70,7 @@ public abstract class AbstractUiPlaywrightTest {
         if (initialized) {
             return;
         }
+        asyncEngine = com.github.mattiasgreen.wiremock.async.engine.AsyncEngine.create();
         wireMockServer = new WireMockServer(WireMockConfiguration.options()
                 .dynamicPort()
                 .extensions(
@@ -76,8 +78,8 @@ public abstract class AbstractUiPlaywrightTest {
                         new StubLifecycleAdminEndpoint(new StubLifecycleService()),
                         new com.github.mattiasgreen.wiremock.openapi.OpenApiAdminEndpoint(),
                         new com.github.mattiasgreen.wiremock.netem.admin.TcpNetEmAdminEndpoint(),
-                        new com.github.mattiasgreen.wiremock.casual.CasualAdminEndpoint(),
-                        new com.github.mattiasgreen.wiremock.async.admin.AsyncAdminEndpoint()));
+                        new com.github.mattiasgreen.wiremock.casual.CasualAdminEndpoint())
+                .extensions(new com.github.mattiasgreen.wiremock.async.admin.AsyncExtensionFactory(asyncEngine)));
         wireMockServer.start();
         resetDefaultStubs();
 

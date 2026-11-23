@@ -159,5 +159,22 @@ class AsyncEngineBridgeTest {
         assertThat(capturedEvents.get(0).getResponseDefinition().getBody())
                 .contains("ASYNC_PROXY_ERROR")
                 .contains("Connection refused");
+        assertThat(capturedEvents
+                        .get(0)
+                        .getResponse()
+                        .getHeaders()
+                        .getHeader("X-Async-Error")
+                        .firstValue())
+                .contains("Connection refused");
+        assertThat(capturedEvents.get(0).getRequest().header("X-Async-Protocol").firstValue())
+                .isEqualTo("async");
+        assertThat(capturedEvents.get(0).getRequest().header("X-Async-Channel").firstValue())
+                .isEqualTo("orders.outbound");
+        assertThat(capturedEvents
+                        .get(0)
+                        .getRequest()
+                        .header("X-Async-Message-Id")
+                        .isPresent())
+                .isTrue();
     }
 }

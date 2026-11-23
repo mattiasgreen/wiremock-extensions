@@ -7,6 +7,10 @@ import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.WaitForSelectorState;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -149,7 +153,7 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
     @DisplayName("Should inspect and update live destination via WireMock Async Admin API")
     void testLiveWireMockAsyncDestinationIntegration() {
         // Publish a message to in-memory broker
-        AsyncEngine engine = AsyncEngine.getInstance();
+        AsyncEngine engine = asyncEngine;
         AsyncMessage liveMsg = AsyncMessage.builder()
                 .id("msg-live-1")
                 .protocol("in-memory")
@@ -178,6 +182,81 @@ public class UiQueuesAndTopicsPlaywrightTest extends AbstractUiPlaywrightTest {
         Locator rows = page.locator(".queues-message-row");
         assertThat(rows.count()).isGreaterThanOrEqualTo(1);
         assertThat(page.locator("#queues-messages-tbody").textContent()).contains("system-healthy");
+    }
+
+    @Test
+    @DisplayName(
+            "Should browse live Kafka wire sink topic and delete a single record by topic:partition:offset recordId")
+    void testLiveKafkaRecordIdBrowseAndDeleteInQueues() throws Exception {
+        HttpClient client = HttpClient.newHttpClient();
+        try {
+            HttpResponse<String> startResp = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(wireMockServer.baseUrl() + "/__admin/async/sinks/kafka"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString("{\"action\":\"start\",\"port\":0}"))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(startResp.statusCode()).isEqualTo(200);
+            assertThat(startResp.body()).contains("\"kafkaSinkRunning\":true");
+
+            HttpResponse<String> pub1 = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(
+                                    wireMockServer.baseUrl() + "/__admin/async/destinations/kafka/orders.e2e/messages"))
+                            .header("Content-Type", "application/json")
+                            .POST(
+                                    HttpRequest.BodyPublishers.ofString(
+                                            "{\"key\":\"ORD-E2E-1\",\"payload\":\"{\\\"orderId\\\":\\\"ORD-E2E-1\\\",\\\"status\\\":\\\"CREATED\\\"}\"}"))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(pub1.statusCode()).isEqualTo(201);
+
+            HttpResponse<String> pub2 = client.send(
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(
+                                    wireMockServer.baseUrl() + "/__admin/async/destinations/kafka/orders.e2e/messages"))
+                            .header("Content-Type", "application/json")
+                            .POST(
+                                    HttpRequest.BodyPublishers.ofString(
+                                            "{\"key\":\"ORD-E2E-2\",\"payload\":\"{\\\"orderId\\\":\\\"ORD-E2E-2\\\",\\\"status\\\":\\\"PAID\\\"}\"}"))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(pub2.statusCode()).isEqualTo(201);
+
+            page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#queues");
+            page.waitForSelector("#tab-queues.active");
+
+            page.locator("#btn-queues-refresh").click();
+            page.waitForSelector(".queues-dest-item:has-text('orders.e2e')");
+
+            Locator kafkaDest =
+                    page.locator(".queues-dest-item:has-text('orders.e2e')").first();
+            assertThat(kafkaDest.isVisible()).isTrue();
+            kafkaDest.click();
+
+            page.waitForFunction("() => document.querySelectorAll('.queues-message-row').length === 2");
+            Locator rows = page.locator(".queues-message-row");
+            assertThat(rows.count()).isEqualTo(2);
+            assertThat(page.locator("#queues-messages-tbody").textContent())
+                    .contains("ORD-E2E-1")
+                    .contains("ORD-E2E-2");
+
+            Locator firstOrderRow =
+                    page.locator(".queues-message-row:has-text('ORD-E2E-1')").first();
+            String firstRecordId = firstOrderRow.getAttribute("data-msg-id");
+            assertThat(firstRecordId).matches("orders\\.e2e:\\d+:\\d+");
+
+            firstOrderRow.locator(".btn-msg-delete").click();
+
+            page.waitForFunction("() => document.querySelectorAll('.queues-message-row').length === 1");
+            assertThat(page.locator(".queues-message-row").count()).isEqualTo(1);
+            assertThat(page.locator("#queues-messages-tbody").textContent())
+                    .doesNotContain("ORD-E2E-1")
+                    .contains("ORD-E2E-2");
+        } finally {
+            asyncEngine.stopKafkaSink();
+        }
     }
 
     @Test

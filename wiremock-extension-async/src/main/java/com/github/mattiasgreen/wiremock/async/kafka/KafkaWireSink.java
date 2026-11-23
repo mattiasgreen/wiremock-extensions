@@ -9,15 +9,20 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
  * In-process Netty TCP server hosting an ultra-lightweight Kafka wire sink (API versions, Metadata,
- * InitProducerId, Produce) with zero external broker daemons.
+ * InitProducerId, Produce, Fetch, ListOffsets, consumer group coordination) with zero external
+ * broker daemons.
+ *
+ * <p>Owns a single shared {@link KafkaTopicLogCoordinator} injected into every per-connection
+ * {@link KafkaWireCodec}, and runs Netty {@link NioEventLoopGroup}s on daemon platform threads.
  *
  * <p><b>Note:</b> This is Beta functionality subject to evolution.
  */
@@ -25,12 +30,11 @@ public class KafkaWireSink implements AutoCloseable {
 
     private final int requestedPort;
     private final Consumer<KafkaProduceRecord> recordConsumer;
-    private final List<KafkaWireCodec> activeCodecs = new java.util.concurrent.CopyOnWriteArrayList<>();
-    private final List<KafkaProduceRecord> preStagedRecords = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final KafkaTopicLogCoordinator coordinator = new KafkaTopicLogCoordinator();
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
-    private int boundPort;
+    private volatile int boundPort;
 
     public KafkaWireSink(int port, Consumer<KafkaProduceRecord> recordConsumer) {
         this.requestedPort = port;
@@ -38,28 +42,19 @@ public class KafkaWireSink implements AutoCloseable {
     }
 
     public void stageRecord(KafkaProduceRecord record) {
-        if (record != null) {
-            preStagedRecords.add(record);
-            for (KafkaWireCodec codec : activeCodecs) {
-                codec.stageRecord(record);
-            }
-        }
+        coordinator.stage(record);
     }
 
     public List<KafkaProduceRecord> getStagedRecords() {
-        return Collections.unmodifiableList(new ArrayList<>(preStagedRecords));
+        return coordinator.getAllRecords();
     }
 
     public boolean deleteStagedRecord(String topic, String keyOrId) {
-        if (topic == null) return false;
-        return preStagedRecords.removeIf(r ->
-                r.topic().equals(topic) && (keyOrId == null || keyOrId.equals(r.key()) || keyOrId.equals(r.value())));
+        return coordinator.deleteRecord(topic, keyOrId);
     }
 
     public void purgeTopic(String topic) {
-        if (topic != null) {
-            preStagedRecords.removeIf(r -> r.topic().equals(topic));
-        }
+        coordinator.purgeTopic(topic);
     }
 
     public synchronized void start() throws InterruptedException {
@@ -68,9 +63,10 @@ public class KafkaWireSink implements AutoCloseable {
         }
 
         bossGroup = new NioEventLoopGroup(
-                1, Thread.ofVirtual().name("kafka-sink-boss-", 0).factory());
+                1, Thread.ofPlatform().daemon(true).name("kafka-sink-boss-", 0).factory());
         workerGroup = new NioEventLoopGroup(
-                2, Thread.ofVirtual().name("kafka-sink-worker-", 0).factory());
+                2,
+                Thread.ofPlatform().daemon(true).name("kafka-sink-worker-", 0).factory());
 
         ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap
@@ -80,13 +76,10 @@ public class KafkaWireSink implements AutoCloseable {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        KafkaWireCodec codec = new KafkaWireCodec(boundPort, recordConsumer);
-                        for (KafkaProduceRecord pre : preStagedRecords) {
-                            codec.stageRecord(pre);
-                        }
-                        activeCodecs.add(codec);
-                        ch.closeFuture().addListener(f -> activeCodecs.remove(codec));
-                        ch.pipeline().addLast(codec);
+                        InetSocketAddress localAddress = ch.localAddress();
+                        int effectivePort =
+                                localAddress != null && localAddress.getPort() > 0 ? localAddress.getPort() : boundPort;
+                        ch.pipeline().addLast(new KafkaWireCodec(effectivePort, coordinator, recordConsumer));
                     }
                 });
 
@@ -102,10 +95,20 @@ public class KafkaWireSink implements AutoCloseable {
         return serverChannel != null && serverChannel.isActive();
     }
 
+    synchronized boolean isEventLoopVirtual() throws InterruptedException, ExecutionException, TimeoutException {
+        if (bossGroup == null || workerGroup == null) {
+            return false;
+        }
+        boolean bossVirtual =
+                bossGroup.submit(() -> Thread.currentThread().isVirtual()).get(5, TimeUnit.SECONDS);
+        boolean workerVirtual =
+                workerGroup.submit(() -> Thread.currentThread().isVirtual()).get(5, TimeUnit.SECONDS);
+        return bossVirtual || workerVirtual;
+    }
+
     @Override
     public synchronized void close() {
-        preStagedRecords.clear();
-        activeCodecs.clear();
+        coordinator.clear();
         if (serverChannel != null) {
             try {
                 serverChannel.close().sync();
@@ -122,5 +125,6 @@ public class KafkaWireSink implements AutoCloseable {
             bossGroup.shutdownGracefully();
             bossGroup = null;
         }
+        boundPort = 0;
     }
 }

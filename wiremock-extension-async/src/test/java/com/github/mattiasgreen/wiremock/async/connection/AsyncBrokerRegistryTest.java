@@ -122,6 +122,58 @@ class AsyncBrokerRegistryTest {
         assertThat(closed.get()).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("Should never leave a stale pooled broker when register races with concurrent getOrCreateBroker")
+    void shouldPreventStalePooledBrokerWhenRegisterRacesWithGetOrCreate() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger closed = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger();
+
+        registry.registerBrokerFactory(
+                "race-proto",
+                conn -> new EndpointTrackingBroker(conn.endpoint(), created.incrementAndGet(), closed, () -> {
+                    // Simulate a concurrent getOrCreateBroker arriving right after old broker eviction
+                    if ("old-host:9092".equals(conn.endpoint())) {
+                        registry.getOrCreateBroker("r1");
+                    }
+                }));
+
+        registry.register(new BrokerConnection("r1", "race-proto", "Old", "old-host:9092", Map.of()));
+        EndpointTrackingBroker initial =
+                (EndpointTrackingBroker) registry.getOrCreateBroker("r1").orElseThrow();
+        assertThat(initial.endpoint).isEqualTo("old-host:9092");
+
+        // Upsert to new-host:9092; during eviction of old broker, concurrent getOrCreateBroker runs
+        registry.register(new BrokerConnection("r1", "race-proto", "New", "new-host:9092", Map.of()));
+
+        // After register(new-host) completes, getOrCreateBroker MUST return a broker pointing to new-host:9092
+        EndpointTrackingBroker active =
+                (EndpointTrackingBroker) registry.getOrCreateBroker("r1").orElseThrow();
+        assertThat(active.endpoint).isEqualTo("new-host:9092");
+    }
+
+    private static final class EndpointTrackingBroker
+            extends com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker implements AutoCloseable {
+        final String endpoint;
+        private final java.util.concurrent.atomic.AtomicInteger closedCounter;
+        private final Runnable onClose;
+
+        EndpointTrackingBroker(
+                String endpoint, int index, java.util.concurrent.atomic.AtomicInteger closedCounter, Runnable onClose) {
+            super("ep-" + index);
+            this.endpoint = endpoint;
+            this.closedCounter = closedCounter;
+            this.onClose = onClose;
+        }
+
+        @Override
+        public void close() {
+            closedCounter.incrementAndGet();
+            if (onClose != null) {
+                onClose.run();
+            }
+        }
+    }
+
     private static final class CloseableTestBroker
             extends com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker implements AutoCloseable {
         private final java.util.concurrent.atomic.AtomicInteger closedCounter;

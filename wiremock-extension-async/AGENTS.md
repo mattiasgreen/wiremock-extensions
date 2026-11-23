@@ -10,7 +10,7 @@ Guidelines and architectural topology for `wiremock-extension-async` (Beta).
 
 1. **Beta Notice**: All public classes, models, and endpoints must reflect `@Beta` / experimental status in Javadocs and README.
 2. **Zero Standalone JVM Bloat**: Never embed external broker daemons (ZooKeeper, KRaft, RabbitMQ, Artemis). Operates strictly via in-process Netty TCP codecs or virtual-thread client bridges.
-3. **Virtual-Thread Native**: Concurrency must use `Thread.ofVirtual().start(...)` for message dispatching, templating, and socket mediation. Never hold locks across blocking socket operations.
+3. **Virtual-Thread Native**: Concurrency must use `Thread.ofVirtual().start(...)` for message dispatching, templating, and inbound/outbound mediation. Netty `NioEventLoopGroup` I/O loops use daemon platform threads (avoiding virtual-thread carrier pinning on selector/native I/O). Never hold locks across blocking socket operations.
 4. **Token Hygiene & Inner Loop**:
    - Inner Loop Test: `./gradlew :wiremock-extension-async:test --tests "ClassName.methodName" -q --console=plain`
    - Pre-Commit Gate: `./gradlew :wiremock-extension-async:spotbugsMain :wiremock-extension-async:test -q --console=plain`
