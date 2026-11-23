@@ -102,5 +102,27 @@ public class BundleIntegrationTest {
         assertThat(resetLevelsResp.body())
                 .doesNotContain("com.github.mattiasgreen=TRACE")
                 .doesNotContain("se.laz.casual=TRACE");
+
+        // 5. Test Async Extension status and publish via SPI auto-discovery
+        HttpRequest asyncStatusReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/async/status"))
+                .GET()
+                .build();
+        HttpResponse<String> asyncStatusResp = httpClient.send(asyncStatusReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(asyncStatusResp.statusCode()).isEqualTo(200);
+        assertThat(asyncStatusResp.body()).contains("\"status\":\"UP\"");
+
+        HttpRequest asyncPublishReq = HttpRequest.newBuilder()
+                .uri(URI.create(server.baseUrl() + "/__admin/async/publish"))
+                .header("Content-Type", "application/json")
+                .POST(
+                        HttpRequest.BodyPublishers.ofString(
+                                "{\"protocol\":\"in-memory\",\"destination\":\"bundle.smoke.queue\",\"key\":\"K-1\",\"payload\":\"{\\\"ok\\\":true}\"}"))
+                .build();
+        HttpResponse<String> asyncPublishResp = httpClient.send(asyncPublishReq, HttpResponse.BodyHandlers.ofString());
+        assertThat(asyncPublishResp.statusCode()).isEqualTo(200);
+        assertThat(asyncPublishResp.body())
+                .contains("\"published\":true")
+                .contains("\"destination\":\"bundle.smoke.queue\"");
     }
 }

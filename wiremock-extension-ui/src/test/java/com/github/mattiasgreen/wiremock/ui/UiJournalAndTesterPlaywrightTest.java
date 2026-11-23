@@ -3,6 +3,7 @@ package com.github.mattiasgreen.wiremock.ui;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.microsoft.playwright.Locator;
@@ -898,6 +899,48 @@ public class UiJournalAndTesterPlaywrightTest extends AbstractUiPlaywrightTest {
         Locator bridgedRow = page.locator("#journal-list tr.journal-row:has-text('/__async/kafka/payments.bridged')")
                 .first();
         assertThat(bridgedRow.locator(".pill-bridged").textContent()).contains("BRIDGED");
+    }
+
+    @Test
+    @DisplayName("Should render live AsyncEngine 502 PROXY_ERROR badge and X-Async-Error detail in Request Journal")
+    void testLiveAsyncEngine502BridgeErrorInJournal() {
+        wireMockServer.resetRequests();
+
+        asyncEngine.addBridgeRule(
+                "Bridge Missing Upstream", 100, "orders\\.bridge\\..*", "missing-upstream-broker", "remote.orders");
+
+        AsyncMessage inbound = AsyncMessage.builder()
+                .id("msg-bridge-502-e2e")
+                .protocol("kafka")
+                .destination("orders.bridge.inbound")
+                .key("ORD-BRIDGE-502")
+                .payload("{\"orderId\":\"ORD-BRIDGE-502\",\"amount\":420}")
+                .build();
+        asyncEngine.getTestBroker().send("orders.bridge.inbound", inbound);
+        boolean processed = asyncEngine.processInbound("orders.bridge.inbound");
+        assertThat(processed).isTrue();
+
+        page.navigate(wireMockServer.baseUrl() + "/__admin/ui/#journal");
+        page.waitForSelector("#tab-journal.active");
+        page.waitForSelector("#journal-list tr.journal-row:has-text('orders.bridge.inbound')");
+
+        Locator errorRow = page.locator("#journal-list tr.journal-row:has-text('orders.bridge.inbound')")
+                .first();
+        assertThat(errorRow.locator(".badge-KAFKA").textContent()).isEqualTo("KAFKA");
+        assertThat(errorRow.locator(".pill-proxy-error").textContent()).contains("PROXY_ERROR");
+        assertThat(errorRow.textContent()).contains("502");
+
+        errorRow.click();
+        String reqId = errorRow.getAttribute("data-request-id");
+        page.waitForSelector("tr.journal-detail-row[data-request-id='" + reqId + "']");
+
+        Locator detailRow = page.locator("tr.journal-detail-row[data-request-id='" + reqId + "']");
+        assertThat(detailRow.textContent())
+                .contains("X-Async-Error")
+                .contains("missing-upstream-broker")
+                .contains("X-Async-Channel")
+                .contains("orders.bridge.inbound")
+                .contains("ASYNC_PROXY_ERROR");
     }
 
     @Test

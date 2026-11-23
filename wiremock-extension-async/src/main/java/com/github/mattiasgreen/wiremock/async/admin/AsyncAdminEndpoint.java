@@ -11,6 +11,8 @@ import com.github.tomakehurst.wiremock.admin.Router;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.extension.AdminApiExtension;
 import com.github.tomakehurst.wiremock.http.RequestMethod;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -230,7 +232,7 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
 
         // DELETE /__admin/async/connections/{id}
         router.add(RequestMethod.DELETE, "/async/connections/{id}", (admin, serveEvent, pathParams) -> {
-            String id = pathParams.get("id");
+            String id = decodePathParam(pathParams.get("id"));
             boolean removed = brokerRegistry.remove(id);
             if (removed) {
                 return ResponseDefinitionBuilder.responseDefinition()
@@ -268,8 +270,8 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 "/async/destinations/{protocol}/{name}/messages",
                 (admin, serveEvent, pathParams) -> {
                     try {
-                        String protocol = pathParams.get("protocol");
-                        String name = pathParams.get("name");
+                        String protocol = decodePathParam(pathParams.get("protocol"));
+                        String name = decodePathParam(pathParams.get("name"));
                         List<AsyncMessage> messages = engine.peekMessages(protocol, name, 50);
                         Map<String, Object> resp = Map.of(
                                 "protocol", protocol,
@@ -293,9 +295,9 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 RequestMethod.DELETE,
                 "/async/destinations/{protocol}/{name}/messages/{id}",
                 (admin, serveEvent, pathParams) -> {
-                    String protocol = pathParams.get("protocol");
-                    String name = pathParams.get("name");
-                    String id = pathParams.get("id");
+                    String protocol = decodePathParam(pathParams.get("protocol"));
+                    String name = decodePathParam(pathParams.get("name"));
+                    String id = decodePathParam(pathParams.get("id"));
                     boolean deleted = engine.deleteMessage(protocol, name, id);
                     if (deleted) {
                         return ResponseDefinitionBuilder.responseDefinition()
@@ -312,8 +314,8 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
 
         // DELETE /__admin/async/destinations/{protocol}/{name}
         router.add(RequestMethod.DELETE, "/async/destinations/{protocol}/{name}", (admin, serveEvent, pathParams) -> {
-            String protocol = pathParams.get("protocol");
-            String name = pathParams.get("name");
+            String protocol = decodePathParam(pathParams.get("protocol"));
+            String name = decodePathParam(pathParams.get("name"));
             engine.purgeDestination(protocol, name);
             return ResponseDefinitionBuilder.responseDefinition()
                     .withStatus(204)
@@ -326,8 +328,8 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 "/async/destinations/{protocol}/{name}/messages",
                 (admin, serveEvent, pathParams) -> {
                     try {
-                        String protocol = pathParams.get("protocol");
-                        String name = pathParams.get("name");
+                        String protocol = decodePathParam(pathParams.get("protocol"));
+                        String name = decodePathParam(pathParams.get("name"));
                         String reqBody = serveEvent.getRequest().getBodyAsString();
                         JsonNode json = MAPPER.readTree(reqBody);
                         AsyncMessage msg = parseAsyncMessage(json, protocol, name);
@@ -392,5 +394,16 @@ public class AsyncAdminEndpoint implements AdminApiExtension {
                 .headers(headers)
                 .timestamp(Instant.now())
                 .build();
+    }
+
+    private static String decodePathParam(String raw) {
+        if (raw == null || !raw.contains("%")) {
+            return raw;
+        }
+        try {
+            return URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return raw;
+        }
     }
 }
