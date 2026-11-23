@@ -1,12 +1,19 @@
 package com.github.mattiasgreen.wiremock.examples;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.mattiasgreen.wiremock.async.admin.AsyncExtensionFactory;
 import com.github.mattiasgreen.wiremock.async.amqp.AmqpMessageBroker;
 import com.github.mattiasgreen.wiremock.async.amqp.AmqpServer;
 import com.github.mattiasgreen.wiremock.async.bridge.InMemoryMessageBroker;
+import com.github.mattiasgreen.wiremock.async.connection.BrokerConnection;
 import com.github.mattiasgreen.wiremock.async.engine.AsyncEngine;
 import com.github.mattiasgreen.wiremock.async.model.AsyncMessage;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -26,6 +33,7 @@ import org.apache.qpid.protonj2.client.Connection;
 import org.apache.qpid.protonj2.client.Delivery;
 import org.apache.qpid.protonj2.client.Message;
 import org.apache.qpid.protonj2.client.Receiver;
+import org.apache.qpid.protonj2.client.Sender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -84,7 +92,7 @@ class EmbeddedArtemisAmqpIntegrationTest {
         if (artemisOutboundBroker != null) {
             artemisOutboundBroker.close();
         }
-        if (artemisServer != null) {
+        if (artemisServer != null && artemisServer.isStarted()) {
             artemisServer.stop();
         }
     }
@@ -244,6 +252,122 @@ class EmbeddedArtemisAmqpIntegrationTest {
 
             delivery.accept();
             receiver.close();
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "Full AMQP wire-to-Artemis E2E bridge: Proton Sender -> AmqpServer -> Artemis -> stop Artemis -> 502 ServeEvent")
+    void shouldBridgeAmqpWireToEmbeddedArtemisAndRecord502WhenArtemisStops() throws Exception {
+        artemisServer.createQueue(QueueConfiguration.of("orders.upstream").setRoutingType(RoutingType.ANYCAST));
+
+        AsyncEngine wireEngine = AsyncEngine.create();
+        WireMockServer wm = new WireMockServer(
+                WireMockConfiguration.options().dynamicPort().extensions(new AsyncExtensionFactory(wireEngine)));
+        wm.start();
+        try {
+            wireEngine.startAmqpServer(0);
+            int amqpWirePort = wireEngine.getAmqpServerPort();
+
+            // Register embedded Artemis in AsyncBrokerRegistry as live-artemis
+            wireEngine
+                    .getBrokerRegistry()
+                    .register(new BrokerConnection(
+                            "live-artemis",
+                            "amqp",
+                            "Live Embedded Artemis",
+                            "amqp://127.0.0.1:" + artemisPort,
+                            Map.of()));
+
+            // Priority 100 bridge stub rewriting orders.in -> orders.upstream
+            wm.stubFor(post(urlEqualTo("/__async/amqp/orders.in"))
+                    .withName("orders-live-artemis-bridge")
+                    .atPriority(100)
+                    .willReturn(aResponse().proxiedFrom("async://live-artemis"))
+                    .withMetadata(Map.of(
+                            "async",
+                            Map.of(
+                                    "mode", "proxy",
+                                    "protocol", "amqp",
+                                    "channel", "orders.in",
+                                    "proxyBroker", "live-artemis",
+                                    "proxyChannel", "orders.upstream"))));
+
+            // 1. Send message with real Proton-J2 Sender to WireMock's AmqpServer
+            try (Connection wmConn = qpidClient.connect("127.0.0.1", amqpWirePort)) {
+                Sender sender = wmConn.openSender("orders.in");
+                Message<byte[]> msg =
+                        Message.create("{\"orderId\":\"ART-E2E-1\",\"amount\":99.50}".getBytes(StandardCharsets.UTF_8));
+                msg.messageId("artemis-e2e-msg-1");
+                msg.correlationId("corr-artemis-e2e-1");
+                msg.property("x-tenant", "nordic-retail");
+                sender.send(msg);
+                sender.close();
+            }
+
+            // 2. Consume bridged message from embedded Artemis with real Proton-J2 Receiver
+            try (Connection artemisConn = qpidClient.connect("127.0.0.1", artemisPort)) {
+                Receiver receiver = artemisConn.openReceiver("orders.upstream");
+                Delivery delivery = receiver.receive(5, TimeUnit.SECONDS);
+                assertThat(delivery).isNotNull();
+                Message<?> forwarded = delivery.message();
+                String payload = new String((byte[]) forwarded.body(), StandardCharsets.UTF_8);
+                assertThat(payload).isEqualTo("{\"orderId\":\"ART-E2E-1\",\"amount\":99.50}");
+                assertThat(forwarded.correlationId()).isEqualTo("corr-artemis-e2e-1");
+                assertThat(forwarded.property("x-tenant")).isEqualTo("nordic-retail");
+                delivery.accept();
+                receiver.close();
+            }
+
+            assertThat(wm.getAllServeEvents()).anySatisfy(se -> {
+                assertThat(se.getResponseDefinition().isProxyResponse()).isTrue();
+                assertThat(se.getRequest().header("X-Async-Protocol").firstValue())
+                        .isEqualTo("amqp");
+                assertThat(se.getRequest().header("X-Async-Channel").firstValue())
+                        .isEqualTo("orders.in");
+                assertThat(se.getResponseDefinition().getProxyBaseUrl()).contains("live-artemis/orders.upstream");
+            });
+
+            // 3. Stop embedded Artemis completely
+            artemisServer.stop();
+
+            // 4. Send another message to WireMock's AmqpServer -> expect 502 Synthetic Async ServeEvent
+            try (Connection wmConn = qpidClient.connect("127.0.0.1", amqpWirePort)) {
+                Sender sender = wmConn.openSender("orders.in");
+                Message<byte[]> failMsg =
+                        Message.create("{\"orderId\":\"ART-E2E-2\",\"amount\":15.00}".getBytes(StandardCharsets.UTF_8));
+                failMsg.messageId("artemis-e2e-msg-2");
+                sender.send(failMsg);
+                sender.close();
+            }
+
+            long deadline = System.currentTimeMillis() + 5_000;
+            while (wireEngine.getProxyErrors() < 1 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(50);
+            }
+
+            assertThat(wireEngine.getProxyErrors()).isEqualTo(1);
+            assertThat(wm.getAllServeEvents()).anySatisfy(se -> {
+                assertThat(se.getResponseDefinition().getStatus()).isEqualTo(502);
+                assertThat(se.getResponse()
+                                .getHeaders()
+                                .getHeader("X-Async-Error")
+                                .isPresent())
+                        .isTrue();
+                assertThat(se.getResponse()
+                                .getHeaders()
+                                .getHeader("X-Async-Error")
+                                .firstValue())
+                        .contains("AMQP");
+                assertThat(se.getRequest().header("X-Async-Protocol").firstValue())
+                        .isEqualTo("amqp");
+                assertThat(se.getRequest().header("X-Async-Channel").firstValue())
+                        .isEqualTo("orders.in");
+                assertThat(se.getRequest().header("X-Async-Message-Id").firstValue())
+                        .isEqualTo("artemis-e2e-msg-2");
+            });
+        } finally {
+            wm.stop();
         }
     }
 }

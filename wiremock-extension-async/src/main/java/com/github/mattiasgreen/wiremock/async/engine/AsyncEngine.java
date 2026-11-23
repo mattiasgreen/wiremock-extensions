@@ -964,7 +964,6 @@ public class AsyncEngine implements AutoCloseable {
             AsyncMessage msg,
             StubMapping matchedStub,
             String errorDetail) {
-        proxyErrors.incrementAndGet();
         String errorBody = "{\"error\":\"ASYNC_PROXY_ERROR\",\"status\":502,\"targetChannel\":\"" + targetChannel
                 + "\",\"targetBroker\":\"" + brokerLabel + "\",\"detail\":\"" + errorDetail + "\"}";
         ServeEvent se = AsyncServeEventMediation.buildServeEvent(
@@ -982,6 +981,7 @@ public class AsyncEngine implements AutoCloseable {
                 errorDetail,
                 matchedStub);
         recordServeEvent(se);
+        proxyErrors.incrementAndGet();
         LOG.error(
                 "[ASYNC-PROXY-ERROR] Bridge [{}] failed forwarding [{}] to [{}]: {}",
                 sanitizeForLog(ruleName),

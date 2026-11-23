@@ -78,7 +78,7 @@ public record AsyncMetadata(
 
         String channelPattern = (String) map.getOrDefault("channelPattern", "");
         String proxyBroker = (String) map.getOrDefault("proxyBroker", "");
-        String proxyChannel = (String) map.getOrDefault("proxyChannel", "");
+        String proxyChannel = (String) map.getOrDefault("proxyChannel", map.getOrDefault("targetChannel", ""));
 
         List<AsyncProduceDirective> produceList = new ArrayList<>();
         Object produceObj = map.get("produce");
